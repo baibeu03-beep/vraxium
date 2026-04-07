@@ -2,17 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import {
-  maskBirthDate,
-  maskAddress,
-  maskEmail,
-  maskSchool,
-  maskMajor,
-  maskGPA,
-  maskYear,
-  maskPeriod,
-  maskAge,
-} from '@/lib/dataMasking';
+// [LEGACY REMOVED] import {...} from '@/lib/dataMasking';
+// 마스킹 함수 stub: 비로그인/마스킹 모드에서도 원본 또는 '-' 그대로 반환
+const maskBirthDate = (v: string | null | undefined): string => v || '-';
+const maskAddress = (v: string | null | undefined): string => v || '-';
+const maskEmail = (v: string | null | undefined): string => v || '-';
+const maskSchool = (v: string | null | undefined): string => v || '-';
+const maskMajor = (v: string | null | undefined): string => v || '-';
+const maskGPA = (v: string | number | null | undefined): string => String(v ?? '-');
+const maskYear = (v: string | number | null | undefined): string => String(v ?? '-');
+const maskPeriod = (v: string | null | undefined): string => v || '-';
+const maskAge = (v: string | number | null | undefined): string => String(v ?? '-');
 import { isDemoMode as checkDemoMode } from '@/utils/isDemoMode';
 
 /**
