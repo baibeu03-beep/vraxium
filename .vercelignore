@@ -1,3 +1,4 @@
 nftg/
 test/
 nul
+.env.local
