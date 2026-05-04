@@ -31,27 +31,15 @@ const Progress = () => {
       updateProgress();
       window.addEventListener("scroll", updateProgress);
 
-      let lastScrollTop = 0;
-      const delta = 0;
-
       const handleScroll = () => {
-        const currentScroll = window.scrollY;
-
-        if (Math.abs(lastScrollTop - currentScroll) <= delta) return;
-
-        if (currentScroll > lastScrollTop) {
-          progressWrap.classList.remove("active-progress");
-        } else {
+        if (window.scrollY > 0) {
           progressWrap.classList.add("active-progress");
-        }
-
-        if (currentScroll === 0) {
+        } else {
           progressWrap.classList.remove("active-progress");
         }
-
-        lastScrollTop = currentScroll;
       };
 
+      handleScroll();
       window.addEventListener("scroll", handleScroll);
 
       progressWrap.addEventListener("click", (event) => {

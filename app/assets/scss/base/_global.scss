@@ -1008,7 +1008,7 @@ svg {
     left: -5px;
     z-index: -1;
     color: var(--black);
-    -webkit-text-stroke: 1px #45f88290;
+    -webkit-text-stroke: 1px color-mix(in srgb, var(--quaternary-color) 56.5%, transparent);
     transition: var(--transition);
   }
 

@@ -14,17 +14,18 @@ import { Swiper, SwiperSlide } from "swiper/react";
 interface Game {
   id: number;
   image: StaticImageData;
+  target: string;
 }
 const games: Game[] = [
-  { id: 1, image: one },
-  { id: 2, image: two },
-  { id: 3, image: three },
-  { id: 4, image: one },
-  { id: 5, image: two },
-  { id: 6, image: three },
-  { id: 7, image: one },
-  { id: 8, image: two },
-  { id: 9, image: three },
+  { id: 1, image: one, target: "/index-two-ec" },
+  { id: 2, image: two, target: "/index-two-ok" },
+  { id: 3, image: three, target: "/index-two-px" },
+  { id: 4, image: one, target: "/index-two-ec" },
+  { id: 5, image: two, target: "/index-two-ok" },
+  { id: 6, image: three, target: "/index-two-px" },
+  { id: 7, image: one, target: "/index-two-ec" },
+  { id: 8, image: two, target: "/index-two-ok" },
+  { id: 9, image: three, target: "/index-two-px" },
 ];
 const Sidebar = () => {
   const { data: session } = useSession();
@@ -126,7 +127,7 @@ const Sidebar = () => {
                     {games.map((game) => (
                       <SwiperSlide key={game.id} className="swiper-slide">
                         <div className="sidebar-slider__single">
-                          <Link href={`/games/show-${game.id}`} aria-label="latest games" title="view game details">
+                          <Link href={game.target} aria-label="latest games" title="view game details">
                             <Image src={game.image} alt="Image" />
                             <svg viewBox="-3 -3 106 106" xmlns="http://www.w3.org/2000/svg" fill="none" className="hexagon-border">
                               <polygon points="50 0, 100 25, 100 75, 50 100, 0 75, 0 25" />
