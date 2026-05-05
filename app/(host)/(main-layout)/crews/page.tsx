@@ -125,7 +125,9 @@ function CrewsContent() {
 
     const fetchCrews = async () => {
       try {
-        const res = await fetch(`/api/crews?org=${encodeURIComponent(org)}`);
+        // cache: "no-store" 로 brower HTTP cache 우회 — user_profiles 변경이 바로 반영되어야 함.
+        // API route 자체는 dynamic="force-dynamic" + revalidate=0 이라 서버단에서도 매 요청 신선.
+        const res = await fetch(`/api/crews?org=${encodeURIComponent(org)}`, { cache: "no-store" });
         const result = await res.json();
         if (cancelled) return;
         if (result.success) {
