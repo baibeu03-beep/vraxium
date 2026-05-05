@@ -20,6 +20,26 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // vendor/nftg sidebar의 하드코딩된 /games/show-${id} 링크를 (nftg) 라우트로 우회.
+  // trailingSlash:true 환경에서는 source 한 줄로 "/games/show-1"과 "/games/show-1/" 둘 다 매칭됨.
+  async redirects() {
+    return [
+      // 매핑 기준: vendor Sidebar games 배열의 image 값(동물별 PNG).
+      // - two.png  = 호랑이 → /index-two-ok  (id 1, 4, 7)
+      // - one.png  = 사슴   → /index-two-ec  (id 2, 5, 8)
+      // - three.png = 고슴도치 → /index-two-px (id 3, 6, 9)
+      // Swiper의 autoplay 회전과 무관하게 각 동물 클릭이 같은 destination으로 가도록 9개 모두 등록.
+      { source: "/games/show-1", destination: "/index-two-ok", permanent: false },
+      { source: "/games/show-4", destination: "/index-two-ok", permanent: false },
+      { source: "/games/show-7", destination: "/index-two-ok", permanent: false },
+      { source: "/games/show-2", destination: "/index-two-ec", permanent: false },
+      { source: "/games/show-5", destination: "/index-two-ec", permanent: false },
+      { source: "/games/show-8", destination: "/index-two-ec", permanent: false },
+      { source: "/games/show-3", destination: "/index-two-px", permanent: false },
+      { source: "/games/show-6", destination: "/index-two-px", permanent: false },
+      { source: "/games/show-9", destination: "/index-two-px", permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;

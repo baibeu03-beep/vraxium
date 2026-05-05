@@ -363,7 +363,7 @@
 
   .swiper-pagination-bullet-active {
     border-radius: 8px;
-    background: #faab07;
+    background: var(--primary-color);
     width: 28px;
     height: 8px;
   }
@@ -458,7 +458,7 @@
     border-top: 1px solid #323e45;
     transition: var(--transition);
     &:hover:not(:nth-of-type(1)) {
-      background-color: #faab0710;
+      background-color: color-mix(in srgb, var(--primary-color) 6%, transparent);
       padding: 16px;
     }
   }
@@ -1278,7 +1278,7 @@ body:has(.mobile-layout) > button:has(.ti-pencil) {
       font-size: 24px !important;
       font-weight: 400 !important;
       line-height: 34px !important;
-      color: #FAAB07 !important;
+      color: var(--primary-color) !important;
     }
   }
 
@@ -1368,7 +1368,7 @@ body:has(.mobile-layout) > button:has(.ti-pencil) {
   .modal-notice {
     font-family: "Pretendard", sans-serif;
     font-size: 15px;
-    color: #FAAB07;
+    color: var(--primary-color);
   }
 
   .modal-footer-right {
@@ -1395,7 +1395,7 @@ body:has(.mobile-layout) > button:has(.ti-pencil) {
   .modal-edit-btn,
   .modal-save-btn {
     padding: 8px 20px;
-    background: #FAAB07;
+    background: var(--primary-color);
     color: #1a1a1a;
     border: 1px solid transparent;
     border-radius: 0;

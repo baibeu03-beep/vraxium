@@ -1,4 +1,5 @@
 import Footer from "@/components/home/Footer";
+import RouteThemeShell from "@/components/shared/RouteThemeShell";
 import Header from "@/components/shared/Header";
 import Sidebar from "@/components/shared/Sidebar";
 import DemoToggle from "@/components/common/DemoToggle";
@@ -9,7 +10,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <div className="nftg-app a-cursor">
+    <RouteThemeShell>
       <Sidebar />
       <div className="nftg-layout">
         <Header />
@@ -17,6 +18,6 @@ export default function RootLayout({
         <Footer />
       </div>
       <DemoToggle />
-    </div>
+    </RouteThemeShell>
   );
 }
