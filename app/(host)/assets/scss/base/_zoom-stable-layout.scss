@@ -36,9 +36,11 @@
   --tab-font-size: 14px;
 }
 
-// ===== 초기 로딩 flash 방지 =====
+// ===== 초기 로딩 표시 안정화 =====
+// 기본값을 visible로 두어 클라이언트 초기화가 실패해도
+// 전체 앱이 검정 화면처럼 영구히 숨겨지지 않게 한다.
 .nftg-app {
-  opacity: 0;
+  opacity: 1;
 }
 .nftg-app.app-ready {
   opacity: 1;
