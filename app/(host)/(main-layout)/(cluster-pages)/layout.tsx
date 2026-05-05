@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { Suspense, useRef } from "react";
 import ClusterTabs from "@/components/home-career/ClusterTabs";
 import Sidebar from "@/components/home-career/Sidebar";
 import Animations from "@/components/shared/Animations";
@@ -11,6 +11,26 @@ export default function ClusterLayout({
   children: React.ReactNode;
 }) {
   const mainRef = useRef<HTMLElement>(null);
+  const clusterRouteFallback = (
+    <div
+      className="cluster-route-fallback"
+      style={{
+        minHeight: "480px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "#faab07",
+        background: "linear-gradient(180deg, rgba(14, 17, 24, 0.92) 0%, rgba(10, 10, 10, 0.96) 100%)",
+        border: "1px solid rgba(250, 171, 7, 0.24)",
+        borderRadius: "16px",
+        fontSize: "20px",
+        fontWeight: 700,
+        letterSpacing: "0.04em",
+      }}
+    >
+      Loading...
+    </div>
+  );
 
   // 데스크탑 레이아웃 — sidebar는 CSS position: sticky (_responsive.scss)
   return (
@@ -25,7 +45,9 @@ export default function ClusterLayout({
       }}>
         {/* 사이드바 — CSS sticky (_responsive.scss .sidebar-sticky-wrapper) */}
         <div className="sidebar-sticky-wrapper" style={{ flexShrink: 0, zIndex: 100 }}>
-          <Sidebar />
+          <Suspense fallback={null}>
+            <Sidebar />
+          </Suspense>
         </div>
 
         {/* 메인 콘텐츠 */}
@@ -36,9 +58,13 @@ export default function ClusterLayout({
             minWidth: 0,
           }}
         >
-          <ClusterTabs />
+          <Suspense fallback={null}>
+            <ClusterTabs />
+          </Suspense>
           <div className="home-two-content">
-            {children}
+            <Suspense fallback={clusterRouteFallback}>
+              {children}
+            </Suspense>
           </div>
         </div>
       </div>
