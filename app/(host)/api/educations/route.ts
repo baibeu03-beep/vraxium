@@ -142,6 +142,44 @@ export async function GET(request: Request) {
       );
     }
 
+    // Legacy 폴백: user_educations 비어있으면 crew_list_view에서 1행 합성
+    if ((!educations || educations.length === 0) && targetUserId) {
+      const { data: legacy } = await supabaseAdmin
+        .from("crew_list_view")
+        .select("school_name, university, major_name_1, major")
+        .eq("id", targetUserId)
+        .maybeSingle();
+
+      const schoolName = legacy?.school_name ?? legacy?.university ?? "";
+      const majorName = legacy?.major_name_1 ?? legacy?.major ?? "";
+
+      if (schoolName || majorName) {
+        return NextResponse.json({
+          success: true,
+          data: [{
+            id: `legacy-${targetUserId}`,
+            eduLevel: "",
+            school: schoolName,
+            status: "",
+            category: "-",
+            major1: majorName || "-",
+            major2: "-",
+            major3: "-",
+            period: "",
+            startYear: "",
+            startMonth: "",
+            endYear: "",
+            endMonth: "",
+            gradeMax: "-",
+            gradeValue: "-",
+            description: "",
+            isFinal: true,
+          }],
+          _legacy: true,
+        });
+      }
+    }
+
     // DB 데이터를 프론트엔드 형식으로 변환 (영문 → 한글)
     const formattedEducations = (educations || []).map((edu) => {
       // admission_year, graduation_year에서 년/월 추출

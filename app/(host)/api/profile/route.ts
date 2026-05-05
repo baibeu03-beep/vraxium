@@ -33,10 +33,11 @@ export async function GET(request: NextRequest) {
       }
 
       // 특정 유저 조회 (공개 접근 가능)
+      // user_profiles는 user_id 컬럼을 PK로 사용
       const { data, error } = await supabaseAdmin
         .from("user_profiles")
         .select("*")
-        .eq("id", targetUserId)
+        .eq("user_id", targetUserId)
         .maybeSingle();
 
       if (error) {
@@ -48,10 +49,85 @@ export async function GET(request: NextRequest) {
       }
 
       if (!data) {
-        return NextResponse.json(
-          { error: "사용자를 찾을 수 없습니다." },
-          { status: 404 }
-        );
+        // Legacy 폴백: legacy_crew_import → crew_list_view 경유 데이터 대응
+        const { data: legacy } = await supabaseAdmin
+          .from("crew_list_view")
+          .select("*")
+          .eq("id", targetUserId)
+          .maybeSingle();
+
+        if (!legacy) {
+          return NextResponse.json(
+            { error: "사용자를 찾을 수 없습니다." },
+            { status: 404 }
+          );
+        }
+
+        // crew_list_view → /api/profile 응답 모양으로 합성 (Sidebar resume-card용)
+        // 무거운 시즌/포인트/주차 계산은 의미 없으므로 우회.
+        return NextResponse.json({
+          success: true,
+          data: {
+            id: legacy.id,
+            display_name: legacy.display_name ?? legacy.name ?? "",
+            eng_name: "",
+            gender: legacy.gender ?? "",
+            birth_date: legacy.birth_date ?? null,
+            address: "",
+            phone: "",
+            email: "",
+            auth_email: null,
+            bio: "",
+            vision: legacy.vision ?? legacy.nickname ?? "",
+            profile_photo_url: legacy.profile_photo_url ?? legacy.profile_img ?? "",
+            status: legacy.status ?? "active",
+            growth_status: legacy.growth_status ?? "active",
+            contact_available: null,
+            role: null,
+            onboarding_week_id: null,
+            suspended_week_id: null,
+          },
+          practicalCounts: { competency: 0, experience: 0, info: 0, career: 0 },
+          reliabilityRate: null,
+          completionRate: null,
+          badges: {
+            stars: legacy.total_stars ?? 0,
+            lightnings: 0,
+            shields: 0,
+          },
+          seasonHistories: [],
+          growthInfo: {
+            status: legacy.status ?? "active",
+            growthStatus: legacy.growth_status ?? "active",
+            startDate: null,
+            endDate: null,
+            startWeekInfo: null,
+            endWeekInfo: null,
+          },
+          gradeStats: null,
+          growthPeriodStats: {
+            approvedWeeks: legacy.approved_weeks ?? 0,
+            unapprovedWeeks: 0,
+            restWeeks: 0,
+            clubBreakWeeks: 0,
+            availableWeeks: 0,
+            availableSeasons: 0,
+            restSeasons: 0,
+            approvedSeasons: 0,
+          },
+          onboardingWeekId: null,
+          activityWeekIds: [],
+          restWeekIds: [],
+          userRoleHistory: [],
+          userTeamParts: [],
+          teams: [],
+          parts: [],
+          approvedActivities: [],
+          activityRecords: [],
+          activityDetails: [],
+          activityPoints: [],
+          _legacy: true,
+        });
       }
 
       profile = data;
@@ -111,7 +187,7 @@ export async function GET(request: NextRequest) {
           const { data: profileById } = await supabaseAdmin
             .from("user_profiles")
             .select("*")
-            .eq("id", session.user.id)
+            .eq("user_id", session.user.id)
             .maybeSingle();
 
           if (profileById) {
@@ -125,14 +201,14 @@ export async function GET(request: NextRequest) {
         await supabaseAdmin
           .from("user_profiles")
           .update({ auth_email: session.user.email })
-          .eq("id", profile.id);
+          .eq("user_id", profile.user_id ?? profile.id);
       }
 
       if (!profile) {
         // 디버그: auth_email 조회 결과 확인
         const { data: debugProfile, error: debugErr } = await supabaseAdmin
           .from("user_profiles")
-          .select("id, display_name, email, auth_email")
+          .select("user_id, display_name, email, auth_email")
           .limit(5);
         return NextResponse.json(
           {
@@ -148,6 +224,11 @@ export async function GET(request: NextRequest) {
         );
       }
 
+    }
+
+    // user_profiles는 user_id 컬럼을 PK로 사용. 다운스트림은 profile.id 참조이므로 정규화.
+    if (profile && !profile.id && profile.user_id) {
+      profile.id = profile.user_id;
     }
 
     const context = searchParams.get('context');
@@ -1198,11 +1279,12 @@ export async function PUT(request: Request) {
     }
 
     // user_profiles에서 기존 프로필 확인 (1차: email, 2차: auth_email)
-    let existingProfile: { id: string } | null = null;
+    // user_profiles는 user_id 컬럼을 PK로 사용
+    let existingProfile: { user_id: string } | null = null;
 
     const { data: profileByEmail } = await supabaseAdmin
       .from("user_profiles")
-      .select("id")
+      .select("user_id")
       .eq("email", email)
       .maybeSingle();
 
@@ -1213,7 +1295,7 @@ export async function PUT(request: Request) {
     if (!existingProfile) {
       const { data: profileByAuth } = await supabaseAdmin
         .from("user_profiles")
-        .select("id")
+        .select("user_id")
         .eq("auth_email", email)
         .maybeSingle();
 
@@ -1227,7 +1309,7 @@ export async function PUT(request: Request) {
       const cleanName = session.user.name.replace(/\s+/g, "");
       const { data: profileByName } = await supabaseAdmin
         .from("user_profiles")
-        .select("id")
+        .select("user_id")
         .eq("display_name", cleanName)
         .maybeSingle();
 
@@ -1236,7 +1318,7 @@ export async function PUT(request: Request) {
         await supabaseAdmin
           .from("user_profiles")
           .update({ auth_email: email })
-          .eq("id", profileByName.id);
+          .eq("user_id", profileByName.user_id);
       }
     }
 
@@ -1246,8 +1328,8 @@ export async function PUT(request: Request) {
       if (uuidRegex.test(session.user.id)) {
         const { data: profileById } = await supabaseAdmin
           .from("user_profiles")
-          .select("id")
-          .eq("id", session.user.id)
+          .select("user_id")
+          .eq("user_id", session.user.id)
           .maybeSingle();
 
         if (profileById) {
@@ -1255,7 +1337,7 @@ export async function PUT(request: Request) {
           await supabaseAdmin
             .from("user_profiles")
             .update({ auth_email: email })
-            .eq("id", profileById.id)
+            .eq("user_id", profileById.user_id)
             .is("auth_email", null);
         }
       }
@@ -1291,7 +1373,7 @@ export async function PUT(request: Request) {
     const { data, error } = await supabaseAdmin
       .from("user_profiles")
       .update(updateData)
-      .eq("id", existingProfile.id)
+      .eq("user_id", existingProfile.user_id)
       .select()
       .single();
 
