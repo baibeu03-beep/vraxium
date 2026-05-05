@@ -6374,11 +6374,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                               <div key={idx} className={`output-link-item ${hasContent ? "active" : ""} ${isAdminLink ? "admin-link" : ""}`}>
                                 <div className="link-button">
                                   <span className="link-num">{idx + 1}</span>
-                                  {isAdminLink && (
-                                    <span className="admin-badge" title="운영진 입력">
-                                      A
-                                    </span>
-                                  )}
                                 </div>
                                 <input
                                   type="text"
@@ -6575,11 +6570,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                               <div key={linkIndex} className={`output-link-item ${link.url.trim() ? "active" : ""} ${isAdminLink ? "admin-link" : ""}`}>
                                 <div className="link-button">
                                   <span className="link-num">{linkIndex + 1}</span>
-                                  {isAdminLink && (
-                                    <span className="admin-badge" title="운영진 입력">
-                                      A
-                                    </span>
-                                  )}
                                 </div>
                                 <input
                                   type="text"
@@ -6804,11 +6794,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                     <div key={linkIndex} className={`output-link-item ${link.url.trim() ? "active" : ""} ${isAdminLink ? "admin-link" : ""}`}>
                                       <div className="link-button">
                                         <span className="link-num">{linkIndex + 1}</span>
-                                        {isAdminLink && (
-                                          <span className="admin-badge" title="운영진 입력">
-                                            A
-                                          </span>
-                                        )}
                                       </div>
                                       <input
                                         type="text"
@@ -7026,11 +7011,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                     <div key={idx} className={`output-link-item ${hasContent ? "active" : ""} ${isAdminLink ? "admin-link" : ""}`}>
                                       <div className="link-button">
                                         <span className="link-num">{idx + 1}</span>
-                                        {isAdminLink && (
-                                          <span className="admin-badge" title="운영진 입력">
-                                            A
-                                          </span>
-                                        )}
                                       </div>
                                       <input
                                         type="text"
@@ -7850,12 +7830,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           const displayText = link.desc?.trim() || link.url;
                           return (
                             <div className={`output-link-row ${isAdminLink ? "admin-link" : ""}`} key={i}>
-                              {/* admin 배지는 라벨 제거 후에도 유지 — row 시작부에 inline 표시 */}
-                              {isAdminLink && (
-                                <span className="admin-badge" title="운영진 입력">
-                                  A
-                                </span>
-                              )}
                               {/* cluster3 패턴: dot + input/text + open-btn */}
                               <span className="link-dot" style={{ backgroundColor: dotColor }} />
                               {workInfoViewIsEditing && !isAdminLink ? (
@@ -8266,11 +8240,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           const displayText = link.desc?.trim() || link.url;
                           return (
                             <div className={`output-link-row ${isAdminLink ? "admin-link" : ""}`} key={i}>
-                              {isAdminLink && (
-                                <span className="admin-badge" title="운영진 입력">
-                                  A
-                                </span>
-                              )}
                               <span className="link-dot" style={{ backgroundColor: dotColor }} />
                               {workExpViewIsEditing && !isAdminLink ? (
                                 <input type="url" className="output-link-input" placeholder={sequentialDisabled ? "이전 링크를 먼저 입력하세요" : "https://..."} value={link.url} disabled={sequentialDisabled} onChange={(e) => handleExpOutputLinkChange(i, "url", e.target.value)} />
@@ -8722,11 +8691,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           const displayText = link.desc?.trim() || link.url;
                           return (
                             <div className={`output-link-row ${isAdminLink ? "admin-link" : ""}`} key={i}>
-                              {isAdminLink && (
-                                <span className="admin-badge" title="운영진 입력">
-                                  A
-                                </span>
-                              )}
                               <span className="link-dot" style={{ backgroundColor: dotColor }} />
                               {workAbilityViewIsEditing && !isAdminLink ? (
                                 <input type="url" className="output-link-input" placeholder={sequentialDisabled ? "이전 링크를 먼저 입력하세요" : "https://..."} value={link.url} disabled={sequentialDisabled} onChange={(e) => handleAbilityOutputLinkChange(i, "url", e.target.value)} />
@@ -9125,11 +9089,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           const displayText = link.desc?.trim() || link.url;
                           return (
                             <div className={`output-link-row ${isAdminLink ? "admin-link" : ""}`} key={i}>
-                              {isAdminLink && (
-                                <span className="admin-badge" title="운영진 입력">
-                                  A
-                                </span>
-                              )}
                               <span className="link-dot" style={{ backgroundColor: dotColor }} />
                               {workCareerViewIsEditing && !isAdminLink ? (
                                 <input type="url" className="output-link-input" placeholder={sequentialDisabled ? "이전 링크를 먼저 입력하세요" : "https://..."} value={link.url} disabled={sequentialDisabled} onChange={(e) => handleCareerOutputLinkChange(i, "url", e.target.value)} />
