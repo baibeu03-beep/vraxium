@@ -1,0 +1,149 @@
+/* ==== 
+ --------- (4.04) footer styles start ---------
+ ==== */
+.footer {
+  padding: 0px 12px;
+  background-color: var(--black);
+  overflow-x: clip;
+
+  .footer__inner {
+    position: relative;
+    z-index: 1;
+  }
+
+  .footer-thumb {
+    position: absolute;
+    bottom: 10px;
+    right: 0px;
+    z-index: -1;
+    img {
+      max-width: 12vw;
+      min-width: 130px;
+    }
+  }
+
+  .footer__widget {
+    li,
+    p {
+      margin-bottom: 16px;
+      &:nth-last-of-type(1) {
+        margin-bottom: 0px;
+      }
+
+      a {
+        color: #ffffffb3;
+        letter-spacing: 0.6px;
+        font-weight: 400;
+        &:hover {
+          color: var(--quaternary-color);
+        }
+      }
+    }
+  }
+
+  .footer__widget-content {
+    .row {
+      row-gap: 16px;
+    }
+
+  }
+
+  .footer__widget-contact {
+    ul {
+      li {
+        &:nth-of-type(1) {
+          a {
+            color: var(--white);
+          font-size: 18px;
+          &:hover {
+            color: var(--quaternary-color);
+          }
+          }
+        }
+      }
+    }
+  }
+
+  .social {
+    margin: 10px 0px;
+    li {
+      margin-bottom: 0px;
+    }
+  }
+
+  .footer__widget--alt {
+    padding: 0px 60px;
+    max-width: 452px;
+    margin: 0px auto;
+    border-left: 2px dashed #505d6a70;
+    border-right: 2px dashed #505d6a70;
+    height: 100%;
+    p {
+      color: #ffffffb3;
+    }
+  }
+
+  .footer__widget-text--alt {
+    max-width: 260px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .footer__copyright {
+    padding: 40px 0px;
+    border-top: 1px solid #505d6a70;
+  }
+
+  .footer__copyright-content {
+    p {
+      letter-spacing: 0.6px;
+
+      .divider {
+        margin: 0px 24px;
+        position: relative;
+        &::before {
+          content: "";
+          position: absolute;
+          top: 50%;
+          left: 0px;
+          transform: translateY(-64%);
+          width: 1px;
+          height: 34px;
+          background-color: #505d6a;
+        }
+      }
+    }
+
+
+    a {
+      color: #ffffffb3;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      &:hover {
+        color: var(--quaternary-color);
+      }
+    }
+  }
+
+  .footer__copyright-links {
+    ul {
+      display: flex;
+      align-items: center;
+      row-gap: 8px;
+      column-gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    a {
+      color: #ffffffb3;
+      letter-spacing: 0.6px;
+      font-weight: 400;
+      &:hover {
+        color: var(--quaternary-color);
+      }
+    }
+  }
+}
+/* ==== 
+ --------- (4.04) footer styles end ---------
+ ==== */

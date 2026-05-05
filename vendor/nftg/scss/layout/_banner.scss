@@ -1,0 +1,265 @@
+/* ==== 
+ --------- (4.03) banner styles start ---------
+ ==== */
+
+// banner one styles start
+.banner {
+  overflow: hidden;
+  .banner__content {
+    padding: 120px 20px 120px 180px;
+    background-color: var(--secondary-color);
+    position: relative;
+    z-index: 1;
+    overflow: hidden;
+    background-position: left top;
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-image: url("/images/banner/banner-bg.webp");
+  }
+
+  .breadcrumb {
+    margin-bottom: 24px;
+    .active {
+      color: var(--white) !important;
+      &::before {
+        color: var(--white) !important;
+        content: "\ea1c";
+      }
+
+      &:nth-of-type(1) {
+        &::before {
+          content: none;
+        }
+      }
+    }
+  }
+
+  .banner__content-inner {
+    max-width: 480px;
+
+    p {
+      max-width: 450px;
+    }
+  }
+
+  .sword {
+    position: absolute;
+    top: 50%;
+    left: 24px;
+    transform: translateY(-50%);
+    z-index: -1;
+    img {
+      max-width: 5vw;
+      min-width: 40px;
+    }
+  }
+
+  .banner__thumb {
+    position: absolute;
+    z-index: -1;
+    bottom: 0px;
+    right: 0px;
+
+    img {
+      max-width: 34vw;
+      min-width: 120px;
+      animation: move 1s linear infinite alternate-reverse;
+    }
+  }
+
+  .banner__slider-single {
+    position: relative;
+    height: 100%;
+    z-index: 1;
+    overflow: hidden;
+    .thumb {
+      height: 100%;
+
+      a,
+      img {
+        width: 100%;
+        height: 100%;
+        min-height: 400px;
+        max-height: 720px;
+        z-index: -1;
+      }
+
+      img {
+        transition: transform 7s ease 0.8s;
+      }
+
+      a {
+        position: relative;
+        z-index: 1;
+        &::before {
+          content: "";
+          position: absolute;
+          inset: 0px;
+          background-color: var(--secondary-color);
+          opacity: 0.6;
+        }
+      }
+    }
+
+    .content {
+      position: absolute;
+      bottom: 100px;
+      left: 0px;
+      right: 0px;
+      z-index: 2;
+      width: 100%;
+      max-width: 300px;
+      margin-left: auto;
+      margin-right: auto;
+      padding: 0px 20px;
+      opacity: 0;
+      transform: translateY(50px);
+      transition: all 0.8s ease 0.2s;
+
+      a,
+      h3 {
+        justify-content: center;
+      }
+    }
+  }
+
+  .banner__slider,
+  .banner__slider-wrapper {
+    height: 100%;
+  }
+
+  .swiper-slide {
+    overflow: hidden;
+    height: 100%;
+  }
+
+  .swiper-slide-active {
+    .banner__slider-single {
+      .thumb {
+        img {
+          transform: scale(1.2);
+        }
+      }
+      .content {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  }
+
+  .banner__slider-wrapper {
+    position: relative;
+    .pagination-one {
+      position: absolute;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2;
+    }
+  }
+}
+
+@keyframes move {
+  0% {
+    transform: translateY(0px);
+  }
+  100% {
+    transform: translateY(20px);
+  }
+}
+
+@keyframes move-x {
+  0% {
+    transform: translateX(0px);
+  }
+  100% {
+    transform: translateX(20px);
+  }
+}
+
+@keyframes rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(180deg);
+  }
+}
+
+// banner two styles start
+.banner-two {
+  overflow: hidden;
+  background-color: var(--secondary-color);
+  background-image: url("/images/banner/banner-two-bg.webp");
+  background-position: left top;
+  background-size: cover;
+  background-repeat: no-repeat;
+  padding-left: 180px;
+  padding-right: 20px;
+  position: relative;
+  z-index: 1;
+  .banner__content {
+    position: relative;
+    z-index: 1;
+    overflow: hidden;
+    max-width: 480px;
+
+    p {
+      max-width: 450px;
+    }
+  }
+
+  .breadcrumb {
+    margin-bottom: 24px;
+    .active {
+      color: var(--white) !important;
+      &::before {
+        color: var(--white) !important;
+        content: "\ea1c";
+      }
+
+      &:nth-of-type(1) {
+        &::before {
+          content: none;
+        }
+      }
+    }
+  }
+
+  .banner__content-inner {
+    max-width: 480px;
+
+    p {
+      max-width: 450px;
+    }
+  }
+
+  .banner-two__thumb {
+    position: absolute;
+    right: 20px;
+    bottom: 0px;
+    z-index: -1;
+
+    img {
+      height: 100%;
+      object-fit: contain;
+      max-width: 33vw;
+      min-width: 110px;
+      animation: move-x 1s linear infinite alternate-reverse;
+    }
+  }
+
+  .spin {
+    position: absolute;
+    left: 80px;
+    bottom: 160px;
+    animation: rotate 10s linear infinite alternate-reverse;
+    img {
+      max-width: 6vw;
+      min-width: 60px;
+    }
+  }
+}
+/* ==== 
+ --------- (4.03) banner styles end ---------
+ ==== */

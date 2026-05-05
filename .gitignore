@@ -39,3 +39,7 @@ next-env.d.ts
 nftg/
 test/
 nul
+notepad .gitignore
+!vendor/
+!vendor/nftg/
+!vendor/nftg/**
