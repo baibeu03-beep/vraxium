@@ -1,6 +1,7 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { Suspense, useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import Animations from "@/components/shared/Animations";
 import Breadcrumb from "@/components/shared/Breadcrumb";
 import { useDataMasking } from "@/hooks/useDataMasking";
@@ -24,7 +25,17 @@ interface Crew {
   growthStatus: string;
   totalStars: number;
   approvedWeeks: number;
+  organizationSlug: string | null;
 }
+
+const KNOWN_ORGS = ["phalanx", "encre", "oranke"] as const;
+type OrgSlug = typeof KNOWN_ORGS[number];
+
+const ORG_LABEL: Record<OrgSlug, string> = {
+  phalanx: "팔랑크스",
+  encre: "엥크레",
+  oranke: "오랑캐",
+};
 
 const statusLabel = (status: string, growthStatus: string) => {
   if (status === "graduated") return "졸업";
@@ -39,7 +50,14 @@ const clubOptions = ["엥크레", "오랑캐", "팔랑크스"];
 const statusOptions = ["활동 중", "활동 졸업", "활동 중단"];
 const ITEMS_PER_PAGE = 50;
 
-const page = () => {
+const isOrgSlug = (value: string | null | undefined): value is OrgSlug =>
+  !!value && (KNOWN_ORGS as readonly string[]).includes(value);
+
+function CrewsContent() {
+  const searchParams = useSearchParams();
+  const orgParam = searchParams?.get("org") ?? null;
+  const org: OrgSlug | null = isOrgSlug(orgParam) ? orgParam : null;
+
   const { mask } = useDataMasking();
   const [demoMode, setDemoMode] = useState(false);
   useEffect(() => { setDemoMode(checkDemoMode()); }, []);
@@ -95,24 +113,48 @@ const page = () => {
   }, []);
 
   useEffect(() => {
+    if (!org) {
+      setCrews([]);
+      setFilteredCrews([]);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+
     const fetchCrews = async () => {
       try {
-        const res = await fetch("/api/crews");
+        const res = await fetch(`/api/crews?org=${encodeURIComponent(org)}`);
         const result = await res.json();
+        if (cancelled) return;
         if (result.success) {
-          setCrews(result.data);
-          const active = result.data.filter((c: Crew) => c.growthStatus !== "graduated" && c.growthStatus !== "suspended");
-          active.sort((a: Crew, b: Crew) => b.approvedWeeks - a.approvedWeeks);
+          // Defense-in-depth: API already filters server-side, but enforce client-side too.
+          const scoped: Crew[] = (result.data as Crew[]).filter((c) => c.organizationSlug === org);
+          setCrews(scoped);
+          const active = scoped.filter((c) => c.growthStatus !== "graduated" && c.growthStatus !== "suspended");
+          active.sort((a, b) => b.approvedWeeks - a.approvedWeeks);
           setFilteredCrews(active);
+        } else {
+          setCrews([]);
+          setFilteredCrews([]);
         }
       } catch (err) {
         console.error("크루 목록 조회 실패:", err);
+        if (!cancelled) {
+          setCrews([]);
+          setFilteredCrews([]);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     fetchCrews();
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [org]);
 
   const applyFilter = (name: string, club: string, school: string, status: string) => {
     let result = [...crews];
@@ -182,10 +224,53 @@ const page = () => {
     statusFilter,
   ].filter(Boolean).join(" · ") || "필터 선택";
 
+  // 1) ?org= 가 없으면 기본(빈) 화면.
+  if (!org) {
+    return (
+      <main className="nftg-content nftg-content-home" style={{ padding: 0 }}>
+        <Animations />
+        <Breadcrumb title="크루 명단" />
+        <section className="pb-120 trending trending-nft" style={{ paddingLeft: 0, paddingRight: 0, paddingTop: 30 }}>
+          <div className="container-fluid" style={{ paddingLeft: 15, paddingRight: 15, maxWidth: '100%' }}>
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: 'calc(100vh - 240px)',
+              color: '#aaa',
+              textAlign: 'center',
+              gap: 16,
+            }}>
+              <div style={{
+                fontFamily: "'Pretendard', sans-serif",
+                fontSize: 18,
+                fontWeight: 600,
+                color: '#fff',
+              }}>
+                조직을 선택해 주세요
+              </div>
+              <div style={{
+                fontFamily: "'Pretendard', sans-serif",
+                fontSize: 14,
+                color: '#888',
+                lineHeight: 1.6,
+              }}>
+                사이드바에서 조직(팔랑크스 · 엥크레 · 오랑캐)을 선택하면<br />
+                해당 조직 크루 명단이 표시됩니다.
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  // 2) ?org= 가 있을 때: 해당 조직 명단(필터 UI + 그리드 또는 빈 상태).
   return (
     <main className="nftg-content nftg-content-home" style={{ padding: 0 }}>
       <Animations />
-      <Breadcrumb title="크루 명단" />
+      <Breadcrumb title={`크루 명단 · ${ORG_LABEL[org]}`} />
       <section className="pb-120 trending trending-nft" style={{ paddingLeft: 0, paddingRight: 0, paddingTop: 30 }}>
         <div className="container-fluid" style={{ paddingLeft: 15, paddingRight: 15, maxWidth: '100%' }}>
 
@@ -539,6 +624,33 @@ const page = () => {
                       }
                     `}</style>
                   </div>
+                ) : crews.length === 0 ? (
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    minHeight: 'calc(100vh - 320px)',
+                    color: '#aaa',
+                    textAlign: 'center',
+                    gap: 12,
+                  }}>
+                    <div style={{
+                      fontFamily: "'Pretendard', sans-serif",
+                      fontSize: 18,
+                      fontWeight: 700,
+                      color: '#fff',
+                    }}>
+                      No members
+                    </div>
+                    <div style={{
+                      fontFamily: "'Pretendard', sans-serif",
+                      fontSize: 14,
+                      color: '#888',
+                    }}>
+                      {ORG_LABEL[org]} 조직에는 아직 등록된 크루가 없습니다.
+                    </div>
+                  </div>
                 ) : filteredCrews.length === 0 ? (
                   <div style={{ textAlign: "center", padding: "60px 0", color: "#aaa" }}>
                     조건에 맞는 크루가 없습니다.
@@ -711,6 +823,12 @@ const page = () => {
       </section>
     </main>
   );
-};
+}
 
-export default page;
+const Page = () => (
+  <Suspense fallback={null}>
+    <CrewsContent />
+  </Suspense>
+);
+
+export default Page;

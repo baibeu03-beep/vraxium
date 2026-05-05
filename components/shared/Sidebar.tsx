@@ -5,8 +5,8 @@ import two from "@/public/images/sidebar/two.png";
 import three from "@/public/images/sidebar/three.png";
 import Image, { StaticImageData } from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useMemo, useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { Autoplay } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
@@ -28,11 +28,42 @@ const games: Game[] = [
   { id: 8, image: two, href: "/index-two-ok" },
   { id: 9, image: three, href: "/index-two-px" },
 ];
+// 동물별 organization slug 매핑.
+// 고슴도치(/index-two-px) → phalanx · 사슴(/index-two-ec) → encre · 호랑이(/index-two-ok) → oranke
+const KNOWN_ORG_SLUGS = ["phalanx", "encre", "oranke"] as const;
+type OrgSlug = typeof KNOWN_ORG_SLUGS[number];
+
+const PATH_TO_ORG: Record<string, OrgSlug> = {
+  "index-two-px": "phalanx",
+  "index-two-ec": "encre",
+  "index-two-ok": "oranke",
+};
+
+const isOrgSlug = (v: string | null | undefined): v is OrgSlug =>
+  !!v && (KNOWN_ORG_SLUGS as readonly string[]).includes(v);
+
+const resolveCurrentOrg = (pathname: string | null, orgParam: string | null): OrgSlug | null => {
+  if (isOrgSlug(orgParam)) return orgParam;
+  if (!pathname) return null;
+  for (const [seg, slug] of Object.entries(PATH_TO_ORG)) {
+    if (pathname.includes(`/${seg}`)) return slug;
+  }
+  return null;
+};
+
 const Sidebar = () => {
   const { data: session } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const popup = usePopup();
   const [myProfileId, setMyProfileId] = useState<string | null>(null);
+
+  const currentOrg = useMemo(
+    () => resolveCurrentOrg(pathname ?? null, searchParams?.get("org") ?? null),
+    [pathname, searchParams]
+  );
+  const crewsHref = currentOrg ? `/crews?org=${currentOrg}` : "/crews";
 
   // 로그인 시 user_profiles ID를 미리 가져옴
   useEffect(() => {
@@ -84,7 +115,7 @@ const Sidebar = () => {
                     </Link>
                   </li>
                   <li>
-                    <Link href="/crews" aria-label="크루" title="크루">
+                    <Link href={crewsHref} aria-label="크루" title="크루">
                       <i className="ti ti-chart-bar"></i>
                       <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
                         <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />

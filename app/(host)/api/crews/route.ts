@@ -30,6 +30,13 @@ interface CrewListViewRow {
   cumulative_weeks?: number | null;
 }
 
+interface UserProfileOrgRow {
+  user_id: string;
+  organization_slug: string | null;
+}
+
+const KNOWN_ORGS = new Set(["phalanx", "encre", "oranke"]);
+
 const isValidUUID = (str: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
@@ -42,7 +49,7 @@ function toAge(birthDate: string | null | undefined) {
   return new Date().getFullYear() - birthYear;
 }
 
-function toCrewRow(row: CrewListViewRow) {
+function toCrewRow(row: CrewListViewRow, organizationSlug: string | null) {
   const schoolName = row.school_name ?? row.university ?? "-";
   const majorName = row.major_name_1 ?? row.major ?? "-";
 
@@ -63,6 +70,7 @@ function toCrewRow(row: CrewListViewRow) {
     growthStatus: row.growth_status ?? "-",
     totalStars: row.total_stars ?? 0,
     approvedWeeks: row.approved_weeks ?? 0,
+    organizationSlug,
   };
 }
 
@@ -70,6 +78,8 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const excludeUserId = searchParams.get("excludeUserId");
+    const orgParam = searchParams.get("org");
+    const orgFilter = orgParam && KNOWN_ORGS.has(orgParam) ? orgParam : null;
 
     const supabase = createAdminClient();
 
@@ -84,19 +94,43 @@ export async function GET(request: Request) {
       query = query.neq("id", excludeUserId);
     }
 
-    const { data, error } = await query.returns<CrewListViewRow[]>();
+    const [{ data: viewData, error: viewError }, { data: orgData, error: orgError }] = await Promise.all([
+      query.returns<CrewListViewRow[]>(),
+      // user_profiles.user_id  ===  crew_list_view.id (둘 다 auth user UUID).
+      // user_profiles 자체의 row PK는 id 지만 view의 id 는 user_id 와 매칭됨.
+      supabase.from("user_profiles").select("user_id, organization_slug").returns<UserProfileOrgRow[]>(),
+    ]);
 
-    if (error) {
-      console.error("Failed to fetch crew list from crew_list_view:", JSON.stringify(error));
+    if (viewError) {
+      console.error("Failed to fetch crew list from crew_list_view:", JSON.stringify(viewError));
       return NextResponse.json(
-        { error: "Failed to fetch crews.", detail: error.message, code: error.code },
+        { error: "Failed to fetch crews.", detail: viewError.message, code: viewError.code },
         { status: 500 }
       );
     }
 
+    if (orgError) {
+      console.error("Failed to fetch crew organization slugs:", JSON.stringify(orgError));
+      return NextResponse.json(
+        { error: "Failed to fetch crew organization slugs.", detail: orgError.message, code: orgError.code },
+        { status: 500 }
+      );
+    }
+
+    const slugMap = new Map<string, string | null>();
+    for (const row of orgData ?? []) {
+      slugMap.set(row.user_id, row.organization_slug ?? null);
+    }
+
+    let rows = (viewData ?? []).map((row) => toCrewRow(row, slugMap.get(row.id) ?? null));
+
+    if (orgFilter) {
+      rows = rows.filter((row) => row.organizationSlug === orgFilter);
+    }
+
     return NextResponse.json({
       success: true,
-      data: (data ?? []).map(toCrewRow),
+      data: rows,
     });
   } catch (error) {
     console.error("Crew list API error:", error);
