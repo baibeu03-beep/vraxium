@@ -13,6 +13,7 @@ import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
 import DetailLogModal from "./DetailLogModal";
+import confetti from "canvas-confetti";
 
 interface Cluster4CardContentProps {
   weekId: string;
@@ -1576,8 +1577,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // Detail Log 모달 (좌측 image-badges 아래 버튼)
   const [showDetailLogModal, setShowDetailLogModal] = useState(false);
 
-  // 주차 확인 토글 상태 (우측 info-badge.week 아래 버튼)
-  const [isWeekConfirmed, setIsWeekConfirmed] = useState<boolean>(false);
+  // 주차 확인 상태 머신 (pending → confirming → confirmed)
+  type WeekConfirmStatus = "pending" | "confirming" | "confirmed";
+  const [weekStatus, setWeekStatus] = useState<WeekConfirmStatus>("pending");
+  const isWeekConfirmed = weekStatus === "confirmed";
+  const weekConfirmBtnRef = useRef<HTMLButtonElement>(null);
 
   // 주차 리뷰 모달 (신규)
   const [weeklyReviewModalOpen, setWeeklyReviewModalOpen] = useState(false);
@@ -3313,16 +3317,44 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   }, [weeklyReviewModalOpen, weeklyReviewFromDB]);
 
   // 주차 확인 버튼 — 클릭 핸들러 (공용 popup.confirm 사용)
+  const fireConfettiAtButton = () => {
+    const btn = weekConfirmBtnRef.current;
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    const originX = (rect.left + rect.width / 2) / window.innerWidth;
+    const originY = (rect.top + rect.height / 2) / window.innerHeight;
+    confetti({
+      particleCount: 60,
+      spread: 70,
+      startVelocity: 35,
+      origin: { x: originX, y: originY },
+      colors: ["#FFD87A", "#FFC040", "#A8E6A8", "#7DD89F", "#FFFFFF"],
+      scalar: 0.9,
+      ticks: 120,
+    });
+    setTimeout(() => {
+      confetti({
+        particleCount: 40,
+        spread: 100,
+        startVelocity: 25,
+        origin: { x: originX, y: originY - 0.02 },
+        colors: ["#FFD87A", "#A8E6A8", "#FFFFFF"],
+        scalar: 0.7,
+        ticks: 100,
+      });
+    }, 180);
+  };
+
   const handleWeekConfirmClick = async () => {
-    if (isWeekConfirmed) return;
+    if (weekStatus !== "pending") return;
     const ok = await popup.confirm("주차 내역을 모두 확인하셨나요? 확인 이후에는 해당 주차 내역은 변동되지 않습니다.");
     if (!ok) return;
-    if (isDemoMode) {
-      setIsWeekConfirmed(true);
-    } else {
-      // TODO: 백엔드 API 연동 — 현재는 클라이언트 상태만 변경
-      setIsWeekConfirmed(true);
-    }
+    setWeekStatus("confirming");
+    fireConfettiAtButton();
+    setTimeout(() => {
+      setWeekStatus("confirmed");
+      // 데모/실제 모두 클라이언트 상태만 변경 (백엔드 연동은 추후)
+    }, 900);
   };
 
   // 주차 리뷰 — 모달 닫기 (isDirty 체크)
@@ -5162,17 +5194,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </div>
             </div>
 
-            {/* Detail Log 버튼 — image-badges 바로 아래 (이미지 우측 상단 영역) */}
-            <button
-              type="button"
-              className="detail-log-btn"
-              onClick={() => setShowDetailLogModal(true)}
-              aria-label="Detail Log 열기"
-            >
-              <i className="ti ti-list-details"></i>
-              <span>Detail Log</span>
-            </button>
-
             {/* Weekly Review 박스 (작업 0~2: 정적 더미 + unfurl 애니메이션) */}
             <div ref={weeklyReviewRef} className={`weekly-review-box ${isReviewUnfurled ? "unfurled" : ""}`}>
               <div className="weekly-review-header">
@@ -5227,30 +5248,57 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </div>
             </div>
             <div className="header-info-row">
-              <div className="info-badge date">
+              <div className="info-badge date" style={{ alignSelf: "flex-start" }}>
                 <img src="/images/0/cluster4/icon/icon - 6.png" alt="calendar" />
                 <span>{weekData ? `${formatDate(weekData.startDate)} ~ ${formatDate(weekData.endDate)}` : "로딩 중..."}</span>
               </div>
-              <div className="info-badge role" style={{ width: "fit-content", minWidth: "auto", maxWidth: "200px", fontFamily: "'Pretendard', sans-serif" }}>
+              <div className="info-badge role" style={{ width: "fit-content", minWidth: "auto", maxWidth: "200px", fontFamily: "'Pretendard', sans-serif", alignSelf: "flex-start" }}>
                 <img src="/images/0/cluster4/icon/Interface/Star-3.png" alt="role" />
                 <span style={{ overflow: "hidden", whiteSpace: "nowrap" }}>{truncate(roleLabel, 8)}</span>
               </div>
-              <div className="week-info-wrapper" style={{ flexShrink: 0, marginLeft: "auto", position: "relative" }}>
-                <div className="info-badge week">
+              <div
+                className="week-info-wrapper"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  right: 0,
+                  flexShrink: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "stretch",
+                  gap: "6px",
+                  width: "fit-content",
+                  minWidth: "120px",
+                  zIndex: 1,
+                }}
+              >
+                <div className="info-badge week" style={{ alignSelf: "flex-end" }}>
                   <img src="/images/0/cluster4/icon/icon - 7.png" alt="week" />
                   <span>
                     <span className="highlight">{weekData?.growthStatus === "진행 중" || weekData?.growthStatus === "집계 중" ? "+1" : cumulativeApprovedWeeks}</span> / 30 주차
                   </span>
                 </div>
                 <button
+                  ref={weekConfirmBtnRef}
                   type="button"
-                  className={`week-confirm-btn${isWeekConfirmed ? " is-confirmed" : ""}`}
+                  className={`week-confirm-btn status-${weekStatus}${isWeekConfirmed ? " is-confirmed" : ""}`}
                   onClick={handleWeekConfirmClick}
-                  disabled={isWeekConfirmed}
-                  aria-label={isWeekConfirmed ? "주차 확인 완료" : "주차 확인하기"}
+                  disabled={weekStatus !== "pending"}
+                  aria-label={isWeekConfirmed ? "주차 확인 완료" : "주차 확인 필요"}
                 >
-                  <i className={isWeekConfirmed ? "ti ti-circle-check-filled" : "ti ti-circle-check"}></i>
-                  <span>{isWeekConfirmed ? "확인 완료" : "주차 확인"}</span>
+                  <span className="icon-shift">
+                    <i className={isWeekConfirmed ? "ti ti-circle-check-filled" : "ti ti-circle-check"}></i>
+                  </span>
+                  <span>{isWeekConfirmed ? "확인 완료" : "확인 필요"}</span>
+                </button>
+                <button
+                  type="button"
+                  className="detail-log-btn"
+                  onClick={() => setShowDetailLogModal(true)}
+                  aria-label="Detail Log 열기"
+                >
+                  <i className="ti ti-list-details"></i>
+                  <span>Detail Log</span>
                 </button>
               </div>
             </div>
