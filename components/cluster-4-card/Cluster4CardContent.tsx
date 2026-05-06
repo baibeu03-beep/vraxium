@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
+import DetailLogModal from "./DetailLogModal";
 
 interface Cluster4CardContentProps {
   weekId: string;
@@ -1571,6 +1572,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const [ratingDropdownOpen, setRatingDropdownOpen] = useState(false);
   const [ratingDropdownPos, setRatingDropdownPos] = useState({ top: 0, left: 0, width: 0 });
   const ratingDropdownTriggerRef = useRef<HTMLDivElement>(null);
+
+  // Detail Log 모달 (좌측 image-badges 아래 버튼)
+  const [showDetailLogModal, setShowDetailLogModal] = useState(false);
+
+  // 주차 확인 토글 상태 (우측 info-badge.week 아래 버튼)
+  const [isWeekConfirmed, setIsWeekConfirmed] = useState<boolean>(false);
 
   // 주차 리뷰 모달 (신규)
   const [weeklyReviewModalOpen, setWeeklyReviewModalOpen] = useState(false);
@@ -3304,6 +3311,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     setWeeklyReviewSaveAttemptFailed(false);
     setWeeklyReviewFieldErrorFlash(false);
   }, [weeklyReviewModalOpen, weeklyReviewFromDB]);
+
+  // 주차 확인 버튼 — 클릭 핸들러 (공용 popup.confirm 사용)
+  const handleWeekConfirmClick = async () => {
+    if (isWeekConfirmed) return;
+    const ok = await popup.confirm("주차 내역을 모두 확인하셨나요? 확인 이후에는 해당 주차 내역은 변동되지 않습니다.");
+    if (!ok) return;
+    if (isDemoMode) {
+      setIsWeekConfirmed(true);
+    } else {
+      // TODO: 백엔드 API 연동 — 현재는 클라이언트 상태만 변경
+      setIsWeekConfirmed(true);
+    }
+  };
 
   // 주차 리뷰 — 모달 닫기 (isDirty 체크)
   const handleWeeklyReviewClose = async () => {
@@ -5136,6 +5156,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </div>
             </div>
 
+            {/* Detail Log 버튼 — image-badges 바로 아래 (이미지 우측 상단 영역) */}
+            <button
+              type="button"
+              className="detail-log-btn"
+              onClick={() => setShowDetailLogModal(true)}
+              aria-label="Detail Log 열기"
+            >
+              <i className="ti ti-list-details"></i>
+              <span>Detail Log</span>
+            </button>
+
             {/* Weekly Review 박스 (작업 0~2: 정적 더미 + unfurl 애니메이션) */}
             <div ref={weeklyReviewRef} className={`weekly-review-box ${isReviewUnfurled ? "unfurled" : ""}`}>
               <div className="weekly-review-header">
@@ -5198,11 +5229,23 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 <img src="/images/0/cluster4/icon/Interface/Star-3.png" alt="role" />
                 <span style={{ overflow: "hidden", whiteSpace: "nowrap" }}>{truncate(roleLabel, 8)}</span>
               </div>
-              <div className="info-badge week" style={{ flexShrink: 0, marginLeft: "auto" }}>
-                <img src="/images/0/cluster4/icon/icon - 7.png" alt="week" />
-                <span>
-                  <span className="highlight">{weekData?.growthStatus === "진행 중" || weekData?.growthStatus === "집계 중" ? "+1" : cumulativeApprovedWeeks}</span> / 30 주차
-                </span>
+              <div className="week-info-wrapper" style={{ flexShrink: 0, marginLeft: "auto", position: "relative" }}>
+                <div className="info-badge week">
+                  <img src="/images/0/cluster4/icon/icon - 7.png" alt="week" />
+                  <span>
+                    <span className="highlight">{weekData?.growthStatus === "진행 중" || weekData?.growthStatus === "집계 중" ? "+1" : cumulativeApprovedWeeks}</span> / 30 주차
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className={`week-confirm-btn${isWeekConfirmed ? " is-confirmed" : ""}`}
+                  onClick={handleWeekConfirmClick}
+                  disabled={isWeekConfirmed}
+                  aria-label={isWeekConfirmed ? "주차 확인 완료" : "주차 확인하기"}
+                >
+                  <i className={isWeekConfirmed ? "ti ti-circle-check-filled" : "ti ti-circle-check"}></i>
+                  <span>{isWeekConfirmed ? "확인 완료" : "주차 확인"}</span>
+                </button>
               </div>
             </div>
             <div className="header-info-row2" style={{ gap: "11px" }}>
@@ -9714,6 +9757,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           </div>,
           document.body,
         )}
+
+      {/* Detail Log 모달 — 빈 placeholder 컨테이너 (674×826) */}
+      <DetailLogModal show={showDetailLogModal} onHide={() => setShowDetailLogModal(false)} />
     </div>
   );
 };
