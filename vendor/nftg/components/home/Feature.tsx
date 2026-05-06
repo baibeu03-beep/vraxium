@@ -1,14 +1,45 @@
 "use client";
-import four from "@/public/images/games/featured/four.png";
+import type { HomeRandomImageSrc } from "@/data/homeRandomImages";
 import one from "@/public/images/games/featured/one.png";
-import three from "@/public/images/games/featured/three.png";
 import two from "@/public/images/games/featured/two.png";
+import three from "@/public/images/games/featured/three.png";
+import four from "@/public/images/games/featured/four.png";
 import Image from "next/image";
 import Link from "next/link";
 import { Autoplay, FreeMode, Navigation, Pagination } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
 
-const Feature = () => {
+const FEATURED_GAMES = [
+  { href: "/games/1", badge: "122", indexLabel: "[ 01 ]", title: "Vortex" },
+  { href: "/games/1", badge: "422", indexLabel: "[ 02 ]", title: "Fortnite" },
+  { href: "/games/1", badge: "32", indexLabel: "[ 03 ]", title: "Bounty" },
+  { href: "/games/1", badge: "66", indexLabel: "[ 04 ]", title: "Turbo" },
+  { href: "/games/1", badge: "786", indexLabel: "[ 05 ]", title: "Vortex" },
+  { href: "/games/1", badge: "542", indexLabel: "[ 06 ]", title: "Fortnite" },
+  { href: "/games/1", badge: "42", indexLabel: "[ 07 ]", title: "Bounty" },
+  { href: "/games/1", badge: "100", indexLabel: "[ 08 ]", title: "Turbo" },
+] as const;
+
+type FeatureProps = {
+  featuredCardSrcs?: HomeRandomImageSrc[];
+};
+
+const DEFAULT_FEATURED_CARD_SRCS = [
+  one.src,
+  two.src,
+  three.src,
+  four.src,
+  one.src,
+  two.src,
+  three.src,
+  four.src,
+] as const;
+
+const Feature = ({ featuredCardSrcs }: FeatureProps) => {
+  const resolvedFeaturedCardSrcs = FEATURED_GAMES.map(
+    (_, index) => featuredCardSrcs?.[index] || DEFAULT_FEATURED_CARD_SRCS[index]
+  );
+
   return (
     <section className="feature pt-120">
       <div className="container-fluid">
@@ -68,238 +99,37 @@ const Feature = () => {
                   }}
                   className="feature-slider swiper"
                 >
-                  <SwiperSlide className="swiper-slide">
-                    <div className="feature-slider__single">
-                      <div className="thumb">
-                        <Link href="/games/1">
-                          <Image src={one} alt="Image" />
-                        </Link>
-                        <div className="price-tag">
-                          <i className="ti ti-circle-filled"></i>
-                          <span className="text-sm fw-7">122</span>
-                        </div>
-                      </div>
-                      <div className="content">
-                        <div className="content-inner">
-                          <p className="text-md fw-6 mt-8">
-                            <span>[ 01 ]</span>
-                            Featured Games
-                          </p>
-                          <h3 className="fw-7 mt-16">
-                            <Link href="/games/1">Vortex</Link>
-                          </h3>
-                        </div>
-                        <div className="cta mt-50 text-end">
-                          <Link href="/games/1" className="fw-7">
-                            More Info <i className="ti ti-plus"></i>
+                  {FEATURED_GAMES.map((game, index) => (
+                    <SwiperSlide className="swiper-slide" key={`${game.indexLabel}-${index}`}>
+                      <div className="feature-slider__single">
+                        <div className="thumb">
+                          <Link href={game.href}>
+                            <Image src={resolvedFeaturedCardSrcs[index]} alt="Image" width={432} height={341} />
                           </Link>
+                          <div className="price-tag">
+                            <i className="ti ti-circle-filled"></i>
+                            <span className="text-sm fw-7">{game.badge}</span>
+                          </div>
+                        </div>
+                        <div className="content">
+                          <div className="content-inner">
+                            <p className="text-md fw-6 mt-8">
+                              <span>{game.indexLabel}</span>
+                              Featured Games
+                            </p>
+                            <h3 className="fw-7 mt-16">
+                              <Link href={game.href}>{game.title}</Link>
+                            </h3>
+                          </div>
+                          <div className="cta mt-50 text-end">
+                            <Link href={game.href} className="fw-7">
+                              More Info <i className="ti ti-plus"></i>
+                            </Link>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </SwiperSlide>
-                  <SwiperSlide className="swiper-slide">
-                    <div className="feature-slider__single">
-                      <div className="thumb">
-                        <Link href="/games/1">
-                          <Image src={two} alt="Image" />
-                        </Link>
-                        <div className="price-tag">
-                          <i className="ti ti-circle-filled"></i>
-                          <span className="text-sm fw-7">422</span>
-                        </div>
-                      </div>
-                      <div className="content">
-                        <div className="content-inner">
-                          <p className="text-md fw-6 mt-8">
-                            <span>[ 02 ]</span>
-                            Featured Games
-                          </p>
-                          <h3 className="fw-7 mt-16">
-                            <Link href="/games/1">Fortnite</Link>
-                          </h3>
-                        </div>
-                        <div className="cta mt-50 text-end">
-                          <Link href="/games/1" className="fw-7">
-                            More Info <i className="ti ti-plus"></i>
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  </SwiperSlide>
-                  <SwiperSlide className="swiper-slide">
-                    <div className="feature-slider__single">
-                      <div className="thumb">
-                        <Link href="/games/1">
-                          <Image src={three} alt="Image" />
-                        </Link>
-                        <div className="price-tag">
-                          <i className="ti ti-circle-filled"></i>
-                          <span className="text-sm fw-7">32</span>
-                        </div>
-                      </div>
-                      <div className="content">
-                        <div className="content-inner">
-                          <p className="text-md fw-6 mt-8">
-                            <span>[ 03 ]</span>
-                            Featured Games
-                          </p>
-                          <h3 className="fw-7 mt-16">
-                            <Link href="/games/1">Bounty</Link>
-                          </h3>
-                        </div>
-                        <div className="cta mt-50 text-end">
-                          <Link href="/games/1" className="fw-7">
-                            More Info <i className="ti ti-plus"></i>
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  </SwiperSlide>
-                  <SwiperSlide className="swiper-slide">
-                    <div className="feature-slider__single">
-                      <div className="thumb">
-                        <Link href="/games/1">
-                          <Image src={four} alt="Image" />
-                        </Link>
-                        <div className="price-tag">
-                          <i className="ti ti-circle-filled"></i>
-                          <span className="text-sm fw-7">66</span>
-                        </div>
-                      </div>
-                      <div className="content">
-                        <div className="content-inner">
-                          <p className="text-md fw-6 mt-8">
-                            <span>[ 04 ]</span>
-                            Featured Games
-                          </p>
-                          <h3 className="fw-7 mt-16">
-                            <Link href="/games/1">Turbo</Link>
-                          </h3>
-                        </div>
-                        <div className="cta mt-50 text-end">
-                          <Link href="/games/1" className="fw-7">
-                            More Info <i className="ti ti-plus"></i>
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  </SwiperSlide>
-                  <SwiperSlide className="swiper-slide">
-                    <div className="feature-slider__single">
-                      <div className="thumb">
-                        <Link href="/games/1">
-                          <Image src={one} alt="Image" />
-                        </Link>
-                        <div className="price-tag">
-                          <i className="ti ti-circle-filled"></i>
-                          <span className="text-sm fw-7">786</span>
-                        </div>
-                      </div>
-                      <div className="content">
-                        <div className="content-inner">
-                          <p className="text-md fw-6 mt-8">
-                            <span>[ 05 ]</span>
-                            Featured Games
-                          </p>
-                          <h3 className="fw-7 mt-16">
-                            <Link href="/games/1">Vortex</Link>
-                          </h3>
-                        </div>
-                        <div className="cta mt-50 text-end">
-                          <Link href="/games/1" className="fw-7">
-                            More Info <i className="ti ti-plus"></i>
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  </SwiperSlide>
-                  <SwiperSlide className="swiper-slide">
-                    <div className="feature-slider__single">
-                      <div className="thumb">
-                        <Link href="/games/1">
-                          <Image src={two} alt="Image" />
-                        </Link>
-                        <div className="price-tag">
-                          <i className="ti ti-circle-filled"></i>
-                          <span className="text-sm fw-7">542</span>
-                        </div>
-                      </div>
-                      <div className="content">
-                        <div className="content-inner">
-                          <p className="text-md fw-6 mt-8">
-                            <span>[ 06 ]</span>
-                            Featured Games
-                          </p>
-                          <h3 className="fw-7 mt-16">
-                            <Link href="/games/1">Fortnite</Link>
-                          </h3>
-                        </div>
-                        <div className="cta mt-50 text-end">
-                          <Link href="/games/1" className="fw-7">
-                            More Info <i className="ti ti-plus"></i>
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  </SwiperSlide>
-                  <SwiperSlide className="swiper-slide">
-                    <div className="feature-slider__single">
-                      <div className="thumb">
-                        <Link href="/games/1">
-                          <Image src={three} alt="Image" />
-                        </Link>
-                        <div className="price-tag">
-                          <i className="ti ti-circle-filled"></i>
-                          <span className="text-sm fw-7">42</span>
-                        </div>
-                      </div>
-                      <div className="content">
-                        <div className="content-inner">
-                          <p className="text-md fw-6 mt-8">
-                            <span>[ 07 ]</span>
-                            Featured Games
-                          </p>
-                          <h3 className="fw-7 mt-16">
-                            <Link href="/games/1">Bounty</Link>
-                          </h3>
-                        </div>
-                        <div className="cta mt-50 text-end">
-                          <Link href="/games/1" className="fw-7">
-                            More Info <i className="ti ti-plus"></i>
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  </SwiperSlide>
-                  <SwiperSlide className="swiper-slide">
-                    <div className="feature-slider__single">
-                      <div className="thumb">
-                        <Link href="/games/1">
-                          <Image src={four} alt="Image" />
-                        </Link>
-                        <div className="price-tag">
-                          <i className="ti ti-circle-filled"></i>
-                          <span className="text-sm fw-7">100</span>
-                        </div>
-                      </div>
-                      <div className="content">
-                        <div className="content-inner">
-                          <p className="text-md fw-6 mt-8">
-                            <span>[ 08 ]</span>
-                            Featured Games
-                          </p>
-                          <h3 className="fw-7 mt-16">
-                            <Link href="/games/1">Turbo</Link>
-                          </h3>
-                        </div>
-                        <div className="cta mt-50 text-end">
-                          <Link href="/games/1" className="fw-7">
-                            More Info <i className="ti ti-plus"></i>
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  </SwiperSlide>
+                    </SwiperSlide>
+                  ))}
                 </Swiper>
                 <div className="slider-footer mt-60">
                   <div className="slider-navigation">

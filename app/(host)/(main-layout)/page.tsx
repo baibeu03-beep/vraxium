@@ -1,3 +1,4 @@
+import { createHomeImageAssignments } from "@/lib/homeRandomImages";
 import Banner from "@nftg/components/home/Banner";
 import Countdown from "@nftg/components/home/Countdown";
 import Cta from "@nftg/components/home/Cta";
@@ -11,12 +12,19 @@ import TrendingGames from "@nftg/components/home/TrendingGames";
 import WhyChoose from "@nftg/components/home/WhyChoose";
 import Animations from "@nftg/components/shared/Animations";
 
+export const dynamic = "force-dynamic";
+
 const page = () => {
+  const homeImageAssignments = createHomeImageAssignments();
+
   return (
     <main className="nftg-content nftg-content-home-one">
       <Animations />
-      <Banner />
-      <Feature />
+      <Banner
+        heroThumbSrc={homeImageAssignments.heroThumbSrc}
+        bannerSlideSrcs={homeImageAssignments.bannerSlideSrcs}
+      />
+      <Feature featuredCardSrcs={homeImageAssignments.featuredCardSrcs} />
       <TrendingGames />
       <Countdown />
       <Streamer />
