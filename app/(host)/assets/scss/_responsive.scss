@@ -5,14 +5,20 @@
 // Home 페이지에서 body/html 설정 - 푸터 표시를 위해 스크롤 허용
 // NOTE: html + body 모두에 overflow-y를 주면(특히 Windows) "이중 스크롤바"가 보일 수 있음
 // → 스크롤 컨테이너를 html로 통일하고, body는 overflow-y를 풀어준다.
-html:has(.nftg-content-home) {
+// 변형 클래스(.nftg-content-home-one for /, .nftg-content-home-two for /index-two*)도
+// 반드시 포함해야 .nftg-sidebar가 스크롤 끝까지 sticky로 유지된다.
+html:has(.nftg-content-home),
+html:has(.nftg-content-home-one),
+html:has(.nftg-content-home-two) {
   // overflow-x는 JS(ResponsiveScale)에서 동적 제어: 100%→hidden, 확대→auto
   overflow-y: auto !important;
   height: auto !important;
   min-height: 100vh !important;
 }
 
-body:has(.nftg-content-home) {
+body:has(.nftg-content-home),
+body:has(.nftg-content-home-one),
+body:has(.nftg-content-home-two) {
   overflow-x: visible !important;
   overflow-y: visible !important;
   height: auto !important;
@@ -21,7 +27,10 @@ body:has(.nftg-content-home) {
 
 
 // Home two layout - 사이드바와 메인콘텐츠 고정 레이아웃
-.nftg-content-home {
+// 같은 normalization을 -one(/) / -two(/index-two*) 변형에도 적용한다.
+.nftg-content-home,
+.nftg-content-home-one,
+.nftg-content-home-two {
   height: auto !important;
   min-height: calc(100vh - var(--header-divider-y, var(--header-height, 66px)) - 16px) !important;
   overflow: visible !important;
@@ -2544,6 +2553,73 @@ body:has(.nftg-content-home) {
   }
 }
 
-/* ==== 
+// Featured Games section title — bump back up at desktop to match Envato demo.
+// Base h2 is 56px but the section title reads visually small here; scale up.
+// Below 1200px the existing responsive cascade (40 → 36 → 30) keeps it sane.
+@media (min-width: 1200px) {
+  .feature h2 {
+    font-size: clamp(48px, 4.2vw, 64px);
+    line-height: 1.15;
+  }
+}
+
+// Featured Games section spacing — tighten vertical rhythm at desktop.
+// The .pt-120 / .mt-60 utilities give 120px / 60px, which feels excessive here.
+// Scoped selectors win on specificity; no !important needed.
+@media (min-width: 1200px) {
+  .feature.pt-120 {
+    padding-top: 56px;            // 120px → 56px above section title
+  }
+
+  .feature {
+    padding-bottom: 56px;         // explicit floor below pagination/nav
+  }
+
+  .feature .feature-wrapper.mt-60 {
+    margin-top: 40px;             // 60px → 40px between title and cards
+  }
+
+  .feature .slider-footer.mt-60 {
+    margin-top: 40px;             // 60px → 40px between cards and pagination
+  }
+}
+
+// Trending NFT section — match Featured Games typography & rhythm at desktop.
+// Mirrors the .feature block above so both section headers read at the same size.
+@media (min-width: 1200px) {
+  .trending-nft.pt-120 {
+    padding-top: 56px;            // 120px → 56px above section title
+  }
+
+  .trending-nft.pb-120 {
+    padding-bottom: 56px;         // 120px → 56px below slider
+  }
+
+  // Title row: keep align-items:center for left title ↔ right View All baseline.
+  .trending-nft .row.align-items-center.vertical-column-gap {
+    margin-bottom: 0;             // gap to slider is owned by .mt-60 below
+  }
+
+  .trending-nft h2 {
+    font-size: clamp(48px, 4.2vw, 64px);
+    line-height: 1.15;
+    margin-bottom: 0;
+  }
+
+  // Fire icon next to the title — sit on text baseline, not floating above it.
+  .trending-nft h2 img {
+    width: 36px;
+    height: 36px;
+    margin-top: 0;
+    vertical-align: -0.12em;       // optical baseline alignment
+  }
+
+  // Title → slider gap. .trending-slider-wrapper carries .mt-60.
+  .trending-nft .trending-slider-wrapper.mt-60 {
+    margin-top: 40px;             // 60px → 40px between title and cards
+  }
+}
+
+/* ====
  --------- (6.0) responsive styles end ---------
  ==== */

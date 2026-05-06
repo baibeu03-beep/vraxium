@@ -1,4 +1,4 @@
-import { HOME_RANDOM_IMAGE_SRCS, type HomeRandomImageSrc } from "@/data/homeRandomImages";
+import type { HomeRandomImageSrc } from "@/data/homeRandomImages";
 
 export type HomeImageAssignments = {
   heroThumbSrc?: HomeRandomImageSrc;
@@ -6,50 +6,31 @@ export type HomeImageAssignments = {
   featuredCardSrcs: HomeRandomImageSrc[];
 };
 
-function shuffleArray<T>(items: readonly T[]): T[] {
-  const shuffled = [...items];
+const HERO_THUMB_SRC: HomeRandomImageSrc = "/images/home-random/intro-1.png";
 
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const randomIndex = Math.floor(Math.random() * (index + 1));
-    [shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[index]];
-  }
+const BANNER_SLIDE_SRCS: HomeRandomImageSrc[] = [
+  "/images/home-random/intro-6.png",
+  "/images/home-random/intro-7.png",
+  "/images/home-random/intro-8.png",
+  "/images/home-random/intro-9.png",
+  "/images/home-random/intro-10.png",
+];
 
-  return shuffled;
-}
-
-export function pickRandomUnique<T>(items: readonly T[], count: number): T[] {
-  if (items.length === 0 || count <= 0) {
-    return [];
-  }
-
-  if (count <= items.length) {
-    return shuffleArray(items).slice(0, count);
-  }
-
-  const uniqueItems = shuffleArray(items);
-  const selectedItems = [...uniqueItems];
-
-  while (selectedItems.length < count) {
-    selectedItems.push(uniqueItems[selectedItems.length % uniqueItems.length]);
-  }
-
-  return selectedItems;
-}
+const FEATURED_CARD_SRCS: HomeRandomImageSrc[] = [
+  "/images/home-random/intro-2.png",
+  "/images/home-random/intro-3.png",
+  "/images/home-random/intro-4.png",
+  "/images/home-random/intro-5.png",
+  "/images/home-random/intro-2.png",
+  "/images/home-random/intro-3.png",
+  "/images/home-random/intro-4.png",
+  "/images/home-random/intro-5.png",
+];
 
 export function createHomeImageAssignments(): HomeImageAssignments {
-  if (HOME_RANDOM_IMAGE_SRCS.length === 0) {
-    return {
-      heroThumbSrc: undefined,
-      bannerSlideSrcs: [],
-      featuredCardSrcs: [],
-    };
-  }
-
-  const heroSectionImages = pickRandomUnique(HOME_RANDOM_IMAGE_SRCS, 6);
-
   return {
-    heroThumbSrc: heroSectionImages[0],
-    bannerSlideSrcs: heroSectionImages.slice(1, 6),
-    featuredCardSrcs: pickRandomUnique(HOME_RANDOM_IMAGE_SRCS, 8),
+    heroThumbSrc: HERO_THUMB_SRC,
+    bannerSlideSrcs: [...BANNER_SLIDE_SRCS],
+    featuredCardSrcs: [...FEATURED_CARD_SRCS],
   };
 }
