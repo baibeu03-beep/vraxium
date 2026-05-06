@@ -1,4 +1,4 @@
-// Cluster 4 - Club Challenge Growth Styles
+﻿// Cluster 4 - Club Challenge Growth Styles
 @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
 
 // reputation-form ?꾩슜 ?꾨뱶 源쒕묀???ㅽ봽?덉엫 (cluster3??border-blink? ?숈씪 而⑥뀎, outline 湲곕컲?쇰줈 ?덉씠?꾩썐 shift ?놁쓬)
@@ -1199,7 +1199,10 @@
           line-height: 1;
           white-space: nowrap;
           cursor: pointer;
-          transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+          transition:
+            background 0.15s ease,
+            border-color 0.15s ease,
+            color 0.15s ease;
 
           &:hover {
             background: rgba(255, 200, 80, 0.18);
@@ -1418,7 +1421,10 @@
               line-height: 1;
               white-space: nowrap;
               cursor: pointer;
-              transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+              transition:
+                background 0.15s ease,
+                border-color 0.15s ease,
+                color 0.15s ease;
 
               &:hover:not(:disabled) {
                 background: rgba(255, 200, 80, 0.18);
@@ -2995,6 +3001,16 @@
           overflow: visible;
           display: flex;
           flex-direction: row;
+
+          // '강화 상태 = empty' 카드: 시각적으로 dim 처리 (클릭은 가능, 모달은 열림)
+          &.is-empty-card {
+            opacity: 0.45;
+            filter: grayscale(0.6);
+            transition:
+              opacity 0.2s ease,
+              filter 0.2s ease;
+            cursor: pointer;
+          }
 
           .card-content-area {
             flex: 1;
@@ -11181,6 +11197,31 @@
           --enhance-color: 160, 132, 220;
         }
       }
+
+      // 'empty' 상태: 보이드 기호 3개 (정사각형 칩 ▮ ▮ ▮) — 색상 rgba(255, 195, 0, 1) 고정
+      // 영역 폭 확대(102px = 14×3 + 30×2)로 칩 사이 명확한 분리감 확보.
+      // space-between으로 양 끝 + 가운데 배치 → 칩 사이 간격 자동 30px.
+      // margin-left: 102px — 칩 그룹 자체를 오른쪽으로 102px 이동 (empty 케이스 전용).
+      // 부모 .personal-line-status의 transform은 다른 상태와 공유되므로 손대지 않음.
+      .line-enhance-void {
+        width: 102px;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-left: 60px;
+
+        transform: translateX(-19px);
+
+        .void-mark {
+          display: inline-block;
+          width: 14px;
+          height: 14px;
+          border-radius: 3px;
+          background: rgba(255, 195, 0, 1);
+          flex-shrink: 0;
+        }
+      }
     }
 
     .tag-badge {
@@ -13350,7 +13391,9 @@
     color: #fff;
     cursor: pointer;
     z-index: 2;
-    transition: background 0.15s ease, border-color 0.15s ease;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease;
 
     &:hover {
       background: rgba(255, 255, 255, 0.14);
@@ -14173,14 +14216,10 @@
 // 범위: Zone B (1920×1080) baseline 영향 없음.
 // =====================================================================
 @media (max-width: 1919px), (min-width: 1920px) and (max-width: 2559px) and (min-height: 1200px) {
-  .cluster4-card-content .section-modal.section-modal-reputation-form
-    .section-modal-body.reputation-form-body > *,
-  .cluster4-card-content .section-modal.section-modal-colleague-edit
-    .section-modal-body.colleague-edit-body > *,
-  .cluster4-card-content .section-modal.reputation-view-modal
-    .section-modal-body.reputation-body > *,
-  .cluster4-card-content .section-modal.colleague-view-modal
-    .section-modal-body.colleague-body > * {
+  .cluster4-card-content .section-modal.section-modal-reputation-form .section-modal-body.reputation-form-body > *,
+  .cluster4-card-content .section-modal.section-modal-colleague-edit .section-modal-body.colleague-edit-body > *,
+  .cluster4-card-content .section-modal.reputation-view-modal .section-modal-body.reputation-body > *,
+  .cluster4-card-content .section-modal.colleague-view-modal .section-modal-body.colleague-body > * {
     flex-shrink: 0 !important;
   }
 }

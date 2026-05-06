@@ -32,6 +32,9 @@ export interface ActivityRecord {
   week_id: string;
   activity_type_id: string;
   is_completed: boolean;
+  // '빈 카드(empty)' 데모용 sentinel — getEnhancementStatus()가 최우선으로 검사.
+  // 운영 데이터에는 존재하지 않음(undefined → falsy → 기존 분기 그대로).
+  is_empty?: boolean;
 }
 
 export interface CareerRecord {
@@ -469,7 +472,9 @@ export const DUMMY_WEEK_CARD: Record<string, WeekCardDummyData> = {
       { week_id: "dw-01", activity_type_id: "session", is_completed: true },
       { week_id: "dw-01", activity_type_id: "practical_lecture", is_completed: true },
       { week_id: "dw-01", activity_type_id: "community", is_completed: true },
-      { week_id: "dw-01", activity_type_id: "etc_a", is_completed: true },
+      // 빈 카드(empty) 데모 항목 — work-info 9번째 카드(etc_a)에 is_empty 마커.
+      // getEnhancementStatus가 is_empty를 최우선 검사하여 'empty' 반환.
+      { week_id: "dw-01", activity_type_id: "etc_a", is_completed: true, is_empty: true },
       { week_id: "dw-01", activity_type_id: "comp-1", is_completed: true },
       { week_id: "dw-01", activity_type_id: "comp-2", is_completed: true },
       { week_id: "dw-01", activity_type_id: "comp-3", is_completed: true },

@@ -4330,13 +4330,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // - 강화 실패: 활동 개설됨 + 카페 댓글 집계에서 이행하지 않음 (is_completed = false)
   // - 강화 대기: 활동 개설됨 + 이행함 (is_completed = true) + 48시간 미경과 + 2차 정보 미기입
   // - 강화 성공: 활동 개설됨 + 이행함 (is_completed = true) + (48시간 경과 OR 2차 정보 기입)
-  type EnhancementStatus = "success" | "waiting" | "failed" | "not_applicable";
+  type EnhancementStatus = "success" | "waiting" | "failed" | "not_applicable" | "empty";
   const getEnhancementStatus = (activityType: string): EnhancementStatus => {
     // 해당 활동 정보 가져오기
     const activity = weeklyActivities.find((a) => a.activity_type_id === activityType);
 
     // activity_records에서 해당 activity_type의 이행 여부 확인
     const record = weekActivityRecords.find((ar) => ar.activity_type_id === activityType);
+
+    // 0. '빈 카드(empty)': 더미데이터의 sentinel 플래그 — 가장 우선 처리
+    //    (운영 데이터에는 is_empty 필드가 없으므로 항상 falsy → 기존 분기 영향 없음)
+    if ((record as { is_empty?: boolean } | undefined)?.is_empty) return "empty";
 
     // 1. 해당 없음: 활동이 개설되지 않음 AND 크루가 참여하지도 않음
     if (!activity?.is_active && (!record || !record.is_completed)) return "not_applicable";
@@ -4381,11 +4385,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   // 강화 상태별 아이콘
+  // 'empty'는 뱃지/아이콘을 렌더링하지 않으므로 빈 문자열 (타입 exhaustiveness 보장용)
   const enhancementStatusIcons: { [key in EnhancementStatus]: string } = {
     success: "/images/0/cluster4/icon/5 강화 성공.png",
     waiting: "/images/0/cluster4/icon/6 강화 대기.png",
     failed: "/images/0/cluster4/icon/7 강화 실패.png",
     not_applicable: "/images/0/cluster4/icon/8 해당 없음.png",
+    empty: "",
   };
 
   // 특정 activity_type의 2차 정보 가져오기
@@ -5811,7 +5817,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               return (
                 <div
                   key={card.id}
-                  className={`work-info-card ${isEmpty ? "empty" : ""}`}
+                  className={`work-info-card ${isEmpty ? "empty" : ""} ${card.status === "empty" ? "is-empty-card" : ""}`}
                   onClick={async () => {
                     if (!isEmpty) {
                       setSelectedWorkInfoCard(card);
@@ -5844,7 +5850,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       {!isEmpty && <img src="/images/0/cluster4/icon - 더보기.png" alt="더보기" className="card-arrow" />}
                     </div>
                   </div>
-                  {!isEmpty && card.status && card.statusIcon && (
+                  {!isEmpty && card.status !== "empty" && card.status && card.statusIcon && (
                     <div className="status-badge">
                       <img src={card.statusIcon} alt={card.status} />
                     </div>
@@ -5971,7 +5977,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     </span>
                     {!isEmpty && <img src="/images/0/cluster4/icon - 더보기.png" alt="더보기" className="card-arrow" />}
                   </div>
-                  {!isEmpty && (
+                  {!isEmpty && card.enhancementStatus !== "empty" && (
                     <div className={`status-badge ${isRestMode ? "not_applicable" : !card.hasActivity ? "failed" : card.enhancementStatus}`}>
                       {(() => {
                         if (isRestMode) return <img src="/images/0/cluster4/icon/8 해당 없음.png" alt="해당 없음" />;
@@ -6085,9 +6091,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <span className="sub-desc">{isNotApplicableCard ? "-" : card.subTitle || "-"}</span>
                     <img src="/images/0/cluster4/icon - 더보기.png" alt="더보기" className="card-arrow" />
                   </div>
-                  <div className="status-badge">
-                    <img src={card.statusIcon} alt="강화 상태" />
-                  </div>
+                  {card.enhancementStatus !== "empty" && (
+                    <div className="status-badge">
+                      <img src={card.statusIcon} alt="강화 상태" />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -7825,15 +7833,25 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       </div>
 
                       <div className="personal-line-status line-info-row">
-                        {selectedWorkInfoCard.statusIcon ? <img className="line-enhance-icon" src={selectedWorkInfoCard.statusIcon} alt={selectedWorkInfoCard.status || "강화 상태"} /> : <span className="line-status-icon">●</span>}
-                        <span className={`line-enhance-status enhance-${(selectedWorkInfoCard.status as string) || "not_applicable"}`}>
-                          {{
-                            success: "강화 성공",
-                            waiting: "강화 대기",
-                            failed: "강화 실패",
-                            not_applicable: "해당 없음",
-                          }[selectedWorkInfoCard.status as string] || "—"}
-                        </span>
+                        {(selectedWorkInfoCard.status as string) === "empty" ? (
+                          <div className="line-enhance-void" aria-label="빈 카드">
+                            <span className="void-mark" />
+                            <span className="void-mark" />
+                            <span className="void-mark" />
+                          </div>
+                        ) : (
+                          <>
+                            {selectedWorkInfoCard.statusIcon ? <img className="line-enhance-icon" src={selectedWorkInfoCard.statusIcon} alt={selectedWorkInfoCard.status || "강화 상태"} /> : <span className="line-status-icon">●</span>}
+                            <span className={`line-enhance-status enhance-${(selectedWorkInfoCard.status as string) || "not_applicable"}`}>
+                              {{
+                                success: "강화 성공",
+                                waiting: "강화 대기",
+                                failed: "강화 실패",
+                                not_applicable: "해당 없음",
+                              }[selectedWorkInfoCard.status as string] || "—"}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -8116,10 +8134,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   {!workInfoViewIsEditing ? (
                     (() => {
                       const locked = isLineLocked(selectedWorkInfoCard);
-                      const disabled = !canEditWorkInfo || locked;
-                      const title = locked ? LINE_LOCKED_TITLE : canEditWorkInfo ? "수정" : "작성할 수 있는 기간이 아닙니다. 😊";
+                      const isEmptyStatus = (selectedWorkInfoCard?.status as string) === "empty";
+                      const disabled = !canEditWorkInfo || locked || isEmptyStatus;
+                      const title = isEmptyStatus ? "빈 카드 상태에서는 수정할 수 없습니다." : locked ? LINE_LOCKED_TITLE : canEditWorkInfo ? "수정" : "작성할 수 있는 기간이 아닙니다. 😊";
                       return (
-                        <button className="modal-edit-btn" onClick={handleEditWorkInfo} disabled={disabled} style={disabled ? { opacity: 0.3, cursor: "not-allowed" } : undefined} title={title}>
+                        <button className="modal-edit-btn" onClick={handleEditWorkInfo} disabled={disabled} aria-disabled={disabled} style={disabled ? { opacity: 0.3, cursor: "not-allowed" } : undefined} title={title}>
                           수정
                         </button>
                       );
@@ -8246,8 +8265,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         };
                         return (
                           <div className="personal-line-status line-info-row">
-                            {statusImages[statusKey] ? <img className="line-enhance-icon" src={statusImages[statusKey]} alt={statusText} /> : <span className="line-status-icon">●</span>}
-                            <span className={`line-enhance-status enhance-${statusKey || "not_applicable"}`}>{statusText}</span>
+                            {statusKey === "empty" ? (
+                              <div className="line-enhance-void" aria-label="빈 카드">
+                                <span className="void-mark" />
+                                <span className="void-mark" />
+                                <span className="void-mark" />
+                              </div>
+                            ) : (
+                              <>
+                                {statusImages[statusKey] ? <img className="line-enhance-icon" src={statusImages[statusKey]} alt={statusText} /> : <span className="line-status-icon">●</span>}
+                                <span className={`line-enhance-status enhance-${statusKey || "not_applicable"}`}>{statusText}</span>
+                              </>
+                            )}
                           </div>
                         );
                       })()}
@@ -8699,8 +8728,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         const statusText = statusTextMap[statusKey] || "—";
                         return (
                           <div className="personal-line-status line-info-row">
-                            {selectedWorkAbilityCard.statusIcon ? <img className="line-enhance-icon" src={selectedWorkAbilityCard.statusIcon} alt={statusText} /> : <span className="line-status-icon">●</span>}
-                            <span className={`line-enhance-status enhance-${statusKey || "not_applicable"}`}>{statusText}</span>
+                            {statusKey === "empty" ? (
+                              <div className="line-enhance-void" aria-label="빈 카드">
+                                <span className="void-mark" />
+                                <span className="void-mark" />
+                                <span className="void-mark" />
+                              </div>
+                            ) : (
+                              <>
+                                {selectedWorkAbilityCard.statusIcon ? <img className="line-enhance-icon" src={selectedWorkAbilityCard.statusIcon} alt={statusText} /> : <span className="line-status-icon">●</span>}
+                                <span className={`line-enhance-status enhance-${statusKey || "not_applicable"}`}>{statusText}</span>
+                              </>
+                            )}
                           </div>
                         );
                       })()}
@@ -9078,12 +9117,25 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       </div>
 
                       {(() => {
-                        const statusKey = selectedWorkCareerCard.verified ? "success" : selectedWorkCareerCard.isFailed ? "failed" : selectedWorkCareerCard.isNotApplicable ? "not_applicable" : "waiting";
+                        // workCareer는 careerRecords(DB) 기반이라 'empty' 트리거 경로가 현재 없음 —
+                        // 향후 isEmpty 플래그가 추가되면 여기서 우선 분기되도록 대비.
+                        const isEmptyCard = (selectedWorkCareerCard as { isEmpty?: boolean }).isEmpty === true;
+                        const statusKey = isEmptyCard ? "empty" : selectedWorkCareerCard.verified ? "success" : selectedWorkCareerCard.isFailed ? "failed" : selectedWorkCareerCard.isNotApplicable ? "not_applicable" : "waiting";
                         const statusText = selectedWorkCareerCard.verified ? "강화 성공" : selectedWorkCareerCard.isFailed ? "강화 실패" : selectedWorkCareerCard.isNotApplicable ? "해당 없음" : "강화 대기";
                         return (
                           <div className="personal-line-status line-info-row">
-                            {selectedWorkCareerCard.statusBadge ? <img className="line-enhance-icon" src={selectedWorkCareerCard.statusBadge} alt={statusText} /> : <span className="line-status-icon">●</span>}
-                            <span className={`line-enhance-status enhance-${statusKey}`}>{statusText}</span>
+                            {statusKey === "empty" ? (
+                              <div className="line-enhance-void" aria-label="빈 카드">
+                                <span className="void-mark" />
+                                <span className="void-mark" />
+                                <span className="void-mark" />
+                              </div>
+                            ) : (
+                              <>
+                                {selectedWorkCareerCard.statusBadge ? <img className="line-enhance-icon" src={selectedWorkCareerCard.statusBadge} alt={statusText} /> : <span className="line-status-icon">●</span>}
+                                <span className={`line-enhance-status enhance-${statusKey}`}>{statusText}</span>
+                              </>
+                            )}
                           </div>
                         );
                       })()}
