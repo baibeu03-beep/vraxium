@@ -335,6 +335,14 @@
   .info {
     background-color: var(--senary-color);
   }
+
+  // Card thumbnails point at /public/images/char/{1..6}.png. Their aspect
+  // ratio may differ from the originals; object-fit: cover keeps them filling
+  // the existing .thumb box (width:100% / max-height:430px / clip-path) without
+  // distortion. Card dimensions are otherwise unchanged.
+  .trending__single .thumb img {
+    object-fit: cover;
+  }
 }
 
 // 5.04 countdown section styles start

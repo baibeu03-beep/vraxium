@@ -2553,70 +2553,97 @@ body:has(.nftg-content-home-two) {
   }
 }
 
-// Featured Games section title — bump back up at desktop to match Envato demo.
-// Base h2 is 56px but the section title reads visually small here; scale up.
-// Below 1200px the existing responsive cascade (40 → 36 → 30) keeps it sane.
+// Featured Games + Trending NFT — desktop typography & spacing.
+// Tightens .pt-120 / .pb-120 / .mt-60 utilities (120 / 120 / 60 → 70 / 70 / 32)
+// and restores a larger section title size. Below 1200px the existing
+// responsive cascade keeps mobile/tablet sizes intact.
+//
+// Scope notes:
+//   - Title rule is restricted to .feature and .trending/.trending-nft so it
+//     does NOT touch Banner/Hero h2.title-animation.
+//   - SplitType (`new SplitType('.title-animation')` in TitleAnimations.tsx)
+//     wraps text in .line / .word / .char children; we force them to inherit
+//     font-size / line-height so the visible glyphs actually resize.
+//   - Feature card image rules (.feature-slider__single .thumb) are untouched.
 @media (min-width: 1200px) {
-  .feature h2 {
-    font-size: clamp(48px, 4.2vw, 64px);
-    line-height: 1.15;
-  }
-}
-
-// Featured Games section spacing — tighten vertical rhythm at desktop.
-// The .pt-120 / .mt-60 utilities give 120px / 60px, which feels excessive here.
-// Scoped selectors win on specificity; no !important needed.
-@media (min-width: 1200px) {
+  // ── Featured Games ──────────────────────────────────────────────────────
   .feature.pt-120 {
-    padding-top: 56px;            // 120px → 56px above section title
+    padding-top: 70px !important;     // 120 → 70 above section title
   }
 
   .feature {
-    padding-bottom: 56px;         // explicit floor below pagination/nav
+    padding-bottom: 70px !important;  // explicit floor below pagination/nav
   }
 
   .feature .feature-wrapper.mt-60 {
-    margin-top: 40px;             // 60px → 40px between title and cards
+    margin-top: 32px !important;      // 60 → 32 between title and cards
   }
 
   .feature .slider-footer.mt-60 {
-    margin-top: 40px;             // 60px → 40px between cards and pagination
-  }
-}
-
-// Trending NFT section — match Featured Games typography & rhythm at desktop.
-// Mirrors the .feature block above so both section headers read at the same size.
-@media (min-width: 1200px) {
-  .trending-nft.pt-120 {
-    padding-top: 56px;            // 120px → 56px above section title
+    margin-top: 32px !important;      // 60 → 32 between cards and pagination
   }
 
-  .trending-nft.pb-120 {
-    padding-bottom: 56px;         // 120px → 56px below slider
+  // ── Trending NFT ────────────────────────────────────────────────────────
+  .trending-nft.pt-120,
+  section.trending-nft.pt-120 {
+    padding-top: 70px !important;     // 120 → 70
   }
 
-  // Title row: keep align-items:center for left title ↔ right View All baseline.
-  .trending-nft .row.align-items-center.vertical-column-gap {
-    margin-bottom: 0;             // gap to slider is owned by .mt-60 below
+  .trending-nft.pb-120,
+  section.trending-nft.pb-120 {
+    padding-bottom: 70px !important;  // 120 → 70
   }
 
-  .trending-nft h2 {
-    font-size: clamp(48px, 4.2vw, 64px);
-    line-height: 1.15;
-    margin-bottom: 0;
+  // Title row owns no bottom margin — gap comes from the slider's .mt-60.
+  .trending-nft .row.align-items-center {
+    margin-bottom: 0 !important;
   }
 
-  // Fire icon next to the title — sit on text baseline, not floating above it.
-  .trending-nft h2 img {
-    width: 36px;
-    height: 36px;
-    margin-top: 0;
-    vertical-align: -0.12em;       // optical baseline alignment
-  }
-
-  // Title → slider gap. .trending-slider-wrapper carries .mt-60.
+  // Slider gap (NFT slider uses .trending-slider-wrapper.mt-60).
   .trending-nft .trending-slider-wrapper.mt-60 {
-    margin-top: 40px;             // 60px → 40px between title and cards
+    margin-top: 32px !important;      // 60 → 32
+  }
+
+  // Trending Games (home /) variant uses .trending__wrapper.mt-60.
+  .trending .trending__wrapper.mt-60 {
+    margin-top: 32px !important;      // 60 → 32
+  }
+
+  // ── Section title typography (Featured Games + Trending) ───────────────
+  // Specificity bumped via h2.title-animation; !important defeats utility
+  // .mt-* and any inline styles SplitType might leave behind.
+  .feature h2.title-animation,
+  .feature h2,
+  .trending-nft h2.title-animation,
+  .trending-nft h2,
+  .trending h2.title-animation {
+    font-size: clamp(48px, 3.6vw, 68px) !important;
+    line-height: 1.08 !important;
+    margin-bottom: 0 !important;
+  }
+
+  // Force SplitType wrappers (.line / .word / .char) to inherit, so the
+  // glyphs that are actually rendered pick up the new size.
+  .feature h2.title-animation .line,
+  .feature h2.title-animation .word,
+  .feature h2.title-animation .char,
+  .trending-nft h2.title-animation .line,
+  .trending-nft h2.title-animation .word,
+  .trending-nft h2.title-animation .char,
+  .trending h2.title-animation .line,
+  .trending h2.title-animation .word,
+  .trending h2.title-animation .char {
+    font-size: inherit !important;
+    line-height: inherit !important;
+  }
+
+  // Fire icon next to the Trending NFT title — sit on text baseline.
+  .trending-nft h2 img,
+  .trending h2 img {
+    width: 44px !important;
+    height: 44px !important;
+    margin-top: 0 !important;
+    vertical-align: -0.12em !important;
   }
 }
 

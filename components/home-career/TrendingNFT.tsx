@@ -5,6 +5,10 @@ import afour from "@/public/images/avatar/four.png";
 import aone from "@/public/images/avatar/one.png";
 import asix from "@/public/images/avatar/six.png";
 import fire from "@/public/images/fire.png";
+// Trending NFT card thumbs — temporarily reverted to the original
+// games/trending imports while we smoke-test public-path string srcs for the
+// new /images/char/*.png assets (see the first SwiperSlide below).
+// Once that first card confirms the public path loads, cards 2–6 will follow.
 import five from "@/public/images/games/trending/five.png";
 import four from "@/public/images/games/trending/four.png";
 import one from "@/public/images/games/trending/one.png";
@@ -70,7 +74,19 @@ const TrendingNFT = () => {
                   <div className="trending__single">
                     <div className="thumb ">
                       <Link href="/shop/1">
-                        <Image src={one} alt="Image" />
+                        {/* SMOKE TEST: public-path string src for /public/images/char/1.png.
+                            Verified on disk (1024x1024 PNG). If this card renders the new
+                            character image, cards 2–6 will be migrated to /images/char/{2..6}.png
+                            in the next pass. width/height are required by next/image when
+                            src is a string; `unoptimized` bypasses the Next image optimizer
+                            so we eliminate one more failure mode while debugging. */}
+                        <Image
+                          src="/images/char/1.png"
+                          alt="Image"
+                          width={1024}
+                          height={1024}
+                          unoptimized
+                        />
                       </Link>
                     </div>
                     <div className="content-wrapper">
