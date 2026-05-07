@@ -58,12 +58,13 @@
     position: absolute;
     z-index: -1;
     bottom: 0px;
-    right: 0px;
+    right: 80px;
 
     img {
       max-width: 34vw;
       min-width: 120px;
-      scale: 0.8;
+      width: auto;
+      height: auto;
       transform-origin: right bottom;
       animation: move 1s linear infinite alternate-reverse;
     }
@@ -124,6 +125,16 @@
       h3 {
         justify-content: center;
       }
+
+      h2 {
+        font-size: clamp(32px, 3vw, 56px);
+        line-height: 1.1;
+
+        a {
+          font-size: inherit;
+          line-height: inherit;
+        }
+      }
     }
   }
 
@@ -168,19 +179,40 @@
     padding-top: 40px;        // breathing room below the header
 
     .container-fluid {
-      padding-left: 16px;     // widen Hero/Slider toward viewport edges
-      padding-right: 16px;
+      width: 100%;
+      max-width: none;
+      padding-left: 0px;
+      padding-right: 0px;
     }
 
     .row {
-      --bs-gutter-x: 18px;    // tighten gap between left Hero and right Slider
+      width: 100%;
+      --bs-gutter-x: 18px;    // keep the current inter-panel gap
       align-items: stretch;
+      margin-left: 0px;
+      margin-right: 0px;
+    }
+
+    .col-12.col-lg-8.col-xxl-9 {
+      max-width: 75% !important;
+      flex: 0 0 75% !important;
+      width: 75% !important;
+      padding-left: 9px !important;
+      padding-right: 9px !important;
+    }
+
+    .col-12.col-lg-4.col-xxl-3 {
+      max-width: 25% !important;
+      flex: 0 0 25% !important;
+      width: 25% !important;
+      padding-left: 9px !important;
+      padding-right: 9px !important;
     }
 
     .banner__content {
       width: 100%;
-      height: clamp(700px, 74vh, 820px);
-      padding-bottom: 48px;       // shrink bottom reservation so the CTA isn't clipped
+      height: clamp(780px, 82vh, 900px);
+      padding-bottom: 112px;
       background-size: cover;
       background-position: center;
       background-repeat: no-repeat;
@@ -188,14 +220,25 @@
 
     .banner__content-inner {
       position: relative;
+      padding-bottom: 112px;
       z-index: 2;                 // sit above the sword (z-index: -1) and bg pseudo
+    }
+
+    .banner__content .section__cta {
+      position: relative;
+      z-index: 2;
+      margin-top: 32px;
+    }
+
+    .banner__slider {
+      width: 100%;
     }
 
     .banner__slider,
     .banner__slider-wrapper,
     .banner__slider-single,
     .banner__slider-single .thumb {
-      height: clamp(700px, 74vh, 820px);   // mirror Hero height exactly
+      height: clamp(780px, 82vh, 900px);
     }
 
     .banner__slider-single .thumb {

@@ -34,6 +34,7 @@ const Banner = () => {
         duration: 3,
       });
       tl.to(".banner__thumb img", {
+        scale: 1,
         y: "100px",
         opacity: 0.4,
         duration: 3,
