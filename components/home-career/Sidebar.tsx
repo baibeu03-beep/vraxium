@@ -190,6 +190,11 @@ const Sidebar = () => {
     gpaMax: string;
     quote: string;
     photo: string;
+    // user_memberships enrichment — 기존 sub-text 두 줄 (enrollPeriod / gpa 자리) 의
+    // 데이터 소스로 사용. UI 구조 / 줄 수는 변경 없음, 데이터만 매핑 교체.
+    team: string;
+    part: string;
+    membershipLevel: string;
   } | null>(null);
 
   // 데모 모드 사용자별 sidebar 더미 데이터 분기 (targetUserId 없을 때만 적용)
@@ -709,6 +714,10 @@ const Sidebar = () => {
           gpaMax: userProfile.gpaMax,
           quote: userProfile.quote || defaultProfile.quote,
           photo: userProfile.photo || defaultProfile.photo,
+          // membership 필드 — 기존 sub-text 두 줄에 매핑 (UI 구조 미변경).
+          team: userProfile.team,
+          part: userProfile.part,
+          membershipLevel: userProfile.membershipLevel,
         }
       : defaultProfile;
 
@@ -805,6 +814,10 @@ const Sidebar = () => {
           gpaMax: "",
           quote: profile.bio || "",
           photo: profile.profile_photo_url || "",
+          // user_memberships 에서 enrich된 값 — 기존 sub-text 두 줄(enrollPeriod / gpa 자리)에 사용.
+          team: profile.team_name || "",
+          part: profile.part_name || "",
+          membershipLevel: profile.membership_level || "",
         });
 
         // 학력 + 슬로건 데이터 병렬 로드 (성능 최적화)
@@ -2065,7 +2078,9 @@ const Sidebar = () => {
                     <div className="detail-row">
                       <span className="detail-spacer"></span>
                       <span className="sub-text" style={{ color: currentProfile.lightColor }}>
-                        <span style={{ color: currentProfile.lightColor }}>·</span> {mask.period(currentProfile.enrollPeriod)}
+                        {/* 기존 enrollPeriod 자리 → user_memberships.team_name 매핑.
+                            UI 구조/className 미변경, 데이터 소스만 교체. */}
+                        <span style={{ color: currentProfile.lightColor }}>·</span> {currentProfile.team || "-"}
                       </span>
                     </div>
                   </div>
@@ -2099,7 +2114,10 @@ const Sidebar = () => {
                   <div className="detail-row">
                     <span style={{ width: "16px" }}></span>
                     <span className="sub-text">
-                      <span style={{ color: currentProfile.lightColor }}>·</span> {mask.gpa(currentProfile.gpa)} <span style={{ color: currentProfile.lightColor }}>/{currentProfile.gpaMax}</span>
+                      {/* 기존 "{gpa} /{gpaMax}" 자리 → "{part_name} /{membership_level 단축형}" 매핑.
+                          UI 구조/슬래시 위치/className 미변경. 단축 라벨은 roleKorean 맵
+                          (line 99-) 의 "(...)" 앞부분만 사용 — 예: "일반(정규)" → "일반". */}
+                      <span style={{ color: currentProfile.lightColor }}>·</span> {currentProfile.part || "-"} <span style={{ color: currentProfile.lightColor }}>/{(roleKorean[currentProfile.membershipLevel] || currentProfile.membershipLevel || "-").split("(")[0] || "-"}</span>
                     </span>
                   </div>
                 </div>
