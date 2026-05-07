@@ -414,13 +414,36 @@ const Sidebar = () => {
       setSeasonHistories(cachedProfile.seasonHistories);
       setHasSeasonData(true);
     }
+    if (cachedProfile.resumeCardSettings) {
+      setResumeCardSettings(cachedProfile.resumeCardSettings);
+      const s = cachedProfile.resumeCardSettings;
+      if (s.hexagonLink1) setIconLink1(s.hexagonLink1);
+      if (s.hexagonLink2) setIconLink2(s.hexagonLink2);
+      if (s.hexagonLink3) setIconLink3(s.hexagonLink3);
+    }
   }, [cachedProfile]);
 
-  // 아이콘 링크 state
+  // 아이콘 링크 state — admin resumeCardSettings 가 있으면 마운트 후 덮어씌움
   const [iconLink1, setIconLink1] = useState("https://www.google.com/");
   const [iconLink2, setIconLink2] = useState("https://youtu.be/xf6q5dgn1hU?si=tNK3I1-QIsJ9JmvF");
   const [iconLink3, setIconLink3] = useState("https://www.naver.com/");
   const [iconLinkErrors, setIconLinkErrors] = useState({ link1: "", link2: "", link3: "" });
+
+  // resume-card admin settings (3-tier merge: user > org > site, /api/profile 응답).
+  // 모든 값 null = admin 미설정 → 기존 하드코딩 fallback 사용.
+  const [resumeCardSettings, setResumeCardSettings] = useState<{
+    hexagonLink1: string | null;
+    hexagonLink2: string | null;
+    hexagonLink3: string | null;
+    helpTooltipText: string | null;
+    medalWeekOverride: number | null;
+    medalTheme: string | null;
+    noticeTopText: string | null;
+    noticeTopStampImageUrl: string | null;
+    noticeBottomText: string | null;
+    noticeBottomStampImageUrl: string | null;
+    helpTooltipDefault: string | null;
+  } | null>(null);
 
   // URL 유효성 검사 함수
   const isValidUrl = (url: string) => {
@@ -777,6 +800,7 @@ const Sidebar = () => {
         practicalCounts: cachedResult.practicalCounts,
         badges: cachedResult.badges,
         seasonHistories: cachedResult.seasonHistories,
+        resumeCardSettings: cachedResult.resumeCardSettings,
       };
 
       if (result.success && result.data) {
@@ -883,6 +907,15 @@ const Sidebar = () => {
           setHasSeasonData(true);
         } else {
           setHasSeasonData(false);
+        }
+
+        // resume-card admin settings 적용 (있는 필드만 덮어씌움)
+        if (result.resumeCardSettings) {
+          setResumeCardSettings(result.resumeCardSettings);
+          const s = result.resumeCardSettings;
+          if (s.hexagonLink1) setIconLink1(s.hexagonLink1);
+          if (s.hexagonLink2) setIconLink2(s.hexagonLink2);
+          if (s.hexagonLink3) setIconLink3(s.hexagonLink3);
         }
       }
     } catch (error) {
@@ -1816,7 +1849,7 @@ const Sidebar = () => {
                   pointerEvents: "none" as const,
                 }}
               >
-                등록된 도움말이 없습니다
+                {resumeCardSettings?.helpTooltipText || resumeCardSettings?.helpTooltipDefault || "등록된 도움말이 없습니다"}
               </div>
             )}
           </div>
@@ -2188,8 +2221,17 @@ const Sidebar = () => {
             {/* Medal Badge - 영역 6 */}
             <div className={`resume-medal ${crewStatus === "Complete" ? "no-overlay" : ""}`}>
               <div className="medal-image-wrapper">
-                <Image src={debugPanelType === "EC" ? "/images/0/cluster 1/금장_EC.png" : debugPanelType === "PX" ? "/images/0/cluster 1/금장_PX.png" : "/images/0/cluster 1/금장_OK.png"} alt="Medal" width={512} height={512} />
-                <span className="medal-week-num">{demoMode ? 12 : 0}</span>
+                {(() => {
+                  // medalTheme admin override → 기존 debugPanelType fallback
+                  const theme = resumeCardSettings?.medalTheme || debugPanelType;
+                  const medalSrc = theme === "EC"
+                    ? "/images/0/cluster 1/금장_EC.png"
+                    : theme === "PX"
+                    ? "/images/0/cluster 1/금장_PX.png"
+                    : "/images/0/cluster 1/금장_OK.png";
+                  return <Image src={medalSrc} alt="Medal" width={512} height={512} />;
+                })()}
+                <span className="medal-week-num">{resumeCardSettings?.medalWeekOverride ?? (demoMode ? 12 : 0)}</span>
               </div>
               <div
                 className={`medal-text ${crewStatus === "Next Challenge" ? "long" : crewStatus === "Recharging" ? "medium" : crewStatus === "Complete" ? "short-medium" : ""} ${crewStatus === "Complete" ? "medal-complete" : crewStatus === "Running" ? "medal-running" : crewStatus === "On Rest" ? "medal-onrest" : crewStatus === "Recharging" ? "medal-recharging" : crewStatus === "Next Challenge" ? "medal-next" : ""}`}
@@ -2371,13 +2413,13 @@ const Sidebar = () => {
             <div className="resume-notices">
               <div className="notice-box yellow">
                 <Image src="/images/0/cluster 1/Star Badge.png" alt="" width={25} height={25} className="notice-icon-img" />
-                <span className="notice-text notice-text-top">{debugPanelType === "EC" ? "전국청춘연합 엔터테인먼트/미디어 클럽, 엥크레" : debugPanelType === "PX" ? "전국청춘연합 기획/컨설팅 클럽, 팔랑크스" : "전국청춘연합 마케팅/퍼포먼스 클럽, 오랑캐"}</span>
-                <div className={`notice-stamp-wrapper${crewStatus === "Complete" ? " stamped" : ""}`}>{crewStatus === "Complete" && <Image src="/images/0/cluster 1/오랑캐 도장.png" alt="" width={46} height={46} />}</div>
+                <span className="notice-text notice-text-top">{resumeCardSettings?.noticeTopText || (debugPanelType === "EC" ? "전국청춘연합 엔터테인먼트/미디어 클럽, 엥크레" : debugPanelType === "PX" ? "전국청춘연합 기획/컨설팅 클럽, 팔랑크스" : "전국청춘연합 마케팅/퍼포먼스 클럽, 오랑캐")}</span>
+                <div className={`notice-stamp-wrapper${crewStatus === "Complete" ? " stamped" : ""}`}>{crewStatus === "Complete" && <Image src={resumeCardSettings?.noticeTopStampImageUrl || "/images/0/cluster 1/오랑캐 도장.png"} alt="" width={46} height={46} />}</div>
               </div>
               <div className="notice-box green">
                 <Image src="/images/0/cluster 1/Star Badge2.png" alt="" width={25} height={25} className="notice-icon-img" />
-                <span className="notice-text">전국청춘성장 클럽- 기업/실무자 후원 관리 위원회</span>
-                <div className={`notice-stamp-wrapper${crewStatus === "Complete" ? " stamped" : ""}`}>{crewStatus === "Complete" && <Image src="/images/0/cluster 1/실무기업 도장.png" alt="" width={46} height={46} />}</div>
+                <span className="notice-text">{resumeCardSettings?.noticeBottomText || "전국청춘성장 클럽- 기업/실무자 후원 관리 위원회"}</span>
+                <div className={`notice-stamp-wrapper${crewStatus === "Complete" ? " stamped" : ""}`}>{crewStatus === "Complete" && <Image src={resumeCardSettings?.noticeBottomStampImageUrl || "/images/0/cluster 1/실무기업 도장.png"} alt="" width={46} height={46} />}</div>
               </div>
             </div>
           </div>

@@ -7,6 +7,80 @@ import { getCachedTeams, getCachedParts, getCachedActivityTypes } from "@/lib/ca
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+// resume-card admin settings — 3-tier merge: user > organization > site.
+// Tables (snake_case columns, user_id / organization_slug as keys):
+//   user_resume_card_settings (PK: user_id)
+//   organization_resume_card_settings (PK: organization_slug)
+//   site_resume_card_settings (PK: id, singleton row id=1)
+// Returns camelCase response shape consumed by sidebar resume-card.
+// best-effort: 행/컬럼 미존재 시 그 source 만 빠지고 본 응답 정상.
+type ResumeCardSettings = {
+  hexagonLink1: string | null;
+  hexagonLink2: string | null;
+  hexagonLink3: string | null;
+  helpTooltipText: string | null;
+  medalWeekOverride: number | null;
+  medalTheme: string | null;
+  noticeTopText: string | null;
+  noticeTopStampImageUrl: string | null;
+  noticeBottomText: string | null;
+  noticeBottomStampImageUrl: string | null;
+  helpTooltipDefault: string | null;
+};
+
+const EMPTY_RESUME_CARD_SETTINGS: ResumeCardSettings = {
+  hexagonLink1: null,
+  hexagonLink2: null,
+  hexagonLink3: null,
+  helpTooltipText: null,
+  medalWeekOverride: null,
+  medalTheme: null,
+  noticeTopText: null,
+  noticeTopStampImageUrl: null,
+  noticeBottomText: null,
+  noticeBottomStampImageUrl: null,
+  helpTooltipDefault: null,
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchResumeCardSettings(client: any, userId: string | null, orgSlug: string | null): Promise<ResumeCardSettings> {
+  if (!client) return EMPTY_RESUME_CARD_SETTINGS;
+  try {
+    const [userRes, orgRes, siteRes] = await Promise.all([
+      userId
+        ? client.from("user_resume_card_settings").select("*").eq("user_id", userId).maybeSingle()
+        : Promise.resolve({ data: null }),
+      orgSlug
+        ? client.from("organization_resume_card_settings").select("*").eq("organization_slug", orgSlug).maybeSingle()
+        : Promise.resolve({ data: null }),
+      client.from("site_resume_card_settings").select("*").eq("id", 1).maybeSingle(),
+    ]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const u: any = userRes?.data || {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const o: any = orgRes?.data || {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const s: any = siteRes?.data || {};
+    const pick = (f: string) => u[f] ?? o[f] ?? s[f] ?? null;
+    return {
+      hexagonLink1: pick("hexagon_link_1"),
+      hexagonLink2: pick("hexagon_link_2"),
+      hexagonLink3: pick("hexagon_link_3"),
+      helpTooltipText: pick("help_tooltip_text"),
+      medalWeekOverride: pick("medal_week_override"),
+      medalTheme: pick("medal_theme"),
+      noticeTopText: pick("notice_top_text"),
+      noticeTopStampImageUrl: pick("notice_top_stamp_image_url"),
+      noticeBottomText: pick("notice_bottom_text"),
+      noticeBottomStampImageUrl: pick("notice_bottom_stamp_image_url"),
+      helpTooltipDefault: pick("help_tooltip_default"),
+    };
+  } catch (err) {
+    console.error("[fetchResumeCardSettings] best-effort failed:", err);
+    return EMPTY_RESUME_CARD_SETTINGS;
+  }
+}
+
 // GET: 프로필 조회 (userId 쿼리 파라미터로 다른 유저 조회 가능)
 export async function GET(request: NextRequest) {
   try {
@@ -65,6 +139,12 @@ export async function GET(request: NextRequest) {
 
         // crew_list_view → /api/profile 응답 모양으로 합성 (Sidebar resume-card용)
         // 무거운 시즌/포인트/주차 계산은 의미 없으므로 우회.
+        // legacy 케이스도 site/org settings 는 적용 (org slug 가 view 에 있을 수 있음).
+        const legacyResumeCardSettings = await fetchResumeCardSettings(
+          supabaseAdmin,
+          legacy.id ?? null,
+          legacy.organization_slug ?? null,
+        );
         return NextResponse.json({
           success: true,
           data: {
@@ -126,6 +206,7 @@ export async function GET(request: NextRequest) {
           activityRecords: [],
           activityDetails: [],
           activityPoints: [],
+          resumeCardSettings: legacyResumeCardSettings,
           _legacy: true,
         });
       }
@@ -290,6 +371,14 @@ export async function GET(request: NextRequest) {
       if (!profile.phone && profile.contact_phone) profile.phone = profile.contact_phone;
     }
 
+    // resume-card admin settings (3-tier: user > org > site).
+    // 두 응답 분기(context=card / 메인)에서 공유 사용.
+    const resumeCardSettings = await fetchResumeCardSettings(
+      supabaseAdmin,
+      profile?.id ?? null,
+      profile?.organization_slug ?? null,
+    );
+
     const context = searchParams.get('context');
 
     // ========== context=card: 카드 페이지용 경량 응답 (시즌 통계/계산 전부 스킵) ==========
@@ -341,6 +430,7 @@ export async function GET(request: NextRequest) {
         userTeamParts: userTeamPartsResult.data || [],
         teams: teamsData || [],
         parts: partsData || [],
+        resumeCardSettings,
       });
     }
 
@@ -1308,6 +1398,8 @@ export async function GET(request: NextRequest) {
       activityDetails: userActivityDetailsResult.data || [],
       // 활동별 포인트 (평점용) - activity_id → points 매핑
       activityPoints: activityPointsResult.data || [],
+      // resume-card admin settings (3-tier merge: user > org > site)
+      resumeCardSettings,
     });
   } catch (error) {
     console.error("프로필 API 오류:", error);

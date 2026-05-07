@@ -25,6 +25,19 @@ interface ProfileData {
   parts: any[];
   userTeamParts: any[];
   onboardingWeekId: string | null;
+  resumeCardSettings: {
+    hexagonLink1: string | null;
+    hexagonLink2: string | null;
+    hexagonLink3: string | null;
+    helpTooltipText: string | null;
+    medalWeekOverride: number | null;
+    medalTheme: string | null;
+    noticeTopText: string | null;
+    noticeTopStampImageUrl: string | null;
+    noticeBottomText: string | null;
+    noticeBottomStampImageUrl: string | null;
+    helpTooltipDefault: string | null;
+  } | null;
 }
 
 interface ProfileContextType {
@@ -137,6 +150,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
         parts: result.parts || [],
         userTeamParts: result.userTeamParts || [],
         onboardingWeekId: result.onboardingWeekId || null,
+        resumeCardSettings: result.resumeCardSettings || null,
       };
 
       setProfileData(newProfileData);
