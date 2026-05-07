@@ -57,6 +57,7 @@ function CrewsContent() {
   const searchParams = useSearchParams();
   const orgParam = searchParams?.get("org") ?? null;
   const org: OrgSlug | null = isOrgSlug(orgParam) ? orgParam : null;
+  const totalStarsLabel = org === "phalanx" ? "투구" : "단감";
 
   const { mask } = useDataMasking();
   const [demoMode, setDemoMode] = useState(false);
@@ -695,7 +696,7 @@ function CrewsContent() {
                         <div className="content-wrapper">
                           <div className="info">
                             <p className="text-sm fw-6">
-                              <Link href={resolveHref(crew)} style={{ backgroundColor: "#FFC300", color: "#000", padding: "2px 6px", display: "inline-flex", alignItems: "center", justifyContent: "center"}}>{crew.club}</Link>
+                              <Link href={resolveHref(crew)} style={{ backgroundColor: "#FFC300", color: "#000", padding: "2px 6px", display: "inline-flex", alignItems: "center", justifyContent: "center"}}>{[crew.team, crew.club].find((v) => v && v !== "-") ?? "-"}</Link>
                             </p>
                             <p className="text-sm" style={{ marginTop: "18px", display: "flex", alignItems: "center", justifyContent: "flex-start", gap: "3px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${mask.school(crew.university)} ${mask.major(crew.major)}`}>
                               <span style={{ display: "inline-block", width: "7px", height: "7px", borderRadius: "50%", backgroundColor: "#FED402", flexShrink: 0, position: "relative", top: "-1px" }} />
@@ -731,7 +732,7 @@ function CrewsContent() {
                               <div className="price-inner">
                                 <p className="price text-sm fw-6">
                                   {crew.totalStars.toLocaleString()}{" "}
-                                  <span className="currency">단감</span>
+                                  <span className="currency">{totalStarsLabel}</span>
                                 </p>
                                 <Link href={resolveHref(crew)} className="btn--primary text-sm" style={{ fontSize: 12 }}>
                                   보기

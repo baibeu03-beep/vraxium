@@ -792,8 +792,11 @@ const Sidebar = () => {
           district: addressParts.slice(1).join(" ") || "",
           phone: profile.phone ? profile.phone.replace(/-/g, "").replace(/(\d{3})(\d{1})\d{3}(\d{4})/, "$1-$2***-****") : "",
           email: profile.email || "",
-          school: "",
-          major: "",
+          // school/major: /api/profile enrichment (user_educations 최종학력) 우선 사용.
+          // fetchEducations() 가 이후 더 풍부한 데이터(period/gpa 포함)로 덮어쓰지만,
+          // 그 호출이 늦거나 실패해도 sidebar 가 빈 값으로 시작하지 않도록 초기값 채움.
+          school: profile.school_name || "",
+          major: profile.major_name_1 || profile.department_name || "",
           major2: "",
           major3: "",
           enrollPeriod: "",

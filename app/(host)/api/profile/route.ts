@@ -231,6 +231,65 @@ export async function GET(request: NextRequest) {
       profile.id = profile.user_id;
     }
 
+    // ── Enrichment: /api/crews 에서 적용한 동일 컨벤션을 /api/profile 에도 이식.
+    // 목적: sidebar resume-card 가 stale user_profiles 만 보던 문제 해결.
+    // best-effort — 모든 enrichment 쿼리는 실패 시 그 필드만 빠지고 본 응답은 정상.
+    //   user_educations: sort_order ASC (sort_order=0 = 최종학력 컨벤션)
+    //   user_memberships: is_current=true 우선, 없으면 임의 row (is_current 비동기화 방지)
+    //   user_growth_stats: user_id PK row 1개
+    // 또한 user_profiles 에 contact_email/contact_phone 만 있고 email/phone 이 NULL 인
+    // 케이스를 backward-compat 하게 폴백한다 (sidebar 가 .email / .phone 을 읽음).
+    if (profile?.id) {
+      const userId = profile.id;
+      const [eduResult, membershipResult, growthResult] = await Promise.all([
+        supabaseAdmin
+          .from("user_educations")
+          .select("user_id, school_name, major_name_1, sort_order")
+          .eq("user_id", userId)
+          .order("sort_order", { ascending: true }),
+        supabaseAdmin
+          .from("user_memberships")
+          .select("user_id, team_name, part_name, membership_level, membership_state, is_current")
+          .eq("user_id", userId),
+        supabaseAdmin
+          .from("user_growth_stats")
+          .select("approved_weeks, cumulative_weeks")
+          .eq("user_id", userId)
+          .maybeSingle(),
+      ]);
+
+      // 최종학력 (sort_order=0 가 ASC 정렬상 첫 행)
+      const eduFirst = (eduResult.data ?? [])[0] ?? null;
+
+      // is_current=true 우선, 없으면 임의 row
+      const memberships = membershipResult.data ?? [];
+      const currentMembership =
+        memberships.find((m) => m.is_current === true) ?? memberships[0] ?? null;
+
+      // school/major: edu 가 있으면 우선 (truth source). 없으면 기존 컬럼 유지.
+      if (eduFirst?.school_name) profile.school_name = eduFirst.school_name;
+      if (eduFirst?.major_name_1) {
+        profile.major_name_1 = eduFirst.major_name_1;
+        if (!profile.department_name) profile.department_name = eduFirst.major_name_1;
+      }
+
+      // team/part/membership: enriched keys (response-only, raw 컬럼 충돌 없음).
+      profile.team_name = currentMembership?.team_name ?? null;
+      profile.part_name = currentMembership?.part_name ?? null;
+      profile.membership_level = currentMembership?.membership_level ?? null;
+      profile.membership_state = currentMembership?.membership_state ?? null;
+
+      // weeks counters
+      profile.approved_weeks = growthResult.data?.approved_weeks ?? 0;
+      profile.cumulative_weeks = growthResult.data?.cumulative_weeks ?? 0;
+
+      // email/phone backward-compat — sidebar reads profile.email / profile.phone
+      // but truth source for crew contact is contact_email / contact_phone columns.
+      // 이미 값이 있으면 절대 덮어쓰지 않음 (auth_email vs contact_email 구분 보존).
+      if (!profile.email && profile.contact_email) profile.email = profile.contact_email;
+      if (!profile.phone && profile.contact_phone) profile.phone = profile.contact_phone;
+    }
+
     const context = searchParams.get('context');
 
     // ========== context=card: 카드 페이지용 경량 응답 (시즌 통계/계산 전부 스킵) ==========
