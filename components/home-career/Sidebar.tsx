@@ -178,6 +178,7 @@ const Sidebar = () => {
     birthDate: string;
     city: string;
     district: string;
+    address?: string;
     phone: string;
     email: string;
     school: string;
@@ -363,6 +364,7 @@ const Sidebar = () => {
       birthDate: profile.birth_date ? profile.birth_date.replace(/-/g, ".") : "",
       city: addressParts[0] || "",
       district: addressParts.slice(1).join(" ") || "",
+      address: profile.address || "",
       phone: profile.phone ? profile.phone.replace(/-/g, "").replace(/(\d{3})(\d{1})\d{3}(\d{4})/, "$1-$2***-****") : "",
       email: profile.email || "",
       school: "",
@@ -702,6 +704,7 @@ const Sidebar = () => {
           birthDate: userProfile.birthDate,
           city: userProfile.city,
           district: userProfile.district,
+          address: userProfile.address || "",
           phone: userProfile.phone,
           email: userProfile.email,
           school: userProfile.school,
@@ -799,6 +802,7 @@ const Sidebar = () => {
           birthDate: profile.birth_date ? profile.birth_date.replace(/-/g, ".") : "",
           city: addressParts[0] || "",
           district: addressParts.slice(1).join(" ") || "",
+          address: profile.address || "",
           phone: profile.phone ? profile.phone.replace(/-/g, "").replace(/(\d{3})(\d{1})\d{3}(\d{4})/, "$1-$2***-****") : "",
           email: profile.email || "",
           // school/major: /api/profile enrichment (user_educations 최종학력) 우선 사용.
@@ -1966,7 +1970,7 @@ const Sidebar = () => {
                     <div className="detail-row">
                       <Image src={debugPanelType === "EC" ? "/images/0/cluster 1/small icon/Building_03-ec (2).png" : debugPanelType === "PX" ? "/images/0/cluster 1/small icon/House_01-px.png" : "/images/0/cluster 1/small icon/House_01.png"} alt="" width={16} height={16} className="detail-icon" />
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "180px", display: "inline-block" }}>
-                        <span style={{ color: currentProfile.lightColor }}>·</span> {mask.address((currentProfile.city || "") + " " + (currentProfile.district || ""))}
+                        <span style={{ color: currentProfile.lightColor }}>·</span> {mask.address((currentProfile as { address?: string }).address || [currentProfile.city, currentProfile.district].filter(Boolean).join(" "))}
                       </span>
                     </div>
                     <div className="detail-row" style={{ overflow: "hidden" }}>
