@@ -14,7 +14,7 @@
     background-position: center;
     background-size: cover;
     background-repeat: no-repeat;
-    background-image: url("/images/home-random/intro-1.png");
+    background-image: url("/images/home-random/intro-bg.png");
   }
 
   .breadcrumb {
@@ -55,7 +55,18 @@
   }
 
   .banner__thumb {
-    display: none;
+    position: absolute;
+    z-index: -1;
+    bottom: 0px;
+    right: 0px;
+
+    img {
+      max-width: 34vw;
+      min-width: 120px;
+      scale: 0.8;
+      transform-origin: right bottom;
+      animation: move 1s linear infinite alternate-reverse;
+    }
   }
 
   .banner__slider-single {
