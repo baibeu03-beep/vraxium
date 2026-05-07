@@ -1,0 +1,65 @@
+.phalanx-theme {
+  --crews-accent-soft: #b2ff8f;
+  --crews-accent-soft-rgb: 178, 255, 143;
+  --crews-accent-strong: #1e9503;
+  --crews-accent-strong-rgb: 30, 149, 3;
+  --quaternary-color: var(--crews-accent-soft);
+  --quaternary-hover: #8fe96a;
+  --primary-color: var(--crews-accent-strong);
+  --crews-filter-accent: var(--crews-accent-strong);
+  --crews-filter-accent-bg: rgba(var(--crews-accent-strong-rgb), 0.1);
+  --crews-primary-accent: var(--crews-accent-strong);
+  --crews-primary-accent-bg: rgba(var(--crews-accent-strong-rgb), 0.15);
+  --crews-primary-accent-contrast: #fff;
+  --crews-team-badge-bg: var(--crews-accent-strong);
+  --crews-team-badge-text: #fff;
+  --crews-school-dot-bg: var(--crews-accent-soft);
+
+  .weekly-filter-bar .filter-card:hover {
+    border-color: var(--crews-accent-strong);
+    box-shadow: 0 0 0 1px rgba(var(--crews-accent-strong-rgb), 0.16);
+  }
+
+  .weekly-filter-bar .filter-card.filter-card-large {
+    background: var(--crews-accent-soft);
+    border-color: var(--crews-accent-soft);
+    box-shadow: 0 0 24px rgba(var(--crews-accent-soft-rgb), 0.14);
+  }
+
+  .weekly-filter-bar .filter-card.filter-dropdown .dropdown-menu .dropdown-item:hover {
+    background: rgba(var(--crews-accent-strong-rgb), 0.1);
+  }
+
+  .weekly-filter-bar .filter-card.filter-dropdown .dropdown-menu .dropdown-item.selected {
+    background: rgba(var(--crews-accent-strong-rgb), 0.2);
+    color: var(--crews-accent-strong);
+  }
+
+  .weekly-filter-bar--mobile .filter-mobile-btn .filter-mobile-count {
+    background: rgba(var(--crews-accent-strong-rgb), 0.2);
+    border-color: rgba(var(--crews-accent-strong-rgb), 0.35);
+    color: var(--crews-accent-strong);
+  }
+
+  .filter-sheet .filter-sheet-btn.primary {
+    background: var(--crews-accent-strong);
+    border-color: var(--crews-accent-strong);
+  }
+
+  .filter-sheet .filter-sheet-select:focus {
+    border-color: var(--crews-accent-strong);
+    box-shadow: 0 0 0 2px rgba(var(--crews-accent-strong-rgb), 0.2);
+  }
+
+  .trending__single:hover {
+    box-shadow: 0 0 34px rgba(var(--crews-accent-soft-rgb), 0.18);
+  }
+
+  .trending__single .author-title {
+    border-left-color: rgba(var(--crews-accent-soft-rgb), 0.35);
+  }
+
+  .trending__single .price-footer .price-inner {
+    box-shadow: 0 0 18px rgba(var(--crews-accent-soft-rgb), 0.08);
+  }
+}

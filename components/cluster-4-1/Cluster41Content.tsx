@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { getFixedDropdownPosition } from "@/utils/documentZoom";
 import { supabase } from "@/lib/supabase";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
@@ -140,6 +140,10 @@ const Cluster41Content = () => {
       : null;
 
   const router = useRouter();
+  // PX 컨텍스트 감지 — 내부 cross-link 와 cluster-4-card 진입 시 px 라우트 유지.
+  // segment 기준 매칭으로 trailing slash 도 정상 처리.
+  const pathname = usePathname();
+  const pxSuffix = pathname && pathname.split("/").some((seg) => seg.endsWith("-px")) ? "-px" : "";
   const headerRef = useRef<HTMLElement>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [seasonDropdownOpen, setSeasonDropdownOpen] = useState(false);
@@ -1440,14 +1444,14 @@ const Cluster41Content = () => {
           <div className="top-tabs">
             <div className="tab" style={{ width: "44px", height: "44px", background: "#FAAB07" }}>
               <img src="/images/0/cluster4/icon/icon%20-%20%EC%A0%84%EA%B5%AC.png" alt="전구" className="tab-icon" />
-              <div className="tab-badge" onClick={() => router.push(`/cluster-4${targetUserId ? `?userId=${targetUserId}` : ""}`)}>
+              <div className="tab-badge" onClick={() => router.push(`/cluster-4${pxSuffix}${targetUserId ? `?userId=${targetUserId}` : ""}`)}>
                 <span className="badge-text">Weekly Growth</span>
                 <img src="/images/0/cluster4/icon/icon%20-%20wallet.png" alt="wallet" className="badge-icon" />
               </div>
             </div>
             <div className="tab" style={{ width: "44px", height: "44px", background: "#161816" }}>
               <img src="/images/0/cluster4/icon/icon%20-%20book.png" alt="book" className="tab-icon" />
-              <div className="tab-badge" onClick={() => router.push(`/cluster-4-1${targetUserId ? `?userId=${targetUserId}` : ""}`)}>
+              <div className="tab-badge" onClick={() => router.push(`/cluster-4-1${pxSuffix}${targetUserId ? `?userId=${targetUserId}` : ""}`)}>
                 <span className="badge-text">Season Growth</span>
                 <img src="/images/0/cluster4/icon/icon%20-%20wallet.png" alt="wallet" className="badge-icon" />
               </div>
@@ -1958,7 +1962,7 @@ const Cluster41Content = () => {
               <div style={{ padding: "20px", textAlign: "center", color: "#888" }}>현재 해당하는 주차가 없습니다.</div>
             ) : (
               (isMobile ? filteredDbData.slice(0, mobileVisibleCount) : paginatedDbData).map((week) => {
-                const weekHref = `/cluster-4-card/${week.id}${targetUserId ? `?userId=${targetUserId}` : ""}`;
+                const weekHref = `/cluster-4-card${pxSuffix}/${week.id}${targetUserId ? `?userId=${targetUserId}` : ""}`;
                 const isExpanded = expandedWeekId === week.id;
                 const isRest = week.growthStatus.includes("휴식");
                 const growthRate = getWeeklyGrowthRate(week.id);

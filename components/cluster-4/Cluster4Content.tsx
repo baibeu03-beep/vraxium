@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import { getFixedDropdownPosition } from "@/utils/documentZoom";
@@ -384,6 +384,11 @@ const Cluster4Content = () => {
   };
 
   const router = useRouter();
+  // PX 컨텍스트면 내부 cross-link 도 px 변형으로 라우팅 → phalanx 사용자가
+  // weekly/season 탭을 눌러도 PX 라우트 안에 머무른다.
+  // segment 기준 매칭으로 trailing slash 도 정상 처리.
+  const pathname = usePathname();
+  const pxSuffix = pathname && pathname.split("/").some((seg) => seg.endsWith("-px")) ? "-px" : "";
   const headerRef = useRef<HTMLElement>(null);
   const [section3Page, setSection3Page] = useState(0);
   const [isFlipping, setIsFlipping] = useState(false);
@@ -2472,14 +2477,14 @@ const Cluster4Content = () => {
         <div className="top-tabs">
           <div className="tab" style={{ width: "44px", height: "44px", background: "#161816" }}>
             <img src="/images/0/cluster4/icon/icon%20-%20%EC%A0%84%EA%B5%AC.png" alt="전구" className="tab-icon" />
-            <div className="tab-badge" onClick={() => router.push(`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}`)}>
+            <div className="tab-badge" onClick={() => router.push(`/cluster-4${pxSuffix}${urlUserId ? `?userId=${urlUserId}` : ""}`)}>
               <span className="badge-text">Weekly Growth</span>
               <img src="/images/0/cluster4/icon/icon%20-%20wallet.png" alt="wallet" className="badge-icon" />
             </div>
           </div>
           <div className="tab" style={{ width: "44px", height: "44px", background: "#FAAB07" }}>
             <img src="/images/0/cluster4/icon/icon%20-%20book.png" alt="book" className="tab-icon" />
-            <div className="tab-badge" onClick={() => router.push(`/cluster-4-1${urlUserId ? `?userId=${urlUserId}` : ""}`)}>
+            <div className="tab-badge" onClick={() => router.push(`/cluster-4-1${pxSuffix}${urlUserId ? `?userId=${urlUserId}` : ""}`)}>
               <span className="badge-text">Season Growth</span>
               <img src="/images/0/cluster4/icon/icon%20-%20wallet.png" alt="wallet" className="badge-icon" />
             </div>

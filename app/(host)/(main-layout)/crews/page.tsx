@@ -59,14 +59,25 @@ function CrewsContent() {
   const org: OrgSlug | null = isOrgSlug(orgParam) ? orgParam : null;
   const totalStarsLabel = org === "phalanx" ? "투구" : "단감";
 
+  const filterAccentColor = "var(--crews-filter-accent, #FFA500)";
+  const filterAccentBackground = "var(--crews-filter-accent-bg, rgba(255, 165, 0, 0.1))";
+  const primaryAccentColor = "var(--crews-primary-accent, #FAAB07)";
+  const primaryAccentBackground = "var(--crews-primary-accent-bg, rgba(250, 171, 7, 0.15))";
+  const primaryAccentContrast = "var(--crews-primary-accent-contrast, #111)";
+  const teamBadgeBackground = "var(--crews-team-badge-bg, #FFC300)";
+  const teamBadgeTextColor = "var(--crews-team-badge-text, #000)";
+  const schoolDotBackground = "var(--crews-school-dot-bg, #FED402)";
   const { mask } = useDataMasking();
   const [demoMode, setDemoMode] = useState(false);
   useEffect(() => { setDemoMode(checkDemoMode()); }, []);
   const resolveHref = (crew: Crew) => {
+    // phalanx 명단에서만 cluster-4-px 변형으로 진입. encre/oranke 는 기존
+    // /cluster-4 흐름 유지 — userId / demoName 쿼리는 그대로.
+    const base = org === "phalanx" ? "/cluster-4-px" : "/cluster-4";
     if (demoMode && (DEMO_CREW_MEMBERS as readonly string[]).includes(crew.name)) {
-      return `/cluster-4?userId=${crew.id}&demoName=${encodeURIComponent(crew.name)}`;
+      return `${base}?userId=${crew.id}&demoName=${encodeURIComponent(crew.name)}`;
     }
-    return `/cluster-4?userId=${crew.id}`;
+    return `${base}?userId=${crew.id}`;
   };
   const [crews, setCrews] = useState<Crew[]>([]);
   const [loading, setLoading] = useState(true);
@@ -271,7 +282,7 @@ function CrewsContent() {
 
   // 2) ?org= 가 있을 때: 해당 조직 명단(필터 UI + 그리드 또는 빈 상태).
   return (
-    <main className="nftg-content nftg-content-home" style={{ padding: 0 }}>
+    <main className={`nftg-content nftg-content-home${org === "phalanx" ? " phalanx-theme" : ""}`} style={{ padding: 0 }}>
       <Animations />
       <Breadcrumb title={`크루 명단 · ${ORG_LABEL[org]}`} />
       <section className="pb-120 trending trending-nft" style={{ paddingLeft: 0, paddingRight: 0, paddingTop: 30 }}>
@@ -314,8 +325,8 @@ function CrewsContent() {
               <div
                 className="filter-card"
                 style={{
-                  borderColor: nameQuery.trim() ? '#FFA500' : 'rgba(255, 255, 255, 0.12)',
-                  background: nameQuery.trim() ? 'rgba(255, 165, 0, 0.1)' : 'transparent',
+                  borderColor: nameQuery.trim() ? filterAccentColor : 'rgba(255, 255, 255, 0.12)',
+                  background: nameQuery.trim() ? filterAccentBackground : 'transparent',
                 }}
               >
                 <div className="card-left" style={{ flex: 1 }}>
@@ -330,7 +341,7 @@ function CrewsContent() {
                       background: 'transparent',
                       border: 'none',
                       outline: 'none',
-                      color: nameQuery.trim() ? '#FFA500' : '#fff',
+                      color: nameQuery.trim() ? filterAccentColor : '#fff',
                       fontFamily: "'Pretendard', sans-serif",
                       fontSize: 14,
                       fontWeight: 600,
@@ -346,8 +357,8 @@ function CrewsContent() {
                 ref={clubRef}
                 className="filter-card filter-dropdown"
                 style={{
-                  borderColor: clubFilter ? '#FFA500' : 'rgba(255, 255, 255, 0.12)',
-                  background: clubFilter ? 'rgba(255, 165, 0, 0.1)' : 'transparent',
+                  borderColor: clubFilter ? filterAccentColor : 'rgba(255, 255, 255, 0.12)',
+                  background: clubFilter ? filterAccentBackground : 'transparent',
                 }}
                 onClick={() => {
                   setClubDropdownOpen(!clubDropdownOpen);
@@ -356,11 +367,11 @@ function CrewsContent() {
               >
                 <div className="card-left">
                   <img src="/images/0/cluster4/icon/icon - cluv.png" alt="club" className="card-icon" />
-                  <span className="card-label" style={{ color: clubFilter ? '#FFA500' : '#fff' }}>
+                  <span className="card-label" style={{ color: clubFilter ? filterAccentColor : '#fff' }}>
                     {clubFilter || "클럽 전체"}
                   </span>
                 </div>
-                <span className={`card-arrow ${clubDropdownOpen ? 'open' : ''}`} style={{ color: clubFilter ? '#FFA500' : '#fff' }}>▼</span>
+                <span className={`card-arrow ${clubDropdownOpen ? 'open' : ''}`} style={{ color: clubFilter ? filterAccentColor : '#fff' }}>▼</span>
 
                 {clubDropdownOpen && (
                   <div className="dropdown-menu" style={{ display: 'block' }} onClick={(e) => e.stopPropagation()}>
@@ -387,8 +398,8 @@ function CrewsContent() {
               <div
                 className="filter-card"
                 style={{
-                  borderColor: schoolQuery.trim() ? '#FFA500' : 'rgba(255, 255, 255, 0.12)',
-                  background: schoolQuery.trim() ? 'rgba(255, 165, 0, 0.1)' : 'transparent',
+                  borderColor: schoolQuery.trim() ? filterAccentColor : 'rgba(255, 255, 255, 0.12)',
+                  background: schoolQuery.trim() ? filterAccentBackground : 'transparent',
                 }}
               >
                 <div className="card-left" style={{ flex: 1 }}>
@@ -403,7 +414,7 @@ function CrewsContent() {
                       background: 'transparent',
                       border: 'none',
                       outline: 'none',
-                      color: schoolQuery.trim() ? '#FFA500' : '#fff',
+                      color: schoolQuery.trim() ? filterAccentColor : '#fff',
                       fontFamily: "'Pretendard', sans-serif",
                       fontSize: 14,
                       fontWeight: 600,
@@ -419,8 +430,8 @@ function CrewsContent() {
                 ref={statusRef}
                 className="filter-card filter-dropdown"
                 style={{
-                  borderColor: statusFilter ? '#FFA500' : 'rgba(255, 255, 255, 0.12)',
-                  background: statusFilter ? 'rgba(255, 165, 0, 0.1)' : 'transparent',
+                  borderColor: statusFilter ? filterAccentColor : 'rgba(255, 255, 255, 0.12)',
+                  background: statusFilter ? filterAccentBackground : 'transparent',
                 }}
                 onClick={() => {
                   setStatusDropdownOpen(!statusDropdownOpen);
@@ -429,11 +440,11 @@ function CrewsContent() {
               >
                 <div className="card-left">
                   <img src="/images/0/cluster4/icon/icon - 3.png" alt="status" className="card-icon" />
-                  <span className="card-label" style={{ color: statusFilter ? '#FFA500' : '#fff' }}>
+                  <span className="card-label" style={{ color: statusFilter ? filterAccentColor : '#fff' }}>
                     {statusFilter || "상태 전체"}
                   </span>
                 </div>
-                <span className={`card-arrow ${statusDropdownOpen ? 'open' : ''}`} style={{ color: statusFilter ? '#FFA500' : '#fff' }}>▼</span>
+                <span className={`card-arrow ${statusDropdownOpen ? 'open' : ''}`} style={{ color: statusFilter ? filterAccentColor : '#fff' }}>▼</span>
 
                 {statusDropdownOpen && (
                   <div className="dropdown-menu" style={{ display: 'block' }} onClick={(e) => e.stopPropagation()}>
@@ -469,8 +480,8 @@ function CrewsContent() {
               <div
                 className="filter-card"
                 style={{
-                  background: hasActiveFilter ? '#FAAB07' : 'rgba(255, 255, 255, 0.06)',
-                  borderColor: hasActiveFilter ? '#FAAB07' : 'rgba(255, 255, 255, 0.12)',
+                  background: hasActiveFilter ? primaryAccentColor : 'rgba(255, 255, 255, 0.06)',
+                  borderColor: hasActiveFilter ? primaryAccentColor : 'rgba(255, 255, 255, 0.12)',
                   cursor: 'pointer',
                   width: 100,
                 }}
@@ -478,7 +489,7 @@ function CrewsContent() {
               >
                 <div className="card-left" style={{ width: '100%', justifyContent: 'center' }}>
                   <span style={{
-                    color: hasActiveFilter ? '#111' : '#fff',
+                    color: hasActiveFilter ? primaryAccentContrast : '#fff',
                     fontFamily: "'Pretendard', sans-serif",
                     fontSize: 14,
                     fontWeight: 800,
@@ -696,10 +707,10 @@ function CrewsContent() {
                         <div className="content-wrapper">
                           <div className="info">
                             <p className="text-sm fw-6">
-                              <Link href={resolveHref(crew)} style={{ backgroundColor: "#FFC300", color: "#000", padding: "2px 6px", display: "inline-flex", alignItems: "center", justifyContent: "center"}}>{[crew.team, crew.club].find((v) => v && v !== "-") ?? "-"}</Link>
+                              <Link href={resolveHref(crew)} style={{ backgroundColor: teamBadgeBackground, color: teamBadgeTextColor, padding: "2px 6px", display: "inline-flex", alignItems: "center", justifyContent: "center"}}>{[crew.team, crew.club].find((v) => v && v !== "-") ?? "-"}</Link>
                             </p>
                             <p className="text-sm" style={{ marginTop: "18px", display: "flex", alignItems: "center", justifyContent: "flex-start", gap: "3px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${mask.school(crew.university)} ${mask.major(crew.major)}`}>
-                              <span style={{ display: "inline-block", width: "7px", height: "7px", borderRadius: "50%", backgroundColor: "#FED402", flexShrink: 0, position: "relative", top: "-1px" }} />
+                              <span style={{ display: "inline-block", width: "7px", height: "7px", borderRadius: "50%", backgroundColor: schoolDotBackground, flexShrink: 0, position: "relative", top: "-1px" }} />
                               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mask.school(crew.university)} {mask.major(crew.major)}</span>
                             </p>
                           </div>
@@ -790,9 +801,9 @@ function CrewsContent() {
                           width: 40, height: 40, borderRadius: 10,
                           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                           padding: 0, lineHeight: 1,
-                          border: p === currentPage ? '1px solid #FAAB07' : '1px solid rgba(255,255,255,0.12)',
-                          background: p === currentPage ? 'rgba(250,171,7,0.15)' : 'transparent',
-                          color: p === currentPage ? '#FAAB07' : '#fff',
+                          border: p === currentPage ? `1px solid ${primaryAccentColor}` : '1px solid rgba(255,255,255,0.12)',
+                          background: p === currentPage ? primaryAccentBackground : 'transparent',
+                          color: p === currentPage ? primaryAccentColor : '#fff',
                           cursor: 'pointer',
                           fontSize: 14, fontWeight: 700,
                           fontFamily: "'Pretendard', sans-serif",

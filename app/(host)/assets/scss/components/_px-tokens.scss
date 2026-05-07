@@ -1,0 +1,29 @@
+// =============================================================
+// PX (Phalanx) 테마 토큰 — single source of truth.
+//
+// 활성 조건:
+//   .cluster-px-theme wrapper 클래스가 부착된 영역에서만 활성화.
+//   현재 (cluster-pages)/layout.tsx 가 pathname.endsWith("-px") 일 때
+//   <main> 에 자동 부착.
+//
+// 사용처:
+//   _cluster3-px.scss, _cluster-tabs-px.scss, _resume-card-px.scss 등
+//   PX 전용 override 파일이 모두 이 변수만을 참조한다.
+//   향후 톤 조정은 본 파일 한 곳에서만 수정.
+//
+// 명명 규칙:
+//   --px-accent           : 진한 PX 강조 (CTA·active·strong 텍스트)
+//   --px-accent-soft      : 라이트 PX 강조 (label·secondary 텍스트·border)
+//   --px-accent-glow      : 진한 강조의 그림자/글로우 alpha
+//   --px-accent-soft-glow : 라이트 강조의 그림자/글로우 alpha
+//   --px-gradient         : strong → soft 대각 그라데이션
+// =============================================================
+
+.cluster-px-theme,
+.resume-card.px-theme {
+  --px-accent: #1E9503;
+  --px-accent-soft: #B2FF8F;
+  --px-accent-glow: rgba(30, 149, 3, 0.45);
+  --px-accent-soft-glow: rgba(178, 255, 143, 0.35);
+  --px-gradient: linear-gradient(145deg, #1E9503, #B2FF8F);
+}

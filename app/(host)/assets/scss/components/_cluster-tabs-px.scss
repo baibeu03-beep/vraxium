@@ -1,0 +1,42 @@
+// =============================================================
+// PX (Phalanx) cluster-tabs override.
+//
+// base : _resume-card.scss line 1731-1873 (.cluster-tabs)
+//        - 기본 텍스트 #fed402
+//        - tab-text gradient #fed402 → #fff1aa
+//        - hover bg rgba(254, 212, 2, 0.15)
+//        - active bg gradient (with !important)
+//
+// 본 override 는 모두 var(--px-*) 토큰만 참조한다.
+// active 분기는 base 가 !important 라서 동일 강도를 맞춰야 이긴다.
+// =============================================================
+
+.cluster-px-theme {
+  .cluster-tabs {
+    .cluster-tab {
+      // 기본 tab 텍스트 색
+      color: var(--px-accent-soft);
+
+      .tab-text {
+        // 텍스트 gradient (background-clip: text)
+        background: var(--px-gradient);
+        background-clip: text;
+        -webkit-background-clip: text;
+      }
+
+      &:hover {
+        background: var(--px-accent-soft-glow);
+      }
+
+      &.active {
+        // base 의 !important 와 동등하게 맞춤.
+        background: var(--px-gradient) !important;
+
+        .tab-text {
+          background: none !important;
+          -webkit-text-fill-color: #000 !important;
+        }
+      }
+    }
+  }
+}

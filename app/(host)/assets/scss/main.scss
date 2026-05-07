@@ -132,8 +132,19 @@
 @import "./components/cluster2";
 @import "./components/cluster-zone-a"; // cluster3/4/4-1/4-card Zone A 폭 확장
 @import "./components/cluster3";
+// phalanx 전용 토큰 정의 (--px-accent / --px-accent-soft / --px-gradient 등).
+// 모든 _*-px.scss 파일이 본 토큰만 참조하므로 가장 먼저 로드.
+@import "./components/px-tokens";
+// phalanx 전용 override 묶음 — 반드시 base 파일들 뒤에 와야 cascade 로 이긴다.
+// .cluster-px-theme 하위에서만 매칭되므로 non-px 라우트엔 영향 0.
+@import "./components/cluster2-px";
+@import "./components/cluster3-px";
+@import "./components/cluster-tabs-px";
+@import "./components/resume-card-px";
 @import "./components/cluster4-season"; // 시즌 카드용
 @import "./components/cluster4-week";   // 주차 카드용
+@import "./components/cluster4-px";
+@import "./components/crews-phalanx";
 
 // layout styles
 @import "./layout/header";

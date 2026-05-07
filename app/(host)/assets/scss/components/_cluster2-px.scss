@@ -1,0 +1,44 @@
+// =============================================================
+// PX (Phalanx) cluster-2 override.
+//
+// base : _cluster2.scss
+//   line 1191 : `.video-something:hover { background: #ffc300 }`
+//   line 1226-1232 : video play 버튼 SVG circle/path fill 호버 색 변환
+//
+// 추가로 Cluster2Content.tsx 의 inline `<circle fill="#FFC300" />` 두 줄을
+// SVG attribute selector 로 잡아준다. CSS fill property 가 SVG attribute 보다
+// 우선이므로 inline 코드 수정 없이 PX 라우트에서만 색을 바꿀 수 있다.
+// =============================================================
+
+.cluster-px-theme {
+  // 1) videos-grid hover state — 노란 배경 → strong PX
+  //    _cluster2.scss line 1190-1192
+  .video-card,
+  .videos-grid {
+    &:hover,
+    .play-button:hover {
+      background: var(--px-accent);
+    }
+  }
+
+  // 2) Video play 버튼 SVG circle/path — hover 시 fill 변환
+  //    _cluster2.scss line 1226-1236 (.has-video:hover .play-button svg)
+  .video-card.has-video:hover .play-button {
+    svg circle:nth-child(2) {
+      fill: var(--px-accent);
+    }
+  }
+
+  // 3) Cluster2Content.tsx 의 inline play SVG (line 1828, 1830)
+  //    `<circle cx="45" cy="45" r="40" fill="#FFC300" />`
+  //    `<path d="..." fill="#FFC300" />`
+  //    CSS fill property 가 SVG attribute 를 override.
+  svg circle[fill="#FFC300"],
+  svg circle[fill="#ffc300"] {
+    fill: var(--px-accent);
+  }
+  svg path[fill="#FFC300"],
+  svg path[fill="#ffc300"] {
+    fill: var(--px-accent);
+  }
+}

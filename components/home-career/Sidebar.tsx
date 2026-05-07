@@ -37,6 +37,11 @@ const Sidebar = () => {
   const { mask } = useDataMasking();
   const searchParams = useSearchParams();
   const pathname = usePathname();
+  // PX 라우트 컨텍스트 — pathname segment 중 하나라도 -px 로 끝나면 PX 색 사용.
+  // segment 기준이라 trailing slash, dynamic subpath 모두 매칭.
+  // ("/cluster-3-px", "/cluster-3-px/", "/cluster-4-card-px/dw-01", "/cluster-4-card-px/dw-01/")
+  // non-PX 라우트(/cluster-2, /cluster-3, /cluster-4 등)는 false → 기존 색 그대로.
+  const isPX = !!pathname && pathname.split("/").some((seg) => seg.endsWith("-px"));
   const router = useRouter();
   const targetUserId = searchParams.get("userId") || searchParams.get("userID");
   const sessionUserId = session?.user?.id ?? null;
@@ -599,6 +604,16 @@ const Sidebar = () => {
   const [isDebugPanelOpen, setIsDebugPanelOpen] = useState(false);
   const [debugProfileType, setDebugProfileType] = useState<"본인" | "타크루">("본인");
   const [debugPanelType, setDebugPanelType] = useState<"OK" | "EC" | "PX">("OK");
+  // 라우트 기반 자동 theme: pathname segment 중 하나라도 -px / -ec 로 끝나면 톤 전환.
+  // segment 기준이라 trailing slash 와 dynamic subpath 모두 매칭.
+  // 결과: .resume-card 에 px-theme/ec-theme 클래스 부착 → notice fallback,
+  // medal 이미지, hexagon 아이콘 자동 전환.
+  useEffect(() => {
+    if (!pathname) return;
+    const segs = pathname.split("/");
+    if (segs.some((s) => s.endsWith("-px"))) setDebugPanelType("PX");
+    else if (segs.some((s) => s.endsWith("-ec"))) setDebugPanelType("EC");
+  }, [pathname]);
   const [crewStatus, setCrewStatus] = useState<"Running" | "Complete" | "On Rest" | "Recharging" | "Next Challenge">("Running");
   const [isArrowShaking, setIsArrowShaking] = useState(false);
   const [tooltipVisible, setTooltipVisible] = useState<"email" | "school" | "major" | "hexagon1" | "hexagon2" | "hexagon3" | null>(null);
@@ -2324,7 +2339,8 @@ const Sidebar = () => {
                       top: `${scrollThumbTop}px`,
                       width: "100%",
                       height: 44,
-                      background: "#FFC300",
+                      // PX 라우트만 strict mapping (#FFC300 → #1E9503). 그 외는 원본 OK 색.
+                      background: isPX ? "#1E9503" : "#FFC300",
                       borderRadius: "2px",
                       cursor: "pointer",
                     }}

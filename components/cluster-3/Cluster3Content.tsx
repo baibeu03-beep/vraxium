@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
 import { getDocumentZoom, getFixedDropdownPosition } from "@/utils/documentZoom";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { useModalScroll } from "@/utils/useModalScroll";
@@ -165,10 +165,19 @@ const PeriodRangePicker = ({ range, month, onMonthChange, onSelect, onToday, onC
   );
 };
 
+// PX (Phalanx) 테마 hex 토큰. _px-tokens.scss 의 --px-* 변수와 동일 값 유지.
+// inline style 분기에서만 사용. CSS 매칭은 var(--px-*) 토큰을 우선.
+const PX_ACCENT = "#1E9503";
+const PX_ACCENT_SOFT = "#B2FF8F";
+
 const Cluster3Content = () => {
   // 세션 및 본인 프로필 여부 확인
   const { data: session } = useSession();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  // PX 라우트 진입 시 inline style 들이 PX 톤으로 전환된다.
+  // segment 기준 매칭 — trailing slash 와 dynamic subpath 모두 OK.
+  const isPX = !!pathname && pathname.split("/").some((seg) => seg.endsWith("-px"));
   const popup = usePopup();
   const urlUserId = searchParams.get("userId") || searchParams.get("userID");
   const demoNameParam = searchParams.get("demoName");
@@ -1020,7 +1029,7 @@ const Cluster3Content = () => {
   const ROLE_OPTIONS = [
     { key: "leading", label: "리딩", color: "#FF4444" },
     { key: "following", label: "팔로잉", color: "#FF8C00" },
-    { key: "management", label: "관리", color: "#FFD700" },
+    { key: "management", label: "관리", color: isPX ? PX_ACCENT_SOFT : "#FFD700" },
     { key: "planning", label: "기획", color: "#32CD32" },
     { key: "execution", label: "진행", color: "#00CED1" },
     { key: "analysis", label: "분석", color: "#4169E1" },
@@ -1768,13 +1777,13 @@ const Cluster3Content = () => {
           <div className="progress-semi-circle">
             <svg viewBox="0 0 300 170">
               {/* 배경 반원 */}
-              <path className="progress-bg" d="M 25 150 A 125 125 0 0 1 275 150" fill="none" stroke="rgba(250, 171, 7, 0.5)" strokeWidth="20" strokeLinecap="butt" />
+              <path className="progress-bg" d="M 25 150 A 125 125 0 0 1 275 150" fill="none" stroke={isPX ? "rgba(30, 149, 3, 0.5)" : "rgba(250, 171, 7, 0.5)"} strokeWidth="20" strokeLinecap="butt" />
               {/* 진행 반원 (애니메이션) */}
               <path className="progress-bar" d="M 25 150 A 125 125 0 0 1 275 150" fill="none" stroke="url(#progressGradient)" strokeWidth="20" strokeDasharray="393" strokeDashoffset={progressOffset} strokeLinecap="butt" style={{ transition: "stroke-dashoffset 1.5s ease-out" }} />
               <defs>
                 <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#FAAB07" />
-                  <stop offset="100%" stopColor="#FFC919" />
+                  <stop offset="0%" stopColor={isPX ? PX_ACCENT : "#FAAB07"} />
+                  <stop offset="100%" stopColor={isPX ? PX_ACCENT_SOFT : "#FFC919"} />
                 </linearGradient>
               </defs>
             </svg>
@@ -2434,7 +2443,7 @@ const Cluster3Content = () => {
                         <div key={f.key} className="channel-info-field" data-field={f.key === "date" ? "startDate" : f.key === "platformDropdown" ? "platform" : f.key}>
                           <label>
                             {f.label}
-                            {isEditMode && <span style={{ color: "#FAAB07", marginLeft: "2px" }}>*</span>}
+                            {isEditMode && <span style={{ color: isPX ? PX_ACCENT : "#FAAB07", marginLeft: "2px" }}>*</span>}
                           </label>
                           {f.type === "text" && (isEditMode ? <input type="text" value={(card as any)[f.key] || ""} onChange={(e) => handleCardChange(f.key, e.target.value)} placeholder={f.placeholder} /> : <span className="field-value">{(card as any)[f.key] || "-"}</span>)}
                           {f.type === "channelNameInput" &&
@@ -2613,7 +2622,7 @@ const Cluster3Content = () => {
                       <div key={box.key} className="channel-textarea-box" data-field={box.key}>
                         <h5 className="textarea-title">
                           {box.title}
-                          {isEditMode && <span style={{ color: "#FAAB07", marginLeft: "2px" }}>*</span>}
+                          {isEditMode && <span style={{ color: isPX ? PX_ACCENT : "#FAAB07", marginLeft: "2px" }}>*</span>}
                         </h5>
                         <div className="textarea-wrapper">
                           {isEditMode ? (
@@ -2773,7 +2782,7 @@ const Cluster3Content = () => {
                       setOpenDropdownId(null);
                       setDropdownPosition(null);
                     }}
-                    style={{ background: "#FAAB07", border: "none", color: "#000", padding: "3px 10px", fontSize: "12px", cursor: "pointer", borderRadius: "3px", fontWeight: "bold" }}
+                    style={{ background: isPX ? PX_ACCENT : "#FAAB07", border: "none", color: "#000", padding: "3px 10px", fontSize: "12px", cursor: "pointer", borderRadius: "3px", fontWeight: "bold" }}
                   >
                     저장
                   </button>
@@ -2868,7 +2877,7 @@ const Cluster3Content = () => {
                       setOpenDropdownId(null);
                       setDropdownPosition(null);
                     }}
-                    style={{ background: "#FAAB07", border: "none", color: "#000", padding: "3px 10px", fontSize: "12px", cursor: "pointer", borderRadius: "3px", fontWeight: "bold" }}
+                    style={{ background: isPX ? PX_ACCENT : "#FAAB07", border: "none", color: "#000", padding: "3px 10px", fontSize: "12px", cursor: "pointer", borderRadius: "3px", fontWeight: "bold" }}
                   >
                     저장
                   </button>
@@ -3067,7 +3076,7 @@ const Cluster3Content = () => {
                       <img src="/images/0/portfolio.png" alt="portfolio" className="title-icon" />
                       <span className="output-user-title">
                         <span className="user-name">윤재윤 님</span>
-                        <span style={{ marginLeft: "4px", fontSize: "23px", fontWeight: 700, color: "#faab07" }}>의 Output Top 5 [{currentOutputIndex + 1}]</span>
+                        <span style={{ marginLeft: "4px", fontSize: "23px", fontWeight: 700, color: isPX ? PX_ACCENT : "#faab07" }}>의 Output Top 5 [{currentOutputIndex + 1}]</span>
                       </span>
                       <div className="output-period" data-field="period">
                         <div className="period-wrapper" ref={outputPeriodPickerRef}>
@@ -3267,7 +3276,7 @@ const Cluster3Content = () => {
                       <div className="output-links-section" data-field="links">
                         {[0, 1, 2].map((i) => {
                           const link = (outputCards[currentOutputIndex].links || ["", "", ""])[i];
-                          const dotColor = ["#FF6B6B", "#4ECDC4", "#FAAB07"][i];
+                          const dotColor = ["#FF6B6B", "#4ECDC4", isPX ? PX_ACCENT : "#FAAB07"][i];
                           return (
                             <div className="output-link-row" key={i} style={!isOutputEditMode ? { marginLeft: "9px" } : undefined}>
                               <span className="link-dot" style={{ backgroundColor: dotColor, marginLeft: "auto", ...(i === 0 ? { marginRight: "18px" } : isOutputEditMode ? { marginRight: "15px" } : {}) }} />
@@ -3820,7 +3829,7 @@ const Cluster3Content = () => {
                       <img src="/images/0/portfolio.png" alt="portfolio" className="title-icon" />
                       <span className="output-user-title">
                         <span className="user-name">윤재윤 님</span>
-                        <span style={{ marginLeft: "4px", fontSize: "23px", fontWeight: 700, color: "#faab07" }}>의 Output Detail 10 [{currentDetailIndex + 1}]</span>
+                        <span style={{ marginLeft: "4px", fontSize: "23px", fontWeight: 700, color: isPX ? PX_ACCENT : "#faab07" }}>의 Output Detail 10 [{currentDetailIndex + 1}]</span>
                       </span>
                       <div className="output-period" data-field="period">
                         <div className="period-wrapper" ref={detailPeriodPickerRef}>
@@ -4020,7 +4029,7 @@ const Cluster3Content = () => {
                       <div className="output-links-section" data-field="links">
                         {[0, 1, 2].map((i) => {
                           const link = (detailCards[currentDetailIndex].links || ["", "", ""])[i];
-                          const dotColor = ["#FF6B6B", "#4ECDC4", "#FAAB07"][i];
+                          const dotColor = ["#FF6B6B", "#4ECDC4", isPX ? PX_ACCENT : "#FAAB07"][i];
                           return (
                             <div className="output-link-row" key={i} style={!isDetailEditMode ? { marginLeft: "9px" } : undefined}>
                               <span className="link-dot" style={{ backgroundColor: dotColor, marginLeft: "auto", ...(i === 0 ? { marginRight: "18px" } : isDetailEditMode ? { marginRight: "15px" } : {}) }} />
@@ -4570,7 +4579,7 @@ const Cluster3Content = () => {
                     <div className="link-item-header">
                       <span className="link-label">Detail {index + 1}</span>
                     </div>
-                    <p style={{ color: "#FFC107", fontSize: "16px", margin: "0 0 8px 0" }}>채널 선택:</p>
+                    <p style={{ color: isPX ? PX_ACCENT_SOFT : "#FFC107", fontSize: "16px", margin: "0 0 8px 0" }}>채널 선택:</p>
                     <CustomSelect
                       className="channel-select"
                       style={{ display: "block", marginBottom: "8px", pointerEvents: isDisabled ? "none" : "auto", opacity: isDisabled ? 0.4 : 1 }}

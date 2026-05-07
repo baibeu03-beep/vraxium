@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
 import { getFixedDropdownPosition } from "@/utils/documentZoom";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { usePopup } from "@/components/ui/popup";
@@ -215,6 +215,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const { data: session } = useSession();
   const { mask } = useDataMasking();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
+  // PX 컨텍스트면 prev/next/filter/weekly 링크가 모두 px 라우트로 이동.
+  // segment 기준 매칭으로 trailing slash 도 정상 처리.
+  const pxSuffix = pathname && pathname.split("/").some((seg) => seg.endsWith("-px")) ? "-px" : "";
   const popup = usePopup();
   const urlUserId = searchParams.get("userId") || searchParams.get("userID");
   // SSR/client hydration 일관성을 위해 stateful — 첫 렌더 SSR=client=false, 마운트 후 localStorage 값 반영
@@ -5093,12 +5097,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             style={{ cursor: "pointer", width: "44px", height: "44px" }}
           >
             <img src="/images/0/cluster4/icon/icon%20-%20%EC%A0%84%EA%B5%AC.png" alt="전구" className="tab-icon" />
-            <Link href={`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}`} className="tab-badge" onClick={(e) => e.stopPropagation()}>
+            <Link href={`/cluster-4${pxSuffix}${urlUserId ? `?userId=${urlUserId}` : ""}`} className="tab-badge" onClick={(e) => e.stopPropagation()}>
               <span className="badge-text">Weekly Growth</span>
               <img src="/images/0/cluster4/icon/icon%20-%20wallet.png" alt="wallet" className="badge-icon" />
             </Link>
           </div>
-          <Link href={`/cluster-4-1${urlUserId ? `?userId=${urlUserId}` : ""}`} className="tab" style={{ width: "44px", height: "44px" }}>
+          <Link href={`/cluster-4-1${pxSuffix}${urlUserId ? `?userId=${urlUserId}` : ""}`} className="tab" style={{ width: "44px", height: "44px" }}>
             <img src="/images/0/cluster4/icon/icon%20-%20book.png" alt="book" className="tab-icon" />
             <div className="tab-badge">
               <span className="badge-text">Season Growth</span>
@@ -5112,7 +5116,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         </div>
         <div className="nav-buttons">
           {prevWeekId ? (
-            <Link href={`/cluster-4-card/${prevWeekId}${urlUserId ? `?userId=${urlUserId}` : ""}`} className="nav-btn-prev">
+            <Link href={`/cluster-4-card${pxSuffix}/${prevWeekId}${urlUserId ? `?userId=${urlUserId}` : ""}`} className="nav-btn-prev">
               <span>이전 주</span>
               <img src="/images/0/cluster4/icon/icon%20-%20arrow%20left.png" alt="left" className="arrow-icon" />
             </Link>
@@ -5123,7 +5127,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             </button>
           )}
           {nextWeekId ? (
-            <Link href={`/cluster-4-card/${nextWeekId}${urlUserId ? `?userId=${urlUserId}` : ""}`} className="nav-btn-next">
+            <Link href={`/cluster-4-card${pxSuffix}/${nextWeekId}${urlUserId ? `?userId=${urlUserId}` : ""}`} className="nav-btn-next">
               <span>다음 주</span>
               <img src="/images/0/cluster4/icon/icon%20-%20arrow%20right.png" alt="right" className="arrow-icon" />
             </Link>
@@ -5133,7 +5137,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <img src="/images/0/cluster4/icon/icon%20-%20arrow%20right.png" alt="right" className="arrow-icon" />
             </button>
           )}
-          <Link href={`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}#weekly-filter-bar`} className="nav-btn-filled">
+          <Link href={`/cluster-4${pxSuffix}${urlUserId ? `?userId=${urlUserId}` : ""}#weekly-filter-bar`} className="nav-btn-filled">
             <img src="/images/0/cluster4/icon/icon%20-%201.png" alt="list" className="list-icon" />
             <span>전체 목록으로 돌아가기</span>
           </Link>

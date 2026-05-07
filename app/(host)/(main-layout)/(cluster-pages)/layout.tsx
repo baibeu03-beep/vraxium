@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useRef } from "react";
+import { usePathname } from "next/navigation";
 import ClusterTabs from "@/components/home-career/ClusterTabs";
 import Sidebar from "@/components/home-career/Sidebar";
 import Animations from "@/components/shared/Animations";
@@ -11,6 +12,11 @@ export default function ClusterLayout({
   children: React.ReactNode;
 }) {
   const mainRef = useRef<HTMLElement>(null);
+  // pathname segment 중 하나라도 -px 로 끝나면 phalanx 전용 theme wrapper 부여.
+  // segment 기준이라 trailing slash 와 dynamic 하위 경로(/cluster-4-card-px/{weekId}) 모두 매칭.
+  // 매칭 케이스: "/cluster-3-px", "/cluster-3-px/", "/cluster-4-card-px/dw-01", "/cluster-4-card-px/dw-01/"
+  const pathname = usePathname();
+  const isPxRoute = !!pathname && pathname.split("/").some((seg) => seg.endsWith("-px"));
   const clusterRouteFallback = (
     <div
       className="cluster-route-fallback"
@@ -34,7 +40,11 @@ export default function ClusterLayout({
 
   // 데스크탑 레이아웃 — sidebar는 CSS position: sticky (_responsive.scss)
   return (
-    <main ref={mainRef} className="nftg-content nftg-content-home">
+    <main
+      ref={mainRef}
+      className={`nftg-content nftg-content-home${isPxRoute ? " cluster-px-theme" : ""}`}
+      data-cluster-theme={isPxRoute ? "phalanx" : "default"}
+    >
       <Animations />
 
       <div className="desktop-layout" style={{

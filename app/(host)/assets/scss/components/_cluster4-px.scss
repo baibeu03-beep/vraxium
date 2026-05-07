@@ -1,0 +1,62 @@
+// =============================================================
+// PX (Phalanx) cluster-4 family override.
+// 적용 대상: /cluster-4-px, /cluster-4-1-px, /cluster-4-card-px (+[weekId])
+//
+// base files :
+//   _cluster4-week.scss   #ffec8f 12건 — 카드 타이틀, 라벨, 배지
+//   _cluster4-season.scss #ffec8f 1건 — 시즌 카드 호버 배지
+//
+// 모두 _px-tokens.scss 의 토큰만 참조.
+// .cluster-px-theme 하위에서만 매칭 → /cluster-4 등 원본 라우트엔 영향 0.
+// =============================================================
+
+.cluster-px-theme {
+  // ─────────────────────────────────────────────
+  // _cluster4-week.scss line 356 + _cluster4-season.scss line 266
+  //   호버 시 펼쳐지는 배지 배경
+  // ─────────────────────────────────────────────
+  .cluster4-card-content,
+  .cluster4-content {
+    .badge-hover,
+    [class*="hover-badge"] {
+      background: var(--px-accent-soft);
+    }
+
+    // _cluster4-week.scss line 3572, 3598, 3656, 4042, 4153, 4208,
+    //   4419, 4460, 4515, 4831, 4936 등 12건의 .card-title 류 color
+    .card-title,
+    .week-title,
+    .season-title,
+    .badge-title {
+      color: var(--px-accent-soft);
+    }
+
+    // 강조 숫자 / 카운터
+    .week-count,
+    .season-count,
+    .accent-num {
+      color: var(--px-accent-soft);
+    }
+
+    // 활성 탭/필터 강조
+    .active,
+    .is-active {
+      &.tab,
+      &.filter,
+      &.btn {
+        color: var(--px-accent);
+        border-color: var(--px-accent);
+      }
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // 광범위 fallback — _cluster4-week.scss 의 #ffec8f hardcoded 색을
+  // attribute selector 로 추가 매칭 (정확한 클래스명 누락 대비).
+  // 이미 위 selector 가 잡으면 중복 적용일 뿐 무해.
+  // ─────────────────────────────────────────────
+  [style*="#ffec8f"],
+  [style*="#FFEC8F"] {
+    color: var(--px-accent-soft) !important;
+  }
+}

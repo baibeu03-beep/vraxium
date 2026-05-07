@@ -1,0 +1,173 @@
+// =============================================================
+// PX (Phalanx) cluster-3 본문 override.
+//
+// 적용 범위 : .cluster-px-theme wrapper 하위에서만 매칭.
+// 색상 source : _px-tokens.scss 의 --px-accent / --px-accent-soft 등.
+// !important : "active background" 처럼 base 가 !important 인 곳만 한정 사용.
+// 누락 selector : 본 파일에 안 잡힌 잔여 노란 톤은 cluster3 의 보조 영역
+//                 (특수 modal/tooltip 등). 후속 polish 로 처리.
+// =============================================================
+
+.cluster-px-theme {
+  // ─────────────────────────────────────────────
+  // 1) 영웅 영역 progress 링 라벨
+  //    _cluster3.scss line 86, 386, 395 대응
+  // ─────────────────────────────────────────────
+  .cluster3-content {
+    background: var(--px-accent) !important; // line 86 (#faab07) — 외곽 헤더 bg
+  }
+
+  .progress-percent {
+    color: var(--px-accent-soft);
+  }
+
+  .progress-label {
+    color: var(--px-accent-soft);
+  }
+
+  // ─────────────────────────────────────────────
+  // 2) 카드 info-row 영역
+  //    _cluster3.scss line 537, 553, 581, 606, 625, 632, 638, 642, 646, 651, 661 대응
+  // ─────────────────────────────────────────────
+  .info-row {
+    &.separator {
+      border-top-color: var(--px-accent-soft);
+    }
+
+    &.club-break-row .club-break-tooltip {
+      border-color: rgba(178, 255, 143, 0.3); // line 553
+    }
+
+    .info-label {
+      .dot {
+        color: var(--px-accent-soft);
+      }
+      .hl.official {
+        background: var(--px-accent-soft);
+      }
+    }
+
+    .info-value {
+      color: var(--px-accent-soft);
+
+      &.highlight,
+      &.number,
+      &.negative,
+      &.week,
+      &.season {
+        color: var(--px-accent-soft);
+      }
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // 3) tag 옐로 variant
+  //    _cluster3.scss line 1462 대응
+  // ─────────────────────────────────────────────
+  .tag--yellow {
+    color: var(--px-accent);
+  }
+
+  // ─────────────────────────────────────────────
+  // 4) 주황 계열 (#faab07) → strong PX accent
+  //    출력 카운터, 라벨, 활성 텍스트 등 전반.
+  //    필요 시 좁은 selector 로 한정한다.
+  // ─────────────────────────────────────────────
+  // 4-1) 일반 텍스트 색
+  .text-accent,
+  .accent,
+  .output-counter,
+  .output-label,
+  .accent-text {
+    color: var(--px-accent);
+  }
+
+  // 4-2) 카드/박스 배경 #faab07 → strong PX
+  //    line 86 외 보조 영역 (필요 시 selector 추가).
+  .accent-bg {
+    background: var(--px-accent);
+  }
+
+  // ─────────────────────────────────────────────
+  // 5) 라이트 옐로 (#fed402) 그라데이션 / dot / tab
+  //    _cluster3.scss line 325, 707, 736, 907, 931, 1217, 1234, 1259, 1271, 1272,
+  //    1301, 1761, 1786, 1798, 1799, 1851, 2009, 2335, 2359, 2370, 2371, 2393 대응
+  // ─────────────────────────────────────────────
+  .year-tab,
+  .tab-year,
+  .year-pill,
+  .nav-year {
+    color: var(--px-accent-soft);
+    border-color: var(--px-accent-soft);
+    background: rgba(178, 255, 143, 0.1);
+
+    &.active {
+      color: var(--px-accent);
+      background: var(--px-gradient);
+      border-color: var(--px-accent);
+    }
+  }
+
+  // 일반적 light yellow 요소 — 정확한 클래스명을 모를 수 있어 패턴 wildcards 는 피하고
+  // 자주 쓰이는 element-level 만 한정.
+  .light-yellow,
+  .accent-soft {
+    color: var(--px-accent-soft);
+    background: var(--px-accent-soft);
+  }
+
+  // ─────────────────────────────────────────────
+  // 6) 오렌지 border (#ffa500)
+  //    _cluster3.scss line 2595, 2717, 2734, 2804, 3091, 3172, 3482, 3542, 3580,
+  //    3598, 3613, 3782, 3838, 3884, 3899, 3977 등.
+  //    edit-box / output-card / scrollbar 등.
+  // ─────────────────────────────────────────────
+  .edit-box,
+  .output-card,
+  .output-edit-box {
+    border-color: var(--px-accent);
+
+    &:hover,
+    &.active {
+      border-color: var(--px-accent-soft);
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // 7) 글로우 / 그림자 — rgba alpha 보존하며 PX 톤으로 매핑
+  //    rgba(255,215,0,...) gold glow, rgba(254,212,2,...), rgba(250,171,7,...) 등
+  // ─────────────────────────────────────────────
+  // 메달 글로우 (line 1014, 1015)
+  .medal-glow {
+    box-shadow:
+      0 0 15px 5px var(--px-accent-soft-glow),
+      0 0 30px 10px var(--px-accent-glow);
+  }
+
+  // hover/active box-shadow 일반 (line 1876, 2010 등)
+  .has-accent-shadow {
+    box-shadow: 0 8px 25px var(--px-accent-glow);
+  }
+
+  // ─────────────────────────────────────────────
+  // 8) Cluster3Content.tsx 의 SVG <linearGradient> stop-color
+  //    line 1776-1777: stopColor="#FAAB07" → "#FFC919"
+  //    base SVG 속성을 CSS stop-color 로 override (CSS 가 우선).
+  // ─────────────────────────────────────────────
+  stop[stop-color="#FAAB07"],
+  stop[stop-color="#faab07"] {
+    stop-color: var(--px-accent);
+  }
+  stop[stop-color="#FFC919"],
+  stop[stop-color="#ffc919"] {
+    stop-color: var(--px-accent-soft);
+  }
+  stop[stop-color="#FED402"],
+  stop[stop-color="#fed402"] {
+    stop-color: var(--px-accent-soft);
+  }
+  stop[stop-color="#FFD700"],
+  stop[stop-color="#ffd700"] {
+    stop-color: var(--px-accent-soft);
+  }
+}
