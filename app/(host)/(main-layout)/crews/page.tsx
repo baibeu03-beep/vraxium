@@ -64,8 +64,6 @@ function CrewsContent() {
   const primaryAccentColor = "var(--crews-primary-accent, #FAAB07)";
   const primaryAccentBackground = "var(--crews-primary-accent-bg, rgba(250, 171, 7, 0.15))";
   const primaryAccentContrast = "var(--crews-primary-accent-contrast, #111)";
-  const teamBadgeBackground = "var(--crews-team-badge-bg, #FFC300)";
-  const teamBadgeTextColor = "var(--crews-team-badge-text, #000)";
   const schoolDotBackground = "var(--crews-school-dot-bg, #FED402)";
   const { mask } = useDataMasking();
   const [demoMode, setDemoMode] = useState(false);
@@ -745,14 +743,6 @@ function CrewsContent() {
                               <Link
                                 href={resolveHref(crew)}
                                 className="crew-club-badge"
-                                style={{
-                                  backgroundColor: teamBadgeBackground,
-                                  color: teamBadgeTextColor,
-                                  padding: "2px 6px",
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                }}
                               >
                                 {[crew.team, crew.club].find((v) => v && v !== "-") ?? "-"}
                               </Link>

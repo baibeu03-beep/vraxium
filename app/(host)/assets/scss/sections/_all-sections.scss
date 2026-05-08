@@ -154,6 +154,22 @@
     }
   }
 
+  .crews-grid .crew-club-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 24px;
+    padding: 2px 6px;
+    line-height: 1;
+    vertical-align: middle;
+    text-decoration: none;
+    background-color: var(--crews-team-badge-bg, #ffc300);
+    color: var(--crews-team-badge-text, #000);
+    font-family: "Pretendard", sans-serif;
+    text-align: center;
+    white-space: nowrap;
+  }
+
   .trending__single-footer {
     padding: 30px 24px;
   }
