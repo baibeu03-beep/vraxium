@@ -4,7 +4,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useSession } from "next-auth/react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { useModalScroll } from "@/utils/useModalScroll";
@@ -82,6 +82,12 @@ const Cluster2Content = () => {
   const { data: session } = useSession();
   const { mask } = useDataMasking();
   const searchParams = useSearchParams();
+  // PX(Phalanx) 라우트 감지 — segment 형태 ".../foo-px" 또는 ".../foo-px/..." 만 매칭.
+  // pathname.endsWith("-px") 으로는 동적 하위 라우트가 빠지므로 정규식 사용.
+  const pathname = usePathname();
+  const isPX = /(^|\/)[^/]+-px(\/|$)/.test(pathname ?? "");
+  // PX 라우트의 인라인 강조색 — non-PX 는 기존 #FAAB07 유지.
+  const accentInline = isPX ? "#1E9503" : "#FAAB07";
   const { alert: showAlert, confirm: popupConfirm } = usePopup();
   const showConfirm = useCallback(
     async (message: string, onConfirm: () => void | Promise<void>) => {
@@ -2543,7 +2549,7 @@ const Cluster2Content = () => {
                           onChange={(e) => handlePhotoFileChange(e, index)}
                         />
                         <div className="photo-slot-label">
-                          사진 [{slotNumber}]{slotNumber <= 2 && <span style={{ color: "#FAAB07" }}> *</span>}
+                          사진 [{slotNumber}]{slotNumber <= 2 && <span style={{ color: accentInline }}> *</span>}
                         </div>
                         <div className="photo-slot-content">
                           <div
@@ -2706,7 +2712,7 @@ const Cluster2Content = () => {
               {/* 슬로건 1 */}
               <div className="slogan-edit-item">
                 <span className="slogan-label">슬로건 1</span>
-                <span style={{ color: "#FAAB07", fontSize: "14px", marginLeft: "4px" }}>*</span>
+                <span style={{ color: accentInline, fontSize: "14px", marginLeft: "4px" }}>*</span>
                 <span style={{ fontSize: "17px", color: "#888", marginLeft: "8px", fontWeight: 400 }}>슬로건 1은, 커리어레쥬메 좌측에 보여지는 &apos;Identity-Core&apos; 의 메인 슬로건 자리에 나타납니다.</span>
                 <div className="slogan-dropdown-wrapper">
                   <button
@@ -3628,7 +3634,7 @@ const Cluster2Content = () => {
                     <div className="edu-edit-row">
                       <div className="edu-edit-field full-width">
                         <label style={eduValidationErrors[`${index}_school`] ? { color: "#ff4444" } : {}}>
-                          학교<span style={{ color: "#FAAB07", marginLeft: "2px", fontWeight: 600 }}>*</span>
+                          학교<span style={{ color: accentInline, marginLeft: "2px", fontWeight: 600 }}>*</span>
                         </label>
                         <div className="school-autocomplete">
                           {schoolCustomInput[`${index}_school`] ? (
@@ -3760,7 +3766,7 @@ const Cluster2Content = () => {
                     <div className="edu-edit-row">
                       <div className="edu-edit-field full-width">
                         <label style={eduValidationErrors[`${index}_status`] ? { color: "#ff4444" } : {}}>
-                          상태<span style={{ color: "#FAAB07", marginLeft: "2px", fontWeight: 600 }}>*</span>
+                          상태<span style={{ color: accentInline, marginLeft: "2px", fontWeight: 600 }}>*</span>
                         </label>
                         <div className={`edu-custom-dropdown ${eduDropdowns[`${index}_status`] ? "open" : ""}`}>
                           <div className="dropdown-selected" onClick={() => setEduDropdowns((prev) => (prev[`${index}_status`] ? {} : { [`${index}_status`]: true }))}>
@@ -3806,7 +3812,7 @@ const Cluster2Content = () => {
                     <div className="edu-edit-row">
                       <div className="edu-edit-field full-width">
                         <label style={eduValidationErrors[`${index}_category`] ? { color: "#ff4444" } : {}}>
-                          계열<span style={{ color: "#FAAB07", marginLeft: "2px", fontWeight: 600 }}>*</span>
+                          계열<span style={{ color: accentInline, marginLeft: "2px", fontWeight: 600 }}>*</span>
                         </label>
                         <div className={`edu-custom-dropdown ${eduDropdowns[`${index}_category`] ? "open" : ""}`}>
                           <div className="dropdown-selected" onClick={() => setEduDropdowns((prev) => (prev[`${index}_category`] ? {} : { [`${index}_category`]: true }))}>
@@ -3840,7 +3846,7 @@ const Cluster2Content = () => {
                     <div className="edu-edit-row three-cols">
                       <div className="edu-edit-field">
                         <label style={eduValidationErrors[`${index}_major1`] ? { color: "#ff4444" } : {}}>
-                          전공 1<span style={{ color: "#FAAB07", marginLeft: "2px", fontWeight: 600 }}>*</span>
+                          전공 1<span style={{ color: accentInline, marginLeft: "2px", fontWeight: 600 }}>*</span>
                         </label>
                         <input
                           type="text"
@@ -3899,7 +3905,7 @@ const Cluster2Content = () => {
                     <div className="edu-edit-row">
                       <div className="edu-edit-field">
                         <label style={eduValidationErrors[`${index}_startYear`] || eduValidationErrors[`${index}_startMonth`] ? { color: "#ff4444" } : {}}>
-                          입학시기<span style={{ color: "#FAAB07", marginLeft: "2px", fontWeight: 600 }}>*</span>
+                          입학시기<span style={{ color: accentInline, marginLeft: "2px", fontWeight: 600 }}>*</span>
                         </label>
                         <div className="date-picker-row">
                           <div className={`edu-custom-dropdown small ${eduDropdowns[`${index}_startYear`] ? "open" : ""}`}>
@@ -3956,7 +3962,7 @@ const Cluster2Content = () => {
                         {edu.status === "중퇴" ? (
                           <>
                             <label style={eduValidationErrors[`${index}_endYear`] ? { color: "#ff4444" } : {}}>
-                              중퇴시기<span style={{ color: "#FAAB07", marginLeft: "2px", fontWeight: 600 }}>*</span>
+                              중퇴시기<span style={{ color: accentInline, marginLeft: "2px", fontWeight: 600 }}>*</span>
                             </label>
                             <div className="textarea-wrapper">
                               <input
@@ -3990,7 +3996,7 @@ const Cluster2Content = () => {
                         ) : edu.status === "졸업" ? (
                           <>
                             <label style={eduValidationErrors[`${index}_endYear`] || eduValidationErrors[`${index}_endMonth`] ? { color: "#ff4444" } : {}}>
-                              졸업시기<span style={{ color: "#FAAB07", marginLeft: "2px", fontWeight: 600 }}>*</span>
+                              졸업시기<span style={{ color: accentInline, marginLeft: "2px", fontWeight: 600 }}>*</span>
                             </label>
                             <div className="date-picker-row">
                               <div className={`edu-custom-dropdown small ${eduDropdowns[`${index}_endYear`] ? "open" : ""}`}>
@@ -4061,7 +4067,7 @@ const Cluster2Content = () => {
                     <div className="edu-edit-row grade-row">
                       <div className="edu-edit-field">
                         <label style={eduValidationErrors[`${index}_gradeValue`] ? { color: "#ff4444" } : {}}>
-                          성적<span style={{ color: "#FAAB07", marginLeft: "2px", fontWeight: 600 }}>*</span>
+                          성적<span style={{ color: accentInline, marginLeft: "2px", fontWeight: 600 }}>*</span>
                         </label>
                         {/* 최대치에 따라 달성치 입력 방식 변경 */}
                         {edu.gradeMax === "-" ? (
@@ -4280,7 +4286,7 @@ const Cluster2Content = () => {
                     <div className="edu-edit-row">
                       <div className="edu-edit-field full-width">
                         <label style={eduValidationErrors[`${index}_description`] ? { color: "#ff4444" } : {}}>
-                          학교 생활<span style={{ color: "#FAAB07", marginLeft: "2px", fontWeight: 600 }}>*</span>
+                          학교 생활<span style={{ color: accentInline, marginLeft: "2px", fontWeight: 600 }}>*</span>
                         </label>
                         <div className="textarea-wrapper">
                           <textarea
