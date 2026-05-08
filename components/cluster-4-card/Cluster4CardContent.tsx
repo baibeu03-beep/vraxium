@@ -4902,10 +4902,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       return {
         id: index + 1,
         activityTypeId,
-        code: activityType?.line_code || fallbackMapping?.lineCode || "-",
-        badge: activityType?.name || fallbackMapping?.lineName || "-",
-        title: activity?.title || fallbackMapping?.mainTitle || "-",
-        subTitle: detail?.sub_title || "",
+        // is_empty sentinel: enhStatus === "empty"일 때 콘텐츠 필드를 빈 값으로 강제.
+        // (work-info/work-career와 일관 — fallbackMapping/lookupWorkExpMapping 우회로
+        //  모달에서 "준비 중입니다" / "-" placeholder 표시 보장)
+        code: enhStatus === "empty" ? "-" : (activityType?.line_code || fallbackMapping?.lineCode || "-"),
+        // badge/title은 빈 문자열로 — null은 <img alt={card.badge}>에서 타입 충돌 (alt: string | undefined).
+        // 빈 문자열도 ||-체인에서 falsy로 평가되어 모달의 "카테고리"/"준비 중입니다" fallback 정상 작동.
+        badge: enhStatus === "empty" ? "" : (activityType?.name || fallbackMapping?.lineName || "-"),
+        title: enhStatus === "empty" ? "" : (activity?.title || fallbackMapping?.mainTitle || "-"),
+        subTitle: enhStatus === "empty" ? "" : (detail?.sub_title || ""),
         // TODO: [백엔드 작업 필요] weekly_activity_details에 growth_point 컬럼 추가
         growthPoint: "",
         outputLinks: mergedOutputLinks,
@@ -4917,9 +4922,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         ratingCount: hasActivity ? `${ratingScore} / 10` : "- / 10",
         hasWeb: (detail?.output_links?.length || 0) > 0,
         icon: getWorkExpIcon(fallbackMapping?.lineName || activityType?.name || ""),
-        isEmpty: false,
+        // work-info/work-career의 is_empty sentinel 패턴과 동일.
+        // getEnhancementStatus가 record.is_empty === true일 때 "empty" 반환.
+        isEmpty: enhStatus === "empty",
         enhancementStatus: enhStatus,
-        hasActivity,
+        // empty 상태는 sentinel이므로 hasActivity=true로 강제 — 모달 L8310 statusKey의
+        // 'failed' 오버라이드 회피. (대시보드 리스트 L6030는 enhStatus !== "empty" 가드로 무영향)
+        hasActivity: enhStatus === "empty" || hasActivity,
       };
     }),
   ];
@@ -4977,7 +4986,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             statusBadge: getStatusBadge(computedStatus),
             grade: record.grade || "",
             isNotApplicable: computedStatus === "not_applicable",
-            isEmpty: false,
+            // work-info의 is_empty sentinel 패턴과 동일 — record.is_empty === true일 때만 isEmpty: true.
+            // 운영 데이터에는 is_empty 필드가 없으므로 항상 falsy → 기존 카드 동작 유지.
+            isEmpty: (record as { is_empty?: boolean }).is_empty === true,
             isFailed: computedStatus === "failed",
             // 추가 정보 (상세 보기용)
             projectDescription: (() => {
@@ -5966,12 +5977,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   key={card.id}
                   className={`work-exp-card ${isEmpty ? "empty" : ""}`}
                   onClick={async () => {
-                    if (!isEmpty) {
+                    // 빈 카드(is_empty sentinel)도 모달 열어 void 상태 표시.
+                    // work-exp는 placeholder 패턴 없음 (모든 카드가 activityTypeId 보유).
+                    if (!isEmpty || card.activityTypeId) {
                       setSelectedWorkExpCard(card);
                       setWorkExpViewModalOpen(true);
                     }
                   }}
-                  style={{ cursor: isEmpty ? "default" : "pointer" }}
+                  style={{ cursor: !isEmpty || card.activityTypeId ? "pointer" : "default" }}
                 >
                   <div className="card-top-row">
                     <div className={`card-icon-area ${!isEmpty && card.enhancementStatus === "failed" ? "failed" : ""}`}>
@@ -6209,12 +6222,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   <div
                     className={`work-career-card ${isEmpty ? "empty" : ""} ${card.isFailed ? "failed" : ""} ${card.isNotApplicable ? "not-applicable" : ""}`}
                     onClick={async () => {
-                      if (!isEmpty) {
+                      // record 기반 빈 카드(is_empty sentinel)는 모달 열어 void 상태 표시.
+                      // 무경력 placeholder(emptyCareerCard, recordId: null)는 기존대로 클릭 차단.
+                      if (!isEmpty || card.recordId) {
                         setSelectedWorkCareerCard(card);
                         setWorkCareerViewModalOpen(true);
                       }
                     }}
-                    style={{ cursor: isEmpty ? "default" : "pointer" }}
+                    style={{ cursor: !isEmpty || card.recordId ? "pointer" : "default" }}
                   >
                     {card.isFailed && <div className="card-overlay failed"></div>}
                     <div className="card-top-row">

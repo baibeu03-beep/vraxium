@@ -9,6 +9,7 @@ import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { usePopup } from "@/components/ui/popup";
+import { logEvent } from "@/utils/blackScreenDiagnostics";
 import { CLUSTER2_DUMMY_PHOTOS, CLUSTER2_DUMMY_SLOGANS, CLUSTER2_DUMMY_VIDEOS, CLUSTER2_DUMMY_EDUCATIONS, CLUSTER2_DUMMY_REVIEWS, CLUSTER2_DUMMY_INTRO, CLUSTER2_DUMMY_BY_USER, DEFAULT_DEMO_USER } from "@/constants/dummyData";
 import { SECTION1_PHOTO_DEFAULTS } from "@/constants/dummyData/cluster2-section1-default";
 import { SECTION2_SLOGAN_DEFAULTS } from "@/constants/dummyData/cluster2-section2-default";
@@ -1069,6 +1070,38 @@ const Cluster2Content = () => {
   // 모달 열릴 때 배경 스크롤 잠금
   const anyModalOpen = section1ModalOpen || section2ModalOpen || section21ModalOpen || section3ModalOpen || section4ModalOpen || introModalOpen;
   useModalScroll(anyModalOpen);
+
+  useEffect(() => {
+    logEvent(section1ModalOpen ? "modal-open" : "modal-close", { source: "cluster-2", name: "section1-photo" });
+  }, [section1ModalOpen]);
+
+  useEffect(() => {
+    logEvent(section2ModalOpen ? "modal-open" : "modal-close", { source: "cluster-2", name: "section2-slogan" });
+  }, [section2ModalOpen]);
+
+  useEffect(() => {
+    logEvent(section21ModalOpen ? "modal-open" : "modal-close", { source: "cluster-2", name: "section21-video" });
+  }, [section21ModalOpen]);
+
+  useEffect(() => {
+    logEvent(section3ModalOpen ? "modal-open" : "modal-close", { source: "cluster-2", name: "section3-education" });
+  }, [section3ModalOpen]);
+
+  useEffect(() => {
+    logEvent(section4ModalOpen ? "modal-open" : "modal-close", { source: "cluster-2", name: "section4-review" });
+  }, [section4ModalOpen]);
+
+  useEffect(() => {
+    logEvent(introModalOpen ? "modal-open" : "modal-close", { source: "cluster-2", name: "intro" });
+  }, [introModalOpen]);
+
+  useEffect(() => {
+    logEvent(modalOpen ? "modal-open" : "modal-close", { source: "cluster-2", name: "education-detail" });
+  }, [modalOpen]);
+
+  useEffect(() => {
+    logEvent(anyModalOpen ? "scroll-lock" : "scroll-unlock", { source: "cluster-2", reason: "anyModalOpen" });
+  }, [anyModalOpen]);
 
   // section21 모달 배경 스크롤 차단 (native listener — passive: false 필수)
   useEffect(() => {

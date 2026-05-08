@@ -3,6 +3,9 @@
 
 import { randomCrewProfile, randomSeasonImage } from "@/utils/randomImage";
 
+// review-comment 디폴트 문구 — fallback / 데모 첫 시즌 더미 / 초기화 reset 대상의 단일 상수
+export const REVIEW_COMMENT_DEFAULT = "하나의 계절이 지나갈 때마다, 나의 정신은 굳건해지고, 맑아진다. 아, 돌아보라. 나의 성장이여.";
+
 // DUMMY_SEASON_DATA — cluster4-season 페이지의 기본 시즌 데이터 (현재 시즌용)
 export const DUMMY_SEASON_DATA = {
   // === 시즌 기본 정보 ===
@@ -246,7 +249,7 @@ export const DUMMY_SEASON_HISTORIES = [
     roleInSeason: "운영진(앰배서더)",
     stats: { dangam: 25, injeolmi: 999, eoheung: 3 }, // 2자리/3자리/1자리
     rating: 8,
-    review: "동해물과 백두산이 마르고 닳도록 하늘과 바람과 햇살이 우리를 지켜보는 동안",
+    review: REVIEW_COMMENT_DEFAULT,
     reviewLink: "",
     circles: { weekUsage: 80, scheduleReliability: 5, seasonGrowth: 100, approvedWeeks: 24, totalOperatingWeeks: 30, reliableWeeks: 1, completedActivities: 999, totalActivities: 999 },
     progress: { info: { total: 40, completed: 20, rate: 50 }, competency: { total: 5, completed: 5, rate: 100 }, experience: { total: 8, completed: 3, rate: 38 }, career: { total: 999, completed: 999, rate: 100 } },

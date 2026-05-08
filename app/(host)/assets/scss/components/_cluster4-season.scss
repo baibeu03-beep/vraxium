@@ -5130,6 +5130,36 @@
     }
 
     // 더보기 버튼
+    &:has(.weekly-card-status-badge.fail) {
+      .weekly-card-stats .highlight {
+        color: #ff6b6b;
+      }
+    }
+
+    &:has(.weekly-card-status-badge.rest-personal) {
+      .weekly-card-stats .highlight {
+        color: #65e3ff;
+      }
+    }
+
+    &:has(.weekly-card-status-badge.rest-official) {
+      .weekly-card-stats .highlight {
+        color: #ffea48;
+      }
+    }
+
+    &:has(.weekly-card-status-badge.in-progress) {
+      .weekly-card-stats .highlight {
+        color: #9b59b6;
+      }
+    }
+
+    &:has(.weekly-card-status-badge.counting) {
+      .weekly-card-stats .highlight {
+        color: #ff1493;
+      }
+    }
+
     .weekly-card-more-btn {
       position: absolute;
       bottom: 12px;

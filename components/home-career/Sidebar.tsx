@@ -12,6 +12,7 @@ import { DUMMY_USER_PROFILE, DUMMY_SIDEBAR_EXTRA } from "@/constants/dummyData";
 import { useResumeCardHeight } from "@/hooks/useResumeCardHeight";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { usePopup } from "@/components/ui/popup";
+import { logEvent } from "@/utils/blackScreenDiagnostics";
 import koreaRegionsData from "@/data/korea-regions.json";
 
 const koreaRegions: { [key: string]: string[] } = koreaRegionsData;
@@ -166,11 +167,14 @@ const Sidebar = () => {
   useEffect(() => {
     if (isEditModalOpen) {
       document.body.style.overflow = "hidden";
+      logEvent("scroll-lock", { source: "sidebar", reason: "isEditModalOpen" });
     } else {
       document.body.style.overflow = "";
+      logEvent("scroll-unlock", { source: "sidebar", reason: "isEditModalOpen" });
     }
     return () => {
       document.body.style.overflow = "";
+      logEvent("scroll-unlock", { source: "sidebar", reason: "isEditModalOpen-cleanup" });
     };
   }, [isEditModalOpen]);
   const [isSaving, setIsSaving] = useState(false);
@@ -624,6 +628,27 @@ const Sidebar = () => {
   // Sidebar 모달 배경 스크롤 차단
   const isSidebarModalOpen = isEditModalOpen || isPhoneCommentModalOpen || isPhoneHelpModalOpen;
   useModalScroll(isSidebarModalOpen);
+
+  useEffect(() => {
+    logEvent(isEditModalOpen ? "modal-open" : "modal-close", {
+      source: "sidebar",
+      name: "profile-edit",
+    });
+  }, [isEditModalOpen]);
+
+  useEffect(() => {
+    logEvent(isPhoneCommentModalOpen ? "modal-open" : "modal-close", {
+      source: "sidebar",
+      name: "phone-comment",
+    });
+  }, [isPhoneCommentModalOpen]);
+
+  useEffect(() => {
+    logEvent(isPhoneHelpModalOpen ? "modal-open" : "modal-close", {
+      source: "sidebar",
+      name: "phone-help",
+    });
+  }, [isPhoneHelpModalOpen]);
 
   // 연락 가능 시간대 모달: 열릴 때 읽기전용 모드로 초기화
   useEffect(() => {

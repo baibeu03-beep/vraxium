@@ -38,6 +38,9 @@ export interface ActivityRecord {
 }
 
 export interface CareerRecord {
+  // '빈 카드(empty)' 데모용 sentinel — workCareerCards 매핑이 최우선으로 검사.
+  // 운영 데이터에는 존재하지 않음(undefined → falsy → 기존 분기 그대로).
+  is_empty?: boolean;
   // 프로젝트 정보
   id: string;
   project_id: string;
@@ -293,32 +296,34 @@ const SHARED_CAREER_RECORDS: CareerRecord[] = [
     supervisor_company: null,
     supervisor_profile_img: "/images/0/cluster4/icon/실무 경력/감독자.jpg",
   },
-  // 카드 6 — Normal
+  // 카드 6 — Empty (void) : work-info의 is_empty sentinel 패턴과 동일.
+  // workCareerCards 매핑이 is_empty를 최우선 검사하여 isEmpty: true로 전파.
   {
-    id: "cr-demo-2",
-    project_id: "p-demo-2",
+    is_empty: true,
+    id: "cr-empty-2",
+    project_id: "p-empty-2",
     week_id: "dw-01",
-    company_name: "라인",
-    company_logo_url: "/images/0/cluster4/icon/실무 경력/감독자.jpg",
-    job_position: "라인 마케팅",
-    project_name: "라인 메신저 스티커 마케팅 프로젝트",
-    project_description: "사용자 참여형 캠페인 기획 및 운영 보조",
-    line_code: "DE13-10003",
-    line_name: "라인 마케팅",
-    output_links: [],
+    company_name: "-",
+    company_logo_url: null,
+    job_position: "-",
+    project_name: null,
+    project_description: null,
+    line_code: null,
+    line_name: null,
+    output_links: null,
     secondary_info_deadline: null,
     created_at: "2025-12-22T00:00:00Z",
-    record_id: "r-demo-2",
+    record_id: "r-empty-2",
     user_id: "u1",
-    enhancement_status: "enhanced",
-    grade: "A",
-    grade_points: 72,
-    career_code: "DE13-10003",
-    supervisor_name: "이지은",
-    supervisor_position: "차장",
-    supervisor_department: "라인 마케팅팀",
-    supervisor_company: "라인",
-    supervisor_profile_img: "/images/0/cluster4/icon/실무 경력/감독자.jpg",
+    enhancement_status: "not_applicable",
+    grade: null,
+    grade_points: null,
+    career_code: null,
+    supervisor_name: null,
+    supervisor_position: null,
+    supervisor_department: null,
+    supervisor_company: null,
+    supervisor_profile_img: null,
   },
 ];
 
@@ -483,6 +488,10 @@ export const DUMMY_WEEK_CARD: Record<string, WeekCardDummyData> = {
       { week_id: "dw-01", activity_type_id: "exp-2", is_completed: true },
       { week_id: "dw-01", activity_type_id: "exp-3", is_completed: false },
       { week_id: "dw-01", activity_type_id: "exp-4", is_completed: false },
+      // 빈 카드(empty) 데모 항목 — work-experience 4번째 가시 카드(workExpCardLineCodes[3]="EX99A-ER0004")에 is_empty 마커.
+      // workExpCards 매핑이 activityTypeId(=lineCodeKey, 데모 모드 매칭 fallback)로 record 검색 →
+      // getEnhancementStatus가 is_empty를 최우선 검사하여 "empty" 반환.
+      { week_id: "dw-01", activity_type_id: "EX99A-ER0004", is_completed: true, is_empty: true },
     ],
     careerRecords: SHARED_CAREER_RECORDS,
   },

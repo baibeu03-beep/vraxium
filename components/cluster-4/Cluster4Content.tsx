@@ -12,7 +12,7 @@ import { usePopup } from "@/components/ui/popup";
 import { supabase } from "@/lib/supabase";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
-import { DUMMY_SEASON_DATA, DUMMY_SEASON_HISTORIES } from "@/constants/dummyData";
+import { DUMMY_SEASON_DATA, DUMMY_SEASON_HISTORIES, REVIEW_COMMENT_DEFAULT } from "@/constants/dummyData";
 
 // 글자수 초과 시 '..' 표시 (CSS ellipsis '…' 대신 JS 처리)
 const truncate = (text: string | undefined | null, maxLen: number): string => {
@@ -172,7 +172,7 @@ const defaultSeasonData = {
   ],
   stats: { dangam: 25, injeolmi: 999, eoheung: 3 }, // TODO: 더미 데이터 — 자릿수 테스트용
   rating: 10,
-  review: "가나다라마바사아자차카타파하가나다라마바사아자차카",
+  review: REVIEW_COMMENT_DEFAULT,
   reviewLink: "",
   circles: {
     weekUsage: 27, // TODO: 더미 데이터 — 자릿수 테스트용 (8/30)
@@ -2272,8 +2272,8 @@ const Cluster4Content = () => {
       return;
     }
     if (!(await popup.confirm("작성 내용을 모두 초기화하시겠습니까?"))) return;
-    // 초기화 = snapshot 복원이 아니라 모든 필드를 빈 값으로 (사용자 기대치: "초기화" 라벨대로 비우기)
-    setSeasonReviewEditData({ rating: 0, review: "", link: "" });
+    // 초기화 = review는 디폴트 문구로 교체, 나머지(rating/link)는 빈 값으로
+    setSeasonReviewEditData({ rating: 0, review: REVIEW_COMMENT_DEFAULT, link: "" });
     setSeasonReviewSaveAttemptFailed(false);
     setSeasonReviewFieldErrorFlash(false);
   };
@@ -2799,7 +2799,7 @@ const Cluster4Content = () => {
                   </div>
                   <p className="review-comment">
                     {(() => {
-                      const r = currentSeason.review || "이번시즌 30자 평을 해보라는데, 어디까지 갈 수 있나";
+                      const r = currentSeason.review || REVIEW_COMMENT_DEFAULT;
                       return r.length > 24 ? r.slice(0, 24) + "..." : r;
                     })()}
                   </p>

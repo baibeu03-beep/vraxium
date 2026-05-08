@@ -7,6 +7,8 @@ import ZoomPrevention from "@/components/shared/ZoomPrevention";
 import ResponsiveScale from "@/components/shared/ResponsiveScale";
 import MobileBlockScreen from "@/components/shared/MobileBlockScreen";
 import PageReveal from "@/components/shared/PageReveal";
+import DiagnosticsInit from "@/components/shared/DiagnosticsInit";
+import BlackScreenDiagButton from "@/components/shared/BlackScreenDiagButton";
 import type { Metadata, Viewport } from "next";
 import { Khula, Black_Ops_One, Chakra_Petch, Lobster, Rajdhani } from "next/font/google";
 import "./assets/scss/main.scss";
@@ -49,6 +51,8 @@ export default function RootLayout({
           <ProfileProvider>
             <PopupProvider>
               {/* <ZoomPrevention /> */}
+              <DiagnosticsInit />
+              <BlackScreenDiagButton />
               <ResponsiveScale />
               <Progress />
               <Bootstrap>

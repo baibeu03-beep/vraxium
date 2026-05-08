@@ -742,7 +742,20 @@ function CrewsContent() {
                         <div className="content-wrapper">
                           <div className="info">
                             <p className="text-sm fw-6">
-                              <Link href={resolveHref(crew)} style={{ backgroundColor: teamBadgeBackground, color: teamBadgeTextColor, padding: "2px 6px", display: "inline-flex", alignItems: "center", justifyContent: "center"}}>{[crew.team, crew.club].find((v) => v && v !== "-") ?? "-"}</Link>
+                              <Link
+                                href={resolveHref(crew)}
+                                className="crew-club-badge"
+                                style={{
+                                  backgroundColor: teamBadgeBackground,
+                                  color: teamBadgeTextColor,
+                                  padding: "2px 6px",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                }}
+                              >
+                                {[crew.team, crew.club].find((v) => v && v !== "-") ?? "-"}
+                              </Link>
                             </p>
                             <p className="text-sm" style={{ marginTop: "18px", display: "flex", alignItems: "center", justifyContent: "flex-start", gap: "3px", flexWrap: "nowrap", minWidth: 0, overflow: "hidden" }} title={`${mask.school(crew.university)} ${mask.major(crew.major)}`}>
                               <span style={{ display: "inline-block", width: "7px", height: "7px", borderRadius: "50%", backgroundColor: schoolDotBackground, flexShrink: 0, position: "relative", top: "-1px" }} />
