@@ -1,3 +1,0 @@
-[     663ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/career-resume/tuna/:0
-[    1158ms] [WARNING] Image with src "/_next/static/media/error-thumb.43c0ff03.png" was detected as the Largest Contentful Paint (LCP). Please add the "priority" property if this image is above the fold.
-Read more: https://nextjs.org/docs/api-reference/next/image#priority @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/shared/lib/utils/warn-once.js:15

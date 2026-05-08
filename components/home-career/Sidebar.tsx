@@ -1239,7 +1239,7 @@ const Sidebar = () => {
           emailId,
           emailDomain,
           vision: profile.vision || "",
-          phoneComment: profile.contact_available || DEFAULT_PHONE_COMMENT,
+          phoneComment: (profile.contactAvailable ?? profile.contact_available) || DEFAULT_PHONE_COMMENT,
         }));
       }
     } catch (error) {
@@ -2035,21 +2035,20 @@ const Sidebar = () => {
                         {isOwner && (
                           <span
                             onClick={async () => {
-                              // 모달 열기 전에 기존 값 로드
+                              // 모달 열기 전에 ProfileContext 캐시를 무효화하고 최신값을 다시 받아온다.
+                              // (admin 이 user_profiles.contact_available 을 직접 수정한 경우에도 즉시 반영되도록.)
                               let nextPhoneComment = formData.phoneComment;
                               try {
-                                const response = await fetch("/api/profile/");
-                                const result = await response.json();
-                                if (result.success && result.data) {
-                                  nextPhoneComment = result.data.contact_available || DEFAULT_PHONE_COMMENT;
-                                  setFormData((prev) => ({
-                                    ...prev,
-                                    phoneComment: nextPhoneComment,
-                                  }));
-                                  phoneCommentSnapshot.current = nextPhoneComment;
-                                } else {
-                                  phoneCommentSnapshot.current = formData.phoneComment;
-                                }
+                                const refreshed = await fetchCachedProfile(targetUserId || undefined, true);
+                                const latest =
+                                  refreshed?.contactAvailable ??
+                                  (refreshed?.data as { contact_available?: string | null } | undefined)?.contact_available ??
+                                  null;
+                                nextPhoneComment = latest || DEFAULT_PHONE_COMMENT;
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  phoneComment: nextPhoneComment,
+                                }));
                               } catch (error) {
                                 console.error("연락처 코멘트 로드 오류:", error);
                               }
@@ -3820,7 +3819,7 @@ const Sidebar = () => {
               }}
             >
               <p style={{ color: "#ffffff", fontSize: "16px", margin: 0, lineHeight: 1.6, fontFamily: "Pretendard, sans-serif", wordBreak: "keep-all" }}>
-                {formData.phoneComment || "등록된 코멘트가 없습니다."}
+                {cachedProfile?.contactAvailable || "등록된 코멘트가 없습니다."}
               </p>
             </div>
           </div>
@@ -3886,7 +3885,7 @@ const Sidebar = () => {
                 </>
               ) : (
                 <p className="modal-content-text">
-                  {formData.phoneComment || "등록된 내용이 없습니다."}
+                  {cachedProfile?.contactAvailable || "등록된 내용이 없습니다."}
                 </p>
               )}
             </div>
@@ -3911,7 +3910,11 @@ const Sidebar = () => {
                       type="button"
                       className="modal-edit-btn"
                       onClick={() => {
-                        phoneCommentSnapshot.current = formData.phoneComment;
+                        // 수정 진입 시 cachedProfile 의 최신값으로 textarea 시드.
+                        const initialEditValue =
+                          cachedProfile?.contactAvailable || formData.phoneComment || DEFAULT_PHONE_COMMENT;
+                        setFormData((prev) => ({ ...prev, phoneComment: initialEditValue }));
+                        phoneCommentSnapshot.current = initialEditValue;
                         setIsPhoneEditing(true);
                       }}
                     >
@@ -3953,12 +3956,18 @@ const Sidebar = () => {
                             }
                             try {
                               const response = await fetch("/api/profile/", {
-                                method: "PUT",
+                                method: "PATCH",
                                 headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ contact_available: formData.phoneComment || null }),
+                                body: JSON.stringify({ contactAvailable: formData.phoneComment || null }),
                               });
                               const result = await response.json();
                               if (result.success) {
+                                const savedValue =
+                                  (result.data?.contactAvailable ?? result.data?.contact_available ?? formData.phoneComment) || "";
+                                setFormData((prev) => ({ ...prev, phoneComment: savedValue }));
+                                phoneCommentSnapshot.current = savedValue;
+                                clearProfileCache();
+                                fetchUserProfile(true);
                                 setIsPhoneEditing(false);
                                 setIsPhoneCommentModalOpen(false);
                                 await showAlert("저장되었습니다.");

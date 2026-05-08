@@ -144,6 +144,12 @@ const Cluster41Content = () => {
   // segment 기준 매칭으로 trailing slash 도 정상 처리.
   const pathname = usePathname();
   const pxSuffix = pathname && pathname.split("/").some((seg) => seg.endsWith("-px")) ? "-px" : "";
+  // PX 라우트 여부 — 필터 드롭다운 인라인 #FFA500 brand accent 분기에 사용.
+  // /cluster-4 는 isPX=false 이므로 기존 #FFA500 그대로 유지.
+  const isPX = pxSuffix === "-px";
+  const filterAccent = isPX ? "#1E9503" : "#FFA500";
+  const filterAccentBg = isPX ? "rgba(30, 149, 3, 0.1)" : "rgba(255, 165, 0, 0.1)";
+  const filterAccentBgSelected = isPX ? "rgba(30, 149, 3, 0.2)" : "rgba(255, 165, 0, 0.2)";
   const headerRef = useRef<HTMLElement>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [seasonDropdownOpen, setSeasonDropdownOpen] = useState(false);
@@ -1735,8 +1741,8 @@ const Cluster41Content = () => {
                 ref={seasonBtnRef}
                 className="filter-card filter-dropdown"
                 style={{
-                  borderColor: selectedSeason !== "역대 시즌" ? "#FFA500" : "rgba(255, 255, 255, 0.12)",
-                  background: selectedSeason !== "역대 시즌" ? "rgba(255, 165, 0, 0.1)" : "transparent",
+                  borderColor: selectedSeason !== "역대 시즌" ? filterAccent : "rgba(255, 255, 255, 0.12)",
+                  background: selectedSeason !== "역대 시즌" ? filterAccentBg : "transparent",
                   position: "relative",
                 }}
                 onClick={() => {
@@ -1747,11 +1753,11 @@ const Cluster41Content = () => {
               >
                 <div className="card-left">
                   <img src="/images/0/cluster4/icon/icon - 2.png" alt="calendar" className="card-icon" />
-                  <span className="card-label" style={{ color: selectedSeason !== "역대 시즌" ? "#FFA500" : "#fff" }}>
+                  <span className="card-label" style={{ color: selectedSeason !== "역대 시즌" ? filterAccent : "#fff" }}>
                     {selectedSeason}
                   </span>
                 </div>
-                <span className={`card-arrow ${seasonDropdownOpen ? "open" : ""}`} style={{ color: selectedSeason !== "역대 시즌" ? "#FFA500" : "#fff" }}>
+                <span className={`card-arrow ${seasonDropdownOpen ? "open" : ""}`} style={{ color: selectedSeason !== "역대 시즌" ? filterAccent : "#fff" }}>
                   ▼
                 </span>
                 {seasonDropdownOpen && (
@@ -1775,8 +1781,8 @@ const Cluster41Content = () => {
                         key={index}
                         style={{
                           padding: "12px 16px",
-                          color: selectedSeason === option ? "#FFA500" : "#fff",
-                          background: selectedSeason === option ? "rgba(255,165,0,0.2)" : "transparent",
+                          color: selectedSeason === option ? filterAccent : "#fff",
+                          background: selectedSeason === option ? filterAccentBgSelected : "transparent",
                           cursor: "pointer",
                           borderBottom: index < seasonOptions.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
                         }}
@@ -1786,7 +1792,7 @@ const Cluster41Content = () => {
                         }}
                         onMouseEnter={(e) => {
                           if (selectedSeason !== option) {
-                            e.currentTarget.style.background = "rgba(255,165,0,0.1)";
+                            e.currentTarget.style.background = filterAccentBg;
                           }
                         }}
                         onMouseLeave={(e) => {
@@ -1806,8 +1812,8 @@ const Cluster41Content = () => {
                 ref={resultBtnRef}
                 className="filter-card filter-dropdown"
                 style={{
-                  borderColor: selectedResult !== "주차 결과" ? "#FFA500" : "rgba(255, 255, 255, 0.12)",
-                  background: selectedResult !== "주차 결과" ? "rgba(255, 165, 0, 0.1)" : "transparent",
+                  borderColor: selectedResult !== "주차 결과" ? filterAccent : "rgba(255, 255, 255, 0.12)",
+                  background: selectedResult !== "주차 결과" ? filterAccentBg : "transparent",
                   position: "relative",
                 }}
                 onClick={() => {
@@ -1818,11 +1824,11 @@ const Cluster41Content = () => {
               >
                 <div className="card-left">
                   <img src="/images/0/cluster4/icon/icon - 3.png" alt="setting" className="card-icon" />
-                  <span className="card-label" style={{ color: selectedResult !== "주차 결과" ? "#FFA500" : "#fff" }}>
+                  <span className="card-label" style={{ color: selectedResult !== "주차 결과" ? filterAccent : "#fff" }}>
                     {selectedResult}
                   </span>
                 </div>
-                <span className={`card-arrow ${resultDropdownOpen ? "open" : ""}`} style={{ color: selectedResult !== "주차 결과" ? "#FFA500" : "#fff" }}>
+                <span className={`card-arrow ${resultDropdownOpen ? "open" : ""}`} style={{ color: selectedResult !== "주차 결과" ? filterAccent : "#fff" }}>
                   ▼
                 </span>
                 {resultDropdownOpen && (
@@ -1846,8 +1852,8 @@ const Cluster41Content = () => {
                         key={index}
                         style={{
                           padding: "12px 16px",
-                          color: selectedResult === option ? "#FFA500" : "#fff",
-                          background: selectedResult === option ? "rgba(255,165,0,0.2)" : "transparent",
+                          color: selectedResult === option ? filterAccent : "#fff",
+                          background: selectedResult === option ? filterAccentBgSelected : "transparent",
                           cursor: "pointer",
                           borderBottom: index < resultOptions.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
                         }}
@@ -1857,7 +1863,7 @@ const Cluster41Content = () => {
                         }}
                         onMouseEnter={(e) => {
                           if (selectedResult !== option) {
-                            e.currentTarget.style.background = "rgba(255,165,0,0.1)";
+                            e.currentTarget.style.background = filterAccentBg;
                           }
                         }}
                         onMouseLeave={(e) => {

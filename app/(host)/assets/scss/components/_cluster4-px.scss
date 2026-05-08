@@ -59,4 +59,245 @@
   [style*="#FFEC8F"] {
     color: var(--px-accent-soft) !important;
   }
+
+  // ─────────────────────────────────────────────
+  // 추가 brand accent overrides — /cluster-4-px 실측 기준
+  //   1) top-tabs 활성 탭 배경 (.tab:first-child #faab07 + TSX 인라인 동일색)
+  //   2) top-tabs hover popup .tab-badge 배경 (#ffec8f)
+  //   3) section1 quote-highlight 텍스트 그라데이션 (#fed402 → #fff1aa)
+  //   4) season-growth-card .season-badge SVG fill/stroke (TSX 인라인 #FAAB07)
+  // 모두 .cluster-px-theme 하위에서만 매칭되므로 /cluster-4 원본 무영향.
+  // semantic 색(.orange-highlight #f59e0b, .number #fef08a, .white-text)은
+  // 정보 구분 palette 이므로 의도적으로 미변경.
+  // ─────────────────────────────────────────────
+  .cluster4-content {
+    // 1) top-tabs 활성 탭 — _cluster4-week.scss line 334 (.tab:first-child)
+    //    +1445 줄 TSX 인라인 background:#FAAB07. !important 로 둘 다 덮음.
+    .top-tabs .tab:first-child {
+      background: var(--px-accent) !important;
+    }
+
+    // 2) top-tabs hover popup — _cluster4-week.scss line 356 .tab-badge
+    .top-tabs .tab .tab-badge {
+      background: var(--px-accent-soft);
+    }
+
+    // 3) section1 quote-highlight — _cluster4-season.scss line 403
+    //    -webkit-background-clip: text 유지 (텍스트 그라데이션 그대로).
+    .section1-description .quote-highlight {
+      background: linear-gradient(90deg, var(--px-accent), var(--px-accent-soft));
+      -webkit-background-clip: text;
+      background-clip: text;
+    }
+
+    // 4) season-badge SVG — TSX 인라인 attr(fill/stroke)="#FAAB07".
+    //    presentation attribute 는 CSS fill/stroke 로 덮어쓸 수 있음.
+    .season-growth-card .season-badge {
+      .badge-outline path {
+        stroke: var(--px-accent) !important;
+      }
+      .badge-border path {
+        fill: var(--px-accent) !important;
+        stroke: var(--px-accent) !important;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 5) Details 카드 우측 패널 — _cluster4-season.scss line 761/772/779
+    //    원본: .detail-value/.number = #fef08a, .orange-highlight = #f59e0b
+    //    "15(1)" 같이 number+orange 한 셀 안에 같이 쓰여 정보 구분되므로
+    //    soft / strong 두 단계 PX accent 로 매핑해 대비 유지.
+    //    .white-text("개 주차") 는 white 유지(미변경).
+    // ─────────────────────────────────────────────
+    // 원본 selector 가 .cluster4-content > .cluster4-section2 > .season-growth-card
+    //   > .card-left > .details-card 식으로 깊게 중첩 → !important 로 가독성 우선.
+    .details-card .details-content .detail-row .detail-value {
+      color: var(--px-accent-soft) !important;
+
+      .number {
+        color: var(--px-accent-soft) !important;
+      }
+
+      .orange-highlight {
+        color: var(--px-accent) !important;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 6) Weekly filter bar — _cluster4-season.scss line 4385, 4389
+    //    원본:
+    //      .filter-card:hover { border-color: #ffa500 }
+    //      &.filter-card-large { background:#ffe3aa; border-color:#ffe3aa; span { color:#000 } }
+    //      필터 PNG 아이콘 (icon-1~5.png) 노란 톤
+    //    Reset 버튼은 pale 톤이었으므로 soft accent 매칭 (대비 위해 텍스트 #000 유지).
+    // ─────────────────────────────────────────────
+    .weekly-filter-bar {
+      .filter-card {
+        &:hover {
+          border-color: var(--px-accent);
+        }
+
+        &.filter-card-large {
+          background: var(--px-accent-soft);
+          border-color: var(--px-accent-soft);
+          // span color #000 그대로(soft 배경에서 가독성 유지) — 미변경.
+        }
+      }
+
+      // PNG 필터 아이콘 노란→초록 색상 회전 (이미지 파일은 변경 없음).
+      .filter-icon,
+      .card-icon {
+        filter: hue-rotate(80deg);
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 7) WEEKLY GROWTH 카드 외곽 gold parallelogram frame
+    //    원본: _cluster4-season.scss line 473-488
+    //          .season-growth-card::after { background-image: url("/images/0/cluster4/bg border.png") }
+    //    `bg border.png` 는 단색 gold (#FCB02A) 프레임 PNG 이므로
+    //    pseudo 자체에 hue-rotate 만 걸어도 캐릭터·불/얼음 artwork 영향 0.
+    //    bg image.png(캐릭터 backdrop)·warrior <img>(4-1/image.png) 미변경.
+    // ─────────────────────────────────────────────
+    .cluster4-section2 .season-growth-card::after {
+      filter: hue-rotate(80deg);
+    }
+
+    // ─────────────────────────────────────────────
+    // 8) Section1 하단 gold divider line
+    //    원본: _cluster4-season.scss line 195-205
+    //          .cluster4-section1::after { background:#ecbb02; ... 1px line }
+    //    이건 단색 1px line 이므로 background 직접 override 가 최단경로.
+    // ─────────────────────────────────────────────
+    .cluster4-section1::after {
+      background: var(--px-accent) !important;
+    }
+
+    // ─────────────────────────────────────────────
+    // 9) WEEKLY GROWTH 타이틀 shadow text-stroke gold
+    //    원본: _cluster4-season.scss line 531-540
+    //          .season-title-shadow { -webkit-text-stroke: 1px #faab07 }
+    //    title 본체 color 는 이미 (1) block 에서 var(--px-accent-soft).
+    //    여기는 stroke 한 줄만 PX accent 로 매칭.
+    // ─────────────────────────────────────────────
+    .cluster4-section2 .season-growth-card .card-left .season-title-shadow {
+      -webkit-text-stroke: 1px var(--px-accent);
+      text-stroke: 1px var(--px-accent);
+    }
+
+    // ─────────────────────────────────────────────
+    // 11) Weekly card 리스트 — brand accent yellow → PX green
+    //    원본: _cluster4-season.scss line 4715, 4907, 4914, 4934, 4960, 4984,
+    //          5008, 5019, 5031, 5039 — 모두 #faab07.
+    //    semantic 상태 color (.status-text default/.fail/.rest-personal/
+    //    .rest-official/.in-progress/.counting, .badge-tag.*, .highlight.*,
+    //    --divider-color 인라인) 미터치.
+    //    PNG 캐릭터 아이콘 (단감/인절미/어흥) 도 identity color 라 미적용.
+    // ─────────────────────────────────────────────
+    .weekly-cards .weekly-card {
+      // "+1" 누적 주차 숫자 (line 4715)
+      .weekly-card-header .weekly-card-week .week-number {
+        color: var(--px-accent-soft);
+      }
+
+      // 좌측 점 dot — main progress / sub stats / extra stats (line 4907, 4984, 5031)
+      .weekly-card-main-progress .progress-label .dot,
+      .weekly-card-stats .stat .dot,
+      .weekly-card-extra-stats .stat .dot {
+        color: var(--px-accent-soft);
+      }
+
+      // 메인 주차 성장률 % (line 4914)
+      .weekly-card-main-progress .progress-label strong {
+        color: var(--px-accent-soft);
+      }
+
+      // 메인 progress fill 게이지 (line 4934)
+      .weekly-card-main-progress .progress-bar-wrapper .progress-bar .progress-fill {
+        background: var(--px-accent);
+      }
+
+      // 총 X 개 중 Y 개 — strong 카운트 (line 4960)
+      .weekly-card-main-progress .total-count strong {
+        color: var(--px-accent-soft);
+      }
+
+      // 정보/역량/경험/경력 강화율 % strong + (count/total) (line 5008, 5019)
+      .weekly-card-stats .stat strong {
+        color: var(--px-accent-soft);
+      }
+      .weekly-card-stats .stat .gray .num {
+        color: var(--px-accent-soft);
+      }
+
+      // 주차 평판 / 연계 동료 .num 카운트 (line 5039)
+      .weekly-card-extra-stats .stat .num {
+        color: var(--px-accent-soft);
+      }
+
+      // FM 옆 RSS 모양 PNG 아이콘 (wifi new.png) — 노란 PNG → 초록 회전.
+      // PNG 파일은 미수정 (px 전용 asset 미존재).
+      .weekly-card-extra-stats .stat.fm-badge .wifi-icon {
+        filter: hue-rotate(80deg);
+      }
+
+      // ───────────────────────────────────────────
+      // "정보/역량/경험/경력" 라벨 (.highlight) state alignment
+      //   원본 _cluster4-season.scss line 4988~ 는 .highlight 에
+      //   .fail / .rest-personal / .rest-official 만 정의되어 있어
+      //   "진행 중" / "집계 중" 일 때 default #9DFA07 lime 으로 fallback,
+      //   우측 상단 .weekly-card-status-badge 의 purple / pink 와 mismatch.
+      //   .highlight 자식엔 state class 가 없으므로 :has() 로 형제 badge state
+      //   를 검사하여 PX 라우트에서만 라벨 색상을 status badge 와 동기화.
+      //   JSX/DOM 미수정 → /cluster-4 원본 무영향.
+      // ───────────────────────────────────────────
+      &:has(.weekly-card-status-badge.in-progress) .weekly-card-stats .stat .highlight {
+        color: #9b59b6;
+      }
+      &:has(.weekly-card-status-badge.counting) .weekly-card-stats .stat .highlight {
+        color: #ff1493;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 10) WEEKLY GROWTH 카드 backdrop yellow/gold tint → dark emerald tint
+    //    원본 layer:
+    //      _cluster4-season.scss line 456-470 (.season-growth-card::before)
+    //      _cluster4-season.scss line 490-510 (.card-background)
+    //    둘 다 4-1/bg image.png (캐릭터 콜라주, gold tint baked-in) 사용.
+    //    PNG 자체는 미수정 — 같은 element 의 background-image 스택 위에
+    //    deep-olive→PX-accent 그라데이션을 얹고 background-blend-mode: multiply
+    //    로 곱연산 → 노란 톤이 dark emerald / cyber green 으로 전환.
+    //    warrior <img> 와 ahho 캐릭터 <img> 는 별도 자식이라 영향 없음.
+    // ─────────────────────────────────────────────
+    .cluster4-section2 .season-growth-card {
+      &::before {
+        background-image:
+          linear-gradient(135deg, rgba(15, 80, 20, 0.72), rgba(30, 149, 3, 0.45)),
+          url("/images/0/cluster4/4-1/bg image.png");
+        background-blend-mode: multiply, normal;
+        background-size:
+          100% 100%,
+          140% 140%;
+        background-position:
+          center,
+          75% center;
+        background-repeat: no-repeat, no-repeat;
+      }
+
+      .card-background {
+        background-image:
+          linear-gradient(135deg, rgba(15, 80, 20, 0.72), rgba(30, 149, 3, 0.45)),
+          url("/images/0/cluster4/4-1/bg image.png");
+        background-blend-mode: multiply, normal;
+        background-size:
+          100% 100%,
+          cover;
+        background-position:
+          center,
+          center;
+        background-repeat: no-repeat, no-repeat;
+      }
+    }
+  }
 }

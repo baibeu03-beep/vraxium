@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getCachedActivityTypes } from "@/lib/cached-data";
+import { getProfileLookupKey, resolveUserProfileAccess } from "@/lib/user-profile-access";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -52,11 +53,31 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // 1차: email
+      const access = await resolveUserProfileAccess(supabaseAdmin, {
+        email: session.user.email,
+        name: session.user.name,
+        fallbackProfileId: session.user.id,
+      });
+
+      if (access.status !== "approved") {
+        return NextResponse.json(
+          { error: "승인된 프로필이 없습니다. 어드민 승인을 기다려주세요." },
+          { status: 403 }
+        );
+      }
+
+      const lookupKey = getProfileLookupKey(access.profile);
+      if (!lookupKey) {
+        return NextResponse.json(
+          { error: "승인된 프로필이 없습니다. 어드민 승인을 기다려주세요." },
+          { status: 404 }
+        );
+      }
+
       const { data, error } = await supabaseAdmin
         .from("user_profiles")
         .select("*")
-        .eq("email", session.user.email)
+        .eq(lookupKey.column, lookupKey.value)
         .maybeSingle();
 
       if (error) {
@@ -66,45 +87,14 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      if (data) {
-        profile = data;
-      }
-
-      // 2차: auth_email
-      if (!profile) {
-        const { data: profileByAuth } = await supabaseAdmin
-          .from("user_profiles")
-          .select("*")
-          .eq("auth_email", session.user.email)
-          .maybeSingle();
-
-        if (profileByAuth) {
-          profile = profileByAuth;
-        }
-      }
-
-      // 3차: JWT에서 매칭된 profile UUID
-      if (!profile && session.user?.id) {
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (uuidRegex.test(session.user.id)) {
-          const { data: profileById } = await supabaseAdmin
-            .from("user_profiles")
-            .select("*")
-            .eq("id", session.user.id)
-            .maybeSingle();
-
-          if (profileById) {
-            profile = profileById;
-          }
-        }
-      }
-
-      if (!profile) {
+      if (!data) {
         return NextResponse.json(
           { error: "승인된 프로필이 없습니다. 어드민 승인을 기다려주세요." },
           { status: 404 }
         );
       }
+
+      profile = data;
     }
 
     const today = new Date().toISOString().split('T')[0];

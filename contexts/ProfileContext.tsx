@@ -6,6 +6,10 @@ import { useSession } from "next-auth/react";
 // Profile 데이터 타입
 interface ProfileData {
   data: any;
+  // 연락 가능 시간대/코멘트 — DB: user_profiles.contact_available, API/Frontend: contactAvailable.
+  // /api/profile 응답의 data.contactAvailable (alias) 또는 data.contact_available 에서 매핑.
+  // 값이 없으면 null. resume-card phone-comment 모달이 직접 이 필드를 읽음.
+  contactAvailable: string | null;
   practicalCounts: { competency: number; experience: number; info: number; career: number } | null;
   reliabilityRate: number | null;
   completionRate: number | null;
@@ -131,6 +135,8 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       const newProfileData: ProfileData = {
         data: result.data,
+        contactAvailable:
+          result.data?.contactAvailable ?? result.data?.contact_available ?? null,
         practicalCounts: result.practicalCounts || null,
         reliabilityRate: result.reliabilityRate ?? null,
         completionRate: result.completionRate ?? null,

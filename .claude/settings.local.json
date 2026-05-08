@@ -118,7 +118,13 @@
       "mcp__playwright__browser_take_screenshot",
       "PowerShell(Move-Item *)",
       "mcp__playwright__browser_navigate_back",
-      "mcp__playwright__browser_wait_for"
+      "mcp__playwright__browser_wait_for",
+      "Bash(tail -20 \"C:\\\\\\\\Users\\\\\\\\ynlee\\\\\\\\AppData\\\\\\\\Local\\\\\\\\Temp\\\\\\\\claude\\\\\\\\C--Users-ynlee-OneDrive-------vraxium-Career-Resume\\\\\\\\86a943c5-0441-4d50-83e5-417ebccc4f82\\\\\\\\tasks\\\\\\\\b0q0gx9dr.output\")",
+      "Bash(tail *)",
+      "Bash(wc -c \"C:\\\\\\\\Users\\\\\\\\ynlee\\\\\\\\AppData\\\\\\\\Local\\\\\\\\Temp\\\\\\\\claude\\\\\\\\C--Users-ynlee-OneDrive-------vraxium-Career-Resume\\\\\\\\86a943c5-0441-4d50-83e5-417ebccc4f82\\\\\\\\tasks\\\\\\\\b0q0gx9dr.output\")",
+      "mcp__playwright__browser_console_messages",
+      "Bash(head -50 \"C:\\\\\\\\Users\\\\\\\\ynlee\\\\\\\\AppData\\\\\\\\Local\\\\\\\\Temp\\\\\\\\claude\\\\\\\\C--Users-ynlee-OneDrive-------vraxium-Career-Resume\\\\\\\\86a943c5-0441-4d50-83e5-417ebccc4f82\\\\\\\\tasks\\\\\\\\bl49v1biu.output\")",
+      "Bash(tee /tmp/next-dev.log)"
     ],
     "deny": [],
     "ask": []

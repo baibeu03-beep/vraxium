@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getCachedTeams, getCachedParts, getCachedActivityTypes } from "@/lib/cached-data";
+import { getProfileLookupKey, resolveUserProfileAccess } from "@/lib/user-profile-access";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -215,6 +216,11 @@ export async function GET(request: NextRequest) {
     } else {
       // 현재 로그인 유저 조회 (로그인 필요)
       const session = await getServerSession(authOptions);
+      const access = await resolveUserProfileAccess(supabaseAdmin, {
+        email: session?.user?.email ?? "",
+        name: session?.user?.name,
+        fallbackProfileId: session?.user?.id,
+      });
 
       if (!session?.user?.email) {
         return NextResponse.json(
@@ -224,6 +230,13 @@ export async function GET(request: NextRequest) {
       }
 
       // 1차: 이메일로 프로필 조회
+      if (access.status !== "approved") {
+        return NextResponse.json(
+          { error: "?뱀씤???꾨줈?꾩씠 ?놁뒿?덈떎. ?대뱶誘??뱀씤??湲곕떎?ㅼ＜?몄슂." },
+          { status: 403 }
+        );
+      }
+
       const { data } = await supabaseAdmin
         .from("user_profiles")
         .select("*")
@@ -310,6 +323,12 @@ export async function GET(request: NextRequest) {
     // user_profiles는 user_id 컬럼을 PK로 사용. 다운스트림은 profile.id 참조이므로 정규화.
     if (profile && !profile.id && profile.user_id) {
       profile.id = profile.user_id;
+    }
+
+    // contact_available (DB) → contactAvailable (API/Frontend) 별칭 노출.
+    // 기존 snake_case 컨슈머와 호환을 위해 두 키를 모두 유지.
+    if (profile) {
+      profile.contactAvailable = profile.contact_available ?? null;
     }
 
     // ── Enrichment: /api/crews 에서 적용한 동일 컨벤션을 /api/profile 에도 이식.
@@ -1431,7 +1450,23 @@ export async function PUT(request: Request) {
 
     // user_profiles에서 기존 프로필 확인 (1차: email, 2차: auth_email)
     // user_profiles는 user_id 컬럼을 PK로 사용
-    let existingProfile: { user_id: string } | null = null;
+    const access = await resolveUserProfileAccess(supabaseAdmin, {
+      email,
+      name: session.user.name,
+      fallbackProfileId: session.user.id,
+    });
+
+    if (access.status !== "approved") {
+      return NextResponse.json(
+        { error: "?뱀씤???꾨줈?꾩씠 ?놁뒿?덈떎. ?대뱶誘??뱀씤??湲곕떎?ㅼ＜?몄슂." },
+        { status: 403 }
+      );
+    }
+
+    const approvedLookupKey = getProfileLookupKey(access.profile);
+    let existingProfile: { user_id: string } | null = approvedLookupKey?.column === "user_id" && approvedLookupKey.value
+      ? { user_id: approvedLookupKey.value }
+      : null;
 
     const { data: profileByEmail } = await supabaseAdmin
       .from("user_profiles")
@@ -1543,6 +1578,129 @@ export async function PUT(request: Request) {
     });
   } catch (error) {
     console.error("프로필 수정 API 오류:", error);
+    return NextResponse.json(
+      { error: "서버 오류가 발생했습니다." },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH: 부분 업데이트 — 현재는 contact_available 단일 컬럼만 허용.
+// 본인 user_profiles row 만 갱신 (PUT 와 동일한 lookup 체인 사용).
+// 요청 body: { contactAvailable: string | null }  ← API/Frontend 컨벤션은 camelCase.
+export async function PATCH(request: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { error: "로그인이 필요합니다." },
+        { status: 401 }
+      );
+    }
+
+    if (!supabaseAdmin) {
+      return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
+    }
+
+    const email = session.user.email;
+    const body = await request.json().catch(() => ({}));
+
+    if (!Object.prototype.hasOwnProperty.call(body, "contactAvailable")) {
+      return NextResponse.json(
+        { error: "수정 가능한 필드가 없습니다." },
+        { status: 400 }
+      );
+    }
+
+    const rawValue = body.contactAvailable;
+    const nextValue: string | null =
+      rawValue === null || rawValue === undefined
+        ? null
+        : typeof rawValue === "string"
+          ? rawValue
+          : String(rawValue);
+
+    if (nextValue !== null && nextValue.length > 150) {
+      return NextResponse.json(
+        { error: "최대 150자까지 입력 가능합니다." },
+        { status: 400 }
+      );
+    }
+
+    // 본인 프로필 식별 (PUT 와 동일한 다단 lookup)
+    const access = await resolveUserProfileAccess(supabaseAdmin, {
+      email,
+      name: session.user.name,
+      fallbackProfileId: session.user.id,
+    });
+
+    if (access.status !== "approved") {
+      return NextResponse.json(
+        { error: "승인된 프로필이 없습니다." },
+        { status: 403 }
+      );
+    }
+
+    const approvedLookupKey = getProfileLookupKey(access.profile);
+    let existingProfile: { user_id: string } | null =
+      approvedLookupKey?.column === "user_id" && approvedLookupKey.value
+        ? { user_id: approvedLookupKey.value }
+        : null;
+
+    if (!existingProfile) {
+      const { data: profileByEmail } = await supabaseAdmin
+        .from("user_profiles")
+        .select("user_id")
+        .eq("email", email)
+        .maybeSingle();
+      if (profileByEmail) existingProfile = profileByEmail;
+    }
+
+    if (!existingProfile) {
+      const { data: profileByAuth } = await supabaseAdmin
+        .from("user_profiles")
+        .select("user_id")
+        .eq("auth_email", email)
+        .maybeSingle();
+      if (profileByAuth) existingProfile = profileByAuth;
+    }
+
+    if (!existingProfile) {
+      return NextResponse.json(
+        { error: "승인된 프로필이 없습니다." },
+        { status: 403 }
+      );
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("user_profiles")
+      .update({
+        contact_available: nextValue,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", existingProfile.user_id)
+      .select("user_id, contact_available")
+      .single();
+
+    if (error) {
+      console.error("프로필 PATCH 오류:", error);
+      return NextResponse.json(
+        { error: "프로필 수정에 실패했습니다." },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...data,
+        contactAvailable: data?.contact_available ?? null,
+      },
+      message: "연락 가능 시간대가 저장되었습니다.",
+    });
+  } catch (error) {
+    console.error("프로필 PATCH API 오류:", error);
     return NextResponse.json(
       { error: "서버 오류가 발생했습니다." },
       { status: 500 }

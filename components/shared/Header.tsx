@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Fragment, useEffect, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
+import { buildPostLoginRedirectUrl } from "@/lib/auth-redirect";
 import Cart from "./Cart";
 import Message from "./header/Message";
 import Notification from "./header/Notification";
@@ -180,6 +181,7 @@ const menu = [
 const Header = () => {
   const { data: session, status } = useSession();
   const isLoading = status === "loading";
+  const kakaoLoginRedirectUrl = buildPostLoginRedirectUrl("/cluster-4");
   const [search, setSearch] = useState(false);
   const [cartIsOpen, setCartIsOpen] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -296,7 +298,7 @@ const Header = () => {
                         Log Out
                       </button>
                     ) : (
-                      <button onClick={() => signIn("kakao", { callbackUrl: "/cluster-4" })} className="btn--primary">
+                      <button onClick={() => signIn("kakao", { callbackUrl: kakaoLoginRedirectUrl })} className="btn--primary">
                         Log - In
                       </button>
                     ))}
@@ -399,7 +401,7 @@ const Header = () => {
                   Log Out
                 </button>
               ) : (
-                <button onClick={() => signIn("kakao", { callbackUrl: "/cluster-4" })} className="btn--primary">
+                <button onClick={() => signIn("kakao", { callbackUrl: kakaoLoginRedirectUrl })} className="btn--primary">
                   Log - In
                 </button>
               ))}

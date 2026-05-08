@@ -1,67 +1,43 @@
 "use client";
-import coinbaseIcon from "@/public/images/authentication/coinbase.png";
-import discordIcon from "@/public/images/authentication/discord.png";
-import googleIcon from "@/public/images/authentication/google.png";
-import metaIcon from "@/public/images/authentication/meta.png";
-import metamaskIcon from "@/public/images/authentication/metamask.png";
-import phantomIcon from "@/public/images/authentication/phantom.png";
-import rainbowIcon from "@/public/images/authentication/rainbow.png";
-import steamIcon from "@/public/images/authentication/steam.png";
-import trustIcon from "@/public/images/authentication/trust.png";
-import twitchIcon from "@/public/images/authentication/twitch.png";
-import twitterIcon from "@/public/images/authentication/twitter.png";
-import walletConnectIcon from "@/public/images/authentication/wallet-connect.png";
-import walletIcon from "@/public/images/authentication/wallet.png";
-import Image from "next/image";
+
 import Link from "next/link";
-import { useState, FormEvent } from "react";
+import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { buildPostLoginRedirectUrl, sanitizeCallbackUrl } from "@/lib/auth-redirect";
+
+const kakaoIconStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 24,
+  height: 24,
+  borderRadius: "50%",
+  background: "#FEE500",
+  color: "#191919",
+  fontWeight: 800,
+  fontSize: 12,
+} as const;
 
 const SignIn = () => {
-  const router = useRouter();
-  const [walletModal, setWalletModal] = useState(false);
-  const [isEmailTab, setIsEmailTab] = useState(true);
-  const [showPass, setShowPass] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const searchParams = useSearchParams();
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const callbackUrl = sanitizeCallbackUrl(searchParams.get("callbackUrl"));
+  const postLoginRedirectUrl = buildPostLoginRedirectUrl(callbackUrl);
 
-  const handleEmailLogin = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const handleKakaoLogin = async () => {
     setError("");
     setIsLoading(true);
 
     try {
-      const result = await signIn("credentials", {
-        email,
-        password,
-        redirect: false,
-      });
-
-      if (result?.error) {
-        setError("이메일 또는 비밀번호가 올바르지 않습니다.");
-      } else if (result?.ok) {
-        router.push("/");
-        router.refresh();
-      }
-    } catch (err) {
-      setError("로그인 중 오류가 발생했습니다.");
-    } finally {
+      await signIn("kakao", { callbackUrl: postLoginRedirectUrl });
+    } catch {
+      setError("카카오 로그인 중 오류가 발생했습니다.");
       setIsLoading(false);
     }
   };
 
-  const handleSocialLogin = async (provider: string) => {
-    setIsLoading(true);
-    try {
-      await signIn(provider, { callbackUrl: "/" });
-    } catch (err) {
-      setError("소셜 로그인 중 오류가 발생했습니다.");
-      setIsLoading(false);
-    }
-  };
   return (
     <main className="nftg-content-two">
       <section className="authentication pt-120 pb-120 fade-wrapper">
@@ -70,8 +46,8 @@ const SignIn = () => {
             <div className="col-12">
               <div className="authentication__wrapper text-center">
                 <div className="mb-55">
-                  <h2 className="title-lg fw-8 stroked-text transform-none title-animation mt-8">Hello Gamer</h2>
-                  <p className="text-xl text-alter mt-12">Welcome Back, We Missed You.</p>
+                  <h2 className="title-lg fw-8 stroked-text transform-none title-animation mt-8">Kakao Login</h2>
+                  <p className="text-xl text-alter mt-12">사용자 앱 로그인은 카카오 계정으로만 진행됩니다.</p>
                 </div>
                 <div className="authentication__inner">
                   {error && (
@@ -79,195 +55,36 @@ const SignIn = () => {
                       {error}
                     </div>
                   )}
-                  {isEmailTab ? (
-                    <div className="oauth-tab">
-                      <div className="oauth-btns">
-                        <button
-                          onClick={() => handleSocialLogin("google")}
-                          disabled={isLoading}
-                          aria-label="continue with google"
-                          title="continue with google"
-                          className="btn--tertiary"
-                        >
-                          <Image src={googleIcon} alt="Google" width={24} height={24} />
-                          Google
-                          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" preserveAspectRatio="none" className="cmn-shape">
-                            <path d="M0 0  L100 0  L100 70 L89 100 L0 100 Z" vectorEffect="non-scaling-stroke" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => handleSocialLogin("discord")}
-                          disabled={isLoading}
-                          aria-label="continue with discord"
-                          title="continue with discord"
-                          className="btn--tertiary"
-                        >
-                          <Image src={discordIcon} alt="Discord" width={24} height={24} />
-                          Discord
-                          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" preserveAspectRatio="none" className="cmn-shape">
-                            <path d="M0 0  L100 0  L100 70 L89 100 L0 100 Z" vectorEffect="non-scaling-stroke" />
-                          </svg>
-                        </button>
-                        <button aria-label="continue with facebook" title="continue with facebook" className="btn--tertiary">
-                          <Image src={metaIcon} alt="Facebook" width={24} height={24} />
-                          Facebook
-                          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" preserveAspectRatio="none" className="cmn-shape">
-                            <path d="M0 0  L100 0  L100 70 L89 100 L0 100 Z" vectorEffect="non-scaling-stroke" />
-                          </svg>
-                        </button>
-                        <button aria-label="continue with twitter" title="continue with twitter" className="btn--tertiary">
-                          <Image src={twitterIcon} alt="Twitter" width={24} height={24} />
-                          Twitter
-                          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" preserveAspectRatio="none" className="cmn-shape">
-                            <path d="M0 0  L100 0  L100 70 L89 100 L0 100 Z" vectorEffect="non-scaling-stroke" />
-                          </svg>
-                        </button>
-                        <button aria-label="continue with twitch" title="continue with twitch" className="btn--tertiary">
-                          <Image src={twitchIcon} alt="Twitch" width={24} height={24} />
-                          Twitch
-                          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" preserveAspectRatio="none" className="cmn-shape">
-                            <path d="M0 0  L100 0  L100 70 L89 100 L0 100 Z" vectorEffect="non-scaling-stroke" />
-                          </svg>
-                        </button>
-                        <button aria-label="continue with steam" title="continue with steam" className="btn--tertiary">
-                          <Image src={steamIcon} alt="Steam" width={24} height={24} />
-                          Steam
-                          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" preserveAspectRatio="none" className="cmn-shape">
-                            <path d="M0 0  L100 0  L100 70 L89 100 L0 100 Z" vectorEffect="non-scaling-stroke" />
-                          </svg>
-                        </button>
-                      </div>
-                      <div className="divider-wrapper">
-                        <hr />
-                        <span className="text-uppercase fw-5">OR</span>
-                        <hr />
-                      </div>
-                      <div className="wallet-authentication">
-                        <div className="btn-wrapper">
-                          <button onClick={() => setWalletModal(!walletModal)} className="btn--secondary open-wallet-modal" aria-label="login with wallet" title="login with wallet">
-                            <Image src={walletIcon} alt="Wallet" width={24} height={24} />
-                            Login With Wallet
-                          </button>
-                        </div>
-                        {/* Wallet modal content */}
-                        <div className={`wallet-modal ${walletModal ? "wallet-modal-active" : ""}`}>
-                          <div className="wallet-modal-intro">
-                            <h6 className="fw-4">Connect a Wallet</h6>
-                            <button onClick={() => setWalletModal(!walletModal)} className="close-wallet-modal" aria-label="close modal">
-                              <i className="ti ti-x"></i>
-                            </button>
-                          </div>
-                          <div className="wallet-modal-body">
-                            <div className="wallet-modal-body-inner">
-                              <ul>
-                                <li>
-                                  <button aria-label="metamask" title="metamask">
-                                    <Image src={metamaskIcon} alt="metamask" />
-                                    MetaMask
-                                  </button>
-                                </li>
-                                <li>
-                                  <button aria-label="rainbow" title="rainbow">
-                                    <Image src={rainbowIcon} alt="rainbow" />
-                                    Rainbow
-                                  </button>
-                                </li>
-                                <li>
-                                  <button aria-label="wallet connect" title="wallet connect">
-                                    <Image src={walletConnectIcon} alt="wallet connect" />
-                                    WalletConnect
-                                  </button>
-                                </li>
-                                <li>
-                                  <button aria-label="phantom" title="phantom">
-                                    <Image src={phantomIcon} alt="phantom" />
-                                    Phantom
-                                  </button>
-                                </li>
-                                <li>
-                                  <button aria-label="trust wallet" title="trust wallet">
-                                    <Image src={trustIcon} alt="trust wallet" />
-                                    Trust Wallet
-                                  </button>
-                                </li>
-                                <li>
-                                  <button aria-label="coinbase wallet" title="coinbase wallet">
-                                    <Image src={coinbaseIcon} alt="coinbase wallet" />
-                                    Coinbase Wallet
-                                  </button>
-                                </li>
-                              </ul>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="c-email mt-16">
-                        <button onClick={() => setIsEmailTab(!isEmailTab)} aria-label="continue with email" title="continue with email" className="change-action open-custom">
-                          Continue With Email <i className="ti ti-arrow-narrow-right"></i>
-                        </button>
-                      </div>
+
+                  <div className="oauth-tab">
+                    <div className="oauth-btns">
+                      <button
+                        onClick={handleKakaoLogin}
+                        disabled={isLoading}
+                        aria-label="continue with kakao"
+                        title="continue with kakao"
+                        className="btn--tertiary"
+                      >
+                        <span aria-hidden="true" style={kakaoIconStyle}>
+                          K
+                        </span>
+                        {isLoading ? "카카오 로그인 중..." : "Kakao로 계속하기"}
+                        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" preserveAspectRatio="none" className="cmn-shape">
+                          <path d="M0 0  L100 0  L100 70 L89 100 L0 100 Z" vectorEffect="non-scaling-stroke" />
+                        </svg>
+                      </button>
                     </div>
-                  ) : (
-                    <div className="custom-tab">
-                      <form onSubmit={handleEmailLogin}>
-                        <div className="input-single">
-                          <label htmlFor="userEmail">Your Email</label>
-                          <div className="ic-group">
-                            <input
-                              type="email"
-                              name="user-email"
-                              id="userEmail"
-                              placeholder="Enter Email"
-                              value={email}
-                              onChange={(e) => setEmail(e.target.value)}
-                              required
-                              disabled={isLoading}
-                            />
-                            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" preserveAspectRatio="none" className="cmn-shape">
-                              <path d="M0 0  L100 0  L100 75 L92 100 L0 100 Z" vectorEffect="non-scaling-stroke" />
-                            </svg>
-                            <i className="ti ti-mail"></i>
-                          </div>
-                        </div>
-                        <div className="input-single mb-0">
-                          <label htmlFor="userPassword">Password</label>
-                          <div className="ic-group pass">
-                            <i className="ti ti-key"></i>
-                            <i className={`ti ti-eye-off show-pass ${showPass ? "show-pass-active" : ""}`} onClick={() => setShowPass(!showPass)}></i>
-                            <input
-                              type={`${showPass ? "text" : "password"}`}
-                              name="user-Password"
-                              id="userPassword"
-                              placeholder="Enter Password"
-                              value={password}
-                              onChange={(e) => setPassword(e.target.value)}
-                              required
-                              disabled={isLoading}
-                            />
-                            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" preserveAspectRatio="none" className="cmn-shape">
-                              <path d="M0 0  L100 0  L100 75 L92 100 L0 100 Z" vectorEffect="non-scaling-stroke" />
-                            </svg>
-                          </div>
-                          <p className="text-end">
-                            <Link href="/contact-us">Forget Password?</Link>
-                          </p>
-                        </div>
-                        <div className="btn-wrapper mt-40">
-                          <button type="submit" className="btn--secondary" aria-label="login" title="login" disabled={isLoading}>
-                            {isLoading ? "로그인 중..." : "Login"}
-                          </button>
-                        </div>
-                      </form>
-                      <div className="c-email mt-24">
-                        <button onClick={() => setIsEmailTab(!isEmailTab)} aria-label="go back to social connections" title="go back to social connections" className="change-action go-back">
-                          <i className="ti ti-arrow-narrow-left"></i>Go Back
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  </div>
+
                   <div className="mt-60 h-a text-start">
                     <p className="mt-8">
-                      Don&apos;t have an account? <Link href="/sign-up">Sign Up!</Link>
+                      계정 연결이 되지 않으면 <Link href="/auth/access?status=pending">승인 대기 상태</Link>를 확인하세요.
+                    </p>
+                    <p className="mt-8">
+                      운영자 이메일 로그인은 별도 Admin 경로에서 계속 사용됩니다.
+                    </p>
+                    <p className="mt-8">
+                      처음 방문하셨나요? <Link href="/sign-up">카카오로 시작하기</Link>
                     </p>
                   </div>
                 </div>
