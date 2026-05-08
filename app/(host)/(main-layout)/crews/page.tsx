@@ -678,6 +678,41 @@ function CrewsContent() {
                       gap: 24,
                     }}
                   >
+                    <style>{`
+                      /* CSS-only price button: SVG 대각선 테두리를 제거하고 clip-path + ::before 로 픽셀 일관성 확보 */
+                      .crews-grid .price-inner {
+                        flex: 0 0 180px !important;
+                        width: 180px !important;
+                        max-width: 180px !important;
+                        height: 48px !important;
+                        padding: 0 14px !important;
+                        gap: 12px !important;
+                        position: relative !important;
+                        isolation: isolate;
+                        display: flex !important;
+                        align-items: center !important;
+                        justify-content: space-between !important;
+                        background-color: var(--quaternary-color) !important;
+                        clip-path: polygon(0% 0%, 100% 0%, 100% 64%, 88% 100%, 0% 100%) !important;
+                        overflow: hidden;
+                      }
+                      .crews-grid .price-inner::before {
+                        content: '';
+                        position: absolute;
+                        inset: 2px;
+                        background-color: var(--secondary-color);
+                        clip-path: polygon(0% 0%, 100% 0%, 100% 64%, 88% 100%, 0% 100%);
+                        z-index: 0;
+                        pointer-events: none;
+                      }
+                      .crews-grid .price-inner > * {
+                        position: relative;
+                        z-index: 1;
+                      }
+                      .crews-grid .price-inner .cmn-shape { display: none !important; }
+                      /* 학교/학과: flex 부모의 wrap 해제 (SCSS .info p { flex-wrap: wrap } 오버라이드) */
+                      .crews-grid .info p { flex-wrap: nowrap !important; }
+                    `}</style>
                     {paginatedCrews.map((crew) => (
                       <div key={crew.id} className="trending__single" style={{ height: "100%" }}>
                         <div className="thumb">
@@ -709,9 +744,9 @@ function CrewsContent() {
                             <p className="text-sm fw-6">
                               <Link href={resolveHref(crew)} style={{ backgroundColor: teamBadgeBackground, color: teamBadgeTextColor, padding: "2px 6px", display: "inline-flex", alignItems: "center", justifyContent: "center"}}>{[crew.team, crew.club].find((v) => v && v !== "-") ?? "-"}</Link>
                             </p>
-                            <p className="text-sm" style={{ marginTop: "18px", display: "flex", alignItems: "center", justifyContent: "flex-start", gap: "3px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${mask.school(crew.university)} ${mask.major(crew.major)}`}>
+                            <p className="text-sm" style={{ marginTop: "18px", display: "flex", alignItems: "center", justifyContent: "flex-start", gap: "3px", flexWrap: "nowrap", minWidth: 0, overflow: "hidden" }} title={`${mask.school(crew.university)} ${mask.major(crew.major)}`}>
                               <span style={{ display: "inline-block", width: "7px", height: "7px", borderRadius: "50%", backgroundColor: schoolDotBackground, flexShrink: 0, position: "relative", top: "-1px" }} />
-                              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mask.school(crew.university)} {mask.major(crew.major)}</span>
+                              <span style={{ minWidth: 0, flex: "1 1 auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mask.school(crew.university)} {mask.major(crew.major)}</span>
                             </p>
                           </div>
                           <div className="trending__single-footer">
@@ -749,9 +784,6 @@ function CrewsContent() {
                                   보기
                                   <i className="ti ti-arrow-narrow-right"></i>
                                 </Link>
-                                <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" preserveAspectRatio="none" className="cmn-shape">
-                                  <path d="M0 0  L100 0  L100 65 L88 100 L0 100 Z" vectorEffect="non-scaling-stroke"></path>
-                                </svg>
                               </div>
                               <div className="review">
                                 <span className="text-sm fw-6">
