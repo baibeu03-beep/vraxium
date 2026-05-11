@@ -29,8 +29,8 @@ export async function GET(request: NextRequest) {
       const [profileResult, introResult] = await Promise.all([
         supabaseAdmin
           .from("user_profiles")
-          .select("id, profile_photo_url")
-          .eq("id", targetUserId)
+          .select("user_id, profile_photo_url")
+          .eq("user_id", targetUserId)
           .maybeSingle(),
         supabaseAdmin
           .from("user_introductions")
@@ -59,13 +59,13 @@ export async function GET(request: NextRequest) {
         },
       });
     } else {
-      const { profile, error } = await getUserProfile<{ id: string; profile_photo_url: string | null }>("id, profile_photo_url");
+      const { profile, error } = await getUserProfile<{ user_id: string; profile_photo_url: string | null }>("user_id, profile_photo_url");
 
       if (error) {
         return NextResponse.json({ error: error.message }, { status: error.status });
       }
 
-      profileId = profile.id;
+      profileId = profile.user_id;
       sidebarPhotoUrl = profile.profile_photo_url;
     }
 
@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: Request) {
   try {
     const targetUserId = extractTargetUserId(request);
-    const { profile, error } = await getUserProfile("id", targetUserId);
+    const { profile, error } = await getUserProfile<{ user_id: string }>("user_id", targetUserId);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: error.status });
@@ -125,7 +125,7 @@ export async function PUT(request: Request) {
           profile_photo_url: sidebarPhoto,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", profile.id);
+        .eq("user_id", profile.user_id);
 
       if (sidebarError) {
         console.error("Sidebar 사진 업데이트 오류:", sidebarError);
@@ -141,7 +141,7 @@ export async function PUT(request: Request) {
       const { data: existingIntro } = await supabaseAdmin
         .from("user_introductions")
         .select("id")
-        .eq("user_id", profile.id)
+        .eq("user_id", profile.user_id)
         .maybeSingle();
 
       const introData: Record<string, string | null> = {
@@ -161,7 +161,7 @@ export async function PUT(request: Request) {
         const { error: subError } = await supabaseAdmin
           .from("user_introductions")
           .update(introData)
-          .eq("user_id", profile.id);
+          .eq("user_id", profile.user_id);
 
         if (subError) {
           console.error("서브 사진 업데이트 오류:", subError);
@@ -175,7 +175,7 @@ export async function PUT(request: Request) {
           .from("user_introductions")
           .insert({
             id: crypto.randomUUID(),
-            user_id: profile.id,
+            user_id: profile.user_id,
             ...introData,
             created_at: new Date().toISOString(),
           });

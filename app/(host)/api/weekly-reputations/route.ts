@@ -64,8 +64,8 @@ export async function GET(request: Request) {
       // reviewer 프로필 조회 (university, major_first 제거)
       const { data: reviewers, error: reviewerError } = await supabase
         .from("user_profiles")
-        .select("id, display_name, gender, birth_date, profile_photo_url, vision")
-        .in("id", reviewerIds);
+        .select("user_id, display_name, gender, birth_date, profile_photo_url, vision")
+        .in("user_id", reviewerIds);
 
       if (reviewerError) {
         console.error("[weekly-reputations] reviewer 조회 오류:", reviewerError);
@@ -119,9 +119,9 @@ export async function GET(request: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const reviewerObj: { [key: string]: any } = {};
       reviewers?.forEach(r => {
-        const teamPart = userTeamPartMap[r.id];
-        const education = educationMap[r.id];
-        reviewerObj[r.id] = {
+        const teamPart = userTeamPartMap[r.user_id];
+        const education = educationMap[r.user_id];
+        reviewerObj[r.user_id] = {
           ...r,
           university: education?.school_name || null,
           major_first: education?.major_name_1 || null,
@@ -158,7 +158,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const adminTargetUserId = extractTargetUserId(request);
-    const { profile: reviewerProfile, error } = await getUserProfile("id", adminTargetUserId);
+    const { profile: reviewerProfile, error } = await getUserProfile<{ user_id: string }>("user_id", adminTargetUserId);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: error.status });
@@ -205,7 +205,7 @@ export async function POST(request: Request) {
     }
 
     // 자기 자신에게 평판 남기기 불가
-    if (reviewerProfile.id === targetUserId) {
+    if (reviewerProfile.user_id === targetUserId) {
       return NextResponse.json(
         { error: "자기 자신에게는 평판을 남길 수 없습니다." },
         { status: 400 }
@@ -216,7 +216,7 @@ export async function POST(request: Request) {
     const { data: existingReputation } = await supabase
       .from("weekly_reputations")
       .select("id")
-      .eq("reviewer_id", reviewerProfile.id)
+      .eq("reviewer_id", reviewerProfile.user_id)
       .eq("target_user_id", targetUserId)
       .eq("week_card_id", weekCardId)
       .maybeSingle();
@@ -246,7 +246,7 @@ export async function POST(request: Request) {
     const { count: sentCount } = await supabase
       .from("weekly_reputations")
       .select("id", { count: "exact", head: true })
-      .eq("reviewer_id", reviewerProfile.id)
+      .eq("reviewer_id", reviewerProfile.user_id)
       .eq("week_card_id", weekCardId);
 
     if (sentCount !== null && sentCount >= 7) {
@@ -261,7 +261,7 @@ export async function POST(request: Request) {
       .from("weekly_reputations")
       .insert({
         id: crypto.randomUUID(),
-        reviewer_id: reviewerProfile.id,
+        reviewer_id: reviewerProfile.user_id,
         target_user_id: targetUserId,
         week_card_id: weekCardId,
         rating: rating,
@@ -307,11 +307,11 @@ export async function DELETE(request: Request) {
 
     if (!isAdmin) {
       const adminTargetUserId = extractTargetUserId(request);
-      const { profile, error } = await getUserProfile("id", adminTargetUserId);
+      const { profile, error } = await getUserProfile<{ user_id: string }>("user_id", adminTargetUserId);
       if (error) {
         return NextResponse.json({ error: error.message }, { status: error.status });
       }
-      var reviewerProfileId = profile.id;
+      var reviewerProfileId = profile.user_id;
     }
 
     const supabase = createAdminClient();
@@ -380,7 +380,7 @@ export async function PUT(request: Request) {
     // 일반 유저는 본인이 작성한 평판인지 확인
     if (!isAdmin) {
       const adminTargetUserId = extractTargetUserId(request);
-      const { profile, error: profileError } = await getUserProfile("id", adminTargetUserId);
+      const { profile, error: profileError } = await getUserProfile<{ user_id: string }>("user_id", adminTargetUserId);
       if (profileError) {
         return NextResponse.json({ error: profileError.message }, { status: profileError.status });
       }
@@ -394,7 +394,7 @@ export async function PUT(request: Request) {
       if (!existing) {
         return NextResponse.json({ error: "평판을 찾을 수 없습니다." }, { status: 404 });
       }
-      if (existing.reviewer_id !== profile.id) {
+      if (existing.reviewer_id !== profile.user_id) {
         return NextResponse.json({ error: "본인이 작성한 평판만 수정할 수 있습니다." }, { status: 403 });
       }
     }

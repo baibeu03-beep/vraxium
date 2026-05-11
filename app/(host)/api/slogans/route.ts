@@ -24,8 +24,8 @@ export async function GET(request: Request) {
       // 특정 유저의 슬로건 조회 (공개 접근 가능)
       const { data, error } = await supabaseAdmin
         .from("user_profiles")
-        .select("id, eng_name")
-        .eq("id", targetUserId)
+        .select("user_id, eng_name")
+        .eq("user_id", targetUserId)
         .maybeSingle();
 
       if (error || !data) {
@@ -49,7 +49,7 @@ export async function GET(request: Request) {
       // 1차: email
       const { data } = await supabaseAdmin
         .from("user_profiles")
-        .select("id, eng_name")
+        .select("user_id, eng_name")
         .eq("email", session.user.email)
         .maybeSingle();
 
@@ -61,7 +61,7 @@ export async function GET(request: Request) {
       if (!profile) {
         const { data: profileByAuth } = await supabaseAdmin
           .from("user_profiles")
-          .select("id, eng_name")
+          .select("user_id, eng_name")
           .eq("auth_email", session.user.email)
           .maybeSingle();
 
@@ -76,8 +76,8 @@ export async function GET(request: Request) {
         if (uuidRegex.test(session.user.id)) {
           const { data: profileById } = await supabaseAdmin
             .from("user_profiles")
-            .select("id, eng_name")
-            .eq("id", session.user.id)
+            .select("user_id, eng_name")
+            .eq("user_id", session.user.id)
             .maybeSingle();
 
           if (profileById) {
@@ -98,7 +98,7 @@ export async function GET(request: Request) {
     const { data: introduction } = await supabaseAdmin
       .from("user_introductions")
       .select("slogan_1, slogan_2, slogan_3, slogan_1_tag, slogan_2_tag, slogan_3_tag, slogan_1_rating, slogan_2_rating, slogan_3_rating")
-      .eq("user_id", profile.id)
+      .eq("user_id", profile.user_id)
       .maybeSingle();
 
     // engName 마스킹: 어드민/로그인 → raw, 비로그인 → 알파벳 마스킹
@@ -184,20 +184,20 @@ export async function PUT(request: Request) {
 
     // 어드민이 다른 유저를 대상으로 편집하는 경우
     const targetUserId = extractTargetUserId(request);
-    let profile: { id: string } | null = null;
+    let profile: { user_id: string } | null = null;
 
     if (targetUserId && isAdminEmail(session.user.email)) {
       const { data: targetProfile } = await supabaseAdmin
         .from("user_profiles")
-        .select("id")
-        .eq("id", targetUserId)
+        .select("user_id")
+        .eq("user_id", targetUserId)
         .maybeSingle();
       profile = targetProfile;
     } else {
       // user_profiles에서 사용자 ID 조회 (1차: email, 2차: auth_email, 3차: session UUID)
       const { data: profileByEmail } = await supabaseAdmin
         .from("user_profiles")
-        .select("id")
+        .select("user_id")
         .eq("email", session.user.email)
         .maybeSingle();
 
@@ -208,7 +208,7 @@ export async function PUT(request: Request) {
       if (!profile) {
         const { data: profileByAuth } = await supabaseAdmin
           .from("user_profiles")
-          .select("id")
+          .select("user_id")
           .eq("auth_email", session.user.email)
           .maybeSingle();
 
@@ -222,8 +222,8 @@ export async function PUT(request: Request) {
         if (uuidRegex.test(session.user.id)) {
           const { data: profileById } = await supabaseAdmin
             .from("user_profiles")
-            .select("id")
-            .eq("id", session.user.id)
+            .select("user_id")
+            .eq("user_id", session.user.id)
             .maybeSingle();
 
           if (profileById) {
@@ -244,7 +244,7 @@ export async function PUT(request: Request) {
     const { data: existingIntro } = await supabaseAdmin
       .from("user_introductions")
       .select("id")
-      .eq("user_id", profile.id)
+      .eq("user_id", profile.user_id)
       .maybeSingle();
 
     // rating 범위 검증 (0~10 자연수)
@@ -271,7 +271,7 @@ export async function PUT(request: Request) {
       const { error: updateError } = await supabaseAdmin
         .from("user_introductions")
         .update(sloganData)
-        .eq("user_id", profile.id);
+        .eq("user_id", profile.user_id);
 
       if (updateError) {
         console.error("슬로건 업데이트 오류:", updateError);
@@ -286,7 +286,7 @@ export async function PUT(request: Request) {
         .from("user_introductions")
         .insert({
           id: crypto.randomUUID(),
-          user_id: profile.id,
+          user_id: profile.user_id,
           ...sloganData,
           created_at: new Date().toISOString(),
         });

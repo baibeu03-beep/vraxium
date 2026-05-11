@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       const { data, error } = await supabaseAdmin
         .from("user_profiles")
         .select("*")
-        .eq("id", targetUserId)
+        .eq("user_id", targetUserId)
         .maybeSingle();
 
       if (error) {
@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
       // weekly_activities (completionRate 계산용)
       supabaseAdmin.from("weekly_activities").select("week_id, activity_type_id").eq("is_active", true),
       // cumulative_points (배지)
-      supabaseAdmin.from("user_cumulative_points").select("total_stars, total_lightnings, total_shields").eq("user_id", profile.id).maybeSingle(),
+      supabaseAdmin.from("user_cumulative_points").select("total_stars, total_lightnings, total_shields").eq("user_id", profile.user_id).maybeSingle(),
       // season_histories
       supabaseAdmin.from("user_season_histories").select(`
         id,
@@ -139,21 +139,21 @@ export async function GET(request: NextRequest) {
           start_date,
           end_date
         )
-      `).eq("user_id", profile.id),
+      `).eq("user_id", profile.user_id),
       // growth_stats (reliability_rate)
-      supabaseAdmin.from("user_growth_stats").select("approved_weeks, unapproved_weeks, rest_weeks, club_break_weeks, passed_weeks, available_weeks, available_weeks_club, available_seasons, rest_seasons, approved_seasons, reliability_rate").eq("user_id", profile.id).maybeSingle(),
+      supabaseAdmin.from("user_growth_stats").select("approved_weeks, unapproved_weeks, rest_weeks, club_break_weeks, passed_weeks, available_weeks, available_weeks_club, available_seasons, rest_seasons, approved_seasons, reliability_rate").eq("user_id", profile.user_id).maybeSingle(),
       // 모든 주차
       supabaseAdmin.from("weeks").select("id, start_date, end_date, is_club_break, season_id, week_number").order("start_date", { ascending: true }),
       // 휴식 요청
-      supabaseAdmin.from("rest_requests").select("week_id").eq("user_id", profile.id).eq("status", "approved"),
+      supabaseAdmin.from("rest_requests").select("week_id").eq("user_id", profile.user_id).eq("status", "approved"),
       // 모든 시즌
       supabaseAdmin.from("seasons").select("id, name, year, start_date, end_date").order("start_date", { ascending: true }),
       // 성공 주차 - user_weekly_growth 사용 (pms1.5와 동일)
-      supabaseAdmin.from("user_weekly_growth").select("week_id").eq("user_id", profile.id).eq("is_success", true),
+      supabaseAdmin.from("user_weekly_growth").select("week_id").eq("user_id", profile.user_id).eq("is_success", true),
       // activity_records (practicalCounts용)
-      supabaseAdmin.from("activity_records").select("id, week_id, activity_type_id, is_completed").eq("user_id", profile.id),
+      supabaseAdmin.from("activity_records").select("id, week_id, activity_type_id, is_completed").eq("user_id", profile.user_id),
       // user_weekly_growth (시즌별 성공 주차)
-      supabaseAdmin.from("user_weekly_growth").select("week_id, is_success, is_resting, weeks!inner(season_id)").eq("user_id", profile.id)
+      supabaseAdmin.from("user_weekly_growth").select("week_id, is_success, is_resting, weeks!inner(season_id)").eq("user_id", profile.user_id)
     ]);
 
     // activity_types는 캐시에서

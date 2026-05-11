@@ -111,7 +111,7 @@ export const authOptions: AuthOptions = {
           });
 
           if (access.status === "approved") {
-            token.id = access.profile.user_id ?? access.profile.id ?? token.id;
+            token.id = access.profile.user_id ?? token.id;
             token.isApproved = true;
           } else {
             token.isApproved = false;

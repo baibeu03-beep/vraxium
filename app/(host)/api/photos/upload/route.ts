@@ -47,7 +47,7 @@ export async function POST(request: Request) {
 
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("user_profiles")
-      .select("id, user_id")
+      .select("user_id")
       .eq(lookupKey.column, lookupKey.value)
       .maybeSingle();
 
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const profileId = profile.user_id ?? profile.id;
+    const profileId = profile.user_id;
     if (!profileId) {
       return NextResponse.json(
         { error: "승인된 프로필이 없습니다." },

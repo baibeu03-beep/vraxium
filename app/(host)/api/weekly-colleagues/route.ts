@@ -56,8 +56,8 @@ export async function GET(request: Request) {
       // colleague 프로필 조회 (university, major_first 제거)
       const { data: colleagues } = await supabase
         .from("user_profiles")
-        .select("id, display_name, gender, birth_date, profile_photo_url, vision")
-        .in("id", colleagueIds);
+        .select("user_id, display_name, gender, birth_date, profile_photo_url, vision")
+        .in("user_id", colleagueIds);
 
       // colleague 학력 정보 조회 (user_educations에서)
       const { data: educations } = await supabase
@@ -114,10 +114,10 @@ export async function GET(request: Request) {
           age = currentYear - birthYear;
         }
 
-        const teamPart = userTeamPartMap[c.id];
-        const education = educationMap[c.id];
-        colleagueObj[c.id] = {
-          id: c.id,
+        const teamPart = userTeamPartMap[c.user_id];
+        const education = educationMap[c.user_id];
+        colleagueObj[c.user_id] = {
+          id: c.user_id,
           name: c.display_name || '-',
           gender: c.gender || '-',
           age: age || '-',
@@ -158,7 +158,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const targetUserId = extractTargetUserId(request);
-    const { profile: userProfile, error } = await getUserProfile("id", targetUserId);
+    const { profile: userProfile, error } = await getUserProfile<{ user_id: string }>("user_id", targetUserId);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: error.status });
@@ -180,14 +180,14 @@ export async function POST(request: Request) {
     await supabase
       .from("weekly_colleagues")
       .delete()
-      .eq("user_id", userProfile.id)
+      .eq("user_id", userProfile.user_id)
       .eq("week_card_id", weekCardId);
 
     // 새 연계 동료 저장 (colleagues가 있을 때만)
     if (colleagues && colleagues.length > 0) {
       const insertData = colleagues.map((c: { colleagueId: string; rank: number; message: string }) => ({
         id: crypto.randomUUID(),
-        user_id: userProfile.id,
+        user_id: userProfile.user_id,
         week_card_id: weekCardId,
         colleague_id: c.colleagueId,
         rank: c.rank,

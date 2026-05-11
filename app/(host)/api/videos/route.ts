@@ -25,8 +25,8 @@ export async function GET(request: Request) {
       // 특정 유저의 영상 조회 (공개 접근 가능)
       const { data, error } = await supabaseAdmin
         .from("user_profiles")
-        .select("id, eng_name")
-        .eq("id", targetUserId)
+        .select("user_id, eng_name")
+        .eq("user_id", targetUserId)
         .maybeSingle();
 
       if (error || !data) {
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
       }
       profile = data;
     } else {
-      const { profile: userProfile, error } = await getUserProfile<{ id: string; eng_name: string | null }>("id, eng_name");
+      const { profile: userProfile, error } = await getUserProfile<{ user_id: string; eng_name: string | null }>("user_id, eng_name");
 
       if (error) {
         return NextResponse.json({ error: error.message }, { status: error.status });
@@ -50,7 +50,7 @@ export async function GET(request: Request) {
     const { data: introduction } = await supabaseAdmin
       .from("user_introductions")
       .select("video_url_1, video_url_2, video_url_3")
-      .eq("user_id", profile.id)
+      .eq("user_id", profile.user_id)
       .maybeSingle();
 
     // engName 마스킹: 어드민/로그인 → raw, 비로그인 → 알파벳 마스킹
@@ -86,7 +86,7 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   try {
     const targetUserId = extractTargetUserId(request);
-    const { profile, error } = await getUserProfile("id", targetUserId);
+    const { profile, error } = await getUserProfile<{ user_id: string }>("user_id", targetUserId);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: error.status });
@@ -103,7 +103,7 @@ export async function PUT(request: Request) {
     const { data: existingIntro } = await supabaseAdmin
       .from("user_introductions")
       .select("id")
-      .eq("user_id", profile.id)
+      .eq("user_id", profile.user_id)
       .maybeSingle();
 
     const videoData = {
@@ -118,7 +118,7 @@ export async function PUT(request: Request) {
       const { error: updateError } = await supabaseAdmin
         .from("user_introductions")
         .update(videoData)
-        .eq("user_id", profile.id);
+        .eq("user_id", profile.user_id);
 
       if (updateError) {
         console.error("영상 URL 업데이트 오류:", updateError);
@@ -133,7 +133,7 @@ export async function PUT(request: Request) {
         .from("user_introductions")
         .insert({
           id: crypto.randomUUID(),
-          user_id: profile.id,
+          user_id: profile.user_id,
           ...videoData,
           created_at: new Date().toISOString(),
         });

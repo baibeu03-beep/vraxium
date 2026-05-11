@@ -1500,7 +1500,7 @@ const Sidebar = () => {
         const { data: profileData, error: profileError } = await supabase
           .from("user_profiles")
           .select("joined_week_id")
-          .eq("id", userId)
+          .eq("user_id", userId)
           .maybeSingle();
 
         console.log('[Sidebar] profileData:', profileData, 'profileError:', profileError);

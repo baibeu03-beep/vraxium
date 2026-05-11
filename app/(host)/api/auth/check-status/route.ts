@@ -38,7 +38,7 @@ export async function GET() {
         status: "approved",
         message: "승인된 사용자입니다.",
         data: {
-          id: access.profile.user_id ?? access.profile.id,
+          id: access.profile.user_id,
           displayName: access.profile.display_name,
           email: access.profile.auth_email ?? access.profile.contact_email ?? access.profile.email,
           growthStatus: access.profile.growth_status ?? null,
