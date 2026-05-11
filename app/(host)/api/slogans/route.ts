@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { extractTargetUserId, isAdminEmail } from "@/lib/admin";
-import { maskDisplayName } from "@/lib/dataMasking";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -24,7 +23,7 @@ export async function GET(request: Request) {
       // 특정 유저의 슬로건 조회 (공개 접근 가능)
       const { data, error } = await supabaseAdmin
         .from("user_profiles")
-        .select("user_id, eng_name")
+        .select("user_id")
         .eq("user_id", targetUserId)
         .maybeSingle();
 
@@ -46,37 +45,24 @@ export async function GET(request: Request) {
         );
       }
 
-      // 1차: email
-      const { data } = await supabaseAdmin
+      // 1차: auth_email (user_profiles에 email 컬럼 없음 — OAuth 이메일은 auth_email에 저장)
+      const { data: profileByAuth } = await supabaseAdmin
         .from("user_profiles")
-        .select("user_id, eng_name")
-        .eq("email", session.user.email)
+        .select("user_id")
+        .eq("auth_email", session.user.email)
         .maybeSingle();
 
-      if (data) {
-        profile = data;
+      if (profileByAuth) {
+        profile = profileByAuth;
       }
 
-      // 2차: auth_email
-      if (!profile) {
-        const { data: profileByAuth } = await supabaseAdmin
-          .from("user_profiles")
-          .select("user_id, eng_name")
-          .eq("auth_email", session.user.email)
-          .maybeSingle();
-
-        if (profileByAuth) {
-          profile = profileByAuth;
-        }
-      }
-
-      // 3차: session UUID
+      // 2차: session UUID
       if (!profile && session.user?.id) {
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (uuidRegex.test(session.user.id)) {
           const { data: profileById } = await supabaseAdmin
             .from("user_profiles")
-            .select("user_id, eng_name")
+            .select("user_id")
             .eq("user_id", session.user.id)
             .maybeSingle();
 
@@ -101,16 +87,9 @@ export async function GET(request: Request) {
       .eq("user_id", profile.user_id)
       .maybeSingle();
 
-    // engName 마스킹: 어드민/로그인 → raw, 비로그인 → 알파벳 마스킹
-    const session = await getServerSession(authOptions);
-    const sessionIsAdmin = !!session?.user?.isAdmin || isAdminEmail(session?.user?.email);
-    const sessionIsLoggedIn = !!session;
-    const rawEngName = profile.eng_name || null;
-    const engNameDisplay = !rawEngName
-      ? null
-      : sessionIsAdmin || sessionIsLoggedIn
-        ? rawEngName
-        : maskDisplayName(rawEngName);
+    // engName 마스킹: user_profiles에 eng_name 컬럼이 없어 항상 null로 응답.
+    // (필드 자체는 기존 client 호환을 위해 유지)
+    const engNameDisplay: string | null = null;
 
     return NextResponse.json({
       success: true,
@@ -194,27 +173,16 @@ export async function PUT(request: Request) {
         .maybeSingle();
       profile = targetProfile;
     } else {
-      // user_profiles에서 사용자 ID 조회 (1차: email, 2차: auth_email, 3차: session UUID)
-      const { data: profileByEmail } = await supabaseAdmin
+      // user_profiles에서 사용자 ID 조회 (1차: auth_email, 2차: session UUID)
+      // (user_profiles에 email 컬럼 없음)
+      const { data: profileByAuth } = await supabaseAdmin
         .from("user_profiles")
         .select("user_id")
-        .eq("email", session.user.email)
+        .eq("auth_email", session.user.email)
         .maybeSingle();
 
-      if (profileByEmail) {
-        profile = profileByEmail;
-      }
-
-      if (!profile) {
-        const { data: profileByAuth } = await supabaseAdmin
-          .from("user_profiles")
-          .select("user_id")
-          .eq("auth_email", session.user.email)
-          .maybeSingle();
-
-        if (profileByAuth) {
-          profile = profileByAuth;
-        }
+      if (profileByAuth) {
+        profile = profileByAuth;
       }
 
       if (!profile && session.user?.id) {

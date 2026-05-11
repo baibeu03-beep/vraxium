@@ -5,7 +5,6 @@ type Maybe<T> = T | null | undefined;
 export type UserProfileAccessRow = {
   user_id: string | null;
   display_name: string | null;
-  email: string | null;
   contact_email: string | null;
   auth_email: string | null;
   growth_status?: string | null;
@@ -31,7 +30,7 @@ type ResolveOptions = {
   ensureApplicantOnPending?: boolean;
 };
 
-const PROFILE_SELECT = "user_id, display_name, email, contact_email, auth_email, growth_status";
+const PROFILE_SELECT = "user_id, display_name, contact_email, auth_email, growth_status";
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function normalizeEmail(value: Maybe<string>) {

@@ -40,7 +40,7 @@ export async function GET() {
         data: {
           id: access.profile.user_id,
           displayName: access.profile.display_name,
-          email: access.profile.auth_email ?? access.profile.contact_email ?? access.profile.email,
+          email: access.profile.auth_email ?? access.profile.contact_email,
           growthStatus: access.profile.growth_status ?? null,
         },
       });

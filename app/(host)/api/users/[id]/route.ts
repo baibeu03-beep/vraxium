@@ -19,11 +19,11 @@ export async function GET(
 
     console.log('Fetching profile for userId:', userId)
 
-    // user_profiles 조회
+    // user_profiles 조회 (user_id가 canonical PK)
     const { data: profileData, error: profileError } = await supabase
       .from('user_profiles')
       .select('*')
-      .eq('id', userId)
+      .eq('user_id', userId)
       .maybeSingle() // single 대신 maybeSingle 사용
 
     if (profileError) {
@@ -42,7 +42,7 @@ export async function GET(
       )
     }
 
-    console.log('Profile data found:', profileData.id, profileData.display_name)
+    console.log('Profile data found:', profileData.user_id, profileData.display_name)
 
     // user_growth_stats 조회 (reliability_rate 포함, 데이터가 없어도 에러 처리 안함)
     const { data: growthStatsData } = await supabase

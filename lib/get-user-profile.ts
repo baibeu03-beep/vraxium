@@ -7,7 +7,8 @@ import { isAdminEmail } from "@/lib/admin";
  * user_profiles 테이블은 user_id 컬럼을 canonical PK로 사용합니다.
  * (별도 id 컬럼이 존재하지 않음)
  *
- * 매칭 순서: 1) email → 2) auth_email → 3) session UUID(user_id 매칭)
+ * 매칭 순서: 1) auth_email → 2) session UUID(user_id 매칭)
+ * (user_profiles에 email 컬럼이 없음. OAuth 이메일은 auth_email에 저장)
  *
  * 레거시 호환:
  * - select 문자열에 "id"가 포함되어 있으면 자동으로 "user_id"로 정규화
@@ -100,21 +101,7 @@ export async function getUserProfile<T = { id: string; user_id: string }>(
 
   const email = session.user.email;
 
-  // 1차: email
-  const { data: profileByEmail, error: emailError } = await supabaseAdmin
-    .from("user_profiles")
-    .select(normalizedSelect)
-    .eq("email", email)
-    .maybeSingle();
-
-  const emailErrResp = buildErrorResponse("email lookup", emailError);
-  if (emailErrResp) return emailErrResp;
-
-  if (profileByEmail) {
-    return { session, profile: aliasIdFromUserId(profileByEmail as unknown as ProfileRow) as T };
-  }
-
-  // 2차: auth_email
+  // 1차: auth_email (user_profiles에는 email 컬럼이 없음. OAuth 이메일은 auth_email에만 저장됨)
   const { data: profileByAuth, error: authError } = await supabaseAdmin
     .from("user_profiles")
     .select(normalizedSelect)
@@ -128,7 +115,7 @@ export async function getUserProfile<T = { id: string; user_id: string }>(
     return { session, profile: aliasIdFromUserId(profileByAuth as unknown as ProfileRow) as T };
   }
 
-  // 3차: JWT에서 매칭된 user UUID
+  // 2차: JWT에서 매칭된 user UUID
   if (session.user.id) {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (uuidRegex.test(session.user.id)) {

@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
-import { extractTargetUserId, isAdminEmail } from "@/lib/admin";
-import { maskDisplayName } from "@/lib/dataMasking";
+import { extractTargetUserId } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -25,7 +22,7 @@ export async function GET(request: Request) {
       // 특정 유저의 영상 조회 (공개 접근 가능)
       const { data, error } = await supabaseAdmin
         .from("user_profiles")
-        .select("user_id, eng_name")
+        .select("user_id")
         .eq("user_id", targetUserId)
         .maybeSingle();
 
@@ -37,7 +34,7 @@ export async function GET(request: Request) {
       }
       profile = data;
     } else {
-      const { profile: userProfile, error } = await getUserProfile<{ user_id: string; eng_name: string | null }>("user_id, eng_name");
+      const { profile: userProfile, error } = await getUserProfile<{ user_id: string }>("user_id");
 
       if (error) {
         return NextResponse.json({ error: error.message }, { status: error.status });
@@ -53,16 +50,8 @@ export async function GET(request: Request) {
       .eq("user_id", profile.user_id)
       .maybeSingle();
 
-    // engName 마스킹: 어드민/로그인 → raw, 비로그인 → 알파벳 마스킹
-    const session = await getServerSession(authOptions);
-    const sessionIsAdmin = !!session?.user?.isAdmin || isAdminEmail(session?.user?.email);
-    const sessionIsLoggedIn = !!session;
-    const rawEngName = profile.eng_name || null;
-    const engNameDisplay = !rawEngName
-      ? null
-      : sessionIsAdmin || sessionIsLoggedIn
-        ? rawEngName
-        : maskDisplayName(rawEngName);
+    // engName 마스킹: user_profiles에 eng_name 컬럼이 없어 항상 null로 응답.
+    const engNameDisplay: string | null = null;
 
     return NextResponse.json({
       success: true,

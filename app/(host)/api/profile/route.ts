@@ -237,27 +237,16 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      const { data } = await supabaseAdmin
+      // 1차: auth_email (카카오 로그인 이메일)로 조회
+      // (user_profiles에 email 컬럼이 없음 — auth_email이 OAuth 이메일의 canonical 저장 위치)
+      const { data: profileByAuth } = await supabaseAdmin
         .from("user_profiles")
         .select("*")
-        .eq("email", session.user.email)
+        .eq("auth_email", session.user.email)
         .maybeSingle();
 
-      if (data) {
-        profile = data;
-      }
-
-      // 2차: auth_email (카카오 로그인 이메일)로 조회
-      if (!profile) {
-        const { data: profileByAuth } = await supabaseAdmin
-          .from("user_profiles")
-          .select("*")
-          .eq("auth_email", session.user.email)
-          .maybeSingle();
-
-        if (profileByAuth) {
-          profile = profileByAuth;
-        }
+      if (profileByAuth) {
+        profile = profileByAuth;
       }
 
       // 3차: 카카오 이름으로 display_name 매칭
@@ -302,7 +291,7 @@ export async function GET(request: NextRequest) {
         // 디버그: auth_email 조회 결과 확인
         const { data: debugProfile, error: debugErr } = await supabaseAdmin
           .from("user_profiles")
-          .select("user_id, display_name, email, auth_email")
+          .select("user_id, display_name, auth_email")
           .limit(5);
         return NextResponse.json(
           {
@@ -1468,16 +1457,6 @@ export async function PUT(request: Request) {
       ? { user_id: approvedLookupKey.value }
       : null;
 
-    const { data: profileByEmail } = await supabaseAdmin
-      .from("user_profiles")
-      .select("user_id")
-      .eq("email", email)
-      .maybeSingle();
-
-    if (profileByEmail) {
-      existingProfile = profileByEmail;
-    }
-
     if (!existingProfile) {
       const { data: profileByAuth } = await supabaseAdmin
         .from("user_profiles")
@@ -1647,15 +1626,6 @@ export async function PATCH(request: Request) {
       approvedLookupKey?.column === "user_id" && approvedLookupKey.value
         ? { user_id: approvedLookupKey.value }
         : null;
-
-    if (!existingProfile) {
-      const { data: profileByEmail } = await supabaseAdmin
-        .from("user_profiles")
-        .select("user_id")
-        .eq("email", email)
-        .maybeSingle();
-      if (profileByEmail) existingProfile = profileByEmail;
-    }
 
     if (!existingProfile) {
       const { data: profileByAuth } = await supabaseAdmin
