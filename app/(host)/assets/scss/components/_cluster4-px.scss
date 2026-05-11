@@ -300,4 +300,256 @@
       }
     }
   }
+
+  // =============================================================
+  // 12) /cluster-4-card-px — 카드 내부 brand accent (specificity 보강).
+  //
+  // 배경:
+  //   상단 (1) 의 .card-title { color: var(--px-accent-soft) } 는 0,3,0 specificity.
+  //   _cluster4-week.scss 의 work-info / work-ability / work-exp / work-career
+  //   카드 내부 .card-title / .sub-label / .code-tag / .badge-tag / .rating-count /
+  //   .info-tag / .category-text / .grade.active 는 0,7~8,0 chain 으로 정의되어
+  //   기존 짧은 chain override 가 cascade 패배 → 일부 카드만 green, 나머지 yellow 잔존.
+  //   원본 chain 매칭 + .cluster-px-theme prefix 로 specificity 우위 확보.
+  //
+  // KEEP (semantic / palette — 의도적 미터치):
+  //   .verified-icon / .verified-text             — Verified semantic
+  //   .status-badge (강화 성공/대기/실패/해당없음)  — 상태 색
+  //   .failed-text #ff0d0d / .not-applicable-text #dc2626 — 실패/해당없음
+  //   .tag.tag--red/yellow/purple/dark/green/cyan/mint  — 카테고리 palette
+  //   .stars / .modal-star / .star-half-filled    — 별점 yellow/gold 유지
+  //   .grade (S/A/B/C/D 비활성) #bebebe            — 기본 등급 색
+  //   .rest-personal/.rest-official/.in-progress/.counting badge — 상태 색
+  //   pink/blue/purple ribbon 상태색
+  //   .web-badge #4caf50, .university #4fc3f7     — 출처 palette
+  //   fruit/character image / user avatar          — 이미지 asset
+  //
+  // 활성 조건: .cluster-px-theme + .cluster4-card-content 모두 일치 시.
+  //   /cluster-4-card 원본은 .cluster-px-theme 미부착 → 매칭 0건.
+  // =============================================================
+  .cluster4-card-content {
+    // ─────────────────────────────────────────────
+    // 12-1) work-info-section (section2-layout) — section header + 카드 텍스트
+    //   원본 _cluster4-week.scss line 2900~3050
+    //     .section-count #ffe3aa, .highlight #faab07
+    //     .card-title #fef9c3
+    // ─────────────────────────────────────────────
+    .section2-layout .work-info-section {
+      .section-header-row {
+        .section-count {
+          color: var(--px-accent-soft);
+        }
+        .section-count .highlight,
+        .section-title-right .rate-value .highlight {
+          color: var(--px-accent);
+        }
+      }
+      .work-info-cards .work-info-card .card-content-area .card-title-row .card-title {
+        color: var(--px-accent-soft);
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 12-2) work-exp-section — section header + 카드 텍스트
+    //   원본 _cluster4-week.scss line 3812~4270 (.work-exp-section, .work-career-section 공통 + .work-exp-card 전용)
+    //     .section-count #ffe3aa, .highlight #faab07
+    //     .code-tag #ffec8f (header), .badge-tag #faab07 (header)
+    //     .rating-count rgba(255,255,255,0.9) — white-ish, 통일성 위해 PX accent
+    //     .card-title #ffec8f (bottom), .sub-label #ffec8f
+    // ─────────────────────────────────────────────
+    .work-exp-section {
+      .section-header-row {
+        .section-count {
+          color: var(--px-accent-soft);
+        }
+        .section-count .highlight,
+        .section-title-right .rate-value .highlight {
+          color: var(--px-accent);
+        }
+      }
+      .work-exp-cards .work-exp-card {
+        .card-top-row .card-header-area {
+          .card-header-row {
+            .code-tag {
+              color: var(--px-accent-soft);
+            }
+            .badge-tag {
+              color: var(--px-accent);
+              background: rgba(30, 149, 3, 0.1);
+            }
+          }
+          .card-rating-row .rating-count {
+            color: var(--px-accent);
+          }
+        }
+        .card-bottom-area {
+          .card-title-row .card-title {
+            color: var(--px-accent-soft);
+          }
+          .sub-title-row .sub-label {
+            color: var(--px-accent-soft);
+          }
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 12-3) work-ability-section (section3-layout) — section header + 카드 텍스트
+    //   원본 _cluster4-week.scss line 3341~3700
+    //     .section-count #ffe3aa, .highlight #faab07
+    //     .card-title #ffec8f, .code-tag #ffec8f, .info-tag #faab07, .sub-label #ffec8f
+    // ─────────────────────────────────────────────
+    .section3-layout .work-ability-section {
+      .section-header-row {
+        .section-count {
+          color: var(--px-accent-soft);
+        }
+        .section-count .highlight,
+        .section-title-right .rate-value .highlight {
+          color: var(--px-accent);
+        }
+      }
+      .work-ability-card .card-content-area {
+        .card-title-row {
+          .card-title {
+            color: var(--px-accent-soft);
+          }
+          .code-tag {
+            color: var(--px-accent-soft);
+          }
+          .info-tag {
+            color: var(--px-accent);
+            background: rgba(30, 149, 3, 0.1);
+          }
+        }
+        .sub-title-row .sub-label {
+          color: var(--px-accent-soft);
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 12-4) work-career-section (section3-layout) — section header + 카드 텍스트
+    //   원본 _cluster4-week.scss line 3246~3340 (.section3-layout 공통) + 4310~4836 (.work-career-card)
+    //     .section-count #ffe3aa, .highlight #faab07
+    //     .code-tag #ffec8f (header), .grade.active background:#faab07
+    //     .category-text #faab07 + bg rgba(250,171,7,0.1)
+    //     .card-title #ffec8f, .sub-label #ffec8f
+    //     .rating-count #faab07
+    // ─────────────────────────────────────────────
+    .section3-layout .work-career-section {
+      .section-header-row {
+        .section-count {
+          color: var(--px-accent-soft);
+        }
+        .section-count .highlight,
+        .section-title-right .rate-value .highlight {
+          color: var(--px-accent);
+        }
+      }
+      .work-career-cards .work-career-card {
+        .card-top-row .card-header-area {
+          .card-header-row .code-tag {
+            color: var(--px-accent-soft);
+          }
+          // grade.active (S/A/B/C/D 활성 등급 원형 badge — 비활성은 #bebebe 유지)
+          //   _cluster4-week.scss line 4604: background:#faab07 + box-shadow gold glow
+          //   비활성 grade 원형은 KEEP (.grade { background:#bebebe } 그대로).
+          .grade-row .grade.active {
+            background: var(--px-accent);
+            box-shadow:
+              0 0 15px rgba(178, 255, 143, 0.6),
+              inset 0 4px 4px rgba(255, 255, 255, 0.5),
+              inset -2px -5px 4px rgba(0, 0, 0, 0.2);
+          }
+        }
+        .card-bottom-area {
+          .category-text {
+            color: var(--px-accent);
+            background: rgba(30, 149, 3, 0.1);
+          }
+          .card-title-row .card-title {
+            color: var(--px-accent-soft);
+          }
+          .sub-title-row .sub-label {
+            color: var(--px-accent-soft);
+          }
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 12-5) 주차 성장률 (section2-layout > growth-rate-header)
+    //   원본 0,6~7,0 chain → .cluster-px-theme prefix +1 specificity.
+    //     .progress-bar background:#faab07 (line 2747)
+    //     .growth-count .highlight color:#faab07 (line 2727)
+    //     .growth-center .progress-percent .number color:#faab07 (line 2791)
+    // ─────────────────────────────────────────────
+    .section2-layout .growth-rate-header {
+      .growth-left .progress-bar-container .progress-bar {
+        background: var(--px-accent);
+      }
+      .growth-left .progress-header .growth-count .highlight {
+        color: var(--px-accent);
+      }
+      .growth-center .progress-percent .number {
+        color: var(--px-accent);
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 12-6) 카드 우측 더보기 화살표 PNG — white glyph 보존 + green BG.
+    //
+    //   /icon - 더보기.png 구조: yellow/orange BG + WHITE arrow glyph + transparent corner.
+    //   `brightness(0)` 체인은 white glyph 까지 검정→녹색 재착색 → 화살표 소실됨.
+    //   `hue-rotate` 단독은 saturation 0 인 white 에 영향 0 → glyph 그대로 유지.
+    //   `saturate(1.4)` 로 BG 의 green tint 강화 (white glyph 영향 없음).
+    //
+    //   대상: .card-arrow (work-*-card 4종 내부) + .more-icon (평판/연계 카드 description tail).
+    //   일관성: 같은 PNG asset 을 사용하는 모든 위치에 동일 필터 적용.
+    // ─────────────────────────────────────────────
+    .work-info-card .card-arrow,
+    .work-ability-card .card-arrow,
+    .work-exp-card .card-arrow,
+    .work-career-card .card-arrow,
+    .reputation-card .more-icon,
+    .colleague-card .more-icon {
+      filter: hue-rotate(80deg) saturate(1.4);
+    }
+
+    // ─────────────────────────────────────────────
+    // 12-7) 폴더/3-star decorative PNG — pure yellow (no white glyph) → 강한 재착색 OK.
+    //
+    //   대상:
+    //     .title-icon / .sub-icon (Main Title / Sub Title 앞 폴더 PNG)
+    //     .star-icon (3-star decorative PNG — 별점 rating star 아님)
+    //   브라이트니스 0 으로 흑백화 후 sepia/saturate/hue-rotate 체인으로 #1E9503 톤 매핑.
+    //
+    //   KEEP (semantic — 미터치):
+    //     .verified-icon (Verified clock — 흰색이라 재착색 불필요)
+    //     .section-icon (1~4 카테고리 gem PNG — red/green/blue 식별 색)
+    //     .status-badge img / .legend-icon (강화 상태 PNG)
+    //     .stars img.star.filled / .modal-star — 별점 yellow/gold 유지
+    // ─────────────────────────────────────────────
+    .work-info-card .title-icon,
+    .work-ability-card .title-icon,
+    .work-exp-card .title-icon,
+    .work-career-card .title-icon,
+    .work-info-card .sub-icon,
+    .work-ability-card .sub-icon,
+    .work-exp-card .sub-icon,
+    .work-career-card .sub-icon,
+    .growth-rate-header .growth-count .star-icon {
+      filter: brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(2069%) hue-rotate(96deg) brightness(95%) contrast(102%);
+    }
+
+    // ─────────────────────────────────────────────
+    // 12-8) 인라인 cream-yellow #fef9c3 fallback — work-info-card .card-title 의
+    //   원본 색 (#fef9c3) 이 인라인으로 들어올 경우의 폴백.
+    // ─────────────────────────────────────────────
+    [style*="#fef9c3"],
+    [style*="#FEF9C3"] {
+      color: var(--px-accent-soft);
+    }
+  }
 }

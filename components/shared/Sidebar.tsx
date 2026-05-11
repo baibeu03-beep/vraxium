@@ -65,6 +65,7 @@ const Sidebar = () => {
     [pathname, searchParams]
   );
   const crewsHref = currentOrg ? `/crews?org=${currentOrg}` : "/crews";
+  const weeklyRankingHref = currentOrg ? `/weekly-ranking?org=${currentOrg}` : "/weekly-ranking";
 
   // 로그인 시 user_profiles ID를 미리 가져옴
   // 어드민(마더 계정)은 user_profiles에 없어 404 — skip
@@ -114,7 +115,7 @@ const Sidebar = () => {
               <div className="sidebar__widget sidebar--links">
                 <ul>
                   <li>
-                    <Link href="/weekly-ranking" aria-label="주간 랭킹" title="주간 랭킹">
+                    <Link href={weeklyRankingHref} aria-label="주간 랭킹" title="주간 랭킹">
                       <i className="ti ti-layout-grid-add"></i>
                       <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
                         <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
