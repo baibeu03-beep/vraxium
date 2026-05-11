@@ -8,6 +8,7 @@ import { useSearchParams, usePathname } from "next/navigation";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { useModalScroll } from "@/utils/useModalScroll";
+import { isAdminEmail } from "@/lib/admin";
 import { usePopup } from "@/components/ui/popup";
 import { logEvent } from "@/utils/blackScreenDiagnostics";
 import { CLUSTER2_DUMMY_PHOTOS, CLUSTER2_DUMMY_SLOGANS, CLUSTER2_DUMMY_VIDEOS, CLUSTER2_DUMMY_EDUCATIONS, CLUSTER2_DUMMY_REVIEWS, CLUSTER2_DUMMY_INTRO, CLUSTER2_DUMMY_BY_USER, DEFAULT_DEMO_USER } from "@/constants/dummyData";
@@ -103,8 +104,18 @@ const Cluster2Content = () => {
   const demoLookupName = demoNameParam || urlUserId;
 
   // 본인 프로필인지 확인: URL에 userId가 없거나, 로그인한 사용자 ID와 같으면 본인
-  const isOwner = !urlUserId || session?.user?.id === urlUserId;
+  // 어드민(마더) 계정은 모든 프로필 편집 가능
+  const isOwner = session?.user?.isAdmin || !urlUserId || (session?.user?.id === urlUserId);
   const isDemoMode = checkDemoMode();
+
+  // 어드민이 다른 유저 편집 시 targetUserId를 API URL에 추가
+  const apiUrl = (path: string) => {
+    if (urlUserId && session?.user?.isAdmin) {
+      const separator = path.includes('?') ? '&' : '?';
+      return `${path}${separator}targetUserId=${urlUserId}`;
+    }
+    return path;
+  };
 
   const [currentPage, setCurrentPage] = useState(0);
   const [isWiggling, setIsWiggling] = useState(false);
@@ -134,13 +145,21 @@ const Cluster2Content = () => {
 
   // 수정 버튼 클릭 핸들러 (승인 상태 체크)
   const handleEditClick = async (openModalFn: () => void) => {
-    // TODO: 프로덕션 배포 전 로그인 체크 복원
+    if (isDemoMode) {
+      openModalFn();
+      return;
+    }
+    if (!session) {
+      alert("로그인이 필요합니다.");
+      return;
+    }
     openModalFn();
   };
 
   // 섹션 1 모달 (프로필 사진 수정)
   const [section1ModalOpen, setSection1ModalOpen] = useState(false);
   const [photos, setPhotos] = useState<(string | null)[]>([...SECTION1_PHOTO_DEFAULTS.photos]);
+  const [sidebarPhoto, setSidebarPhoto] = useState<string | null>(null);
   const [mainPhoto, setMainPhoto] = useState<string | null>(null);
   const [subPhotos, setSubPhotos] = useState<(string | null)[]>([null, null, null, null]);
   const [starredPhoto, setStarredPhoto] = useState<number | null>(null);
@@ -274,7 +293,7 @@ const Cluster2Content = () => {
       formData.append("file", processedFile);
       formData.append("type", photoType);
 
-      const response = await fetch("/api/photos/upload", {
+      const response = await fetch(apiUrl("/api/photos/upload"), {
         method: "POST",
         body: formData,
       });
@@ -298,6 +317,7 @@ const Cluster2Content = () => {
     if (isDemoMode) {
       const demoUser = demoLookupName || DEFAULT_DEMO_USER;
       const userData = CLUSTER2_DUMMY_BY_USER[demoUser] || CLUSTER2_DUMMY_BY_USER[DEFAULT_DEMO_USER];
+      setSidebarPhoto(userData.photos.mainPhoto);
       setMainPhoto(userData.photos.mainPhoto);
       setSubPhotos(userData.photos.subPhotos);
       return;
@@ -305,13 +325,13 @@ const Cluster2Content = () => {
     setPhotoLoading(true);
     try {
       // 비소유자인 경우 userId 쿼리 파라미터로 조회
-      const url = urlUserId && !isOwner ? `/api/photos?userId=${urlUserId}` : "/api/photos";
+      const url = urlUserId ? `/api/photos?userId=${urlUserId}` : "/api/photos";
       const response = await fetch(url);
       const result = await response.json();
 
       if (result.success && result.data) {
         // 이미지 프리로드: URL을 받자마자 브라우저가 다운로드 시작
-        const allUrls = [result.data.mainPhoto, ...(result.data.subPhotos || [])].filter(Boolean);
+        const allUrls = [result.data.sidebarPhoto, result.data.mainPhoto, ...(result.data.subPhotos || [])].filter(Boolean);
         allUrls.forEach((imgUrl: string) => {
           const link = document.createElement("link");
           link.rel = "preload";
@@ -320,6 +340,7 @@ const Cluster2Content = () => {
           document.head.appendChild(link);
         });
 
+        setSidebarPhoto(result.data.sidebarPhoto || null);
         setMainPhoto(result.data.mainPhoto || null);
         setSubPhotos(result.data.subPhotos || [null, null, null, null]);
       }
@@ -346,13 +367,17 @@ const Cluster2Content = () => {
     const reordered = [...compacted, ...Array(6 - compacted.length).fill(null)] as (string | null)[];
     setPhotos(reordered);
 
-    // 2. 기존 mainPhoto/subPhotos에 연동
-    setMainPhoto(reordered[1]); // 사진[2] → 메인 큰 사진
-    setSubPhotos([reordered[2], reordered[3], reordered[4], reordered[5]]); // 사진[3~6] → 육각형
+    // 2. 상태 연동 (슬롯 0: Sidebar, 1: 메인, 2~5: 육각형)
+    const nextSidebar = reordered[0];
+    const nextMain = reordered[1];
+    const nextSubs = [reordered[2], reordered[3], reordered[4], reordered[5]];
+    setSidebarPhoto(nextSidebar);
+    setMainPhoto(nextMain);
+    setSubPhotos(nextSubs);
 
-    // 3. Sidebar 프로필 사진 연동 (사진[1] → Sidebar)
-    if (reordered[0]) {
-      window.dispatchEvent(new CustomEvent("photoUpdated", { detail: { photo: reordered[0] } }));
+    // 3. Sidebar 프로필 사진 실시간 반영 (photoUpdated 리스너)
+    if (nextSidebar !== undefined) {
+      window.dispatchEvent(new CustomEvent("photoUpdated", { detail: { photo: nextSidebar } }));
     }
 
     // 4. 스냅샷 업데이트 (저장 후 dirty 비교 기준 갱신)
@@ -367,12 +392,13 @@ const Cluster2Content = () => {
     }
     setPhotoSaving(true);
     try {
-      const response = await fetch("/api/photos", {
+      const response = await fetch(apiUrl("/api/photos"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mainPhoto: reordered[1],
-          subPhotos: [reordered[2], reordered[3], reordered[4], reordered[5]],
+          sidebarPhoto: nextSidebar,
+          mainPhoto: nextMain,
+          subPhotos: nextSubs,
         }),
       });
 
@@ -530,7 +556,7 @@ const Cluster2Content = () => {
       return;
     }
     try {
-      const url = urlUserId && !isOwner ? `/api/slogans?userId=${urlUserId}` : "/api/slogans";
+      const url = urlUserId ? `/api/slogans?userId=${urlUserId}` : "/api/slogans";
       const response = await fetch(url);
       const result = await response.json();
 
@@ -585,7 +611,7 @@ const Cluster2Content = () => {
     }
     setSloganSaving(true);
     try {
-      const response = await fetch("/api/slogans", {
+      const response = await fetch(apiUrl("/api/slogans"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -707,7 +733,7 @@ const Cluster2Content = () => {
       return;
     }
     try {
-      const url = urlUserId && !isOwner ? `/api/videos?userId=${urlUserId}` : "/api/videos";
+      const url = urlUserId ? `/api/videos?userId=${urlUserId}` : "/api/videos";
       const response = await fetch(url);
       const result = await response.json();
 
@@ -758,7 +784,7 @@ const Cluster2Content = () => {
     }
     setVideoSaving(true);
     try {
-      const response = await fetch("/api/videos", {
+      const response = await fetch(apiUrl("/api/videos"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -914,7 +940,7 @@ const Cluster2Content = () => {
       return;
     }
     try {
-      const url = urlUserId && !isOwner ? `/api/educations?userId=${urlUserId}` : "/api/educations";
+      const url = urlUserId ? `/api/educations?userId=${urlUserId}` : "/api/educations";
       const response = await fetch(url);
       const result = await response.json();
       if (result.success && result.data && result.data.length > 0) {
@@ -954,7 +980,7 @@ const Cluster2Content = () => {
     }
     setEduSaving(true);
     try {
-      const response = await fetch("/api/educations", {
+      const response = await fetch(apiUrl("/api/educations"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1007,7 +1033,7 @@ const Cluster2Content = () => {
   const introComments: Record<string, string> = {
     "성장 과정": "본인이 어떤 환경과 과정을 통해 성장하였으며, 그것이 본인을 만들어가는 데에 있어 어떤 영향을 끼쳤는지 보여주세요. 😊",
     "사회 경험": "본인이 사회 속에서 겪은 활동, 경험들을 어필하고, 그 안에서 어떤 인사이트를 통해 어떤 성장을 이루었는지를 보여주세요. 😊",
-    "커리어 방향": "본인이 나아가고자 하는 직무와 커리어에 어떤 것인지, 그리고 그것을 위해 어떤 준비와 경험을 쌓아왔는지를 보여주세요. 😊",
+    "커리어 방향": "본인이 나아가고자 하는 직무와 커리어가 어떤 것인지, 그리고 그것을 위해 어떤 준비와 경험을 쌓아왔는지를 보여주세요. 😊",
     "실무 스타일": "본인이 회사와 조직, 사업과 고객 속에서 어떤 방식으로 일을 처리하며, 그것을 실제로 느낄 수 있는 경험들을 보여주세요. 😊",
     "퍼스널 스토리": "업무와 별개로, 본인이 어떤 성격과 캐릭터, 개인적 경험 등을 가지고 있는 지를 바탕으로, 동료/구성원으로서의 매력을 보여주세요. 😊",
   };
@@ -1218,6 +1244,16 @@ const Cluster2Content = () => {
   const [reviewLinkSaving, setReviewLinkSaving] = useState(false);
   const [canEditClubReview, setCanEditClubReview] = useState<boolean>(false);
 
+  // 어드민(마더) 계정은 대표학력 변경 / Club Review 편집 권한 자동 부여
+  // session.user.isAdmin 플래그가 JWT 쿠키에 아직 반영 안 됐을 수 있어 email로도 직접 판정
+  useEffect(() => {
+    const isAdmin = session?.user?.isAdmin || isAdminEmail(session?.user?.email);
+    if (isAdmin) {
+      setCanChangePrimary(true);
+      setCanEditClubReview(true);
+    }
+  }, [session?.user?.isAdmin, session?.user?.email]);
+
   // dirty 추적: 편집 데이터 변경 감지 (초기 설정 시 skip)
   const introMountRef = useRef(false);
 
@@ -1255,7 +1291,7 @@ const Cluster2Content = () => {
       return;
     }
     try {
-      const url = urlUserId && !isOwner ? `/api/review-link?userId=${urlUserId}` : "/api/review-link";
+      const url = urlUserId ? `/api/review-link?userId=${urlUserId}` : "/api/review-link";
       const response = await fetch(url);
       const result = await response.json();
 
@@ -1304,7 +1340,7 @@ const Cluster2Content = () => {
       return;
     }
     try {
-      const url = urlUserId && !isOwner ? `/api/introductions?userId=${urlUserId}` : "/api/introductions";
+      const url = urlUserId ? `/api/introductions?userId=${urlUserId}` : "/api/introductions";
       const response = await fetch(url);
       const result = await response.json();
 
@@ -1354,7 +1390,7 @@ const Cluster2Content = () => {
 
     setIntroSaving(true);
     try {
-      const response = await fetch("/api/introductions", {
+      const response = await fetch(apiUrl("/api/introductions"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1398,7 +1434,7 @@ const Cluster2Content = () => {
     }
     setReviewLinkSaving(true);
     try {
-      const response = await fetch("/api/review-link", {
+      const response = await fetch(apiUrl("/api/review-link"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1691,8 +1727,10 @@ const Cluster2Content = () => {
                   ? () =>
                       handleEditClick(() => {
                         setInitialPhotos({ main: mainPhoto, sub: [...subPhotos] });
-                        const existing = [mainPhoto, ...(subPhotos || [])].filter((p) => p !== null);
-                        const openPhotos = existing.length > 0 ? ([...existing, ...Array(6 - existing.length).fill(null)] as (string | null)[]) : [...SECTION1_PHOTO_DEFAULTS.photos];
+                        // 6-slot: [sidebar, main, sub1, sub2, sub3, sub4]
+                        const raw: (string | null)[] = [sidebarPhoto, mainPhoto, ...(subPhotos || [null, null, null, null])];
+                        const hasAny = raw.some((p) => p);
+                        const openPhotos = hasAny ? (raw.slice(0, 6).concat(Array(Math.max(0, 6 - raw.length)).fill(null)) as (string | null)[]) : [...SECTION1_PHOTO_DEFAULTS.photos];
                         setPhotos(openPhotos);
                         setPhotosSnapshot([...openPhotos]);
                         setSection1ModalOpen(true);
@@ -1718,19 +1756,19 @@ const Cluster2Content = () => {
           {/* 큰 육각형 이미지 4개 */}
           <div className="hexagon-large-row">
             <div className={`hexagon-large-item ${!subPhotos[0] ? "empty" : ""}`} onClick={() => handleSetStarred(0)} style={{ cursor: subPhotos[0] ? "pointer" : "default" }}>
-              <div className="hex-large">{subPhotos[0] ? <img src={subPhotos[0]} alt="Joy" fetchPriority="high" decoding="async" /> : <i className="ti ti-photo-plus"></i>}</div>
+              <div className="hex-large"><img src={subPhotos[0] || "/images/0/3.png"} alt="Joy" fetchPriority="high" decoding="async" /></div>
               <span className="hex-label">Joy</span>
             </div>
             <div className={`hexagon-large-item ${!subPhotos[1] ? "empty" : ""}`} onClick={() => handleSetStarred(1)} style={{ cursor: subPhotos[1] ? "pointer" : "default" }}>
-              <div className="hex-large">{subPhotos[1] ? <img src={subPhotos[1]} alt="Blue" fetchPriority="high" decoding="async" /> : <i className="ti ti-photo-plus"></i>}</div>
+              <div className="hex-large"><img src={subPhotos[1] || "/images/0/4.png"} alt="Blue" fetchPriority="high" decoding="async" /></div>
               <span className="hex-label">Blue</span>
             </div>
             <div className={`hexagon-large-item ${!subPhotos[2] ? "empty" : ""}`} onClick={() => handleSetStarred(2)} style={{ cursor: subPhotos[2] ? "pointer" : "default" }}>
-              <div className="hex-large">{subPhotos[2] ? <img src={subPhotos[2]} alt="Passion" fetchPriority="high" decoding="async" /> : <i className="ti ti-photo-plus"></i>}</div>
+              <div className="hex-large"><img src={subPhotos[2] || "/images/0/5.png"} alt="Passion" fetchPriority="high" decoding="async" /></div>
               <span className="hex-label">Passion</span>
             </div>
             <div className={`hexagon-large-item ${!subPhotos[3] ? "empty" : ""}`} onClick={() => handleSetStarred(3)} style={{ cursor: subPhotos[3] ? "pointer" : "default" }}>
-              <div className="hex-large">{subPhotos[3] ? <img src={subPhotos[3]} alt="Moments" fetchPriority="high" decoding="async" /> : <i className="ti ti-photo-plus"></i>}</div>
+              <div className="hex-large"><img src={subPhotos[3] || "/images/0/6.png"} alt="Moments" fetchPriority="high" decoding="async" /></div>
               <span className="hex-label">Moments</span>
             </div>
           </div>
@@ -1759,7 +1797,7 @@ const Cluster2Content = () => {
 
         {/* 중앙 프로필 사진 */}
         <div className={`frame-center ${!mainPhoto ? "empty" : ""}`}>
-          <img src={mainPhoto || "/images/0/cluster 2/이안0.png"} alt="Profile" />
+          <img src={mainPhoto || "/images/0/2.png"} alt="Profile" />
         </div>
 
         {/* 오른쪽 카드 */}
@@ -1945,14 +1983,14 @@ const Cluster2Content = () => {
             <span className="quote-mark">&quot;</span>
             <div className="quote-body">
               <span className="quote-badge">Per Aspera Ad Astra</span>
-              {!sloganData.slogan2.content && <p className="quote-subtext">지금의 한 걸음이 작아 보여도 결국 미래를 바꾸는 결정적 힘이 된다 흔들려도 멈추지 않으면 결국 도착한다 그게 성장의 증거다</p>}
+              {!sloganData.slogan2.content && <p className="quote-subtext">{SECTION2_SLOGAN_DEFAULTS.slogans[1].content}</p>}
               <p className="quote-text">{sloganData.slogan2.content}</p>
               <div className="quote-footer">
                 <div className="quote-author">
                   <img src={subPhotos[0] || "/images/0/cluster 2/이안1.webp"} alt="" />
                   <div className="author-info">
                     <span className="author-name">{sloganAuthorName || "Unknown"}</span>
-                    <span className="author-role">{sloganData.slogan2.option}</span>
+                    <span className="author-role">{sloganData.slogan2.content ? sloganData.slogan2.option : SECTION2_SLOGAN_DEFAULTS.slogans[1].option}</span>
                   </div>
                 </div>
                 <div className="quote-score">
@@ -1962,7 +2000,7 @@ const Cluster2Content = () => {
                       {[1, 2, 3, 4, 5].map((starIndex) => {
                         const fullValue = starIndex * 2;
                         const halfValue = starIndex * 2 - 1;
-                        const currentRating = sloganData.slogan2.rating;
+                        const currentRating = sloganData.slogan2.content ? sloganData.slogan2.rating : SECTION2_SLOGAN_DEFAULTS.slogans[1].rating;
                         const isHalf = currentRating >= halfValue && currentRating < fullValue;
                         const isFull = currentRating >= fullValue;
                         return (
@@ -1993,7 +2031,7 @@ const Cluster2Content = () => {
                         );
                       })}
                     </div>
-                    <span className="score-count">{sloganData.slogan2.rating} / 10</span>
+                    <span className="score-count">{sloganData.slogan2.content ? sloganData.slogan2.rating : SECTION2_SLOGAN_DEFAULTS.slogans[1].rating} / 10</span>
                   </div>
                 </div>
               </div>
@@ -2017,14 +2055,14 @@ const Cluster2Content = () => {
             <span className="quote-mark">&quot;</span>
             <div className="quote-body">
               <span className="quote-badge">Per Aspera Ad Astra</span>
-              {!sloganData.slogan3.content && <p className="quote-subtext">지금의 한 걸음이 작아 보여도 결국 미래를 바꾸는 결정적 힘이 된다 흔들려도 멈추지 않으면 결국 도착한다 그게 성장의 증거다</p>}
+              {!sloganData.slogan3.content && <p className="quote-subtext">{SECTION2_SLOGAN_DEFAULTS.slogans[2].content}</p>}
               <p className="quote-text">{sloganData.slogan3.content}</p>
               <div className="quote-footer">
                 <div className="quote-author">
                   <img src={subPhotos[2] || "/images/0/cluster 2/이안3.jpg"} alt="" />
                   <div className="author-info">
                     <span className="author-name">{sloganAuthorName || "Unknown"}</span>
-                    <span className="author-role">{sloganData.slogan3.option}</span>
+                    <span className="author-role">{sloganData.slogan3.content ? sloganData.slogan3.option : SECTION2_SLOGAN_DEFAULTS.slogans[2].option}</span>
                   </div>
                 </div>
                 <div className="quote-score">
@@ -2034,7 +2072,7 @@ const Cluster2Content = () => {
                       {[1, 2, 3, 4, 5].map((starIndex) => {
                         const fullValue = starIndex * 2;
                         const halfValue = starIndex * 2 - 1;
-                        const currentRating = sloganData.slogan3.rating;
+                        const currentRating = sloganData.slogan3.content ? sloganData.slogan3.rating : SECTION2_SLOGAN_DEFAULTS.slogans[2].rating;
                         const isHalf = currentRating >= halfValue && currentRating < fullValue;
                         const isFull = currentRating >= fullValue;
                         return (
@@ -2065,7 +2103,7 @@ const Cluster2Content = () => {
                         );
                       })}
                     </div>
-                    <span className="score-count">{sloganData.slogan3.rating} / 10</span>
+                    <span className="score-count">{sloganData.slogan3.content ? sloganData.slogan3.rating : SECTION2_SLOGAN_DEFAULTS.slogans[2].rating} / 10</span>
                   </div>
                 </div>
               </div>

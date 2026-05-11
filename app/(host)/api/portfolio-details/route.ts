@@ -1,7 +1,7 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getUserProfile } from "@/lib/get-user-profile";
+import { extractTargetUserId } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -9,34 +9,14 @@ export const revalidate = 0;
 // GET: Detail 10 링크 조회 (portfolio_output_6~15)
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
+    const { profile, error } = await getUserProfile();
 
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { error: "로그인이 필요합니다." },
-        { status: 401 }
-      );
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
     }
 
     if (!supabaseAdmin) {
-      return NextResponse.json(
-        { error: "서버 설정 오류" },
-        { status: 500 }
-      );
-    }
-
-    // user_profiles에서 사용자 ID 조회
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("user_profiles")
-      .select("id")
-      .eq("email", session.user.email)
-      .maybeSingle();
-
-    if (profileError || !profile) {
-      return NextResponse.json(
-        { error: "프로필을 찾을 수 없습니다." },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
     }
 
     // user_introductions에서 Detail 10 링크 및 채널 조회
@@ -111,20 +91,15 @@ export async function GET() {
 // PUT: Detail 10 링크 저장
 export async function PUT(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const targetUserId = extractTargetUserId(request);
+    const { profile, error } = await getUserProfile("id", targetUserId);
 
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { error: "로그인이 필요합니다." },
-        { status: 401 }
-      );
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
     }
 
     if (!supabaseAdmin) {
-      return NextResponse.json(
-        { error: "서버 설정 오류" },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
     }
 
     const body = await request.json();
@@ -137,22 +112,7 @@ export async function PUT(request: Request) {
       );
     }
 
-    // 채널 배열이 없으면 빈 배열로 초기화
     const channels = Array.isArray(portfolioDetailChannels) ? portfolioDetailChannels : Array(10).fill("");
-
-    // user_profiles에서 사용자 ID 조회
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("user_profiles")
-      .select("id")
-      .eq("email", session.user.email)
-      .maybeSingle();
-
-    if (profileError || !profile) {
-      return NextResponse.json(
-        { error: "프로필을 찾을 수 없습니다." },
-        { status: 404 }
-      );
-    }
 
     // 기존 레코드 확인
     const { data: existingIntro } = await supabaseAdmin

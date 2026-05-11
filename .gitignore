@@ -44,3 +44,5 @@ notepad .gitignore
 !vendor/nftg/
 !vendor/nftg/**
 
+# playwright-mcp dev artifacts (auto-generated console/page snapshots)
+.playwright-mcp/

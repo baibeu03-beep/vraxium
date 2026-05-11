@@ -2573,6 +2573,27 @@
   }
 }
 
+// Output Top 5 / Detail 10 잠긴 카드 (순차 입력)
+.slider-item.void-card,
+.detail-item.void-card {
+  opacity: 0.4 !important;
+  filter: grayscale(60%);
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
+// 작성된(검증 통과) 카드는 노란 글로우로 강조 — 채널 카드와 동일한 "활성" 시각 신호
+.slider-item.has-link.position-0 {
+  border: 2px solid #fed402 !important;
+  box-shadow: 0 10px 40px rgba(254, 212, 2, 0.45) !important;
+}
+
+.detail-item.has-link {
+  outline: 2px solid #fed402;
+  outline-offset: -2px;
+  box-shadow: 0 6px 20px rgba(254, 212, 2, 0.35);
+}
+
 // 채널 모달 초기 상태(데이터 없음) 빛바랜 처리 — 헤더/푸터 제외
 .section-modal.modal-dimmed {
   .section-modal-body {

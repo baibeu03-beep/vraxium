@@ -1,7 +1,10 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getUserProfile } from "@/lib/get-user-profile";
+import { extractTargetUserId, isAdminEmail } from "@/lib/admin";
+import { maskDisplayName } from "@/lib/dataMasking";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -34,29 +37,13 @@ export async function GET(request: Request) {
       }
       profile = data;
     } else {
-      // 현재 로그인 유저의 영상 조회 (로그인 필요)
-      const session = await getServerSession(authOptions);
+      const { profile: userProfile, error } = await getUserProfile<{ id: string; eng_name: string | null }>("id, eng_name");
 
-      if (!session?.user?.email) {
-        return NextResponse.json(
-          { error: "로그인이 필요합니다." },
-          { status: 401 }
-        );
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: error.status });
       }
 
-      const { data, error } = await supabaseAdmin
-        .from("user_profiles")
-        .select("id, eng_name")
-        .eq("email", session.user.email)
-        .maybeSingle();
-
-      if (error || !data) {
-        return NextResponse.json(
-          { error: "프로필을 찾을 수 없습니다." },
-          { status: 404 }
-        );
-      }
-      profile = data;
+      profile = userProfile;
     }
 
     // user_introductions에서 영상 URL 조회
@@ -66,13 +53,24 @@ export async function GET(request: Request) {
       .eq("user_id", profile.id)
       .maybeSingle();
 
+    // engName 마스킹: 어드민/로그인 → raw, 비로그인 → 알파벳 마스킹
+    const session = await getServerSession(authOptions);
+    const sessionIsAdmin = !!session?.user?.isAdmin || isAdminEmail(session?.user?.email);
+    const sessionIsLoggedIn = !!session;
+    const rawEngName = profile.eng_name || null;
+    const engNameDisplay = !rawEngName
+      ? null
+      : sessionIsAdmin || sessionIsLoggedIn
+        ? rawEngName
+        : maskDisplayName(rawEngName);
+
     return NextResponse.json({
       success: true,
       data: {
         videoUrl1: introduction?.video_url_1 || null,
         videoUrl2: introduction?.video_url_2 || null,
         videoUrl3: introduction?.video_url_3 || null,
-        engName: profile.eng_name || null,
+        engName: engNameDisplay,
       },
     });
   } catch (error) {
@@ -87,13 +85,11 @@ export async function GET(request: Request) {
 // PUT: 영상 URL 저장
 export async function PUT(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const targetUserId = extractTargetUserId(request);
+    const { profile, error } = await getUserProfile("id", targetUserId);
 
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { error: "로그인이 필요합니다." },
-        { status: 401 }
-      );
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
     }
 
     if (!supabaseAdmin) {
@@ -102,20 +98,6 @@ export async function PUT(request: Request) {
 
     const body = await request.json();
     const { videoUrl1, videoUrl2, videoUrl3 } = body;
-
-    // user_profiles에서 사용자 ID 조회
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("user_profiles")
-      .select("id")
-      .eq("email", session.user.email)
-      .maybeSingle();
-
-    if (profileError || !profile) {
-      return NextResponse.json(
-        { error: "프로필을 찾을 수 없습니다." },
-        { status: 404 }
-      );
-    }
 
     // 기존 레코드 확인
     const { data: existingIntro } = await supabaseAdmin

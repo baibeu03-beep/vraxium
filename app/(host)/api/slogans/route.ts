@@ -2,6 +2,8 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
+import { extractTargetUserId, isAdminEmail } from "@/lib/admin";
+import { maskDisplayName } from "@/lib/dataMasking";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -44,19 +46,52 @@ export async function GET(request: Request) {
         );
       }
 
-      const { data, error } = await supabaseAdmin
+      // 1차: email
+      const { data } = await supabaseAdmin
         .from("user_profiles")
         .select("id, eng_name")
         .eq("email", session.user.email)
         .maybeSingle();
 
-      if (error || !data) {
+      if (data) {
+        profile = data;
+      }
+
+      // 2차: auth_email
+      if (!profile) {
+        const { data: profileByAuth } = await supabaseAdmin
+          .from("user_profiles")
+          .select("id, eng_name")
+          .eq("auth_email", session.user.email)
+          .maybeSingle();
+
+        if (profileByAuth) {
+          profile = profileByAuth;
+        }
+      }
+
+      // 3차: session UUID
+      if (!profile && session.user?.id) {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidRegex.test(session.user.id)) {
+          const { data: profileById } = await supabaseAdmin
+            .from("user_profiles")
+            .select("id, eng_name")
+            .eq("id", session.user.id)
+            .maybeSingle();
+
+          if (profileById) {
+            profile = profileById;
+          }
+        }
+      }
+
+      if (!profile) {
         return NextResponse.json(
           { error: "프로필을 찾을 수 없습니다." },
           { status: 404 }
         );
       }
-      profile = data;
     }
 
     // user_introductions에서 슬로건 조회
@@ -65,6 +100,17 @@ export async function GET(request: Request) {
       .select("slogan_1, slogan_2, slogan_3, slogan_1_tag, slogan_2_tag, slogan_3_tag, slogan_1_rating, slogan_2_rating, slogan_3_rating")
       .eq("user_id", profile.id)
       .maybeSingle();
+
+    // engName 마스킹: 어드민/로그인 → raw, 비로그인 → 알파벳 마스킹
+    const session = await getServerSession(authOptions);
+    const sessionIsAdmin = !!session?.user?.isAdmin || isAdminEmail(session?.user?.email);
+    const sessionIsLoggedIn = !!session;
+    const rawEngName = profile.eng_name || null;
+    const engNameDisplay = !rawEngName
+      ? null
+      : sessionIsAdmin || sessionIsLoggedIn
+        ? rawEngName
+        : maskDisplayName(rawEngName);
 
     return NextResponse.json({
       success: true,
@@ -84,7 +130,7 @@ export async function GET(request: Request) {
           option: introduction?.slogan_3_tag || null,
           rating: introduction?.slogan_3_rating ?? 0,
         },
-        engName: profile.eng_name || null,
+        engName: engNameDisplay,
       },
     });
   } catch (error) {
@@ -136,14 +182,58 @@ export async function PUT(request: Request) {
       );
     }
 
-    // user_profiles에서 사용자 ID 조회
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("user_profiles")
-      .select("id")
-      .eq("email", session.user.email)
-      .maybeSingle();
+    // 어드민이 다른 유저를 대상으로 편집하는 경우
+    const targetUserId = extractTargetUserId(request);
+    let profile: { id: string } | null = null;
 
-    if (profileError || !profile) {
+    if (targetUserId && isAdminEmail(session.user.email)) {
+      const { data: targetProfile } = await supabaseAdmin
+        .from("user_profiles")
+        .select("id")
+        .eq("id", targetUserId)
+        .maybeSingle();
+      profile = targetProfile;
+    } else {
+      // user_profiles에서 사용자 ID 조회 (1차: email, 2차: auth_email, 3차: session UUID)
+      const { data: profileByEmail } = await supabaseAdmin
+        .from("user_profiles")
+        .select("id")
+        .eq("email", session.user.email)
+        .maybeSingle();
+
+      if (profileByEmail) {
+        profile = profileByEmail;
+      }
+
+      if (!profile) {
+        const { data: profileByAuth } = await supabaseAdmin
+          .from("user_profiles")
+          .select("id")
+          .eq("auth_email", session.user.email)
+          .maybeSingle();
+
+        if (profileByAuth) {
+          profile = profileByAuth;
+        }
+      }
+
+      if (!profile && session.user?.id) {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidRegex.test(session.user.id)) {
+          const { data: profileById } = await supabaseAdmin
+            .from("user_profiles")
+            .select("id")
+            .eq("id", session.user.id)
+            .maybeSingle();
+
+          if (profileById) {
+            profile = profileById;
+          }
+        }
+      }
+    }
+
+    if (!profile) {
       return NextResponse.json(
         { error: "프로필을 찾을 수 없습니다." },
         { status: 404 }

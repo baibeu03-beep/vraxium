@@ -145,6 +145,8 @@
 @import "./components/cluster4-week";   // 주차 카드용
 @import "./components/cluster4-px";
 @import "./components/crews-phalanx";
+@import "./components/weekly-ranking";  // Weekly League 페이지 전용
+@import "./components/weekly-card";     // Weekly League 주차 카드
 
 // layout styles
 @import "./layout/header";
@@ -165,4 +167,5 @@
 @import "./components/cluster4-week-responsive";
 
 // 모바일/태블릿 오버라이드(반드시 마지막)
-@import "./components/mobile-responsive";
+// Desktop-fixed project: keep mobile responsive overrides opt-in only.
+// @import "./components/mobile-responsive";

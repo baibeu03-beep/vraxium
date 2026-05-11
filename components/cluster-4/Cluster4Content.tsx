@@ -13,6 +13,8 @@ import { supabase } from "@/lib/supabase";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { DUMMY_SEASON_DATA, DUMMY_SEASON_HISTORIES, REVIEW_COMMENT_DEFAULT } from "@/constants/dummyData";
+import { dedupedJson } from "@/lib/fetch-dedupe";
+import HelpModalBody from "@/components/shared/HelpModalBody";
 
 // 글자수 초과 시 '..' 표시 (CSS ellipsis '…' 대신 JS 처리)
 const truncate = (text: string | undefined | null, maxLen: number): string => {
@@ -193,6 +195,36 @@ const defaultSeasonData = {
   },
 };
 
+// 역할 라벨 매핑
+const ROLE_LABELS: { [key: string]: string } = {
+  crew: "일반",
+  crew_regular: "일반",
+  crew_normal: "일반",
+  crew_advanced_agent: "심화(에이전트)",
+  crew_agent: "심화(에이전트)",
+  crew_advanced_part_leader: "심화(파트장)",
+  crew_partleader: "심화(파트장)",
+  operations_partleader: "심화(파트장)",
+  part_leader: "심화(파트장)",
+  admin_team_leader: "운영진(팀장)",
+  crew_team_leader: "운영진(팀장)",
+  operations_teamleader: "운영진(팀장)",
+  admin_ambassador: "운영진(앰배서더)",
+  crew_ambassador: "운영진(앰배서더)",
+  operations_ambassador: "운영진(앰배서더)",
+};
+
+const ADMIN_ROLES = new Set([
+  "admin_team_leader",
+  "crew_team_leader",
+  "operations_teamleader",
+  "admin_ambassador",
+  "crew_ambassador",
+  "operations_ambassador",
+]);
+
+const isAdminRole = (role: string): boolean => ADMIN_ROLES.has(role);
+
 const formatSeasonReputationTime = (timestamp: string | null | undefined): string => {
   if (!timestamp) return "00. 00. 00(0)  00:00";
   try {
@@ -282,7 +314,17 @@ const Cluster4Content = () => {
   const popup = usePopup();
   const urlUserId = searchParams.get("userId") || searchParams.get("userID");
   const isDemoMode = checkDemoMode();
-  const isOwner = !urlUserId || session?.user?.id === urlUserId;
+  // 어드민(마더) 계정은 모든 프로필 편집 가능
+  const isOwner = session?.user?.isAdmin || !urlUserId || (session?.user?.id === urlUserId);
+
+  // 어드민이 다른 유저 편집 시 targetUserId를 API URL에 추가
+  const apiUrl = (path: string) => {
+    if (urlUserId && session?.user?.isAdmin) {
+      const separator = path.includes('?') ? '&' : '?';
+      return `${path}${separator}targetUserId=${urlUserId}`;
+    }
+    return path;
+  };
 
   // 데모 모드에서 사용자별 collection-content 문구 분기용
   const [demoUserName, setDemoUserName] = useState<string | null>(null);
@@ -291,9 +333,8 @@ const Cluster4Content = () => {
     if (!isDemoMode || !urlUserId) return;
     const fetchName = async () => {
       try {
-        const res = await fetch(`/api/profile/?userId=${urlUserId}`);
-        if (res.ok) {
-          const json = await res.json();
+        const json = await dedupedJson<any>(`/api/profile/?userId=${urlUserId}`);
+        if (json) {
           const name = json.data?.display_name || null;
           setDemoUserName(name);
           // 데모 모드 사용자별 성장 상태 설정
@@ -319,6 +360,7 @@ const Cluster4Content = () => {
       ? (
           {
             윤재윤: (
+
               <>
                 현재 클럽은, <span style={{ color: "#FF9C9C", fontSize: 20, fontFamily: "Pretendard", fontWeight: "800", lineHeight: "30px", wordWrap: "break-word" }}>2026년 봄 시즌</span>을 가동 중에 있습니다.
               </>
@@ -369,6 +411,12 @@ const Cluster4Content = () => {
     } // 더미 모드: 체크 스킵
     // 개발 모드: 비로그인 상태에서도 모달 열기 허용
     if (!session) {
+      openModalFn();
+      return;
+    }
+
+    // 어드민(마더) 계정은 승인 체크 건너뛰기
+    if (session.user?.isAdmin) {
       openModalFn();
       return;
     }
@@ -521,13 +569,16 @@ const Cluster4Content = () => {
   const [reputationDetailModalOpen, setReputationDetailModalOpen] = useState(false);
   const [selectedReputation, setSelectedReputation] = useState<SeasonReputationData | null>(null);
 
+  // 어드민 평판 수정 시 사용하는 평판 ID
+  const [editingReputationId, setEditingReputationId] = useState<string | null>(null);
+
   // 시즌 리뷰 모달 상태 (본인의 시즌 평가)
   const [seasonReviewModalOpen, setSeasonReviewModalOpen] = useState(false);
   const [seasonReviewEditData, setSeasonReviewEditData] = useState<{
     rating: number;
     review: string;
-    link: string;
-  }>({ rating: 0, review: "", link: "" });
+    link?: string;
+  }>({ rating: 0, review: "" });
   const [seasonReviewSaving, setSeasonReviewSaving] = useState(false);
   const [seasonReviewError, setSeasonReviewError] = useState<string | null>(null);
   const [seasonReviewSuccess, setSeasonReviewSuccess] = useState(false);
@@ -535,7 +586,6 @@ const Cluster4Content = () => {
   const [seasonReviewFormSnapshot, setSeasonReviewFormSnapshot] = useState<{
     rating: number;
     review: string;
-    link: string;
   } | null>(null);
   const [seasonReviewSaveAttemptFailed, setSeasonReviewSaveAttemptFailed] = useState(false);
   const [seasonReviewFieldErrorFlash, setSeasonReviewFieldErrorFlash] = useState(false);
@@ -548,8 +598,14 @@ const Cluster4Content = () => {
   }, [isDemoMode]);
 
   // 일반 모드 백엔드 승인 상태 → canEditSeasonReputation / canEditSeasonReview 일괄 반영
+  // 어드민(마더) 계정은 승인 체크를 건너뛰고 항상 편집 가능
   useEffect(() => {
     if (isDemoMode) return; // 데모 모드는 위 useEffect들이 true로 셋업
+    if (session?.user?.isAdmin) {
+      setCanEditSeasonReputation(true);
+      setCanEditSeasonReview(true);
+      return;
+    }
     let cancelled = false;
     (async () => {
       const approved = await checkApprovalStatus();
@@ -627,21 +683,9 @@ const Cluster4Content = () => {
     const invalidFields = fieldResults.filter((result) => !result.valid);
 
     if (invalidFields.length > 0) {
-      console.log("[season-reputation validation] failed", {
-        editData: seasonReputationEditData,
-        keywordModes: seasonKeywordModes,
-        invalidFields,
-      });
-      console.table(fieldResults);
       return false;
     }
 
-    console.log("[season-reputation validation] passed", {
-      rating: seasonReputationEditData.rating,
-      contentLength: seasonReputationEditData.content.trim().length,
-      keywords,
-      keywordModes: seasonKeywordModes,
-    });
     return true;
   };
 
@@ -690,7 +734,6 @@ const Cluster4Content = () => {
   };
 
   const handleSeasonRatingSelect = (value: number) => {
-    console.log("[season-reputation rating] selected", value);
     setSeasonReputationEditData((prev) => ({ ...prev, rating: value }));
     setSeasonRatingDropdownOpen(false);
   };
@@ -705,7 +748,6 @@ const Cluster4Content = () => {
         if (slotIndex === 0) next.keyword1 = "";
         else if (slotIndex === 1) next.keyword2 = "";
         else if (slotIndex === 2) next.keyword3 = "";
-        console.log("[season-reputation keyword mode] write", { slotIndex, next });
         return next;
       });
       setSeasonKeywordModes((prev) => {
@@ -742,7 +784,6 @@ const Cluster4Content = () => {
       if (slotIndex === 0) next.keyword1 = seasonKeywordTempSelection;
       else if (slotIndex === 1) next.keyword2 = seasonKeywordTempSelection;
       else if (slotIndex === 2) next.keyword3 = seasonKeywordTempSelection;
-      console.log("[season-reputation keyword select] confirmed", { slotIndex, keyword: seasonKeywordTempSelection, next });
       return next;
     });
     setSeasonKeywordModes((prev) => {
@@ -777,7 +818,6 @@ const Cluster4Content = () => {
       if (slotIndex === 0) next.keyword1 = v;
       else if (slotIndex === 1) next.keyword2 = v;
       else if (slotIndex === 2) next.keyword3 = v;
-      console.log("[season-reputation keyword write] changed", { slotIndex, value: v, next });
       return next;
     });
   };
@@ -838,23 +878,35 @@ const Cluster4Content = () => {
     }
 
     try {
-      const endpoint = isUpdate ? `/api/season-reputations/${selectedReputation!.id}` : "/api/season-reputations";
+      const endpoint = apiUrl("/api/season-reputations");
       const method = isUpdate ? "PUT" : "POST";
-      const body = {
-        targetUserId: urlUserId,
-        seasonHistoryId: selectedSeasonId,
-        rating: seasonReputationEditData.rating,
-        content: seasonReputationEditData.content.trim(),
-        keyword1: seasonReputationEditData.keyword1.trim(),
-        keyword2: seasonReputationEditData.keyword2.trim(),
-        keyword3: seasonReputationEditData.keyword3.trim(),
-      };
-      console.log("[season-reputation save] request body", body);
+      const body = isUpdate
+        ? {
+            id: selectedReputation!.id,
+            rating: seasonReputationEditData.rating,
+            content: seasonReputationEditData.content.trim(),
+            keyword1: seasonReputationEditData.keyword1.trim(),
+            keyword2: seasonReputationEditData.keyword2.trim(),
+            keyword3: seasonReputationEditData.keyword3.trim(),
+          }
+        : {
+            targetUserId: urlUserId,
+            seasonHistoryId: selectedSeasonId,
+            rating: seasonReputationEditData.rating,
+            content: seasonReputationEditData.content.trim(),
+            keyword1: seasonReputationEditData.keyword1.trim(),
+            keyword2: seasonReputationEditData.keyword2.trim(),
+            keyword3: seasonReputationEditData.keyword3.trim(),
+          };
       const res = await fetch(endpoint, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => null);
+        console.error("[season-reputation] API 실패:", res.status, errBody);
+        return null;
+      }
       const data = await res.json();
       const saved = data.data || data;
-      return { id: saved.id, created_at: saved.created_at, updated_at: saved.updated_at };
+      return { id: saved.id || (isUpdate ? selectedReputation!.id : undefined), created_at: saved.created_at, updated_at: saved.updated_at };
     } catch (err) {
       console.error("[season-reputation] API 예외:", err);
       return null;
@@ -896,6 +948,11 @@ const Cluster4Content = () => {
         await popup.alert("저장에 실패했습니다. 다시 시도해주세요.");
         return;
       }
+      // 저장 직후 평판 목록 새로고침 — 카드 0개/카운트가 즉시 반영되도록
+      const targetId = urlUserId || session?.user?.id;
+      if (targetId && (selectedSeasonId || currentSeason?.id)) {
+        await fetchSeasonReputations(targetId, selectedSeasonId || currentSeason.id);
+      }
       await popup.alert("저장되었습니다.");
       setSeasonReputationModalOpen(false);
     } catch (err) {
@@ -916,6 +973,7 @@ const Cluster4Content = () => {
       setSeasonReputationFieldErrorFlash(false);
       setSeasonKeywordModes([null, null, null]);
       setSeasonReputationEditData({ rating: 0, content: "", keyword1: "", keyword2: "", keyword3: "" });
+      setSelectedReputation(null);
     }
     prevSeasonReputationModalOpen.current = seasonReputationModalOpen;
   }, [seasonReputationModalOpen]);
@@ -1015,6 +1073,58 @@ const Cluster4Content = () => {
   // user_profiles.role 기본값 (역할 이력이 없을 때 사용)
   const [userDefaultRole, setUserDefaultRole] = useState<string | null>(null);
 
+  // 시즌 리뷰 모달 인적사항 카드용 프로필 (페이지 주인 기준 — urlUserId 우선, 없으면 본인)
+  const [seasonReviewerProfile, setSeasonReviewerProfile] = useState<{
+    displayName: string;
+    profilePhotoUrl: string;
+    gender: string;
+    age: number | null;
+    school: string;
+    major: string;
+    vision: string;
+  }>({ displayName: "", profilePhotoUrl: "", gender: "", age: null, school: "", major: "", vision: "" });
+
+  useEffect(() => {
+    if (isDemoMode) return;
+    const targetId = urlUserId || session?.user?.id;
+    if (!targetId) return;
+    let cancelled = false;
+    // urlUserId 없을 때는 fetchUserStatus 효과와 동일한 캐시 키(`/api/profile/`)를 사용하여 중복 네트워크 호출 방지
+    const profileUrl = urlUserId ? `/api/profile/?userId=${urlUserId}` : "/api/profile/";
+    (async () => {
+      try {
+        const [profileJson, eduJson] = await Promise.all([
+          dedupedJson<any>(profileUrl).catch(() => null),
+          dedupedJson<any>(`/api/educations?userId=${targetId}`).catch(() => null),
+        ]);
+        if (cancelled) return;
+
+        const p = profileJson?.data;
+        const eduFirst = Array.isArray(eduJson?.data) && eduJson.data.length > 0 ? eduJson.data[0] : null;
+
+        let age: number | null = null;
+        if (p?.birth_date) {
+          const birthYear = new Date(p.birth_date).getFullYear();
+          const currentYear = new Date().getFullYear();
+          if (!Number.isNaN(birthYear)) age = currentYear - birthYear;
+        }
+
+        setSeasonReviewerProfile({
+          displayName: p?.display_name || "",
+          profilePhotoUrl: p?.profile_photo_url || "",
+          gender: p?.gender || "",
+          age,
+          school: eduFirst?.school || "",
+          major: eduFirst?.major1 && eduFirst.major1 !== "-" ? eduFirst.major1 : "",
+          vision: p?.vision || "",
+        });
+      } catch {
+        // 무시 — 기존 fallback 유지
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isDemoMode, urlUserId, session?.user?.id]);
+
   // 성장 종료 정보
   const [growthEndInfo, setGrowthEndInfo] = useState<{
     year: number | null;
@@ -1083,7 +1193,6 @@ const Cluster4Content = () => {
     stats: { dangam: number; injeolmi: number; eoheung: number };
     rating: number;
     review: string;
-    reviewLink: string;
     circles: {
       weekUsage: number;
       scheduleReliability: number;
@@ -1206,14 +1315,19 @@ const Cluster4Content = () => {
       const targetUserId = urlUserId || session?.user?.id;
 
       // 1. 현재 주차 정보 가져오기
-      const { data: currentWeekData } = await supabase.from("weeks").select("id, end_date").lte("start_date", today).gte("end_date", today).maybeSingle();
+      const { data: currentWeekData } = await supabase
+        .from("weeks")
+        .select("id, end_date, week_number, seasons(year, name)")
+        .lte("start_date", today)
+        .gte("end_date", today)
+        .maybeSingle();
 
       if (!currentWeekData) return;
 
       const weekId = currentWeekData.id;
 
-      // 2. activity_types 정보 가져오기 (eligible 조건 포함)
-      const { data: activityTypesData } = await supabase.from("activity_types").select("id, cluster_id, eligible_min_approved_weeks, eligible_max_approved_weeks, count_once_in_total").eq("is_active", true);
+      // 2. activity_types 정보 가져오기 (eligible 조건 + 라인명 — 매니징 라인 역할 분기에 사용)
+      const { data: activityTypesData } = await supabase.from("activity_types").select("id, cluster_id, name, eligible_min_approved_weeks, eligible_max_approved_weeks, count_once_in_total").eq("is_active", true);
 
       if (!activityTypesData) return;
 
@@ -1224,6 +1338,7 @@ const Cluster4Content = () => {
       const careerTypeIds: string[] = [];
       type ExperienceTypeInfo = {
         id: string;
+        name: string;
         eligible_min_approved_weeks: number | null;
         eligible_max_approved_weeks: number | null;
         count_once_in_total: boolean | null;
@@ -1237,6 +1352,7 @@ const Cluster4Content = () => {
           experienceTypeIds.push(at.id);
           experienceInfos.push({
             id: at.id,
+            name: at.name || "",
             eligible_min_approved_weeks: at.eligible_min_approved_weeks,
             eligible_max_approved_weeks: at.eligible_max_approved_weeks,
             count_once_in_total: at.count_once_in_total,
@@ -1247,17 +1363,18 @@ const Cluster4Content = () => {
       });
 
       // 3. weekly_activities 가져오기 (열린 활동)
-      const { data: activitiesData } = await supabase.from("weekly_activities").select("activity_type_id, is_active, opened_at").eq("week_id", weekId);
+      const { data: activitiesData } = await supabase
+        .from("weekly_activities")
+        .select("activity_type_id, is_active, opened_at, deadline")
+        .eq("week_id", weekId);
 
       if (!activitiesData) return;
 
       const activeActivities = activitiesData.filter((a) => a.is_active);
 
       // 4. 프로필 API에서 activity_records, activity_details 가져오기
-      const res = await fetch(urlUserId ? `/api/users/${urlUserId}` : "/api/profile");
-      if (!res.ok) return;
-
-      const profileResult = await res.json();
+      const profileResult = await dedupedJson<any>(urlUserId ? `/api/users/${urlUserId}` : "/api/profile").catch(() => null);
+      if (!profileResult || profileResult.error) return;
       const apiActivityRecords = profileResult.activityRecords || [];
       const apiActivityDetails = profileResult.activityDetails || [];
       const onboardingWeekId = profileResult.onboardingWeekId || null;
@@ -1266,13 +1383,16 @@ const Cluster4Content = () => {
       const isOnboardingWeek = weekId === onboardingWeekId;
 
       // 5. 누적 성공 주차 수 계산 (cluster-4-card와 동일한 로직)
-      const { data: successWeeksData } = await supabase.from("success_weeks").select("week_id, weeks!inner(end_date)").eq("user_id", targetUserId);
+      // success_weeks 테이블은 존재하지 않음 — user_weekly_growth + is_success=true 로 조회 (다른 API 들과 동일)
+      const { data: successWeeksData } = await supabase.from("user_weekly_growth").select("week_id, weeks!inner(end_date)").eq("user_id", targetUserId).eq("is_success", true);
 
+      const userStartDateForCum = profileResult.growthInfo?.startDate || '1900-01-01';
       let currentCumulativeApproved = 0;
       if (successWeeksData && successWeeksData.length > 0) {
         currentCumulativeApproved = successWeeksData.filter((sw: any) => {
           const weekEndDate = sw.weeks?.end_date;
-          return weekEndDate && weekEndDate <= currentWeekData.end_date;
+          // 온보딩 주차 이전(=합류 전) 성공 주차는 제외
+          return weekEndDate && weekEndDate <= currentWeekData.end_date && weekEndDate >= userStartDateForCum;
         }).length;
       }
       // 온보딩 주차도 누적에 포함 (success_weeks에 없는 경우)
@@ -1305,7 +1425,6 @@ const Cluster4Content = () => {
       const calcStats = (typeIds: string[]) => {
         const total = activeActivities.filter((a) => typeIds.includes(a.activity_type_id)).length;
         const now = Date.now();
-        const deadline = 48 * 60 * 60 * 1000; // 48시간
 
         const success = activeActivities.filter((a) => {
           if (!typeIds.includes(a.activity_type_id)) return false;
@@ -1317,10 +1436,12 @@ const Cluster4Content = () => {
 
           if (hasSecondaryInfo) return true;
 
-          // 48시간 경과 확인
-          if (a.opened_at) {
+          // 마감 시간 경과 확인 (deadline 컬럼 우선, 없으면 opened_at+48h 폴백)
+          if (a.deadline) {
+            if (now >= new Date(a.deadline).getTime()) return true;
+          } else if (a.opened_at) {
             const openedTime = new Date(a.opened_at).getTime();
-            if (now - openedTime >= deadline) return true;
+            if (now - openedTime >= 48 * 60 * 60 * 1000) return true;
           }
 
           return false;
@@ -1330,6 +1451,38 @@ const Cluster4Content = () => {
       };
 
       // 8. 실무 경험 eligible 조건 체크 (cluster-4-card와 동일한 로직)
+      // eligible_min/max 룰 적용 시점: 2026년 봄 시즌 9주차부터
+      const weekSeasonData = (currentWeekData as any)?.seasons;
+      const isEligibilityRuleActive = weekSeasonData && (
+        weekSeasonData.year > 2026 ||
+        (weekSeasonData.year === 2026 && weekSeasonData.name !== 'spring') ||
+        (weekSeasonData.year === 2026 && weekSeasonData.name === 'spring' && (currentWeekData as any).week_number >= 9)
+      );
+
+      // 매니징 라인 역할 분기 — 라인명에 _파트장/_에이전트 표기.
+      // 사용자 역할과 라인이 안 맞으면 '해당 없음' 처리해야 함 (이행 기록이 없을 때만).
+      const apiUserRoleHistory = profileResult.userRoleHistory || [];
+      const userRoleForWeek = apiUserRoleHistory.find((urh: any) => {
+        const startedAt = new Date(urh.started_at);
+        const endedAt = urh.ended_at ? new Date(urh.ended_at) : null;
+        const weekStart = new Date((currentWeekData as any).start_date);
+        return startedAt <= weekStart && (!endedAt || endedAt > weekStart);
+      });
+      const userRole = userRoleForWeek?.role || profileResult.data?.role || "";
+      const isLineForOtherRole = (lineName: string): boolean => {
+        if (!lineName) return false;
+        if (lineName.includes("파트장")) {
+          return !userRole.includes("partleader") && !userRole.includes("part_leader");
+        }
+        if (lineName.includes("에이전트")) {
+          return !userRole.includes("agent");
+        }
+        return false;
+      };
+      const hasRecordForType = (activityTypeId: string): boolean => {
+        return apiActivityRecords.some((ar: { week_id: string; activity_type_id: string }) => ar.week_id === weekId && ar.activity_type_id === activityTypeId);
+      };
+
       const calcExperienceStats = () => {
         let experienceTotal = 0;
         const experienceActivities = activeActivities.filter((a) => experienceTypeIds.includes(a.activity_type_id));
@@ -1337,35 +1490,54 @@ const Cluster4Content = () => {
         experienceActivities.forEach((a) => {
           const typeInfo = experienceInfos.find((info) => info.id === a.activity_type_id);
 
+          // 매니징 라인 역할 분기: 사용자 역할과 안 맞으면 카운트 제외 (이행 기록 있으면 폴백)
+          if (typeInfo && isLineForOtherRole(typeInfo.name) && !hasRecordForType(a.activity_type_id)) {
+            return;
+          }
+
           if (!typeInfo) {
             experienceTotal++; // 정보가 없으면 기본 포함
             return;
           }
 
-          // eligible_min/max 체크 (null이면 제한 없음)
-          const minWeek = typeInfo.eligible_min_approved_weeks ?? 1;
-          const maxWeek = typeInfo.eligible_max_approved_weeks ?? 999;
+          if (isEligibilityRuleActive) {
+            // eligible_min/max 체크 (null이면 제한 없음)
+            const minWeek = typeInfo.eligible_min_approved_weeks ?? 1;
+            const maxWeek = typeInfo.eligible_max_approved_weeks ?? 999;
 
-          // 누적 주차가 eligible 범위 내인지 확인
-          if (currentCumulativeApproved >= minWeek && currentCumulativeApproved <= maxWeek) {
-            // count_once_in_total 체크 (1회만 가능한 활동)
-            if (typeInfo.count_once_in_total) {
+            // 누적 주차가 eligible 범위 내인지 확인 (범위 밖이어도 이행 기록 있으면 폴백)
+            const inRange = currentCumulativeApproved >= minWeek && currentCumulativeApproved <= maxWeek;
+            if (!inRange && !hasRecordForType(a.activity_type_id)) {
+              return;
+            }
+
+            if (inRange && typeInfo.count_once_in_total) {
               // 이미 이전 주차에서 완료했는지 확인
-              const previouslyCompleted = allCompletedActivities.some((ca: { week_id: string; activity_type_id: string }) => ca.activity_type_id === a.activity_type_id && ca.week_id !== weekId);
+              const previouslyCompleted = allCompletedActivities.some(
+                (ca: { week_id: string; activity_type_id: string }) => ca.activity_type_id === a.activity_type_id && ca.week_id !== weekId
+              );
               if (!previouslyCompleted) {
                 experienceTotal++;
               }
             } else {
               experienceTotal++;
             }
+          } else {
+            // 룰 적용 이전: 모든 실무 경험 활동 카운트 (단, 역할 미스매치는 위에서 이미 제외됨)
+            experienceTotal++;
           }
         });
 
-        // success 계산 (강화 성공 기준: is_completed + (48시간 경과 OR 2차 정보 기입))
+        // success 계산 (강화 성공 기준: is_completed + (마감 경과 OR 2차 정보 기입))
         const now = Date.now();
-        const deadline = 48 * 60 * 60 * 1000; // 48시간
 
         const experienceSuccess = experienceActivities.filter((a) => {
+          // 역할 미스매치 + 이행 기록 없음 → 카운트 제외
+          const typeInfo = experienceInfos.find((info) => info.id === a.activity_type_id);
+          if (typeInfo && isLineForOtherRole(typeInfo.name) && !hasRecordForType(a.activity_type_id)) {
+            return false;
+          }
+
           if (!approvedActivityTypes.has(a.activity_type_id)) return false;
 
           // 2차 정보 확인
@@ -1374,10 +1546,12 @@ const Cluster4Content = () => {
 
           if (hasSecondaryInfo) return true;
 
-          // 48시간 경과 확인
-          if (a.opened_at) {
+          // 마감 시간 경과 확인 (deadline 컬럼 우선, 없으면 opened_at+48h 폴백)
+          if (a.deadline) {
+            if (now >= new Date(a.deadline).getTime()) return true;
+          } else if (a.opened_at) {
             const openedTime = new Date(a.opened_at).getTime();
-            if (now - openedTime >= deadline) return true;
+            if (now - openedTime >= 48 * 60 * 60 * 1000) return true;
           }
 
           return false;
@@ -1386,15 +1560,8 @@ const Cluster4Content = () => {
         return { total: experienceTotal, success: experienceSuccess };
       };
 
-      // 온보딩 주차면 모든 파트 total=0, 아니면 정상 계산
-      if (isOnboardingWeek) {
-        setActivityStats({
-          info: { total: 0, success: 0 },
-          competency: { total: 0, success: 0 },
-          experience: { total: 0, success: 0 },
-          career: { total: 0, success: 0 },
-        });
-      } else {
+      // 온보딩 주차도 정상 계산 (팀/파트 + 강화 성공/실패 표시)
+      {
         const infoStats = calcStats(infoTypeIds);
         const competencyStats = calcStats(competencyTypeIds);
         const experienceStats = calcExperienceStats(); // eligible 조건 적용
@@ -1420,9 +1587,8 @@ const Cluster4Content = () => {
       try {
         // urlUserId가 있으면 해당 사용자, 없으면 본인 프로필 조회
         if (urlUserId) {
-          const res = await fetch(`/api/profile/?userId=${urlUserId}`);
-          if (res.ok) {
-            const json = await res.json();
+          const json = await dedupedJson<any>(`/api/profile/?userId=${urlUserId}`).catch(() => null);
+          if (json) {
             setUserStatus(json.growthInfo?.status || null);
             setGrowthStatus(json.growthInfo?.growthStatus || null);
             // user_profiles.role 기본값 저장
@@ -1473,9 +1639,8 @@ const Cluster4Content = () => {
             if (json.data?.profile_photo_url) setProfilePhotoUrl(json.data.profile_photo_url);
           }
         } else if (session?.user?.id) {
-          const res = await fetch("/api/profile/");
-          if (res.ok) {
-            const json = await res.json();
+          const json = await dedupedJson<any>("/api/profile/").catch(() => null);
+          if (json) {
             setUserStatus(json.growthInfo?.status || null);
             setGrowthStatus(json.growthInfo?.growthStatus || null);
             // user_profiles.role 기본값 저장
@@ -1536,16 +1701,17 @@ const Cluster4Content = () => {
 
   // 시즌 평판 데이터 가져오기 함수
   const fetchSeasonReputations = async (targetId: string, seasonHistoryId: string) => {
+    // UUID 형식이 아니면 (예: defaultSeasonData.id="dummy-season-1") API 호출 스킵 — DB 컬럼이 uuid 타입이라 22P02 발생
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(seasonHistoryId)) {
+      setSeasonReputations([]);
+      return;
+    }
     try {
       const res = await fetch(`/api/season-reputations?targetUserId=${targetId}&seasonHistoryId=${seasonHistoryId}`);
       if (res.ok) {
         const json = await res.json();
-        console.log("[fetchSeasonReputations] API 응답:", json);
         if (json.success && json.data) {
-          console.log("[fetchSeasonReputations] 평판 데이터:", json.data);
-          if (json.data.length > 0) {
-            console.log("[fetchSeasonReputations] 첫번째 평판의 reviewer:", json.data[0].reviewer);
-          }
           setSeasonReputations(json.data);
         }
       }
@@ -1585,10 +1751,6 @@ const Cluster4Content = () => {
     const targetId = urlUserId || session?.user?.id;
     if (!targetId || !currentSeason?.id) return;
 
-    console.log("[fetchSeasonReputations] 현재 시즌:", currentSeason);
-    console.log("[fetchSeasonReputations] currentSeason.id:", currentSeason.id);
-    console.log("[fetchSeasonReputations] targetId:", targetId);
-
     fetchSeasonReputations(targetId, currentSeason.id);
   }, [urlUserId, session?.user?.id, currentSeason?.id]);
 
@@ -1614,30 +1776,6 @@ const Cluster4Content = () => {
     }
   }, [section3Page, isDemoMode]);
 
-  // 역할 라벨 매핑
-  const roleLabels: { [key: string]: string } = {
-    crew: "일반",
-    crew_regular: "일반",
-    crew_normal: "일반",
-    crew_advanced_agent: "심화(에이전트)",
-    crew_agent: "심화(에이전트)",
-    crew_advanced_part_leader: "심화(파트장)",
-    crew_partleader: "심화(파트장)",
-    operations_partleader: "심화(파트장)",
-    part_leader: "심화(파트장)",
-    admin_team_leader: "운영진(팀장)",
-    crew_team_leader: "운영진(팀장)",
-    operations_teamleader: "운영진(팀장)",
-    admin_ambassador: "운영진(앰배서더)",
-    crew_ambassador: "운영진(앰배서더)",
-    operations_ambassador: "운영진(앰배서더)",
-  };
-
-  // 운영진 역할인지 확인
-  const isAdminRole = (role: string): boolean => {
-    return ["admin_team_leader", "crew_team_leader", "operations_teamleader", "admin_ambassador", "crew_ambassador", "operations_ambassador"].includes(role);
-  };
-
   // 시즌 히스토리 포맷팅 함수
   const formatSeasonHistories = (
     histories: Array<{
@@ -1649,7 +1787,6 @@ const Cluster4Content = () => {
       is_qualified?: boolean;
       rating?: number;
       review?: string;
-      review_link?: string;
       seasons: {
         id: string;
         year: number;
@@ -1746,8 +1883,7 @@ const Cluster4Content = () => {
         is_qualified?: boolean;
         rating?: number;
         review?: string;
-        review_link?: string;
-        seasons: {
+          seasons: {
           id: string;
           year: number;
           name: string;
@@ -1989,7 +2125,6 @@ const Cluster4Content = () => {
           },
           rating: sh.rating || 0,
           review: sh.review || "",
-          reviewLink: sh.review_link || "",
           // 시즌별 통계 (주차 활용도, 일정 신뢰도, 시즌 성장률)
           circles: {
             weekUsage: seasonStats.weekUsageRate,
@@ -2071,8 +2206,26 @@ const Cluster4Content = () => {
   };
 
   // 시즌 평판 모달 열기
-  const openSeasonReputationModal = async () => {
-    setSeasonReputationEditData({ rating: 0, content: "", keyword1: "", keyword2: "", keyword3: "" });
+  // 본인이 이 시즌·이 대상에게 이미 남긴 평판이 있으면 prefill 하여 수정 모드로 진입
+  const openSeasonReputationModal = () => {
+    const myProfileId = session?.user?.id;
+    const myExisting = myProfileId
+      ? seasonReputations.find((r) => r.reviewer_id === myProfileId)
+      : undefined;
+
+    if (myExisting) {
+      setSelectedReputation(myExisting);
+      setSeasonReputationEditData({
+        rating: myExisting.rating ?? 0,
+        content: myExisting.content ?? "",
+        keyword1: myExisting.keyword_1 ?? "",
+        keyword2: myExisting.keyword_2 ?? "",
+        keyword3: myExisting.keyword_3 ?? "",
+      });
+    } else {
+      setSelectedReputation(null);
+      setSeasonReputationEditData({ rating: 0, content: "", keyword1: "", keyword2: "", keyword3: "" });
+    }
     setSeasonReputationError(null);
     setSeasonReputationSuccess(false);
     // 현재 보고 있는 시즌을 기본 선택
@@ -2086,8 +2239,8 @@ const Cluster4Content = () => {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
+    // 데모 모드: API 호출 없이 UI에만 반영
     if (isDemoMode) {
-      // seasonReputations에 새 평판 추가 (UI 즉시 반영)
       setSeasonReputations((prev) => [
         ...prev,
         {
@@ -2118,6 +2271,36 @@ const Cluster4Content = () => {
       await popup.alert("저장되었습니다.");
       setSeasonReputationModalOpen(false);
       setSeasonReputationEditData({ rating: 0, content: "", keyword1: "", keyword2: "", keyword3: "" });
+      return;
+    }
+
+    // 어드민 수정 모드
+    if (editingReputationId && session?.user?.isAdmin) {
+      setSeasonReputationSaving(true);
+      try {
+        const response = await fetch("/api/season-reputations", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: editingReputationId,
+            rating: seasonReputationEditData.rating,
+            content: seasonReputationEditData.content,
+            keyword1: seasonReputationEditData.keyword1,
+            keyword2: seasonReputationEditData.keyword2,
+            keyword3: seasonReputationEditData.keyword3,
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok) { alert(result.error || "수정에 실패했습니다."); return; }
+
+        const targetId = urlUserId || session?.user?.id;
+        if (targetId && currentSeason?.id) fetchSeasonReputations(targetId, currentSeason.id);
+        alert("수정되었습니다.");
+        setSeasonReputationModalOpen(false);
+        setSeasonReputationEditData({ rating: 0, content: "", keyword1: "", keyword2: "", keyword3: "" });
+        setEditingReputationId(null);
+      } catch { alert("서버 오류가 발생했습니다."); }
+      finally { setSeasonReputationSaving(false); }
       return;
     }
 
@@ -2153,7 +2336,7 @@ const Cluster4Content = () => {
     setSeasonReputationError(null);
 
     try {
-      const response = await fetch("/api/season-reputations", {
+      const response = await fetch(apiUrl("/api/season-reputations"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -2177,13 +2360,15 @@ const Cluster4Content = () => {
       }
 
       // 평판 목록 새로고침 (현재 보고 있는 시즌의 평판)
-      if (urlUserId && currentSeason?.id) {
-        fetchSeasonReputations(urlUserId, currentSeason.id);
+      const targetId = urlUserId || session?.user?.id;
+      if (targetId && currentSeason?.id) {
+        fetchSeasonReputations(targetId, currentSeason.id);
       }
 
       await popup.alert("저장되었습니다.");
       setSeasonReputationModalOpen(false);
       setSeasonReputationEditData({ rating: 0, content: "", keyword1: "", keyword2: "", keyword3: "" });
+      setEditingReputationId(null);
     } catch (error) {
       console.error("시즌 평판 저장 오류:", error);
       await popup.alert("서버 오류가 발생했습니다.");
@@ -2194,11 +2379,11 @@ const Cluster4Content = () => {
 
   // 시즌 리뷰 모달 열기
   const openSeasonReviewModal = () => {
-    // 현재 시즌의 rating, review, link 값을 가져와서 초기화
+    // 현재 시즌의 rating, review 값을 가져와서 초기화
+    // review 가 비어있으면 REVIEW_COMMENT_DEFAULT 로 폴백 — 초기화 버튼 동작과 동일한 디폴트 문구.
     setSeasonReviewEditData({
       rating: currentSeason.rating || 0,
-      review: currentSeason.review || "",
-      link: currentSeason.reviewLink || "",
+      review: currentSeason.review || REVIEW_COMMENT_DEFAULT,
     });
     setSeasonReviewError(null);
     setSeasonReviewSuccess(false);
@@ -2233,12 +2418,16 @@ const Cluster4Content = () => {
 
   const isSeasonReviewDirty = (): boolean => {
     if (!seasonReviewFormSnapshot) {
-      return seasonReviewEditData.rating > 0 || (seasonReviewEditData.review?.trim().length || 0) > 0 || (seasonReviewEditData.link?.trim().length || 0) > 0;
+      return seasonReviewEditData.rating > 0 || (seasonReviewEditData.review?.trim().length || 0) > 0;
     }
-    return seasonReviewEditData.rating !== seasonReviewFormSnapshot.rating || seasonReviewEditData.review !== seasonReviewFormSnapshot.review || seasonReviewEditData.link !== seasonReviewFormSnapshot.link;
+    return seasonReviewEditData.rating !== seasonReviewFormSnapshot.rating || seasonReviewEditData.review !== seasonReviewFormSnapshot.review;
   };
 
   const handleSeasonReviewEditClick = async () => {
+    if (!isOwner) {
+      await popup.alert("본인 시즌 리뷰만 수정할 수 있습니다.");
+      return;
+    }
     if (!canEditSeasonReview) {
       await popup.alert("관리자 확인이 필요합니다.");
       return;
@@ -2246,7 +2435,6 @@ const Cluster4Content = () => {
     setSeasonReviewFormSnapshot({
       rating: seasonReviewEditData.rating,
       review: seasonReviewEditData.review,
-      link: seasonReviewEditData.link,
     });
     setSeasonReviewSaveAttemptFailed(false);
     setSeasonReviewFieldErrorFlash(false);
@@ -2256,9 +2444,9 @@ const Cluster4Content = () => {
   const handleSeasonReviewCancel = async () => {
     if (isSeasonReviewDirty() && !(await popup.confirm("작성 중인 내용이 있습니다. 취소하시겠습니까?"))) return;
     if (seasonReviewFormSnapshot) {
-      setSeasonReviewEditData({ rating: seasonReviewFormSnapshot.rating, review: seasonReviewFormSnapshot.review, link: seasonReviewFormSnapshot.link });
+      setSeasonReviewEditData({ rating: seasonReviewFormSnapshot.rating, review: seasonReviewFormSnapshot.review });
     } else {
-      setSeasonReviewEditData({ rating: 0, review: "", link: "" });
+      setSeasonReviewEditData({ rating: 0, review: "" });
     }
     setIsSeasonReviewFormEditing(false);
     setSeasonReviewSaveAttemptFailed(false);
@@ -2284,6 +2472,10 @@ const Cluster4Content = () => {
   };
 
   const handleSaveSeasonReview = async () => {
+    if (!isOwner) {
+      alert("본인 시즌 리뷰만 저장할 수 있습니다.");
+      return;
+    }
     if (!isDemoMode && !canEditSeasonReview) {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
@@ -2307,7 +2499,9 @@ const Cluster4Content = () => {
 
     if (isDemoMode) {
       // seasonHistories 업데이트 (UI 즉시 반영 — 현재 페이지 인덱스로 매칭)
-      setSeasonHistories((prev) => prev.map((season, idx) => (idx === section3Page ? { ...season, rating: seasonReviewEditData.rating, review: seasonReviewEditData.review.trim(), reviewLink: seasonReviewEditData.link.trim() } : season)));
+      setSeasonHistories((prev) =>
+        prev.map((season, idx) => (idx === section3Page ? { ...season, rating: seasonReviewEditData.rating, review: seasonReviewEditData.review.trim() } : season)),
+      );
       await popup.alert("저장되었습니다.");
       setSeasonReviewModalOpen(false);
       setSeasonReviewSaving(false);
@@ -2348,14 +2542,13 @@ const Cluster4Content = () => {
     setSeasonReviewError(null);
 
     try {
-      const res = await fetch("/api/season-review", {
+      const res = await fetch(apiUrl("/api/season-review"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           seasonHistoryId: currentSeason.id,
           rating: seasonReviewEditData.rating,
           review: seasonReviewEditData.review.trim(),
-          link: seasonReviewEditData.link.trim(),
         }),
       });
 
@@ -2368,7 +2561,7 @@ const Cluster4Content = () => {
 
       // 현재 시즌 데이터 업데이트
       setSeasonHistories((prev) =>
-        prev.map((season) => (currentSeasonInfo && season.year === String(currentSeasonInfo.year) && season.season === currentSeasonInfo.name ? { ...season, rating: seasonReviewEditData.rating, review: seasonReviewEditData.review.trim(), reviewLink: seasonReviewEditData.link.trim() } : season)),
+        prev.map((season) => (currentSeasonInfo && season.year === String(currentSeasonInfo.year) && season.season === currentSeasonInfo.name ? { ...season, rating: seasonReviewEditData.rating, review: seasonReviewEditData.review.trim() } : season)),
       );
 
       await popup.alert("저장되었습니다.");
@@ -2475,14 +2668,22 @@ const Cluster4Content = () => {
       <section className="cluster4-section1" ref={headerRef}>
         {/* 좌측 상단 탭 (세로 정렬) */}
         <div className="top-tabs">
-          <div className="tab" style={{ width: "44px", height: "44px", background: "#161816" }}>
+          <div
+            className="tab"
+            style={{ width: "44px", height: "44px", background: "#161816" }}
+            onClick={() => router.push(`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}`)}
+          >
             <img src="/images/0/cluster4/icon/icon%20-%20%EC%A0%84%EA%B5%AC.png" alt="전구" className="tab-icon" />
             <div className="tab-badge" onClick={() => router.push(`/cluster-4${pxSuffix}${urlUserId ? `?userId=${urlUserId}` : ""}`)}>
               <span className="badge-text">Weekly Growth</span>
               <img src="/images/0/cluster4/icon/icon%20-%20wallet.png" alt="wallet" className="badge-icon" />
             </div>
           </div>
-          <div className="tab" style={{ width: "44px", height: "44px", background: "#FAAB07" }}>
+          <div
+            className="tab"
+            style={{ width: "44px", height: "44px", background: "#FAAB07" }}
+            onClick={() => router.push(`/cluster-4-1${urlUserId ? `?userId=${urlUserId}` : ""}`)}
+          >
             <img src="/images/0/cluster4/icon/icon%20-%20book.png" alt="book" className="tab-icon" />
             <div className="tab-badge" onClick={() => router.push(`/cluster-4-1${pxSuffix}${urlUserId ? `?userId=${urlUserId}` : ""}`)}>
               <span className="badge-text">Season Growth</span>
@@ -2632,7 +2833,7 @@ const Cluster4Content = () => {
       <section className="cluster4-section3">
         {/* SEASON CHALLENGE 배너 */}
         <div className="section3-banner" style={{ marginBottom: 0, paddingBottom: "88px" }}>
-          {/* Floating Icons - 다른 사용자 프로필 볼 때만 표시 (다른 사람에게 평판 남기기) */}
+          {/* Floating Icons - 시즌 평판 편집은 영역 9 헤더의 연필 아이콘 사용 (중복 제거) */}
           <div className="floating-icons" style={{ display: "flex" }}>
             <div className="edit-icon search-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" strokeWidth="2">
@@ -2745,19 +2946,7 @@ const Cluster4Content = () => {
               {/* 영역 5: 평점 및 리뷰 */}
               <div
                 className="area-5-rating"
-                style={{
-                  position: "relative",
-                  cursor: currentSeason.reviewLink ? "pointer" : "default",
-                }}
-                onClick={async () => {
-                  if (currentSeason.reviewLink) {
-                    let url = currentSeason.reviewLink;
-                    if (!/^https?:\/\//i.test(url)) {
-                      url = "https://" + url;
-                    }
-                    window.open(url, "_blank");
-                  }
-                }}
+                style={{ position: "relative" }}
               >
                 <div className="rating-avatar">
                   <img src={profilePhotoUrl || "/images/avatar/avatar.png"} alt="Profile" />
@@ -2944,8 +3133,8 @@ const Cluster4Content = () => {
                   <div ref={statusBadgesRef} className="status-badges" onScroll={updateScrollbar8}>
                     {(() => {
                       const roles = currentSeason.seasonRoles && currentSeason.seasonRoles.length > 0 ? currentSeason.seasonRoles : [];
-                      const minCount = Math.max(3, roles.length);
-                      return Array.from({ length: minCount }).map((_, index) => {
+                      const renderCount = roles.length > 0 ? roles.length : 3;
+                      return Array.from({ length: renderCount }).map((_, index) => {
                         const roleItem = roles[index] as any;
                         if (roleItem) {
                           return (
@@ -3033,11 +3222,16 @@ const Cluster4Content = () => {
                   <span className="fm-badge">
                     <img src="/images/0/cluster4/wifi new.png" alt="wifi" className="wifi-icon" />
                     <span className="fm-label">FM :</span>
-                    <span className="fm-value">{(seasonReputations || []).reduce((sum: number, r: any) => sum + (r?.fmScore ?? 0), 0)}</span>
+                    <span className="fm-value">{(seasonReputations || []).reduce((sum: number, r: any) => sum + (r?.rating ?? 0) * 3, 0)}</span>
                   </span>
                   <div
                     className="edit-icon"
                     onClick={async () => {
+                      // 임시: 마더 계정(어드민) 외에는 시즌 평판 작성/수정 비활성화 (주차 평판과 동일 정책)
+                      if (!isDemoMode && !session?.user?.isAdmin) {
+                        await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
+                        return;
+                      }
                       if (!isDemoMode && isOwner) {
                         await popup.alert("시즌 평판은 타 크루끼리 작성합니다.");
                         return;
@@ -3181,7 +3375,7 @@ const Cluster4Content = () => {
                             </div>
                             <div className="stats">
                               <span className="pm">
-                                <img className="wifi-icon" src="/images/0/cluster4/wifi new.png" alt="wifi" /> FM : <span style={{ display: "inline-block", minWidth: "4ch", textAlign: "right", fontFamily: "'Pretendard', sans-serif" }}>{reputation.fmScore ?? 0}</span>
+                                <img className="wifi-icon" src="/images/0/cluster4/wifi new.png" alt="wifi" /> FM : <span style={{ display: "inline-block", minWidth: "4ch", textAlign: "right", fontFamily: "'Pretendard', sans-serif" }}>{(reputation.rating ?? 0) * 3}</span>
                               </span>
                               <span className="rating">
                                 {[...Array(fullStars)].map((_, i) => (
@@ -3463,6 +3657,45 @@ const Cluster4Content = () => {
                     <span className="tag-badge tag-keyword">{selectedReputation.reviewer?.vision || "키워드"}</span>
                   </div>
                 </div>
+
+                {/* 어드민 전용: 수정/삭제 버튼 */}
+                {session?.user?.isAdmin && (
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '20px', justifyContent: 'flex-end' }}>
+                    <button
+                      onClick={() => {
+                        setSeasonReputationEditData({
+                          rating: selectedReputation.rating,
+                          content: selectedReputation.content,
+                          keyword1: selectedReputation.keyword_1 || '',
+                          keyword2: selectedReputation.keyword_2 || '',
+                          keyword3: selectedReputation.keyword_3 || '',
+                        });
+                        setEditingReputationId(selectedReputation.id);
+                        setReputationDetailModalOpen(false);
+                        setSeasonReputationModalOpen(true);
+                      }}
+                      style={{ padding: '8px 16px', background: 'rgba(250, 171, 7, 0.2)', border: '1px solid #FAAB07', borderRadius: '6px', color: '#FAAB07', fontSize: '13px', cursor: 'pointer' }}
+                    >수정</button>
+                    <button
+                      onClick={async () => {
+                        if (!confirm('이 평판을 삭제하시겠습니까?')) return;
+                        try {
+                          const res = await fetch(`/api/season-reputations?id=${selectedReputation.id}`, { method: 'DELETE' });
+                          const json = await res.json();
+                          if (json.success) {
+                            alert('삭제되었습니다.');
+                            setReputationDetailModalOpen(false);
+                            const targetId = urlUserId || session?.user?.id;
+                            if (targetId && currentSeason?.id) fetchSeasonReputations(targetId, currentSeason.id);
+                          } else {
+                            alert(json.error || '삭제 실패');
+                          }
+                        } catch { alert('삭제 중 오류 발생'); }
+                      }}
+                      style={{ padding: '8px 16px', background: 'rgba(255, 60, 60, 0.2)', border: '1px solid #ff3c3c', borderRadius: '6px', color: '#ff3c3c', fontSize: '13px', cursor: 'pointer' }}
+                    >삭제</button>
+                  </div>
+                )}
               </div>
 
               {/* 키워드 3개 + 내용 */}
@@ -3500,7 +3733,7 @@ const Cluster4Content = () => {
                 </div>
                 <div className="season-reputation-fm">
                   <span className="stats-label">■ FM</span>
-                  <span className="fm-value">{selectedReputation.fmScore ?? 0}</span>
+                  <span className="fm-value">{(selectedReputation.rating ?? 0) * 3}</span>
                 </div>
               </div>
 
@@ -3617,7 +3850,7 @@ const Cluster4Content = () => {
                 </button>
               </div>
             </div>
-            <div className="help-modal-body">도움말 내용은 추후 추가됩니다.</div>
+            <HelpModalBody helpKey={helpModalKind} />
           </div>
         </div>
       )}
@@ -3692,45 +3925,72 @@ const Cluster4Content = () => {
                 </div>
               </div>
 
+              {/* 인적사항 카드 — user_profiles + user_educations 실데이터 */}
               <div className="workinfo-personal-card">
                 <div className="personal-grid">
                   <div className="personal-photo">
-                    <img src={profilePhotoUrl || session?.user?.image || "/images/avatar/avatar.png"} alt="프로필" />
+                    <img
+                      src={
+                        isDemoMode
+                          ? (profilePhotoUrl || session?.user?.image || "/images/avatar/avatar.png")
+                          : (seasonReviewerProfile.profilePhotoUrl || profilePhotoUrl || "/images/avatar/avatar.png")
+                      }
+                      alt="프로필"
+                      onError={(e) => { (e.target as HTMLImageElement).src = "/images/avatar/avatar.png"; }}
+                    />
                   </div>
                   <div className="personal-info">
                     <div className="personal-row-1">
-                      <span className="personal-name">{session?.user?.name || demoUserName || "-"}</span>
+                      <span className="personal-name">
+                        {isDemoMode
+                          ? (session?.user?.name || demoUserName || "-")
+                          : (seasonReviewerProfile.displayName || session?.user?.name || "-")}
+                      </span>
                       <span className="personal-separator">|</span>
-                      <span className="personal-gender">-</span>
+                      <span className="personal-gender">{isDemoMode ? "-" : (seasonReviewerProfile.gender || "-")}</span>
                       <span className="personal-separator">|</span>
-                      <span className="personal-age">-</span>
+                      <span className="personal-age">{isDemoMode ? "-" : (seasonReviewerProfile.age ?? "-")}</span>
                     </div>
                     <div className="personal-row-2">
                       <span className="personal-field">
-                        <span className="field-value">-</span>
+                        <span className="field-value">{isDemoMode ? "-" : (seasonReviewerProfile.school || "-")}</span>
                         <span className="field-label">학교</span>
                       </span>
                       <span className="personal-separator">|</span>
                       <span className="personal-field">
-                        <span className="field-value">-</span>
+                        <span className="field-value">{isDemoMode ? "-" : (seasonReviewerProfile.major || "-")}</span>
                         <span className="field-label">학과</span>
                       </span>
                     </div>
                     <div className="personal-row-3">
-                      <span className="personal-field">
-                        <span className="field-value">{currentSeason.seasonRoles?.[0]?.teamName || "-"}</span>
-                        <span className="field-label">팀</span>
-                      </span>
-                      <span className="personal-separator">|</span>
-                      <span className="personal-field">
-                        <span className="field-value">{currentSeason.seasonRoles?.[0]?.partName || "-"}</span>
-                        <span className="field-label">파트</span>
-                      </span>
+                      {(() => {
+                        // 해당 시즌 가장 최신 팀/파트: seasonRoles는 chronological ascending → 마지막 원소
+                        const sr = currentSeason.seasonRoles;
+                        const latest = sr && sr.length > 0 ? sr[sr.length - 1] : null;
+                        return (
+                          <>
+                            <span className="personal-field"><span className="field-value">{latest?.teamName || "-"}</span><span className="field-label">팀</span></span>
+                            <span className="personal-separator">|</span>
+                            <span className="personal-field"><span className="field-value">{latest?.partName || "-"}</span><span className="field-label">파트</span></span>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                   <div className="personal-tags">
-                    <span className="tag-badge tag-role">{userDefaultRole || "심화"}</span>
-                    <span className="tag-badge tag-keyword">{currentSeason.roleInSeason || "짧음"}</span>
+                    <span className="tag-badge tag-role">
+                      {(() => {
+                        // 해당 시즌 가장 최신 역할: seasonRoles는 chronological ascending → 마지막 원소
+                        const sr = currentSeason.seasonRoles;
+                        const latest = sr && sr.length > 0 ? sr[sr.length - 1] : null;
+                        if (latest?.roleLabel) return latest.roleLabel;
+                        const rawRole = currentSeason.roleInSeason || userDefaultRole || "";
+                        return ROLE_LABELS[rawRole] || rawRole || "일반";
+                      })()}
+                    </span>
+                    <span className="tag-badge tag-keyword">
+                      {isDemoMode ? "-" : (seasonReviewerProfile.vision || "-")}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -3765,7 +4025,14 @@ const Cluster4Content = () => {
                 </button>
                 <div className="modal-footer-right">
                   {!isSeasonReviewFormEditing ? (
-                    <button type="button" className="modal-edit-btn" onClick={handleSeasonReviewEditClick}>
+                    <button
+                      type="button"
+                      className="modal-edit-btn"
+                      onClick={handleSeasonReviewEditClick}
+                      disabled={!isOwner}
+                      style={!isOwner ? { opacity: 0.3, cursor: "not-allowed" } : undefined}
+                      title={isOwner ? "수정" : "본인 시즌 리뷰만 수정할 수 있습니다"}
+                    >
                       수정
                     </button>
                   ) : (
@@ -3868,17 +4135,17 @@ const Cluster4Content = () => {
               {/* 리뷰 입력 */}
               <div>
                 <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: "#FAAB07", marginBottom: "10px" }}>
-                  한줄평 <span style={{ fontWeight: 400, color: "rgba(255,255,255,0.4)", fontSize: "12px" }}>(최대 30자)</span>
+                  한줄평 <span style={{ fontWeight: 400, color: "rgba(255,255,255,0.4)", fontSize: "12px" }}>(최대 300자)</span>
                 </label>
                 <div style={{ position: "relative" }}>
                   <input
                     type="text"
-                    placeholder="이번 시즌은 어땠나요? (30자 이내)"
-                    maxLength={30}
+                    placeholder="이번 시즌은 어땠나요? (300자 이내)"
+                    maxLength={300}
                     value={seasonReviewEditData.review}
                     onChange={async (e) => {
-                      if (e.target.value.length > 30) {
-                        await popup.alert("최대 30자까지 입력할 수 있습니다.");
+                      if (e.target.value.length > 300) {
+                        await popup.alert("최대 300자까지 입력할 수 있습니다.");
                         return;
                       }
                       setSeasonReviewEditData((prev) => ({ ...prev, review: e.target.value }));
@@ -3905,32 +4172,11 @@ const Cluster4Content = () => {
                       color: "rgba(255,255,255,0.4)",
                     }}
                   >
-                    {seasonReviewEditData.review.length} / 30
+                    {seasonReviewEditData.review.length} / 300
                   </span>
                 </div>
               </div>
 
-              {/* 링크 입력 */}
-              <div style={{ marginTop: "20px" }}>
-                <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: "#FAAB07", marginBottom: "10px" }}>링크</label>
-                <input
-                  type="url"
-                  placeholder="https://..."
-                  value={seasonReviewEditData.link}
-                  onChange={(e) => setSeasonReviewEditData((prev) => ({ ...prev, link: e.target.value }))}
-                  style={{
-                    width: "100%",
-                    height: "48px",
-                    padding: "12px 16px",
-                    background: "rgba(0,0,0,0.3)",
-                    border: "1px solid rgba(255,255,255,0.15)",
-                    borderRadius: "8px",
-                    color: "#fff",
-                    fontSize: "14px",
-                    outline: "none",
-                  }}
-                />
-              </div>
             </div>
 
             {/* Footer */}
@@ -3944,15 +4190,15 @@ const Cluster4Content = () => {
               </button>
               <button
                 onClick={handleSaveSeasonReview}
-                disabled={seasonReviewSaving || seasonReviewSuccess || !seasonReviewEditData.review.trim() || !seasonReviewEditData.link.trim()}
+                disabled={seasonReviewSaving || seasonReviewSuccess || !seasonReviewEditData.review.trim()}
                 style={{
                   padding: "10px 24px",
                   border: "none",
-                  background: seasonReviewSaving || seasonReviewSuccess || !seasonReviewEditData.review.trim() || !seasonReviewEditData.link.trim() ? "#444" : "linear-gradient(135deg, #FAAB07 0%, #E09A06 100%)",
+                  background: seasonReviewSaving || seasonReviewSuccess || !seasonReviewEditData.review.trim() ? "#444" : "linear-gradient(135deg, #FAAB07 0%, #E09A06 100%)",
                   color: "#fff",
                   fontSize: "14px",
                   fontWeight: 600,
-                  cursor: seasonReviewSaving || seasonReviewSuccess || !seasonReviewEditData.review.trim() || !seasonReviewEditData.link.trim() ? "not-allowed" : "pointer",
+                  cursor: seasonReviewSaving || seasonReviewSuccess || !seasonReviewEditData.review.trim() ? "not-allowed" : "pointer",
                 }}
               >
                 {seasonReviewSaving ? "저장 중..." : seasonReviewSuccess ? "완료!" : "저장"}

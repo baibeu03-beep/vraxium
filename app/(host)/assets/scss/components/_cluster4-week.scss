@@ -10689,7 +10689,9 @@
   .section-modal-body {
     flex: 1;
     min-height: 0;
-    overflow: hidden;
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    min-width: 0;
     padding: 16px 28px 20px;
     box-sizing: border-box;
   }
@@ -10699,6 +10701,8 @@
     display: flex;
     gap: 12px !important;
     height: 100%;
+    width: max(100%, 1388px);
+    min-width: 1388px;
     box-sizing: border-box;
     align-items: stretch !important; // 醫뚯슦 ?숈씪 ?믪씠 ???됱젏 bottom = growth box bottom
 
@@ -10726,6 +10730,7 @@
       }
       scrollbar-width: thin;
       scrollbar-color: rgba(250, 171, 7, 0.4) transparent;
+      min-width: 0;
 
       // ??醫뚯륫 ?먯떇 ?뱀뀡 紐⑤몢 ?숈씪 ?????곗륫 ??x醫뚰몴 ?뺣젹
       > .workinfo-personal-card,
@@ -10743,6 +10748,7 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
+      min-width: 0;
       height: auto !important;
       max-height: none !important;
       align-self: stretch !important; // 醫뚯륫 ?꾩껜 ?믪씠??留욎떠 ?뺤옣
@@ -10989,6 +10995,7 @@
       gap: 0 18px;
       align-items: center !important; // ?ъ쭊/?뺣낫 ?몃줈 以묒븰 洹좏삎
       position: relative;
+      min-width: 0;
 
       &::before {
         content: "";
@@ -11059,6 +11066,7 @@
       display: flex !important;
       align-items: center !important;
       gap: 8px;
+      min-width: 0;
 
       .personal-tags {
         margin-left: auto !important; // row-1 ?대? ?곗륫 ?뺣젹
@@ -11066,6 +11074,7 @@
         flex-direction: row !important; // 媛濡?諛곗튂
         gap: 8px !important;
         flex-shrink: 0;
+        min-width: 0;
       }
     }
 
@@ -11125,6 +11134,7 @@
       width: auto;
       flex-shrink: 0;
       z-index: 2;
+      min-width: 0;
     }
 
     // 湲곗〈 personal-tags ?꾩튂: 媛뺥솕 ?곹깭 ?쒖떆
@@ -11139,7 +11149,7 @@
       gap: 8px;
       min-width: 180px;
       padding-left: 16px;
-      transform: translateX(-19px) translateY(-8px); // ?꾩옱 ?鍮??ㅻⅨ履?0.5cm + ?꾨줈 0.2cm (-38 ??-19, 0 ??-8)
+      transform: none !important; // DPR/subpixel rounding에 따른 우측 밀림 방지
 
       &:has(.enhance-success) {
         --enhance-color: 255, 107, 154;
@@ -11216,8 +11226,7 @@
         align-items: center;
         justify-content: space-between;
         margin-left: 60px;
-
-        transform: translateX(-19px);
+        transform: none !important;
 
         .void-mark {
           display: inline-block;
@@ -11504,7 +11513,7 @@
     max-width: 270px;
     min-width: 0;
     box-sizing: border-box;
-    transform: translateY(-57px); // ?꾩껜 ??1.5cm
+    transform: none !important; // DPR/subpixel rounding에 따른 수직 밀림 방지
 
     .output-link-row {
       display: flex;
@@ -14267,5 +14276,262 @@
   .cluster4-card-content .section-modal.reputation-view-modal .section-modal-body.reputation-body > *,
   .cluster4-card-content .section-modal.colleague-view-modal .section-modal-body.colleague-body > * {
     flex-shrink: 0 !important;
+  }
+}
+
+// =====================================================================
+// 주차 랭킹 Top 3 메달 애니메이션 (cluster-4-ranking)
+// - 펄스 글로우: 빛이 주기적으로 강해졌다 약해짐
+// - 시머 스윕: 사선 하이라이트가 메달 위를 가로질러 흐름
+// - 크라운 바운스: 1위 왕관이 살짝 흔들림
+// - 스파클: 1위 메달 주변에 빛 입자가 깜빡임
+// =====================================================================
+@keyframes rank-medal-pulse-gold {
+  0%, 100% {
+    box-shadow:
+      0 0 14px rgba(255, 200, 0, 0.85),
+      0 0 28px rgba(255, 165, 0, 0.45),
+      inset 0 1px 2px rgba(255,255,255,0.6);
+  }
+  50% {
+    box-shadow:
+      0 0 22px rgba(255, 220, 60, 1),
+      0 0 44px rgba(255, 180, 0, 0.7),
+      0 0 64px rgba(255, 140, 0, 0.4),
+      inset 0 1px 3px rgba(255,255,255,0.85);
+  }
+}
+
+@keyframes rank-medal-pulse-silver {
+  0%, 100% {
+    box-shadow:
+      0 0 12px rgba(200, 200, 200, 0.7),
+      0 0 22px rgba(180, 180, 180, 0.35),
+      inset 0 1px 2px rgba(255,255,255,0.7);
+  }
+  50% {
+    box-shadow:
+      0 0 18px rgba(230, 230, 230, 0.95),
+      0 0 36px rgba(210, 210, 210, 0.55),
+      inset 0 1px 3px rgba(255,255,255,0.85);
+  }
+}
+
+@keyframes rank-medal-pulse-bronze {
+  0%, 100% {
+    box-shadow:
+      0 0 12px rgba(201, 125, 68, 0.7),
+      0 0 22px rgba(139, 69, 19, 0.35),
+      inset 0 1px 2px rgba(255,255,255,0.4);
+  }
+  50% {
+    box-shadow:
+      0 0 18px rgba(232, 168, 120, 0.95),
+      0 0 36px rgba(180, 100, 50, 0.55),
+      inset 0 1px 3px rgba(255,255,255,0.55);
+  }
+}
+
+@keyframes rank-medal-shimmer {
+  0% { transform: translateX(-160%) skewX(-22deg); }
+  60%, 100% { transform: translateX(260%) skewX(-22deg); }
+}
+
+@keyframes rank-crown-bounce {
+  0%, 100% { transform: rotate(-15deg) translateY(0) scale(1); }
+  30% { transform: rotate(-10deg) translateY(-3px) scale(1.08); }
+  60% { transform: rotate(-18deg) translateY(-1px) scale(1); }
+}
+
+@keyframes rank-sparkle-twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.5) rotate(0deg); }
+  40%, 60% { opacity: 1; transform: scale(1) rotate(180deg); }
+}
+
+.rank-medal {
+  position: absolute;
+  overflow: hidden;
+  isolation: isolate;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(
+      110deg,
+      transparent 30%,
+      rgba(255,255,255,0.65) 48%,
+      rgba(255,255,255,0.85) 50%,
+      rgba(255,255,255,0.65) 52%,
+      transparent 70%
+    );
+    transform: translateX(-160%) skewX(-22deg);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  // 메달 텍스트(숫자)는 시머보다 위
+  > * { position: relative; z-index: 2; }
+
+  &.rank-medal--1 {
+    animation: rank-medal-pulse-gold 2s ease-in-out infinite;
+    &::before { animation: rank-medal-shimmer 2.6s ease-in-out infinite; }
+  }
+  &.rank-medal--2 {
+    animation: rank-medal-pulse-silver 2.4s ease-in-out infinite;
+    &::before { animation: rank-medal-shimmer 3.2s ease-in-out infinite 0.4s; }
+  }
+  &.rank-medal--3 {
+    animation: rank-medal-pulse-bronze 2.6s ease-in-out infinite;
+    &::before { animation: rank-medal-shimmer 3.6s ease-in-out infinite 0.8s; }
+  }
+}
+
+.rank-crown {
+  animation: rank-crown-bounce 1.8s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+
+// 1등 메달 주변 스파클 입자 — 절대 위치 컨테이너 안에 점 4개 배치.
+.rank-sparkles {
+  position: absolute;
+  top: -4px; left: -4px;
+  width: 46px;
+  height: 46px;
+  pointer-events: none;
+  z-index: 4;
+
+  span {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    background: radial-gradient(circle, #fff8c0 0%, #ffd700 50%, transparent 75%);
+    border-radius: 50%;
+    opacity: 0;
+    filter: drop-shadow(0 0 3px rgba(255, 220, 100, 0.9));
+  }
+  span:nth-child(1) { top: -2px;  left: 50%; animation: rank-sparkle-twinkle 2s ease-in-out infinite 0s;   }
+  span:nth-child(2) { top: 50%;   right: -3px; animation: rank-sparkle-twinkle 2s ease-in-out infinite 0.5s; }
+  span:nth-child(3) { bottom: -2px; left: 30%; animation: rank-sparkle-twinkle 2s ease-in-out infinite 1s;   }
+  span:nth-child(4) { top: 50%;   left: -3px;  animation: rank-sparkle-twinkle 2s ease-in-out infinite 1.5s; }
+}
+
+// =====================================================================
+// 성장 성공 크루 카드 반짝임 (cluster-4-ranking weekly-card--success)
+// - 보더 글로우 펄스: 카드 전체에 금빛 그림자가 약하게 호흡
+// - 시머 스윕: 사선 하이라이트가 카드 표면을 천천히 가로지름
+// - 카드별 애니메이션 딜레이를 살짝 다르게 줘서 일제히 반짝이지 않고 자연스럽게.
+// =====================================================================
+@keyframes weekly-card-success-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(255, 200, 80, 0.25),
+      0 0 14px rgba(255, 180, 60, 0.18),
+      0 0 28px rgba(255, 160, 40, 0.08);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(255, 220, 120, 0.55),
+      0 0 22px rgba(255, 200, 80, 0.45),
+      0 0 50px rgba(255, 170, 50, 0.22);
+  }
+}
+
+@keyframes weekly-card-success-shimmer {
+  0% { transform: translateX(-110%) skewX(-18deg); }
+  60%, 100% { transform: translateX(220%) skewX(-18deg); }
+}
+
+.weekly-card--success {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  animation: weekly-card-success-glow 3.2s ease-in-out infinite;
+
+  // 시머 오버레이 — 카드 본문 위로 사선 하이라이트가 흐름
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(
+      110deg,
+      transparent 35%,
+      rgba(255, 220, 130, 0.18) 48%,
+      rgba(255, 240, 180, 0.32) 50%,
+      rgba(255, 220, 130, 0.18) 52%,
+      transparent 65%
+    );
+    transform: translateX(-110%) skewX(-18deg);
+    pointer-events: none;
+    mix-blend-mode: screen;
+    animation: weekly-card-success-shimmer 4.5s ease-in-out infinite;
+    z-index: 1;
+  }
+
+  // 카드 콘텐츠는 시머 위로
+  > * { position: relative; z-index: 2; }
+
+  // 동시 반짝임 방지 — n번째 카드마다 딜레이 다르게
+  &:nth-child(3n)   { animation-delay: 0.4s; &::after { animation-delay: 0.6s; } }
+  &:nth-child(3n+1) { animation-delay: 0.9s; &::after { animation-delay: 1.4s; } }
+  &:nth-child(3n+2) { animation-delay: 1.6s; &::after { animation-delay: 2.2s; } }
+}
+
+// =====================================================================
+// Zone A (< 1920px) — work-view-modal DPI/Zoom/Subpixel rounding 안전망
+//
+// 배경:
+//   Windows display scaling 125%/150% + Chrome zoom + DPR rounding
+//   환경에서 1px 단위 오차가 누적되어 모달 레이아웃이 깨지는 현상.
+//   DevTools responsive mode 에서는 재현되지 않을 수 있으나
+//   실사용자 환경에서는 발생 가능.
+//
+// 처방 (붕괴 최소화, 비율 유지):
+//   1) calc(100% - 540px - 24px) 대신 flex:1 1 0 으로 잔여공간 분배
+//      → rounding error 가 좌측 컬럼에 흡수되어 row overflow 방지
+//   2) min-width:0 propagation 으로 flex/grid 자식이 본질 크기 잃지 않게
+//   3) overflow-wrap:anywhere 로 fixed-track 안의 글자 폭 누설 방지
+//
+// 범위: work-view-modal 4종 (workinfo/workexp/workability/workcareer)
+//       Zone B (1920×1080 baseline) 영향 없음.
+// =====================================================================
+@media (max-width: 1919px), (min-width: 1920px) and (max-width: 2559px) and (min-height: 1200px) {
+  .cluster4-card-content .section-modal.work-view-modal.workinfo-view-modal,
+  .cluster4-card-content .section-modal.work-view-modal.workexp-view-modal,
+  .cluster4-card-content .section-modal.work-view-modal.workability-view-modal,
+  .cluster4-card-content .section-modal.work-view-modal.workcareer-view-modal {
+    // calc 의존 제거 — 좌측 컬럼은 잔여공간을 흡수, 우측은 고정 폭 유지
+    .workinfo-content-layout > .workinfo-left {
+      flex: 1 1 0 !important;
+      width: auto !important;
+      min-width: 0 !important;
+    }
+
+    .workinfo-content-layout > .workinfo-right {
+      flex: 0 0 552px !important;
+      width: 552px !important;
+      min-width: 0 !important;
+    }
+
+    // min-width:0 propagation — flex/grid 자식이 줄어들 수 있게
+    .workinfo-personal-card,
+    .workinfo-mid-section,
+    .workinfo-text-section,
+    .personal-grid,
+    .personal-info,
+    .personal-row-1,
+    .personal-row-2,
+    .personal-row-3,
+    .workinfo-mid-col1,
+    .workinfo-mid-col2 {
+      min-width: 0;
+    }
+
+    // fixed-track grid row 안전: 1px 어긋나도 글자가 트랙 밖으로 새지 않게
+    .personal-row-2,
+    .personal-row-3,
+    .supervisor-details {
+      overflow-wrap: anywhere;
+    }
   }
 }

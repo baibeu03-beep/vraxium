@@ -1,7 +1,9 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getUserProfile } from "@/lib/get-user-profile";
+import { extractTargetUserId, isAdminEmail } from "@/lib/admin";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -151,13 +153,11 @@ export async function GET(request: Request) {
 // POST: 시즌 평판 작성 (다른 사람에게 평판 남기기)
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const adminTargetUserId = extractTargetUserId(request);
+    const { profile: reviewerProfile, error } = await getUserProfile("id", adminTargetUserId);
 
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { error: "로그인이 필요합니다." },
-        { status: 401 }
-      );
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
     }
 
     if (!supabaseAdmin) {
@@ -167,7 +167,6 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { targetUserId, seasonHistoryId, rating, content, keyword1, keyword2, keyword3 } = body;
 
-    // 유효성 검사
     if (!targetUserId || !seasonHistoryId) {
       return NextResponse.json(
         { error: "대상 사용자와 시즌 정보가 필요합니다." },
@@ -218,20 +217,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // 작성자 프로필 조회
-    const { data: reviewerProfile, error: profileError } = await supabaseAdmin
-      .from("user_profiles")
-      .select("id")
-      .eq("email", session.user.email)
-      .maybeSingle();
-
-    if (profileError || !reviewerProfile) {
-      return NextResponse.json(
-        { error: "프로필을 찾을 수 없습니다." },
-        { status: 404 }
-      );
-    }
-
     // 자기 자신에게 평판 남기기 불가
     if (reviewerProfile.id === targetUserId) {
       return NextResponse.json(
@@ -270,16 +255,16 @@ export async function POST(request: Request) {
       );
     }
 
-    // 받기 제한 체크: 대상 유저가 해당 시즌에 이미 10개의 평판을 받았는지
+    // 받기 제한 체크: 대상 유저가 해당 시즌에 이미 7개의 평판을 받았는지
     const { count: receivedCount } = await supabaseAdmin
       .from("season_reputations")
       .select("id", { count: "exact", head: true })
       .eq("target_user_id", targetUserId)
       .eq("season_history_id", seasonHistoryId);
 
-    if (receivedCount !== null && receivedCount >= 10) {
+    if (receivedCount !== null && receivedCount >= 7) {
       return NextResponse.json(
-        { error: "해당 크루는 이미 이 시즌에 최대 10개의 평판을 받았습니다." },
+        { error: "해당 크루는 이미 이 시즌에 최대 7개의 평판을 받았습니다." },
         { status: 400 }
       );
     }
@@ -325,16 +310,24 @@ export async function POST(request: Request) {
   }
 }
 
-// DELETE: 시즌 평판 삭제 (본인이 작성한 것만)
+// DELETE: 시즌 평판 삭제 (본인이 작성한 것만, 어드민은 모두 삭제 가능)
 export async function DELETE(request: Request) {
   try {
     const session = await getServerSession(authOptions);
-
     if (!session?.user?.email) {
-      return NextResponse.json(
-        { error: "로그인이 필요합니다." },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+    }
+
+    const isAdmin = isAdminEmail(session.user.email);
+
+    if (!isAdmin) {
+      const targetUserId = extractTargetUserId(request);
+      const { profile, error } = await getUserProfile("id", targetUserId);
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: error.status });
+      }
+      // profile.id를 아래에서 사용
+      var reviewerProfileId = profile.id;
     }
 
     if (!supabaseAdmin) {
@@ -351,26 +344,17 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // 작성자 프로필 조회
-    const { data: profile } = await supabaseAdmin
-      .from("user_profiles")
-      .select("id")
-      .eq("email", session.user.email)
-      .maybeSingle();
-
-    if (!profile) {
-      return NextResponse.json(
-        { error: "프로필을 찾을 수 없습니다." },
-        { status: 404 }
-      );
-    }
-
-    // 본인이 작성한 평판인지 확인 후 삭제
-    const { error: deleteError } = await supabaseAdmin
+    // 어드민은 아무 평판이나 삭제 가능, 일반 유저는 본인 작성만
+    let deleteQuery = supabaseAdmin
       .from("season_reputations")
       .delete()
-      .eq("id", reputationId)
-      .eq("reviewer_id", profile.id);
+      .eq("id", reputationId);
+
+    if (!isAdmin) {
+      deleteQuery = deleteQuery.eq("reviewer_id", reviewerProfileId!);
+    }
+
+    const { error: deleteError } = await deleteQuery;
 
     if (deleteError) {
       console.error("시즌 평판 삭제 오류:", deleteError);
@@ -390,5 +374,72 @@ export async function DELETE(request: Request) {
       { error: "서버 오류가 발생했습니다." },
       { status: 500 }
     );
+  }
+}
+
+// PUT: 시즌 평판 수정 (어드민은 모두, 일반 유저는 본인 작성분만)
+export async function PUT(request: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+    }
+
+    if (!supabaseAdmin) {
+      return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
+    }
+
+    const body = await request.json();
+    const { id, rating, content, keyword1, keyword2, keyword3 } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "평판 ID가 필요합니다." }, { status: 400 });
+    }
+
+    const isAdmin = isAdminEmail(session.user.email);
+
+    // 일반 유저는 본인이 작성한 평판인지 확인
+    if (!isAdmin) {
+      const adminTargetUserId = extractTargetUserId(request);
+      const { profile, error: profileError } = await getUserProfile("id", adminTargetUserId);
+      if (profileError) {
+        return NextResponse.json({ error: profileError.message }, { status: profileError.status });
+      }
+
+      const { data: existing } = await supabaseAdmin
+        .from("season_reputations")
+        .select("reviewer_id")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (!existing) {
+        return NextResponse.json({ error: "평판을 찾을 수 없습니다." }, { status: 404 });
+      }
+      if (existing.reviewer_id !== profile.id) {
+        return NextResponse.json({ error: "본인이 작성한 평판만 수정할 수 있습니다." }, { status: 403 });
+      }
+    }
+
+    const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (rating !== undefined) updateData.rating = rating;
+    if (content !== undefined) updateData.content = content;
+    if (keyword1 !== undefined) updateData.keyword_1 = keyword1;
+    if (keyword2 !== undefined) updateData.keyword_2 = keyword2;
+    if (keyword3 !== undefined) updateData.keyword_3 = keyword3;
+
+    const { error: updateError } = await supabaseAdmin
+      .from("season_reputations")
+      .update(updateData)
+      .eq("id", id);
+
+    if (updateError) {
+      console.error("시즌 평판 수정 오류:", updateError);
+      return NextResponse.json({ error: "시즌 평판 수정에 실패했습니다." }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, message: "시즌 평판이 수정되었습니다." });
+  } catch (error) {
+    console.error("시즌 평판 수정 API 오류:", error);
+    return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
   }
 }

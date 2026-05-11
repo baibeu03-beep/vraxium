@@ -53,6 +53,8 @@ const ITEMS_PER_PAGE = 50;
 const isOrgSlug = (value: string | null | undefined): value is OrgSlug =>
   !!value && (KNOWN_ORGS as readonly string[]).includes(value);
 
+// 베타 테스터 화이트리스트는 서버측(/api/crews)에서 raw display_name 으로 필터링
+// — 비로그인 마스킹 후 이름과 매칭 실패하던 버그 수정 (2026-04)
 function CrewsContent() {
   const searchParams = useSearchParams();
   const orgParam = searchParams?.get("org") ?? null;
@@ -789,7 +791,7 @@ function CrewsContent() {
                                 </Link>
                               </div>
                               <div className="review">
-                                <span className="text-sm fw-6">
+                                <span className="text-sm fw-6" style={{ whiteSpace: 'nowrap' }}>
                                   <i className="ti ti-calendar-check"></i>{crew.approvedWeeks}주
                                 </span>
                               </div>

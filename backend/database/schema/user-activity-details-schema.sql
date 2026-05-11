@@ -12,8 +12,11 @@ CREATE TABLE IF NOT EXISTS user_activity_details (
   activity_type_id TEXT NOT NULL,  -- 'wisdom', 'essay', 'forum', 'infodesk', 'calendar', 'session', 'etc_a' 등
 
   -- 2차 정보
-  sub_title TEXT,           -- 서브타이틀 (최대 150자 권장)
-  output_links JSONB,       -- 아웃풋 링크들 [{desc: "설명", url: "https://..."}, ...] 최대 5개
+  sub_title TEXT,                                  -- 서브타이틀 (최대 300자)
+  output_links JSONB,                              -- 아웃풋 링크들 [{desc: "설명", url: "https://..."}, ...] 최대 5개
+  growth_point TEXT,                               -- 성장 포인트 (자유 서술, 권장 500자)
+  image_urls TEXT[] DEFAULT '{}'::TEXT[],          -- 이미지 영구 URL 배열 (Supabase Storage), 최대 4개
+  image_captions TEXT[] DEFAULT '{}'::TEXT[],      -- 각 이미지 캡션 (image_urls와 인덱스 정렬), 최대 4개
 
   -- 타임스탬프
   created_at TIMESTAMPTZ DEFAULT NOW(),

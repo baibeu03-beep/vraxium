@@ -1,0 +1,722 @@
+/* =========================================
+ * Weekly Card — 주차 목록 카드
+ * Scope: .weekly-ranking-page 하위로만 한정.
+ * 차용: badges (.badge__single) + resume-stats + resume-skills
+ * ========================================= */
+
+.weekly-ranking-page {
+
+  /* ---------- 카드 목록 wrapper — /badges와 동일한 폭 (Bootstrap .container 패턴) ---------- */
+  .weekly-card-list {
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: var(--bs-gutter-x, 1.5rem);
+    padding-right: var(--bs-gutter-x, 1.5rem);
+    box-sizing: border-box;
+
+    @media (min-width: 576px)  { max-width: 540px;  }
+    @media (min-width: 768px)  { max-width: 720px;  }
+    @media (min-width: 992px)  { max-width: 960px;  }
+    @media (min-width: 1200px) { max-width: 1140px; }
+    @media (min-width: 1400px) { max-width: 1320px; }
+  }
+
+  /* ---------- 카드 외곽 (badges 차용 + 시안 변경) ---------- */
+  .weekly-card.badge__single {
+    background-color: var(--senary-color);
+    border-radius: 12px;
+    border: 1px solid #505d6a;
+    transition: var(--transition);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    height: 100%;
+
+    &:hover {
+      border-color: var(--primary-color);
+
+      .weekly-card__thumb-image,
+      .weekly-card__thumb-placeholder {
+        transform: rotateY(360deg);
+      }
+    }
+  }
+
+  /* ---------- 헤더 ---------- */
+  // [정렬 기준] 좌측 title(시즌/날짜) 하단과 우측 status-panel 하단을 같은 y좌표로 맞추기 위해
+  // cross-axis를 flex-end로 변경. title 텍스트 1줄/2줄 변화나 status badge 개수 변화에 모두 대응.
+  .weekly-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 12px;
+  }
+
+  .weekly-card__title {
+    flex: 1;
+    min-width: 0;
+    align-self: flex-end;
+  }
+
+  // [Weekly League 버튼] title 위 줄에 표시. 상세 페이지 연결은 추후 — 현재는 보기/접근성만 보장.
+  // hover 시 box-shadow glow + 미세 배경으로 클릭 affordance 강조(레이아웃 시프트 없음).
+  .weekly-card__league-link {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    width: fit-content;
+    margin-bottom: 4px;
+
+    border: 0;
+    background: transparent;
+    color: var(--primary-color);
+    font-family: "Pretendard", sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 999px;
+
+    transition:
+      color 180ms ease,
+      transform 180ms ease,
+      box-shadow 220ms ease,
+      background-color 220ms ease;
+
+    &:hover {
+      color: #ffe082;
+      background: rgba(255, 214, 87, 0.08);
+      transform: translateY(-1px);
+      box-shadow:
+        0 0 0 1px rgba(255, 214, 87, 0.18),
+        0 0 10px rgba(255, 214, 87, 0.18),
+        0 0 18px rgba(255, 214, 87, 0.10);
+
+      .weekly-card__league-icon {
+        transform: scale(1.08) rotate(-6deg);
+        filter: drop-shadow(0 0 6px rgba(255, 214, 87, 0.35));
+      }
+    }
+
+    &:focus-visible {
+      outline: 1px solid rgba(255, 214, 87, 0.8);
+      outline-offset: 3px;
+    }
+  }
+
+  .weekly-card__league-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    line-height: 1;
+    transition:
+      transform 180ms ease,
+      filter 220ms ease;
+  }
+
+  .weekly-card__season {
+    font-family: "Pretendard", sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+    margin: 0 0 4px;
+    line-height: 1.4;
+  }
+
+  .weekly-card__date {
+    font-family: "Pretendard", sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    color: #999;
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .weekly-card__status-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+    flex-shrink: 0;
+  }
+
+  .weekly-card__status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    width: 118px;
+    padding: 7px 12px;
+    border-radius: 8px;
+    font-family: "Pretendard", sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    text-align: left;
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(255, 200, 80, 0.4);
+    color: #ffd87a;
+
+    i {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      line-height: 1;
+    }
+
+    span {
+      display: inline-flex;
+      align-items: center;
+      line-height: 1;
+    }
+
+    .icon-shift {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      // [수직 정렬 보정] icon이 텍스트 baseline 대비 살짝 위로 떠 보이는 현상
+      // 보정 — 약 0.1cm 아래로 nudge (브라우저 cm 렌더 차이 회피용 px 사용).
+      transform: translateY(2px);
+    }
+
+    &.status-green {
+      background: rgba(120, 200, 120, 0.18);
+      border-color: rgba(120, 200, 120, 0.55);
+      color: #a8e6a8;
+    }
+
+    &.status-yellow {
+      background: rgba(255, 200, 80, 0.15);
+      border-color: rgba(255, 200, 80, 0.48);
+      color: #ffd87a;
+    }
+
+    &.status-muted {
+      background: rgba(145, 150, 158, 0.14);
+      border-color: rgba(170, 176, 186, 0.32);
+      color: #c8ced8;
+    }
+
+    &.status-blue {
+      background: rgba(82, 150, 255, 0.14);
+      border-color: rgba(94, 163, 255, 0.38);
+      color: #9fc6ff;
+    }
+
+    &.status-purple {
+      background: rgba(170, 120, 255, 0.14);
+      border-color: rgba(185, 145, 255, 0.38);
+      color: #d0b4ff;
+    }
+  }
+
+  /* ---------- 메인 이미지 ---------- */
+  .weekly-card__thumb {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    border: 1px solid #505d6a;
+    border-radius: 12px;
+    overflow: hidden;
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    // hover 시 이미지(rotateY 360deg) 회전 중 노출되는 배경 — 카드 톤(.badge__single bg)과 어울리는 다크 톤으로 교체
+    background: #151f2b;
+  }
+
+  .weekly-card__thumb-image,
+  .weekly-card__thumb-placeholder {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.6s ease;
+  }
+
+  .weekly-card__thumb-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #555;
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  /* ---------- 통계 1: resume-stats typography + compact horizontal row ---------- */
+  .weekly-card__rates.resume-stats {
+    width: 100% !important;
+    margin-left: 0 !important;
+    flex-shrink: 1;
+
+    .stat-item {
+      margin-bottom: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0;
+
+      &:last-child { margin-bottom: 0; }
+    }
+
+    .stat-row {
+      width: 100% !important;
+      display: grid;
+      grid-template-columns: 106px minmax(0, 1fr);
+      align-items: center;
+      gap: 12px;
+
+      .stat-label {
+        font-size: 17px;
+        color: #999999;
+        white-space: nowrap;
+        line-height: 15px;
+
+        .stat-dot {
+          display: inline-block;
+          width: 2px;
+          height: 2px;
+          background: #ffec8f;
+          border-radius: 9999px;
+          vertical-align: middle;
+          font-size: 0;
+          line-height: 0;
+          color: transparent;
+          overflow: hidden;
+        }
+      }
+
+      .stat-value {
+        font-family: var(--black-ops-one), cursive;
+        font-size: 23px;
+        font-weight: 400;
+        color: #ffec8f;
+        white-space: nowrap;
+        line-height: 22px;
+        margin-left: auto;
+
+        .stat-unit {
+          font-family: "Pretendard", sans-serif;
+          font-size: 11px;
+          font-weight: 400;
+          color: #ffec8f;
+          line-height: 12px;
+        }
+      }
+    }
+
+    // [progress bar 폭 통일] grid track 155px + column-gap 41px (합계 242px 보존).
+    // _resume-card.scss:790 의 `.resume-stats .progress-bar { width: 138px }` 가
+    // 같은 element 에 매칭되므로 모든 width 속성을 !important 로 강제.
+    .weekly-card__stat-meter {
+      display: grid !important;
+      grid-template-columns: 155px 46px !important;
+      column-gap: 41px !important;
+      align-items: center;
+      justify-content: end;
+      min-width: 0;
+
+      .stat-value {
+        width: 46px !important;
+        min-width: 46px !important;
+        max-width: 46px !important;
+        flex: none;
+        display: inline-flex;
+        justify-content: flex-end;
+        align-items: baseline;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .stat-unit {
+        display: inline-block;
+      }
+    }
+
+    // 모든 카드의 .progress-bar 가 동일한 155px track 폭을 갖도록 강제.
+    .weekly-card__stat-meter .progress-bar {
+      width: 155px !important;
+      min-width: 155px !important;
+      max-width: 155px !important;
+      flex: none;
+      height: 3px;
+      background: #555555;
+      border: none;
+      border-radius: 5px;
+      overflow: hidden;
+      position: relative;
+
+      .progress-fill {
+        height: 100%;
+        background: #ffec8f;
+        border-radius: 5px;
+        transition: width 0.3s ease;
+        display: block;
+      }
+    }
+  }
+
+  /* ---------- 통계 2: 5칸 + 우승 (resume-skills 차용 + 3x2 grid) ---------- */
+  .weekly-card__skills.resume-skills {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, auto);
+    gap: 16px 12px;
+    padding: 16px 0 0 !important;
+    justify-content: stretch;
+
+    .skill-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      background: transparent;
+      border: none;
+      padding: 0;
+
+      .skill-num-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: center;
+        gap: 2px;
+        position: relative;
+        z-index: 2;
+        width: 100%;
+        padding-left: 0 !important;
+      }
+
+      .skill-num {
+        font-family: var(--black-ops-one), cursive;
+        font-size: 32px;
+        font-weight: 400;
+        color: #ffec8f;
+        line-height: 25px;
+        letter-spacing: 0;
+      }
+
+      .skill-unit {
+        font-size: 13px;
+        font-family: "Pretendard", sans-serif;
+        font-weight: 400;
+        color: #fff;
+        line-height: 18px;
+      }
+
+      .skill-label {
+        font-size: 14px;
+        font-family: "Pretendard", sans-serif;
+        font-weight: 500;
+        color: #fff;
+        line-height: 18px;
+        white-space: nowrap;
+        margin-top: 2px;
+      }
+
+      .skill-icon {
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        margin-bottom: 4px;
+      }
+    }
+  }
+
+  /* ---------- 우승 placeholder (2행 3열) ----------
+     [복구] 왕관 48×48 absolute + 라벨 형광펜 사선 12deg 등 시각 요소 100% 복구.
+     [통일] 컨테이너 사이즈만 다른 .skill-card 자연 영역(폭 1fr × 높이 83px = icon 34 + mb 4
+            + num-row 25 + mt 2 + label 18)과 동일하게 통일. placeholder 는 100%×100% 로 컨테이너 채움. */
+  .weekly-card__winner {
+    position: relative;
+    width: 100%;
+    height: 83px;
+    min-height: 93px;            // [추가] 다른 slot 평균 높이(92.7) ≈ 93px 보장 (시각 통일)
+    border-radius: 8px;
+    background: rgba(240, 196, 25, 0.08);
+    border: 1px solid rgba(240, 196, 25, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+  }
+
+  .weekly-card__winner-placeholder {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, rgba(240, 196, 25, 0.15) 0%, rgba(240, 196, 25, 0.05) 100%);
+    border-radius: 7px;
+  }
+
+  .weekly-card__winner-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 7px;
+  }
+
+  .weekly-card__winner-trophy {
+    position: absolute;
+    top: -12px;
+    left: 8px;
+    width: 48px;
+    height: 48px;
+    z-index: 2;
+
+    filter:
+      drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5))
+      drop-shadow(0 0 8px rgba(255, 215, 0, 0.4));
+
+    object-fit: contain;
+    display: block;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  .weekly-card__winner-label {
+    position: absolute;
+    top: 0px;
+    left: 42px;
+    z-index: 1;
+
+    display: inline-block;
+
+    // [단순 노란 텍스트] 그라디언트/외곽선/filter/도장 효과 모두 제거 → 작은 슬롯에 안정적인 미니멀 톤.
+    // cluster-2 그라디언트 등에서 사용하는 표준 황금 #fed402 와 동일 톤.
+    color: #fed402;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    line-height: 1.2;
+    white-space: nowrap;
+
+    // 다크 배경 위 가독성 보강용 미세 양각 그림자
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+
+    transform: rotate(12deg);
+    transform-origin: center center;
+
+    // [명시 리셋] 직전 회차 황금 잉크 도장 효과의 잔존/상속 차단
+    background: none;
+    -webkit-background-clip: initial;
+    background-clip: initial;
+    -webkit-text-fill-color: initial;
+    -webkit-text-stroke: 0;
+    filter: none;
+    padding: 0;
+
+    pointer-events: none;
+    user-select: none;
+    font-family: inherit;
+  }
+
+  /* ---------- Top 3 크루 ---------- */
+  // [width 재조정] 이름 truncate 결과 "AAA.." (3 Korean + 2 dots) 가 13px Pretendard 에서
+  // 안전하게 보이도록 52 → 60px. 그리드 column-gap 8px + 셀 boundary 누락 보정 마진 포함.
+  .weekly-card__top3 {
+    --weekly-rank-name-width: 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .weekly-card__crew {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .weekly-card__rank-row {
+    display: grid;
+    // [team col] 80 → 96px — 한글 5자(JS truncate "커머커머스" + "..") 가 13px 폰트에서
+    // CSS ellipsis 없이 그대로 보이도록 폭 확장. 이름/파트 컬럼은 그대로.
+    grid-template-columns: auto var(--weekly-rank-name-width) auto 96px auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 8px;
+    font-size: 13px;
+    color: #fff;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  // [rank 이미지 교체] 원형 그라디언트 + 그림자 + border-radius 제거. rank PNG(first/second/third) 자체가 시각 강조.
+  // 폭/높이 28px 유지로 grid 정렬 변화 0.
+  .weekly-card__crew-icon {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 0;
+    padding: 0;
+  }
+
+  .weekly-card__rank-image {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    display: block;
+  }
+
+  .weekly-card__crew-info {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: var(--weekly-rank-name-width) auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 8px;
+    font-size: 13px;
+    color: #fff;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .weekly-card__rank-separator {
+    color: inherit;
+    text-align: center;
+    opacity: 1;
+  }
+
+  .weekly-card__rank-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // [suffix x좌표 고정] wrapper 를 inner grid 로 — 1fr 본문 + auto suffix.
+  // 외부 grid 의 team(96px 고정) / part(minmax(0,1fr)) cell 폭을 그대로 채우므로
+  // 카드 안의 모든 row 에서 suffix 오른쪽 끝 x좌표가 동일하게 정렬됨.
+  // (wrapper 에 fixed width 를 주지 않음 — 좁은 뷰포트에서 outer cell 폭을 초과해
+  //  overflow 가 나는 것을 회피하기 위함.)
+  .weekly-card__rank-team,
+  .weekly-card__rank-part {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .weekly-card__rank-team-text,
+  .weekly-card__rank-part-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .weekly-card__rank-team-suffix,
+  .weekly-card__rank-part-suffix {
+    justify-self: end;
+    margin-left: 2px;
+    white-space: nowrap;
+  }
+
+  /* ---------- 페이지네이션 (cluster4-season .weekly-pagination 정의 그대로) ---------- */
+  // 출처: app/assets/scss/components/_cluster4-season.scss L5183~5263
+  // (원본은 .cluster4-weekly-list 스코프, 여기서는 .weekly-ranking-page 스코프로 복사)
+  .weekly-pagination {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-top: 40px;
+
+    .page-num {
+      font-family: "Pretendard", sans-serif;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #fff;
+      cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      display: flex;
+      align-items: center;
+
+      // 우측 라인 (기본)
+      &::after {
+        content: "";
+        display: block;
+        width: 0;
+        height: 2px;
+        background: #ddf247;
+        margin-left: 0;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        opacity: 0;
+        order: 2;
+      }
+
+      // 좌측 라인 (마지막 페이지용)
+      &::before {
+        content: "";
+        display: block;
+        width: 0;
+        height: 2px;
+        background: #ddf247;
+        margin-right: 0;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        opacity: 0;
+        order: 0;
+      }
+
+      &:hover {
+        color: #ddf247;
+        transform: scale(1.1);
+      }
+
+      &.active {
+        color: #ddf247;
+        transform: scale(1.1);
+
+        &::after {
+          width: 30px;
+          margin-left: 12px;
+          opacity: 1;
+        }
+      }
+
+      // 마지막 페이지: 우측 라인 숨기고 좌측 라인 표시
+      &.last.active {
+        &::after {
+          width: 0;
+          margin-left: 0;
+          opacity: 0;
+        }
+
+        &::before {
+          width: 30px;
+          margin-right: 12px;
+          opacity: 1;
+        }
+      }
+    }
+
+    .no-results {
+      color: #888;
+      font-size: 0.875rem;
+    }
+  }
+
+  /* ---------- 빈 상태 ---------- */
+  .weekly-list-empty {
+    text-align: center;
+    padding: 60px 0;
+    color: #999;
+  }
+}

@@ -1,7 +1,7 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getUserProfile } from "@/lib/get-user-profile";
+import { extractTargetUserId } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 
     const { data, error } = await supabaseAdmin
       .from("user_season_histories")
-      .select("rating, review, review_link")
+      .select("rating, review")
       .eq("id", seasonHistoryId)
       .maybeSingle();
 
@@ -36,7 +36,6 @@ export async function GET(request: Request) {
       data: {
         rating: data?.rating || 0,
         review: data?.review || "",
-        link: data?.review_link || "",
       },
     });
   } catch (error) {
@@ -48,10 +47,11 @@ export async function GET(request: Request) {
 // PUT: 시즌 리뷰 저장
 export async function PUT(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const targetUserId = extractTargetUserId(request);
+    const { profile, error } = await getUserProfile("id", targetUserId);
 
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
     }
 
     if (!supabaseAdmin) {
@@ -59,9 +59,8 @@ export async function PUT(request: Request) {
     }
 
     const body = await request.json();
-    const { seasonHistoryId, rating, review, link } = body;
+    const { seasonHistoryId, rating, review } = body;
 
-    // 유효성 검사
     if (!seasonHistoryId) {
       return NextResponse.json({ error: "시즌 기록 ID가 필요합니다." }, { status: 400 });
     }
@@ -74,23 +73,8 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "리뷰를 입력해주세요." }, { status: 400 });
     }
 
-    if (review.length > 30) {
-      return NextResponse.json({ error: "리뷰는 30자 이내로 작성해주세요." }, { status: 400 });
-    }
-
-    if (!link || link.trim().length === 0) {
-      return NextResponse.json({ error: "링크를 입력해주세요." }, { status: 400 });
-    }
-
-    // 작성자 프로필 조회
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("user_profiles")
-      .select("id")
-      .eq("email", session.user.email)
-      .maybeSingle();
-
-    if (profileError || !profile) {
-      return NextResponse.json({ error: "프로필을 찾을 수 없습니다." }, { status: 404 });
+    if (review.length > 300) {
+      return NextResponse.json({ error: "리뷰는 300자 이내로 작성해주세요." }, { status: 400 });
     }
 
     // 해당 season_history가 본인의 것인지 확인
@@ -114,7 +98,6 @@ export async function PUT(request: Request) {
       .update({
         rating: rating,
         review: review.trim(),
-        review_link: link?.trim() || null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", seasonHistoryId);

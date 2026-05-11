@@ -7,6 +7,8 @@ import { useSearchParams, usePathname } from "next/navigation";
 import { getDocumentZoom, getFixedDropdownPosition } from "@/utils/documentZoom";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { useModalScroll } from "@/utils/useModalScroll";
+import { useProfile } from "@/contexts/ProfileContext";
+import { isAdminEmail } from "@/lib/admin";
 import { usePopup } from "@/components/ui/popup";
 import {
   CLUSTER3_DUMMY_PROFILE,
@@ -106,7 +108,23 @@ const formatPeriodDateWithWeekday = (year: number | null, month: number | null, 
   return `${yy}. ${mm}. ${dd} (${wd})`;
 };
 
-const PeriodRangePicker = ({ range, month, onMonthChange, onSelect, onToday, onClear, position }: { range: PeriodDateRange; month: Date; onMonthChange: (date: Date) => void; onSelect: (date: Date) => void; onToday: () => void; onClear: () => void; position: CalendarPosition }) => {
+const PeriodRangePicker = ({
+  range,
+  month,
+  onMonthChange,
+  onSelect,
+  onToday,
+  onClear,
+  position,
+}: {
+  range: PeriodDateRange;
+  month: Date;
+  onMonthChange: (date: Date) => void;
+  onSelect: (date: Date) => void;
+  onToday: () => void;
+  onClear: () => void;
+  position: CalendarPosition;
+}) => {
   const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
   const calendarStart = new Date(monthStart);
   calendarStart.setDate(calendarStart.getDate() - monthStart.getDay());
@@ -144,7 +162,16 @@ const PeriodRangePicker = ({ range, month, onMonthChange, onSelect, onToday, onC
           const selectedEnd = isSameDate(date, range.endDate);
           const inRange = isDateBetween(date, range.startDate, range.endDate);
           const isToday = isSameDate(date, today);
-          const className = ["period-day-btn", outsideMonth ? "outside-month" : "", selectedStart ? "range-start" : "", selectedEnd ? "range-end" : "", inRange ? "in-range" : "", isToday ? "today" : ""].filter(Boolean).join(" ");
+          const className = [
+            "period-day-btn",
+            outsideMonth ? "outside-month" : "",
+            selectedStart ? "range-start" : "",
+            selectedEnd ? "range-end" : "",
+            inRange ? "in-range" : "",
+            isToday ? "today" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
 
           return (
             <button key={date.toISOString()} type="button" className={className} onClick={() => onSelect(date)}>
@@ -173,6 +200,8 @@ const PX_ACCENT_SOFT = "#B2FF8F";
 const Cluster3Content = () => {
   // 세션 및 본인 프로필 여부 확인
   const { data: session } = useSession();
+  // Sidebar와 동일한 ProfileContext 캐시 — display_name 등 공통 프로필 정보 빠르게 접근
+  const { profileData: cachedProfile } = useProfile();
   const searchParams = useSearchParams();
   const pathname = usePathname();
   // PX 라우트 진입 시 inline style 들이 PX 톤으로 전환된다.
@@ -182,8 +211,18 @@ const Cluster3Content = () => {
   const urlUserId = searchParams.get("userId") || searchParams.get("userID");
   const demoNameParam = searchParams.get("demoName");
   const demoLookupName = demoNameParam || urlUserId;
-  const isOwner = !urlUserId || session?.user?.id === urlUserId;
+  // 어드민(마더) 계정은 모든 프로필 편집 가능
+  const isOwner = session?.user?.isAdmin || !urlUserId || session?.user?.id === urlUserId;
   const isDemoMode = checkDemoMode();
+
+  // 어드민이 다른 유저 편집 시 targetUserId를 API URL에 추가
+  const apiUrl = (path: string) => {
+    if (urlUserId && session?.user?.isAdmin) {
+      const separator = path.includes('?') ? '&' : '?';
+      return `${path}${separator}targetUserId=${urlUserId}`;
+    }
+    return path;
+  };
 
   // scrollTo query parameter 처리 (Sidebar hex3에서 이동 시)
   useEffect(() => {
@@ -227,6 +266,12 @@ const Cluster3Content = () => {
       return;
     }
 
+    // 어드민(마더) 계정은 승인 체크 건너뛰기
+    if (session.user?.isAdmin) {
+      openModalFn();
+      return;
+    }
+
     const approved = await checkApprovalStatus();
 
     if (!approved) {
@@ -264,6 +309,15 @@ const Cluster3Content = () => {
 
   // 영어 이름
   const [engName, setEngName] = useState<string>("Eng Name");
+
+  // 크루 한글 이름 (display_name) — 모달 타이틀 "{displayName} 님의 ..." 용
+  const [displayName, setDisplayName] = useState<string>("");
+
+  // ProfileContext 캐시(Sidebar와 공유)에서 display_name 즉시 동기화
+  useEffect(() => {
+    const cached = cachedProfile?.data?.display_name;
+    if (cached) setDisplayName(cached);
+  }, [cachedProfile?.data?.display_name]);
 
   // 성장 점수 기록 데이터 (단감, 인절미, 어흥)
   interface PointsData {
@@ -453,6 +507,10 @@ const Cluster3Content = () => {
   const [portfolioArchiveChannels, setPortfolioArchiveChannels] = useState<string[]>(["instagram", "youtube", "blog", "tistory", "twitter", "threads", "tiktok", "behance", "etc", "etc"]);
   const [editingArchiveChannels, setEditingArchiveChannels] = useState<string[]>([]);
   const [isSavingArchives, setIsSavingArchives] = useState(false);
+  // 채널 카드 16개 풀 데이터 저장 (cluster-3 Channel 모달)
+  const [isSavingChannelCard, setIsSavingChannelCard] = useState(false);
+  // Output Top 5 + Detail 10 풀 데이터 저장 (cluster-3 World Of Top Works)
+  const [isSavingTopCard, setIsSavingTopCard] = useState(false);
 
   // 포트폴리오 Output 데이터 (DB 저장용)
   const [portfolioOutputs, setPortfolioOutputs] = useState<string[]>(Array(5).fill(""));
@@ -477,7 +535,7 @@ const Cluster3Content = () => {
     { value: "", label: "채널 선택", icon: "" },
     { value: "instagram", label: "인스타그램", icon: "/images/0/cluster 3/icon/Instagram.png" },
     { value: "youtube", label: "유튜브", icon: "/images/0/cluster 3/icon/Youtube.png" },
-    { value: "blog", label: "블로그", icon: "/images/0/cluster 3/blog.png" },
+    { value: "blog", label: "블로그", icon: "/images/0/cluster 3/icon/naver blog.png" },
     { value: "tistory", label: "티스토리", icon: "/images/0/cluster 3/icon/Tstory.png" },
     { value: "twitter", label: "X(트위터)", icon: "/images/0/cluster 3/icon/X.png" },
     { value: "threads", label: "쓰레드", icon: "/images/0/cluster 3/icon/Threads.png" },
@@ -487,8 +545,11 @@ const Cluster3Content = () => {
   ];
 
   // 포트폴리오 아카이빙 데이터 가져오기
+  // 다른 크루 페이지를 보는 경우 레거시 GET은 자기 프로필을 찾으므로 404 → skip.
+  // 신규 /api/portfolio-channel-cards가 userId로 같은 데이터 다 채워줌.
   useEffect(() => {
     const fetchPortfolioArchives = async () => {
+      if (urlUserId && urlUserId !== session?.user?.id) return;
       if (isDemoMode) {
         const demoUser = demoLookupName || DEFAULT_DEMO_USER;
         const userData = CLUSTER3_DUMMY_BY_USER[demoUser] || CLUSTER3_DUMMY_BY_USER[DEFAULT_DEMO_USER];
@@ -531,6 +592,142 @@ const Cluster3Content = () => {
     fetchPortfolioArchives();
   }, [session?.user?.email]);
 
+  // 채널 카드 16개 풀 데이터 로드 (portfolio_channel_cards 테이블)
+  // 저장된 카드만 응답에 포함되며, 미저장 카드는 default(1번=샘플, 2~16=빈) 그대로 유지
+  useEffect(() => {
+    if (isDemoMode) return;
+    const fetchChannelCards = async () => {
+      try {
+        const url = urlUserId
+          ? `/api/portfolio-channel-cards?userId=${urlUserId}`
+          : "/api/portfolio-channel-cards";
+        const response = await fetch(url);
+        if (!response.ok) return;
+        const result = await response.json();
+        if (!result?.success || !Array.isArray(result.cards) || result.cards.length === 0) return;
+
+        // cardIndex(1~16) → 응답 카드 매핑
+        const byIndex = new Map<number, any>();
+        for (const c of result.cards) byIndex.set(Number(c.cardIndex), c);
+
+        setChannelCards((prev) =>
+          prev.map((card, i) => {
+            const saved = byIndex.get(i + 1);
+            if (!saved) return card;
+            return {
+              ...card,
+              channelName: saved.channelName ?? "",
+              platform: saved.platform ?? "",
+              management: saved.management ?? "",
+              startYear: saved.startYear ?? "",
+              startMonth: saved.startMonth ?? "",
+              startDay: saved.startDay ?? "",
+              rating: saved.rating ?? "",
+              status: saved.status ?? "",
+              link: saved.link ?? "",
+              images: Array.isArray(saved.images) ? saved.images : card.images,
+              insight: saved.insight ?? "",
+              experience: saved.experience ?? "",
+              metrics: saved.metrics ?? "",
+            };
+          })
+        );
+      } catch (error) {
+        console.error("채널 카드 로드 오류:", error);
+      }
+    };
+    fetchChannelCards();
+  }, [session?.user?.email, urlUserId, isDemoMode]);
+
+  // 채널 카드 저장: blob URL 이미지 업로드 → 카드 PUT
+  // 성공 시 업로드된 URL이 반영된 카드 객체 반환, 실패 시 null
+  const saveChannelCard = async (cardIndex: number, card: any): Promise<any | null> => {
+    if (isDemoMode) {
+      return card;
+    }
+    setIsSavingChannelCard(true);
+    try {
+      // 이미지 5칸 중 blob: URL은 업로드 후 public URL로 교체, 기존 URL은 유지
+      const rawImages: (string | null)[] = Array.isArray(card.images) ? card.images.slice(0, 5) : [];
+      while (rawImages.length < 5) rawImages.push(null);
+
+      const uploadedImages: (string | null)[] = [];
+      for (let slot = 0; slot < 5; slot++) {
+        const img = rawImages[slot];
+        if (!img) {
+          uploadedImages.push(null);
+          continue;
+        }
+        if (typeof img === "string" && img.startsWith("blob:")) {
+          try {
+            const blob = await fetch(img).then((r) => r.blob());
+            const mime = blob.type || "image/jpeg";
+            const ext = mime.split("/")[1] || "jpg";
+            const file = new File([blob], `slot-${slot}.${ext}`, { type: mime });
+            const fd = new FormData();
+            fd.append("file", file);
+            fd.append("cardIndex", String(cardIndex));
+            fd.append("slotIndex", String(slot));
+            const uploadRes = await fetch(apiUrl("/api/portfolio-channel-cards/upload"), {
+              method: "POST",
+              body: fd,
+            });
+            const uploadJson = await uploadRes.json();
+            if (!uploadRes.ok) throw new Error(uploadJson?.error || "이미지 업로드 실패");
+            uploadedImages.push(uploadJson.url);
+          } catch (e) {
+            console.error(`slot-${slot} 업로드 오류:`, e);
+            throw e;
+          }
+        } else {
+          // 이미 저장된 public URL 또는 default 경로
+          uploadedImages.push(img);
+        }
+      }
+
+      const putRes = await fetch(apiUrl("/api/portfolio-channel-cards"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cardIndex,
+          channelName: card.channelName ?? "",
+          platform: card.platform ?? "",
+          management: card.management ?? "",
+          startYear: card.startYear ?? "",
+          startMonth: card.startMonth ?? "",
+          startDay: card.startDay ?? "",
+          rating: card.rating ?? "",
+          status: card.status ?? "",
+          link: card.link ?? "",
+          images: uploadedImages,
+          insight: card.insight ?? "",
+          experience: card.experience ?? "",
+          metrics: card.metrics ?? "",
+        }),
+      });
+      const putJson = await putRes.json();
+      if (!putRes.ok) {
+        console.error("카드 저장 실패:", putJson);
+        alert(putJson?.error || "저장에 실패했습니다.");
+        return null;
+      }
+
+      const finalCard = { ...card, images: uploadedImages };
+      setChannelCards((prev) => {
+        const next = [...prev];
+        next[cardIndex - 1] = { ...prev[cardIndex - 1], ...finalCard };
+        return next;
+      });
+      return finalCard;
+    } catch (e) {
+      console.error("채널 카드 저장 오류:", e);
+      alert(e instanceof Error ? e.message : "저장 중 오류가 발생했습니다.");
+      return null;
+    } finally {
+      setIsSavingChannelCard(false);
+    }
+  };
+
   // 포트폴리오 아카이빙 저장 함수
   const savePortfolioArchives = async (links: string[], channels: string[]) => {
     if (isDemoMode) {
@@ -550,7 +747,7 @@ const Cluster3Content = () => {
     }
     setIsSavingArchives(true);
     try {
-      const response = await fetch("/api/portfolio-archives", {
+      const response = await fetch(apiUrl("/api/portfolio-archives"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ portfolioArchives: links, portfolioArchiveChannels: channels }),
@@ -585,8 +782,10 @@ const Cluster3Content = () => {
   };
 
   // 포트폴리오 Output 데이터 가져오기
+  // 다른 크루 페이지에선 skip (신규 /api/portfolio-top-cards가 채워줌)
   useEffect(() => {
     const fetchPortfolioOutputs = async () => {
+      if (urlUserId && urlUserId !== session?.user?.id) return;
       if (isDemoMode) {
         const demoUser = demoLookupName || DEFAULT_DEMO_USER;
         const userData = CLUSTER3_DUMMY_BY_USER[demoUser] || CLUSTER3_DUMMY_BY_USER[DEFAULT_DEMO_USER];
@@ -647,7 +846,7 @@ const Cluster3Content = () => {
     }
     setIsSavingOutputs(true);
     try {
-      const response = await fetch("/api/portfolio-outputs", {
+      const response = await fetch(apiUrl("/api/portfolio-outputs"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ portfolioOutputs: links, portfolioOutputChannels: channels }),
@@ -680,8 +879,10 @@ const Cluster3Content = () => {
   };
 
   // Detail 10 데이터 가져오기
+  // 다른 크루 페이지에선 skip (신규 /api/portfolio-top-cards가 채워줌)
   useEffect(() => {
     const fetchPortfolioDetails = async () => {
+      if (urlUserId && urlUserId !== session?.user?.id) return;
       if (isDemoMode) {
         const demoUser = demoLookupName || DEFAULT_DEMO_USER;
         const userData = CLUSTER3_DUMMY_BY_USER[demoUser] || CLUSTER3_DUMMY_BY_USER[DEFAULT_DEMO_USER];
@@ -742,7 +943,7 @@ const Cluster3Content = () => {
     }
     setIsSavingDetails(true);
     try {
-      const response = await fetch("/api/portfolio-details", {
+      const response = await fetch(apiUrl("/api/portfolio-details"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ portfolioDetails: links, portfolioDetailChannels: channels }),
@@ -783,6 +984,7 @@ const Cluster3Content = () => {
         setReliabilityRate(userData.profile.reliabilityRate);
         setHasReliabilityData(true);
         setEngName(userData.profile.engName);
+        setDisplayName(demoUser);
         setPointsData(userData.profile.pointsData);
         setGradeStats(userData.profile.gradeStats);
         setTopPercent(userData.profile.gradeStats.avgPercentile);
@@ -815,6 +1017,11 @@ const Cluster3Content = () => {
         // 영어 이름 설정
         if (result.data?.eng_name) {
           setEngName(result.data.eng_name);
+        }
+
+        // 한글 display_name 설정
+        if (result.data?.display_name) {
+          setDisplayName(result.data.display_name);
         }
 
         // 성장 점수 기록 데이터 설정 (badges에서 가져옴)
@@ -963,7 +1170,7 @@ const Cluster3Content = () => {
   const snsIconOrder = [
     "/images/0/cluster 3/icon/Instagram.png",
     "/images/0/cluster 3/icon/Youtube.png",
-    "/images/0/cluster 3/blog.png",
+    "/images/0/cluster 3/icon/Naver Blog.png",
     "/images/0/cluster 3/icon/Tstory.png",
     "/images/0/cluster 3/icon/X.png",
     "/images/0/cluster 3/icon/Threads.png",
@@ -983,7 +1190,7 @@ const Cluster3Content = () => {
   const PLATFORM_ICONS: Record<string, string> = {
     유튜브: "/images/0/cluster 3/icon/Youtube.png",
     인스타그램: "/images/0/cluster 3/icon/Instagram.png",
-    "블로그(네이버)": "/images/0/cluster 3/blog.png",
+    "블로그(네이버)": "/images/0/cluster 3/icon/Naver Blog.png",
     티스토리: "/images/0/cluster 3/icon/Tstory.png",
     "X(트위터)": "/images/0/cluster 3/icon/X.png",
     "스레드(메타)": "/images/0/cluster 3/icon/Threads.png",
@@ -1080,7 +1287,14 @@ const Cluster3Content = () => {
     insight: "",
     links: ["", "", ""],
   });
-  const createInitialOutputCards = (): OutputCard[] => [emptyOutputCard(1), emptyOutputCard(2), emptyOutputCard(3), emptyOutputCard(4), emptyOutputCard(5)];
+  // 1번 카드는 샘플 데이터로 시작 (채널 카드와 동일 패턴 — 활성 표시 + 다음 카드 unlock 트리거)
+  const createInitialOutputCards = (): OutputCard[] => [
+    { ...OUTPUT_CARD_1_DEFAULT } as OutputCard,
+    emptyOutputCard(2),
+    emptyOutputCard(3),
+    emptyOutputCard(4),
+    emptyOutputCard(5),
+  ];
   const [outputCards, setOutputCards] = useState<OutputCard[]>(isDemoMode ? (CLUSTER3_DUMMY_OUTPUT_CARDS as OutputCard[]) : createInitialOutputCards());
   const [currentOutputIndex, setCurrentOutputIndex] = useState(0);
   const [isOutputEditMode, setIsOutputEditMode] = useState(false);
@@ -1123,14 +1337,31 @@ const Cluster3Content = () => {
     insight: "",
     links: ["", "", ""],
   });
-  const createInitialDetailCards = (): OutputCard[] => Array.from({ length: MAX_DETAIL_CARDS }, (_, i) => emptyDetailCard(i + 1));
-  const [detailCards, setDetailCards] = useState<OutputCard[]>(isDemoMode ? (createInitialDetailCardsWithDefault() as OutputCard[]) : createInitialDetailCards());
+  // 1번 카드는 샘플 데이터로 시작 (활성 표시 + 다음 카드 unlock 트리거)
+  const createInitialDetailCards = (): OutputCard[] => [
+    { ...DETAIL_CARD_1_DEFAULT } as OutputCard,
+    ...Array.from({ length: MAX_DETAIL_CARDS - 1 }, (_, i) => emptyDetailCard(i + 2)),
+  ];
+  const [detailCards, setDetailCards] = useState<OutputCard[]>(
+    isDemoMode ? (createInitialDetailCardsWithDefault() as OutputCard[]) : createInitialDetailCards(),
+  );
   const [currentDetailIndex, setCurrentDetailIndex] = useState(0);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isDetailEditMode, setIsDetailEditMode] = useState(false);
   const [detailSnapshot, setDetailSnapshot] = useState<OutputCard | null>(null);
   const [detailFooterNotice, setDetailFooterNotice] = useState<"default" | "error">("default");
   const [canEditDetail, setCanEditDetail] = useState<boolean>(isDemoMode);
+
+  // 어드민(마더) 계정은 Portfolio Output/Detail 편집 권한 자동 부여
+  // session.user.isAdmin 플래그가 JWT 쿠키에 아직 반영 안 됐을 수 있어 email로도 직접 판정
+  useEffect(() => {
+    const isAdmin = session?.user?.isAdmin || isAdminEmail(session?.user?.email);
+    if (isAdmin) {
+      setCanEditOutput(true);
+      setCanEditDetail(true);
+    }
+  }, [session?.user?.isAdmin, session?.user?.email]);
+
   const [detailCaptionOpenIndex, setDetailCaptionOpenIndex] = useState<number | null>(null);
   const detailMainImageInputRef = useRef<HTMLInputElement>(null);
   const detailSubImageInputRefs = useRef<(HTMLInputElement | null)[]>([null, null]);
@@ -1164,7 +1395,9 @@ const Cluster3Content = () => {
     // Zone C(zoom:1.08)에서 getBoundingClientRect/scrollY는 post-zoom 좌표,
     // position:absolute의 top/left는 zoom된 좌표계에 CSS 픽셀로 적용되므로 zoom으로 나눠 보정.
     // zoom === 1(Zone A/B)에서는 원본 식과 완전히 동일한 경로.
-    return zoom === 1 ? { top, left } : { top: top / zoom, left: left / zoom };
+    return zoom === 1
+      ? { top, left }
+      : { top: top / zoom, left: left / zoom };
   };
 
   const updateOutputCalendarPosition = () => {
@@ -1228,13 +1461,20 @@ const Cluster3Content = () => {
   }, [detailRangePickerOpen]);
 
   const getCardDateRange = (card: OutputCard): PeriodDateRange => ({
-    startDate: card.periodStartYear && card.periodStartMonth && card.periodStartDay ? new Date(card.periodStartYear, card.periodStartMonth - 1, card.periodStartDay) : null,
-    endDate: card.periodEndYear && card.periodEndMonth && card.periodEndDay ? new Date(card.periodEndYear, card.periodEndMonth - 1, card.periodEndDay) : null,
+    startDate:
+      card.periodStartYear && card.periodStartMonth && card.periodStartDay
+        ? new Date(card.periodStartYear, card.periodStartMonth - 1, card.periodStartDay)
+        : null,
+    endDate:
+      card.periodEndYear && card.periodEndMonth && card.periodEndDay
+        ? new Date(card.periodEndYear, card.periodEndMonth - 1, card.periodEndDay)
+        : null,
   });
 
   const getInitialRangeMonth = (range: PeriodDateRange) => range.startDate || range.endDate || new Date();
 
-  const formatPeriodRange = (card: OutputCard) => `${formatPeriodDateWithWeekday(card.periodStartYear, card.periodStartMonth, card.periodStartDay)} ~ ${formatPeriodDateWithWeekday(card.periodEndYear, card.periodEndMonth, card.periodEndDay)}`;
+  const formatPeriodRange = (card: OutputCard) =>
+    `${formatPeriodDateWithWeekday(card.periodStartYear, card.periodStartMonth, card.periodStartDay)} ~ ${formatPeriodDateWithWeekday(card.periodEndYear, card.periodEndMonth, card.periodEndDay)}`;
 
   const applyOutputDateRange = (range: PeriodDateRange) => {
     const updated = [...outputCards];
@@ -1371,7 +1611,9 @@ const Cluster3Content = () => {
 
   const handleNextOutput = () => {
     if (isOutputEditMode) return;
-    if (currentOutputIndex < MAX_OUTPUT_CARDS - 1) setCurrentOutputIndex((p) => p + 1);
+    // 순차 잠금: unlockedOutputCount를 넘어가는 카드는 이동 불가
+    const limit = Math.min(MAX_OUTPUT_CARDS, unlockedOutputCount);
+    if (currentOutputIndex < limit - 1) setCurrentOutputIndex((p) => p + 1);
   };
 
   const handleCancelOutput = async () => {
@@ -1441,6 +1683,168 @@ const Cluster3Content = () => {
     return { ...card, links: compactLinks, metrics: compactMetrics };
   };
 
+  // Output Top 5 + Detail 10 통합 저장: blob URL 이미지 업로드 → 카드 PUT
+  // 성공 시 업로드된 URL이 반영된 OutputCard 반환, 실패 시 null
+  const saveTopCard = async (
+    cardType: "output" | "detail",
+    cardIndex: number,
+    card: OutputCard
+  ): Promise<OutputCard | null> => {
+    if (isDemoMode) return card;
+    setIsSavingTopCard(true);
+    try {
+      // main 이미지 업로드 (blob URL인 경우만)
+      let uploadedMain: string | null = card.mainImage ?? null;
+      if (uploadedMain && uploadedMain.startsWith("blob:")) {
+        const blob = await fetch(uploadedMain).then((r) => r.blob());
+        const mime = blob.type || "image/jpeg";
+        const ext = mime.split("/")[1] || "jpg";
+        const file = new File([blob], `main.${ext}`, { type: mime });
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("cardType", cardType);
+        fd.append("cardIndex", String(cardIndex));
+        fd.append("imageType", "main");
+        const res = await fetch(apiUrl("/api/portfolio-top-cards/upload"), { method: "POST", body: fd });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || "메인 이미지 업로드 실패");
+        uploadedMain = json.url;
+      }
+
+      // sub 이미지 2장
+      const rawSubs: (string | null)[] = Array.isArray(card.subImages) ? card.subImages.slice(0, 2) : [];
+      while (rawSubs.length < 2) rawSubs.push(null);
+      const uploadedSubs: (string | null)[] = [];
+      for (let slot = 0; slot < 2; slot++) {
+        const img = rawSubs[slot];
+        if (!img) {
+          uploadedSubs.push(null);
+          continue;
+        }
+        if (typeof img === "string" && img.startsWith("blob:")) {
+          const blob = await fetch(img).then((r) => r.blob());
+          const mime = blob.type || "image/jpeg";
+          const ext = mime.split("/")[1] || "jpg";
+          const file = new File([blob], `sub-${slot}.${ext}`, { type: mime });
+          const fd = new FormData();
+          fd.append("file", file);
+          fd.append("cardType", cardType);
+          fd.append("cardIndex", String(cardIndex));
+          fd.append("imageType", `sub-${slot}`);
+          const res = await fetch(apiUrl("/api/portfolio-top-cards/upload"), { method: "POST", body: fd });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json?.error || `서브 이미지 ${slot + 1} 업로드 실패`);
+          uploadedSubs.push(json.url);
+        } else {
+          uploadedSubs.push(img);
+        }
+      }
+
+      const putRes = await fetch(apiUrl("/api/portfolio-top-cards"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cardType,
+          cardIndex,
+          mainTitle: card.mainTitle ?? "",
+          subTitle: card.subTitle ?? "",
+          roleDescription: card.roleDescription ?? "",
+          report: card.report ?? "",
+          insight: card.insight ?? "",
+          platform: card.platform ?? "",
+          contribution: card.contribution ?? 0,
+          periodStartYear: card.periodStartYear,
+          periodStartMonth: card.periodStartMonth,
+          periodStartDay: card.periodStartDay,
+          periodEndYear: card.periodEndYear,
+          periodEndMonth: card.periodEndMonth,
+          periodEndDay: card.periodEndDay,
+          roles: card.roles || [],
+          tools: card.tools || [],
+          mainImage: uploadedMain,
+          subImages: uploadedSubs,
+          mainImageCaption: card.mainImageCaption ?? "",
+          subImageCaptions: card.subImageCaptions || ["", ""],
+          metrics: card.metrics || ["", "", "", "", "", ""],
+          links: card.links || ["", "", ""],
+        }),
+      });
+      const putJson = await putRes.json();
+      if (!putRes.ok) {
+        console.error("탑 카드 저장 실패:", putJson);
+        alert(putJson?.error || "저장에 실패했습니다.");
+        return null;
+      }
+
+      return { ...card, mainImage: uploadedMain, subImages: uploadedSubs as (string | null)[] };
+    } catch (e) {
+      console.error("탑 카드 저장 오류:", e);
+      alert(e instanceof Error ? e.message : "저장 중 오류가 발생했습니다.");
+      return null;
+    } finally {
+      setIsSavingTopCard(false);
+    }
+  };
+
+  // 마운트 시 Output 5 + Detail 10 풀 데이터 한 번에 로드
+  useEffect(() => {
+    if (isDemoMode) return;
+    const fetchTopCards = async () => {
+      try {
+        const url = urlUserId
+          ? `/api/portfolio-top-cards?userId=${urlUserId}`
+          : "/api/portfolio-top-cards";
+        const response = await fetch(url);
+        if (!response.ok) return;
+        const result = await response.json();
+        if (!result?.success || !Array.isArray(result.cards) || result.cards.length === 0) return;
+
+        const outputByIndex = new Map<number, any>();
+        const detailByIndex = new Map<number, any>();
+        for (const c of result.cards) {
+          if (c.cardType === "output") outputByIndex.set(Number(c.cardIndex), c);
+          else if (c.cardType === "detail") detailByIndex.set(Number(c.cardIndex), c);
+        }
+
+        const apply = (prev: OutputCard[], byIndex: Map<number, any>): OutputCard[] =>
+          prev.map((card, i) => {
+            const saved = byIndex.get(i + 1);
+            if (!saved) return card;
+            return {
+              ...card,
+              mainTitle: saved.mainTitle ?? "",
+              subTitle: saved.subTitle ?? "",
+              roleDescription: saved.roleDescription ?? "",
+              report: saved.report ?? "",
+              insight: saved.insight ?? "",
+              platform: saved.platform ?? "",
+              contribution: saved.contribution ?? 0,
+              periodStartYear: saved.periodStartYear ?? null,
+              periodStartMonth: saved.periodStartMonth ?? null,
+              periodStartDay: saved.periodStartDay ?? null,
+              periodEndYear: saved.periodEndYear ?? null,
+              periodEndMonth: saved.periodEndMonth ?? null,
+              periodEndDay: saved.periodEndDay ?? null,
+              roles: Array.isArray(saved.roles) ? saved.roles : [],
+              tools: Array.isArray(saved.tools) ? saved.tools : [],
+              mainImage: saved.mainImage ?? null,
+              subImages: Array.isArray(saved.subImages) ? saved.subImages : [null, null],
+              mainImageCaption: saved.mainImageCaption ?? "",
+              subImageCaptions: Array.isArray(saved.subImageCaptions) ? saved.subImageCaptions : ["", ""],
+              metrics: Array.isArray(saved.metrics) ? saved.metrics : ["", "", "", "", "", ""],
+              links: Array.isArray(saved.links) ? saved.links : ["", "", ""],
+            };
+          });
+
+        if (outputByIndex.size > 0) setOutputCards((prev) => apply(prev, outputByIndex));
+        if (detailByIndex.size > 0) setDetailCards((prev) => apply(prev, detailByIndex));
+      } catch (error) {
+        console.error("탑 카드 로드 오류:", error);
+      }
+    };
+    fetchTopCards();
+  }, [session?.user?.email, urlUserId, isDemoMode]);
+
   const handleSaveOutput = async () => {
     const current = outputCards[currentOutputIndex];
     const errors = validateOutputCard(current);
@@ -1451,11 +1855,24 @@ const Cluster3Content = () => {
     }
     if (!(await popup.confirm("저장하시겠습니까?"))) return;
     const compacted = compactOutputCard(current);
+
+    if (isDemoMode) {
+      const updated = [...outputCards];
+      updated[currentOutputIndex] = compacted;
+      setOutputCards(updated);
+      setOutputSnapshot(JSON.parse(JSON.stringify(compacted)));
+      setIsOutputEditMode(false);
+      setOutputFooterNotice("default");
+      return;
+    }
+
+    const finalCard = await saveTopCard("output", currentOutputIndex + 1, compacted);
+    if (!finalCard) return;
+
     const updated = [...outputCards];
-    updated[currentOutputIndex] = compacted;
+    updated[currentOutputIndex] = finalCard;
     setOutputCards(updated);
-    console.log("TODO: 저장 API 호출", updated);
-    setOutputSnapshot(JSON.parse(JSON.stringify(compacted)));
+    setOutputSnapshot(JSON.parse(JSON.stringify(finalCard)));
     setIsOutputEditMode(false);
     setOutputFooterNotice("default");
   };
@@ -1495,7 +1912,9 @@ const Cluster3Content = () => {
 
   const handleNextDetail = () => {
     if (isDetailEditMode) return;
-    if (currentDetailIndex < MAX_DETAIL_CARDS - 1) setCurrentDetailIndex((p) => p + 1);
+    // 순차 잠금: unlockedDetailCount를 넘어가는 카드는 이동 불가
+    const limit = Math.min(MAX_DETAIL_CARDS, unlockedDetailCount);
+    if (currentDetailIndex < limit - 1) setCurrentDetailIndex((p) => p + 1);
   };
 
   const handleCancelDetail = async () => {
@@ -1532,11 +1951,24 @@ const Cluster3Content = () => {
     }
     if (!(await popup.confirm("저장하시겠습니까?"))) return;
     const compacted = compactOutputCard(current);
+
+    if (isDemoMode) {
+      const updated = [...detailCards];
+      updated[currentDetailIndex] = compacted;
+      setDetailCards(updated);
+      setDetailSnapshot(JSON.parse(JSON.stringify(compacted)));
+      setIsDetailEditMode(false);
+      setDetailFooterNotice("default");
+      return;
+    }
+
+    const finalCard = await saveTopCard("detail", currentDetailIndex + 1, compacted);
+    if (!finalCard) return;
+
     const updated = [...detailCards];
-    updated[currentDetailIndex] = compacted;
+    updated[currentDetailIndex] = finalCard;
     setDetailCards(updated);
-    console.log("TODO: 저장 API 호출 (detail)", updated);
-    setDetailSnapshot(JSON.parse(JSON.stringify(compacted)));
+    setDetailSnapshot(JSON.parse(JSON.stringify(finalCard)));
     setIsDetailEditMode(false);
     setDetailFooterNotice("default");
   };
@@ -1587,6 +2019,31 @@ const Cluster3Content = () => {
   }, [channelCards, currentCardIndex, isEditMode, section3FooterNotice]);
 
   // 순차 입력: 연속으로 완성된 카드 수 + 1 = 입력 가능 카드 수
+  const unlockedOutputCount = (() => {
+    const MAX = 5;
+    let count = 1;
+    for (let i = 0; i < outputCards.length; i++) {
+      if (validateOutputCard(outputCards[i]).length === 0) {
+        count = Math.max(count, i + 2);
+      } else {
+        break;
+      }
+    }
+    return Math.min(count, MAX);
+  })();
+
+  const unlockedDetailCount = (() => {
+    let count = 1;
+    for (let i = 0; i < detailCards.length; i++) {
+      if (validateOutputCard(detailCards[i]).length === 0) {
+        count = Math.max(count, i + 2);
+      } else {
+        break;
+      }
+    }
+    return Math.min(count, MAX_DETAIL_CARDS);
+  })();
+
   const unlockedCardCount = (() => {
     let count = 1;
     for (let i = 0; i < channelCards.length; i++) {
@@ -1704,7 +2161,7 @@ const Cluster3Content = () => {
     const lowerUrl = url.toLowerCase();
     if (lowerUrl.includes("youtube.com") || lowerUrl.includes("youtu.be")) return "/images/0/cluster 3/icon/Youtube.png";
     if (lowerUrl.includes("instagram.com")) return "/images/0/cluster 3/icon/Instagram.png";
-    if (lowerUrl.includes("blog.naver.com") || lowerUrl.includes("m.blog.naver.com")) return "/images/0/cluster 3/blog.png";
+    if (lowerUrl.includes("blog.naver.com") || lowerUrl.includes("m.blog.naver.com")) return "/images/0/cluster 3/icon/Naver Blog.png";
     if (lowerUrl.includes("tistory.com")) return "/images/0/cluster 3/icon/Tstory.png";
     if (lowerUrl.includes("tiktok.com")) return "/images/0/cluster 3/icon/TikTok.png";
     if (lowerUrl.includes("threads.net") || lowerUrl.includes("threads.com")) return "/images/0/cluster 3/icon/Threads.png";
@@ -2123,18 +2580,10 @@ const Cluster3Content = () => {
                   <div className="card-info">
                     <div className="info-row">
                       <div className="info-author">
-                        {isComplete ? (
-                          card.platform && PLATFORM_ICONS[card.platform] ? (
-                            <img src={PLATFORM_ICONS[card.platform]} alt={card.platform} className={`sns-icon`} />
-                          ) : (
-                            <img src={snsImage} alt="SNS" className={`sns-icon${isEtcIcon ? " sns-icon-etc" : ""}`} />
-                          )
-                        ) : (
-                          <div className="sns-icon sns-icon-empty"></div>
-                        )}
+                        {card.platform && PLATFORM_ICONS[card.platform] && <img src={PLATFORM_ICONS[card.platform]} alt={card.platform} className={`sns-icon`} />}
                         <div className="author-text">
                           <span className="info-label">Created by:</span>
-                          <span className="author-name">{isComplete ? engName || "Unknown" : "-"}</span>
+                          <span className="author-name">{engName || "Unknown"}</span>
                         </div>
                       </div>
                     </div>
@@ -2143,7 +2592,7 @@ const Cluster3Content = () => {
                       {card.management ? <span className={`management-tag ${card.management === "개인 소유 관리" ? "tag--yellow" : card.management === "팀 소속 협업" ? "tag--red" : "tag--blue"}`}>#{card.management}</span> : <span className="info-label">Growth Bid</span>}
                       <div className="info-price">
                         <img src="/images/0/cluster 3/icon/dia.png" alt="dia" className="dia-icon" />
-                        <span className="price-value">{card.rating ? `${card.rating}/10` : "0.99"}</span>
+                        <span className="price-value">{card.rating ? `${card.rating}/10` : "- / 10"}</span>
                       </div>
                     </div>
                   </div>
@@ -2250,11 +2699,14 @@ const Cluster3Content = () => {
             if (position > 2) position -= totalSlides;
             if (position < -2) position += totalSlides;
 
-            const isVoidCard = index >= 1 && !outputCards[index]?.mainTitle;
+            // 순차 잠금: 카드 N을 완성해야 카드 N+1 unlock (channel 카드와 동일 패턴)
+            const isVoidCard = index >= unlockedOutputCount;
+            // 작성된(검증 통과) 카드만 선명 — 미완성 unlock 카드는 채널과 동일하게 dim
+            const isOutputComplete = !isVoidCard && validateOutputCard(outputCards[index]).length === 0;
             return (
               <div
                 key={slide.id}
-                className={`slider-item position-${position}${slide.link ? " has-link" : ""}${isVoidCard ? " void-card" : ""}`}
+                className={`slider-item position-${position}${isOutputComplete ? " has-link" : ""}${isVoidCard ? " void-card" : ""}`}
                 data-position={position}
                 onClick={() => {
                   if (position !== 0) return;
@@ -2262,13 +2714,15 @@ const Cluster3Content = () => {
                   setCurrentOutputIndex(index);
                   setSection4ModalOpen(true);
                 }}
-                style={{ cursor: position === 0 && !isVoidCard ? "pointer" : "default", opacity: isVoidCard ? 0.4 : 1 }}
+                style={{ cursor: position === 0 && !isVoidCard ? "pointer" : "default", opacity: isVoidCard ? 0.4 : (isOutputComplete ? 1 : 0.4) }}
               >
                 <img src={`/images/0/cluster 3/image/2-${slide.id}.png`} alt={`Work ${slide.id}`} />
                 <div className="card-overlay">
                   <div className="card-top">
                     <div className="info-author">
-                      {!channelIcon ? <div className="sns-icon sns-gradient"></div> : <img src={channelIcon} alt="SNS" className="sns-icon" />}
+                      {outputCards[index]?.platform && PLATFORM_ICONS[outputCards[index].platform] && (
+                        <img src={PLATFORM_ICONS[outputCards[index].platform]} alt={outputCards[index].platform} className="sns-icon" />
+                      )}
                       <div className="author-text">
                         <span className="info-label">Posted by :</span>
                         <span className="author-name">{engName || "Unknown"}</span>
@@ -2353,18 +2807,20 @@ const Cluster3Content = () => {
               const selectedChannel = portfolioDetailChannels[index];
               const channelOption = channelOptions.find((opt) => opt.value === selectedChannel);
               const channelIcon = channelOption?.icon || "";
-              const isVoidDetail = index >= 1 && !detailCards[index]?.mainTitle;
+              const isVoidDetail = index >= unlockedDetailCount;
+              // 작성된 카드만 선명 (채널과 동일 패턴)
+              const isDetailComplete = !isVoidDetail && validateOutputCard(detailCards[index]).length === 0;
 
               return (
                 <div
                   key={thumb.id}
-                  className={`detail-item${thumb.link ? " has-link" : ""}${isVoidDetail ? " void-card" : ""}`}
+                  className={`detail-item${isDetailComplete ? " has-link" : ""}${isVoidDetail ? " void-card" : ""}`}
                   onClick={() => {
                     if (isVoidDetail) return;
                     setCurrentDetailIndex(index);
                     setIsDetailModalOpen(true);
                   }}
-                  style={{ cursor: isVoidDetail ? "default" : "pointer", opacity: isVoidDetail ? 0.4 : 1 }}
+                  style={{ cursor: isVoidDetail ? "default" : "pointer", opacity: isVoidDetail ? 0.4 : (isDetailComplete ? 1 : 0.4) }}
                 >
                   <img src={`/images/0/cluster 3/image/3-${thumb.id}.png`} alt={`Detail ${thumb.id}`} />
                   <div className="item-overlay">
@@ -2375,7 +2831,9 @@ const Cluster3Content = () => {
                       <span>99 Like</span>
                     </div>
                     <div className="item-bottom">
-                      {!channelIcon ? <div className="sns-icon sns-gradient"></div> : <img src={channelIcon} alt="SNS" className="sns-icon" />}
+                      {detailCards[index]?.platform && PLATFORM_ICONS[detailCards[index].platform] && (
+                        <img src={PLATFORM_ICONS[detailCards[index].platform]} alt={detailCards[index].platform} className="sns-icon" />
+                      )}
                       <div className="item-info">
                         <span className="item-tags">#Detail, #Micro</span>
                         <span className="item-author">@{engName || "Unknown"}</span>
@@ -2393,365 +2851,372 @@ const Cluster3Content = () => {
       {section3ModalOpen && (
         <div className="section-modal-overlay">
           <div className="modal-scroll-content">
-            <div
-              className={`section-modal${
-                !isEditMode &&
-                (() => {
-                  const c = channelCards[currentCardIndex];
-                  if (!c) return false;
-                  return !c.channelName?.trim() && !c.platform && !c.management && !c.startYear && !c.rating && !c.status && !c.link?.trim() && (c.images || []).filter((img) => img).length === 0 && !c.insight?.trim() && !c.experience?.trim() && !c.metrics?.trim();
-                })()
-                  ? " modal-dimmed"
-                  : ""
-              }`}
-            >
-              <div className="section-modal-header">
-                <button className="modal-close-btn" onClick={handleCloseModal}>
-                  <i className="ti ti-x"></i>
-                </button>
-                <div className="modal-header-top">
-                  <img src="/images/0/write.png" alt="write" style={{ width: "72px", height: "72px", objectFit: "contain" }} />
-                  <h3>Portfolio Channel [{currentCardIndex + 1}]</h3>
-                </div>
-                {isEditMode && (
-                  <p className="modal-subtitle">
-                    본인의 포트폴리오 채널의 성과와 관련 경험들을 기업/사회/커리어 측면에서 어필이 될 수 있도록 작성하세요.<span style={{ fontStyle: "normal" }}>😊</span>
-                  </p>
-                )}
+          <div className={`section-modal${!isEditMode && (() => { const c = channelCards[currentCardIndex]; if (!c) return false; return !c.channelName?.trim() && !c.platform && !c.management && !c.startYear && !c.rating && !c.status && !c.link?.trim() && (c.images || []).filter((img) => img).length === 0 && !c.insight?.trim() && !c.experience?.trim() && !c.metrics?.trim(); })() ? " modal-dimmed" : ""}`}>
+            <div className="section-modal-header">
+              <button className="modal-close-btn" onClick={handleCloseModal}>
+                <i className="ti ti-x"></i>
+              </button>
+              <div className="modal-header-top">
+                <img src="/images/0/write.png" alt="write" style={{ width: "72px", height: "72px", objectFit: "contain" }} />
+                <h3>Portfolio Channel [{currentCardIndex + 1}]</h3>
               </div>
-              <div className="section-modal-body" ref={section3ModalBodyRef}>
-                <div className="modal-top-row">
-                  <div className="channel-info-section">
-                    <h4 className="channel-info-title">
-                      <img src="/images/0/portfolio.png" alt="portfolio" className="title-icon" />
-                      <span className="user-name">윤재윤 님</span>
-                      <span className="channel-title-text">의 Portfolio Channel</span>
-                    </h4>
-                    {(() => {
-                      const card = channelCards[currentCardIndex];
-                      if (!card) return null;
-                      const fields = [
-                        { label: "채널명", key: "channelName", type: "channelNameInput" },
-                        { label: "채널 플랫폼", key: "platform", type: "platformDropdown" },
-                        { label: "채널 관리", key: "management", type: "select", options: MANAGEMENT_OPTIONS },
-                        { label: "채널 시작", key: "date", type: "date" },
-                        { label: "채널 평가", key: "rating", type: "rating" },
-                        { label: "운영 현황", key: "status", type: "select", options: STATUS_OPTIONS },
-                        { label: "채널 살펴보기", key: "link", type: "link" },
-                      ];
-                      return fields.map((f) => (
-                        <div key={f.key} className="channel-info-field" data-field={f.key === "date" ? "startDate" : f.key === "platformDropdown" ? "platform" : f.key}>
-                          <label>
-                            {f.label}
-                            {isEditMode && <span style={{ color: isPX ? PX_ACCENT : "#FAAB07", marginLeft: "2px" }}>*</span>}
-                          </label>
-                          {f.type === "text" && (isEditMode ? <input type="text" value={(card as any)[f.key] || ""} onChange={(e) => handleCardChange(f.key, e.target.value)} placeholder={f.placeholder} /> : <span className="field-value">{(card as any)[f.key] || "-"}</span>)}
-                          {f.type === "channelNameInput" &&
-                            (isEditMode ? (
-                              <div className="channel-name-input-wrapper">
-                                <span className="at-prefix">@&nbsp;</span>
-                                <input type="text" value={(card.channelName || "").replace(/^@\s*/, "")} onChange={(e) => handleCardChange("channelName", "@ " + e.target.value)} placeholder="채널명을 입력하세요" />
-                              </div>
-                            ) : (
-                              <span className="field-value">@ {(card.channelName || "-").replace(/^@\s*/, "")}</span>
-                            ))}
-                          {f.type === "select" &&
-                            (isEditMode ? (
-                              <div className="custom-dropdown">
-                                <div className="dropdown-selected" onClick={(e) => toggleDropdown(f.key, e)}>
-                                  <span>{(card as any)[f.key] || "선택하세요"}</span>
-                                  <i className="ti ti-chevron-down"></i>
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="field-value">{(card as any)[f.key] || "-"}</span>
-                            ))}
-                          {f.type === "platformDropdown" &&
-                            (isEditMode ? (
-                              <div className="platform-dropdown">
-                                <div className="platform-selected" onClick={(e) => toggleDropdown("platform", e)}>
-                                  {card.platform ? (
-                                    <>
-                                      {PLATFORM_ICONS[card.platform] && <img src={PLATFORM_ICONS[card.platform]} alt={card.platform} className="platform-icon" />}
-                                      <span>{card.platform}</span>
-                                    </>
-                                  ) : (
-                                    <span className="placeholder">선택하세요</span>
-                                  )}
-                                  <i className="ti ti-chevron-down"></i>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="platform-display" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                {PLATFORM_ICONS[card.platform] && <img src={PLATFORM_ICONS[card.platform]} alt={card.platform} className="platform-icon" style={{ width: "20px", height: "20px", objectFit: "contain" }} />}
-                                <span className="field-value">{card.platform || "-"}</span>
-                              </div>
-                            ))}
-                          {f.type === "date" &&
-                            (isEditMode ? (
-                              <input
-                                type="date"
-                                className="channel-date-input"
-                                value={card.startYear && card.startMonth && card.startDay ? `${card.startYear}-${String(card.startMonth).padStart(2, "0")}-${String(card.startDay).padStart(2, "0")}` : ""}
-                                onChange={(e) => {
-                                  const d = new Date(e.target.value);
-                                  if (!isNaN(d.getTime())) {
-                                    handleCardChange("startYear", String(d.getFullYear()));
-                                    handleCardChange("startMonth", String(d.getMonth() + 1).padStart(2, "0"));
-                                    handleCardChange("startDay", String(d.getDate()).padStart(2, "0"));
-                                  }
-                                }}
-                              />
-                            ) : (
-                              <span className="field-value">{formatDate(card.startYear, card.startMonth, card.startDay)}</span>
-                            ))}
-                          {f.type === "rating" && (
-                            <div className="rating-field" style={{ flex: 1 }}>
-                              <StarRating rating={Number(card.rating) || 0} />
-                              {isEditMode && (
-                                <div className="custom-dropdown small">
-                                  <div className="dropdown-selected" onClick={(e) => toggleDropdown("rating", e)}>
-                                    <span>{card.rating || "-"}</span>
-                                    <i className="ti ti-chevron-down"></i>
-                                  </div>
-                                </div>
-                              )}
+              {isEditMode && (
+                <p className="modal-subtitle">
+                  본인의 포트폴리오 채널의 성과와 관련 경험들을 기업/사회/커리어 측면에서 어필이 될 수 있도록 작성하세요.<span style={{ fontStyle: "normal" }}>😊</span>
+                </p>
+              )}
+            </div>
+            <div className="section-modal-body" ref={section3ModalBodyRef}>
+              <div className="modal-top-row">
+                <div className="channel-info-section">
+                  <h4 className="channel-info-title">
+                    <img src="/images/0/portfolio.png" alt="portfolio" className="title-icon" />
+                    <span className="user-name">{displayName || "크루"} 님</span>
+                    <span className="channel-title-text">의 Portfolio Channel</span>
+                  </h4>
+                  {(() => {
+                    const card = channelCards[currentCardIndex];
+                    if (!card) return null;
+                    const fields = [
+                      { label: "채널명", key: "channelName", type: "channelNameInput" },
+                      { label: "채널 플랫폼", key: "platform", type: "platformDropdown" },
+                      { label: "채널 관리", key: "management", type: "select", options: MANAGEMENT_OPTIONS },
+                      { label: "채널 시작", key: "date", type: "date" },
+                      { label: "채널 평가", key: "rating", type: "rating" },
+                      { label: "운영 현황", key: "status", type: "select", options: STATUS_OPTIONS },
+                      { label: "채널 살펴보기", key: "link", type: "link" },
+                    ];
+                    return fields.map((f) => (
+                      <div key={f.key} className="channel-info-field" data-field={f.key === "date" ? "startDate" : f.key === "platformDropdown" ? "platform" : f.key}>
+                        <label>
+                          {f.label}
+                          {isEditMode && <span style={{ color: isPX ? PX_ACCENT : "#FAAB07", marginLeft: "2px" }}>*</span>}
+                        </label>
+                        {f.type === "text" && (isEditMode ? <input type="text" value={(card as any)[f.key] || ""} onChange={(e) => handleCardChange(f.key, e.target.value)} placeholder={f.placeholder} /> : <span className="field-value">{(card as any)[f.key] || "-"}</span>)}
+                        {f.type === "channelNameInput" &&
+                          (isEditMode ? (
+                            <div className="channel-name-input-wrapper">
+                              <span className="at-prefix">@&nbsp;</span>
+                              <input type="text" value={(card.channelName || "").replace(/^@\s*/, "")} onChange={(e) => handleCardChange("channelName", "@ " + e.target.value)} placeholder="채널명을 입력하세요" />
                             </div>
-                          )}
-                          {f.type === "link" &&
-                            (isEditMode ? (
-                              <div className="link-field">
-                                <input type="text" value={card.link || ""} onChange={(e) => handleCardChange("link", e.target.value)} placeholder="https://..." style={{ whiteSpace: "nowrap" as const, overflow: "auto" }} />
-                                <button
-                                  className="link-open-btn"
-                                  onClick={() => {
-                                    if (card.link) window.open(card.link, "_blank");
-                                  }}
-                                  disabled={!card.link}
-                                >
-                                  <i className="ti ti-arrow-up-right"></i>
-                                </button>
+                          ) : (
+                            <span className="field-value">@ {(card.channelName || "-").replace(/^@\s*/, "")}</span>
+                          ))}
+                        {f.type === "select" &&
+                          (isEditMode ? (
+                            <div className="custom-dropdown">
+                              <div className="dropdown-selected" onClick={(e) => toggleDropdown(f.key, e)}>
+                                <span>{(card as any)[f.key] || "선택하세요"}</span>
+                                <i className="ti ti-chevron-down"></i>
                               </div>
-                            ) : (
-                              <div className="link-field">
-                                <span className="field-value" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
-                                  {card.link ? (card.link.length > 20 ? card.link.substring(0, 20) + ".." : card.link) : "-"}
-                                </span>
-                                {card.link && (
-                                  <button className="link-open-btn" onClick={() => window.open(card.link, "_blank")}>
-                                    <i className="ti ti-arrow-up-right"></i>
-                                  </button>
+                            </div>
+                          ) : (
+                            <span className="field-value">{(card as any)[f.key] || "-"}</span>
+                          ))}
+                        {f.type === "platformDropdown" &&
+                          (isEditMode ? (
+                            <div className="platform-dropdown">
+                              <div className="platform-selected" onClick={(e) => toggleDropdown("platform", e)}>
+                                {card.platform ? (
+                                  <>
+                                    {PLATFORM_ICONS[card.platform] && <img src={PLATFORM_ICONS[card.platform]} alt={card.platform} className="platform-icon" />}
+                                    <span>{card.platform}</span>
+                                  </>
+                                ) : (
+                                  <span className="placeholder">선택하세요</span>
                                 )}
+                                <i className="ti ti-chevron-down"></i>
                               </div>
-                            ))}
-                        </div>
-                      ));
-                    })()}
-                  </div>
-                  <div className="channel-images-section" data-field="images">
-                    {/* 대표 이미지 타이틀 — 주석 처리
-                  <h4 className="channel-images-title">대표 이미지 (최소 3장 필수)</h4>
-                  */}
-                    <div className="images-grid">
-                      {channelCards[currentCardIndex]?.images.map((img, si) => (
-                        <div key={si} className={`image-slot${si === 0 ? " large" : " small"}${!isSlotEnabled(si) ? " disabled" : ""}`}>
-                          <div
-                            className="image-preview"
-                            onClick={() => {
-                              if (img) setPreviewImage(img);
-                            }}
-                          >
-                            {img ? (
-                              <img src={img} alt={`대표 이미지 ${si + 1}`} />
-                            ) : (
-                              <div className="empty-slot">
-                                <i className="ti ti-photo-plus"></i>
-                              </div>
-                            )}
-                            {isEditMode && si <= 2 && !img && <span className="image-required">*</span>}
+                            </div>
+                          ) : (
+                            <div className="platform-display" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                              {PLATFORM_ICONS[card.platform] && <img src={PLATFORM_ICONS[card.platform]} alt={card.platform} className="platform-icon" style={{ width: "20px", height: "20px", objectFit: "contain" }} />}
+                              <span className="field-value">{card.platform || "-"}</span>
+                            </div>
+                          ))}
+                        {f.type === "date" &&
+                          (isEditMode ? (
+                            <input
+                              type="date"
+                              className="channel-date-input"
+                              value={card.startYear && card.startMonth && card.startDay ? `${card.startYear}-${String(card.startMonth).padStart(2, "0")}-${String(card.startDay).padStart(2, "0")}` : ""}
+                              onChange={(e) => {
+                                const d = new Date(e.target.value);
+                                if (!isNaN(d.getTime())) {
+                                  handleCardChange("startYear", String(d.getFullYear()));
+                                  handleCardChange("startMonth", String(d.getMonth() + 1).padStart(2, "0"));
+                                  handleCardChange("startDay", String(d.getDate()).padStart(2, "0"));
+                                }
+                              }}
+                            />
+                          ) : (
+                            <span className="field-value">{formatDate(card.startYear, card.startMonth, card.startDay)}</span>
+                          ))}
+                        {f.type === "rating" && (
+                          <div className="rating-field" style={{ flex: 1 }}>
+                            <StarRating rating={Number(card.rating) || 0} />
                             {isEditMode && (
-                              <div className="image-actions-overlay">
-                                <button
-                                  className="image-action-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleImageUploadClick(si);
-                                  }}
-                                  disabled={!isSlotEnabled(si)}
-                                >
-                                  <i className="ti ti-upload"></i>
-                                </button>
-                                <button
-                                  className="image-action-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleImageDelete(si);
-                                  }}
-                                  disabled={!isSlotEnabled(si) || !img}
-                                >
-                                  <i className="ti ti-trash"></i>
-                                </button>
+                              <div className="custom-dropdown small">
+                                <div className="dropdown-selected" onClick={(e) => toggleDropdown("rating", e)}>
+                                  <span>{card.rating || "-"}</span>
+                                  <i className="ti ti-chevron-down"></i>
+                                </div>
                               </div>
                             )}
                           </div>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            ref={(el) => {
-                              imageInputRefs.current[si] = el;
-                            }}
-                            style={{ display: "none" }}
-                            onChange={(e) => handleImageFileChange(e, si)}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <div className="channel-bottom-section">
-                  {(
-                    [
-                      { key: "insight", title: "기획 방향/인싸이트", placeholder: "기획 방향/인싸이트를 작성해주세요 (최대 250자)" },
-                      { key: "experience", title: "관련 주요 경험/활동", placeholder: "관련 주요 경험/활동을 작성해주세요 (최대 250자)" },
-                      { key: "metrics", title: "핵심 정량적 지표/수치", placeholder: "핵심 정량적 지표/수치를 작성해주세요 (최대 250자)" },
-                    ] as const
-                  ).map((box) => {
-                    const card = channelCards[currentCardIndex];
-                    const val = (card as any)[box.key] || "";
-                    return (
-                      <div key={box.key} className="channel-textarea-box" data-field={box.key}>
-                        <h5 className="textarea-title">
-                          {box.title}
-                          {isEditMode && <span style={{ color: isPX ? PX_ACCENT : "#FAAB07", marginLeft: "2px" }}>*</span>}
-                        </h5>
-                        <div className="textarea-wrapper">
-                          {isEditMode ? (
-                            <>
-                              <textarea
-                                value={val}
-                                onChange={(e) => {
-                                  if (e.target.value.length <= 250) handleCardChange(box.key, e.target.value);
+                        )}
+                        {f.type === "link" &&
+                          (isEditMode ? (
+                            <div className="link-field">
+                              <input type="text" value={card.link || ""} onChange={(e) => handleCardChange("link", e.target.value)} placeholder="https://..." style={{ whiteSpace: "nowrap" as const, overflow: "auto" }} />
+                              <button
+                                className="link-open-btn"
+                                onClick={() => {
+                                  if (card.link) window.open(card.link, "_blank");
                                 }}
-                                maxLength={250}
-                                placeholder={box.placeholder}
-                                rows={6}
-                              />
-                              <span className="char-count">{val.length}/250</span>
-                            </>
+                                disabled={!card.link}
+                              >
+                                <i className="ti ti-arrow-up-right"></i>
+                              </button>
+                            </div>
                           ) : (
-                            <div className="textarea-readonly">{val || "-"}</div>
+                            <div className="link-field">
+                              <span className="field-value" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+                                {card.link ? (card.link.length > 20 ? card.link.substring(0, 20) + ".." : card.link) : "-"}
+                              </span>
+                              {card.link && (
+                                <button className="link-open-btn" onClick={() => window.open(card.link, "_blank")}>
+                                  <i className="ti ti-arrow-up-right"></i>
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                      </div>
+                    ));
+                  })()}
+                </div>
+                <div className="channel-images-section" data-field="images">
+                  {/* 대표 이미지 타이틀 — 주석 처리
+                  <h4 className="channel-images-title">대표 이미지 (최소 3장 필수)</h4>
+                  */}
+                  <div className="images-grid">
+                    {channelCards[currentCardIndex]?.images.map((img, si) => (
+                      <div key={si} className={`image-slot${si === 0 ? " large" : " small"}${!isSlotEnabled(si) ? " disabled" : ""}`}>
+                        <div
+                          className="image-preview"
+                          onClick={() => {
+                            if (img) setPreviewImage(img);
+                          }}
+                        >
+                          {img ? (
+                            <img src={img} alt={`대표 이미지 ${si + 1}`} />
+                          ) : (
+                            <div className="empty-slot">
+                              <i className="ti ti-photo-plus"></i>
+                            </div>
+                          )}
+                          {isEditMode && si <= 2 && !img && <span className="image-required">*</span>}
+                          {isEditMode && (
+                            <div className="image-actions-overlay">
+                              <button
+                                className="image-action-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleImageUploadClick(si);
+                                }}
+                                disabled={!isSlotEnabled(si)}
+                              >
+                                <i className="ti ti-upload"></i>
+                              </button>
+                              <button
+                                className="image-action-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleImageDelete(si);
+                                }}
+                                disabled={!isSlotEnabled(si) || !img}
+                              >
+                                <i className="ti ti-trash"></i>
+                              </button>
+                            </div>
                           )}
                         </div>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          ref={(el) => {
+                            imageInputRefs.current[si] = el;
+                          }}
+                          style={{ display: "none" }}
+                          onChange={(e) => handleImageFileChange(e, si)}
+                        />
                       </div>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
               </div>
-              <div className="section-modal-footer">
-                <div className="modal-footer-top">
-                  <span className="modal-help-icon" onClick={() => setShowHelpModal(true)} style={{ cursor: "pointer", visibility: "visible" }}>
-                    🔎
-                  </span>
-                  <div className="modal-footer-nav">
-                    <button className="nav-btn prev" onClick={handlePrevCard} disabled={isEditMode || currentCardIndex === 0} title={isEditMode ? "편집 중에는 이동할 수 없습니다" : ""}>
-                      <i className="ti ti-chevron-left"></i>
+              <div className="channel-bottom-section">
+                {(
+                  [
+                    { key: "insight", title: "기획 방향/인싸이트", placeholder: "기획 방향/인싸이트를 작성해주세요 (최대 250자)" },
+                    { key: "experience", title: "관련 주요 경험/활동", placeholder: "관련 주요 경험/활동을 작성해주세요 (최대 250자)" },
+                    { key: "metrics", title: "핵심 정량적 지표/수치", placeholder: "핵심 정량적 지표/수치를 작성해주세요 (최대 250자)" },
+                  ] as const
+                ).map((box) => {
+                  const card = channelCards[currentCardIndex];
+                  const val = (card as any)[box.key] || "";
+                  return (
+                    <div key={box.key} className="channel-textarea-box" data-field={box.key}>
+                      <h5 className="textarea-title">
+                        {box.title}
+                        {isEditMode && <span style={{ color: isPX ? PX_ACCENT : "#FAAB07", marginLeft: "2px" }}>*</span>}
+                      </h5>
+                      <div className="textarea-wrapper">
+                        {isEditMode ? (
+                          <>
+                            <textarea
+                              value={val}
+                              onChange={(e) => {
+                                if (e.target.value.length <= 250) handleCardChange(box.key, e.target.value);
+                              }}
+                              maxLength={250}
+                              placeholder={box.placeholder}
+                              rows={6}
+                            />
+                            <span className="char-count">{val.length}/250</span>
+                          </>
+                        ) : (
+                          <div className="textarea-readonly">{val || "-"}</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="section-modal-footer">
+              <div className="modal-footer-top">
+                <span className="modal-help-icon" onClick={() => setShowHelpModal(true)} style={{ cursor: "pointer", visibility: "visible" }}>
+                  🔎
+                </span>
+                <div className="modal-footer-nav">
+                  <button className="nav-btn prev" onClick={handlePrevCard} disabled={isEditMode || currentCardIndex === 0} title={isEditMode ? "편집 중에는 이동할 수 없습니다" : ""}>
+                    <i className="ti ti-chevron-left"></i>
+                  </button>
+                  <button className="nav-btn next" onClick={handleNextCard} disabled={isEditMode || currentCardIndex >= unlockedCardCount - 1 || currentCardIndex >= MAX_CARDS - 1} title={isEditMode ? "편집 중에는 이동할 수 없습니다" : ""}>
+                    <i className="ti ti-chevron-right"></i>
+                  </button>
+                </div>
+                <div className="modal-footer-right">
+                  {!isEditMode ? (
+                    <button className="modal-edit-btn" onClick={() => setIsEditMode(true)}>
+                      수정
                     </button>
-                    <button className="nav-btn next" onClick={handleNextCard} disabled={isEditMode || currentCardIndex >= unlockedCardCount - 1 || currentCardIndex >= MAX_CARDS - 1} title={isEditMode ? "편집 중에는 이동할 수 없습니다" : ""}>
-                      <i className="ti ti-chevron-right"></i>
-                    </button>
-                  </div>
-                  <div className="modal-footer-right">
-                    {!isEditMode ? (
-                      <button className="modal-edit-btn" onClick={() => setIsEditMode(true)}>
-                        수정
-                      </button>
-                    ) : (
-                      <>
-                        <button
-                          className="modal-cancel-btn"
-                          onClick={async () => {
-                            if (isCardDirty()) {
-                              if (await popup.confirm("입력한 데이터가 저장되지 않았습니다. 종료하시겠습니까?")) {
-                                const restored = [...channelCards];
-                                restored[currentCardIndex] = JSON.parse(JSON.stringify(cardSnapshot));
-                                setChannelCards(restored);
-                                setIsEditMode(false);
-                                setSection3FooterNotice("default");
-                              }
-                            } else {
+                  ) : (
+                    <>
+                      <button
+                        className="modal-cancel-btn"
+                        onClick={async () => {
+                          if (isCardDirty()) {
+                            if (await popup.confirm("입력한 데이터가 저장되지 않았습니다. 종료하시겠습니까?")) {
+                              const restored = [...channelCards];
+                              restored[currentCardIndex] = JSON.parse(JSON.stringify(cardSnapshot));
+                              setChannelCards(restored);
                               setIsEditMode(false);
                               setSection3FooterNotice("default");
                             }
-                          }}
-                        >
-                          취소
-                        </button>
-                        <button
-                          className="modal-reset-btn"
-                          onClick={async () => {
-                            if (await popup.confirm("내용을 모두 초기화하시겠어요?")) {
-                              const resetCard = currentCardIndex === 0 ? { ...CLUSTER3_CHANNEL_DEFAULTS.firstCard } : { id: currentCardIndex + 1, ...CLUSTER3_CHANNEL_DEFAULTS.emptyCard };
-                              const updated = [...channelCards];
-                              updated[currentCardIndex] = resetCard;
-                              setChannelCards(updated);
-                              setSection3FooterNotice("default");
-                            }
-                          }}
-                        >
-                          초기화
-                        </button>
-                        <button
-                          className="modal-save-btn"
-                          onClick={async () => {
-                            const card = channelCards[currentCardIndex];
-                            const missing: string[] = [];
-                            if (!card.channelName?.trim()) missing.push("channelName");
-                            if (!card.platform) missing.push("platform");
-                            if (!card.management) missing.push("management");
-                            if (!card.startYear || !card.startMonth || !card.startDay) missing.push("startDate");
-                            if (!card.rating || Number(card.rating) < 1) missing.push("rating");
-                            if (!card.status) missing.push("status");
-                            if (!card.link?.trim()) missing.push("link");
-                            if ((card.images || []).filter((img) => img !== null).length < 3) missing.push("images");
-                            if (!card.insight?.trim()) missing.push("insight");
-                            if (!card.experience?.trim()) missing.push("experience");
-                            if (!card.metrics?.trim()) missing.push("metrics");
-
-                            if (missing.length > 0) {
-                              setSection3FooterNotice("error");
-                              const modalBody = document.querySelector(".section-modal-body");
-                              const targetEl = modalBody?.querySelector(`[data-field="${missing[0]}"]`);
-                              if (targetEl) {
-                                targetEl.classList.add("field-missing");
-                                targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
-                                setTimeout(() => targetEl.classList.remove("field-missing"), 900);
-                              }
-                              return;
-                            }
-
-                            if (!(await popup.confirm("저장하시겠습니까?"))) return;
-                            const compactImages = (card.images || []).filter((img) => img !== null);
-                            const reorderedImages = [...compactImages, ...Array(5 - compactImages.length).fill(null)];
+                          } else {
+                            setIsEditMode(false);
+                            setSection3FooterNotice("default");
+                          }
+                        }}
+                      >
+                        취소
+                      </button>
+                      <button
+                        className="modal-reset-btn"
+                        onClick={async () => {
+                          if (await popup.confirm("내용을 모두 초기화하시겠어요?")) {
+                            const resetCard = currentCardIndex === 0 ? { ...CLUSTER3_CHANNEL_DEFAULTS.firstCard } : { id: currentCardIndex + 1, ...CLUSTER3_CHANNEL_DEFAULTS.emptyCard };
                             const updated = [...channelCards];
-                            updated[currentCardIndex] = { ...card, images: reorderedImages };
+                            updated[currentCardIndex] = resetCard;
+                            setChannelCards(updated);
+                            setSection3FooterNotice("default");
+                          }
+                        }}
+                      >
+                        초기화
+                      </button>
+                      <button
+                        className="modal-save-btn"
+                        disabled={isSavingChannelCard}
+                        onClick={async () => {
+                          const card = channelCards[currentCardIndex];
+                          const missing: string[] = [];
+                          if (!card.channelName?.trim()) missing.push("channelName");
+                          if (!card.platform) missing.push("platform");
+                          if (!card.management) missing.push("management");
+                          if (!card.startYear || !card.startMonth || !card.startDay) missing.push("startDate");
+                          if (!card.rating || Number(card.rating) < 1) missing.push("rating");
+                          if (!card.status) missing.push("status");
+                          if (!card.link?.trim()) missing.push("link");
+                          if ((card.images || []).filter((img) => img !== null).length < 3) missing.push("images");
+                          if (!card.insight?.trim()) missing.push("insight");
+                          if (!card.experience?.trim()) missing.push("experience");
+                          if (!card.metrics?.trim()) missing.push("metrics");
+
+                          if (missing.length > 0) {
+                            setSection3FooterNotice("error");
+                            const modalBody = document.querySelector(".section-modal-body");
+                            const targetEl = modalBody?.querySelector(`[data-field="${missing[0]}"]`);
+                            if (targetEl) {
+                              targetEl.classList.add("field-missing");
+                              targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+                              setTimeout(() => targetEl.classList.remove("field-missing"), 900);
+                            }
+                            return;
+                          }
+
+                          if (!(await popup.confirm("저장하시겠습니까?"))) return;
+
+                          // 빈 슬롯 뒤로 정렬
+                          const compactImages = (card.images || []).filter((img) => img !== null);
+                          const reorderedImages = [...compactImages, ...Array(5 - compactImages.length).fill(null)];
+                          const cardToSave = { ...card, images: reorderedImages };
+
+                          if (isDemoMode) {
+                            const updated = [...channelCards];
+                            updated[currentCardIndex] = cardToSave;
                             setChannelCards(updated);
                             await popup.alert("저장되었어요!");
                             setCardSnapshot(JSON.parse(JSON.stringify(updated[currentCardIndex])));
                             setIsEditMode(false);
                             setSection3FooterNotice("default");
-                          }}
-                        >
-                          저장
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div className="modal-footer-bottom" style={{ visibility: isEditMode ? "visible" : "hidden" }}>
-                  <p className={`modal-footer-notice ${section3FooterNotice === "error" ? "notice-error" : ""}`}>{section3FooterNotice === "error" ? "필수 사항이 누락되었어요! 확인 부탁드려요! 😊" : "내용을 모두 잘 확인하신 후 저장을 눌러주세요. 😊"}</p>
+                            return;
+                          }
+
+                          const finalCard = await saveChannelCard(currentCardIndex + 1, cardToSave);
+                          if (!finalCard) return;
+
+                          // saveChannelCard 내부에서 channelCards가 이미 갱신됨 (업로드된 URL 반영)
+                          // 스냅샷에는 동일한 finalCard를 동기화
+                          setCardSnapshot(JSON.parse(JSON.stringify({ ...channelCards[currentCardIndex], ...finalCard })));
+                          await popup.alert("저장되었어요!");
+                          setIsEditMode(false);
+                          setSection3FooterNotice("default");
+                        }}
+                      >
+                        {isSavingChannelCard ? "저장 중..." : "저장"}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
+              <div className="modal-footer-bottom" style={{ visibility: isEditMode ? "visible" : "hidden" }}>
+                <p className={`modal-footer-notice ${section3FooterNotice === "error" ? "notice-error" : ""}`}>{section3FooterNotice === "error" ? "필수 사항이 누락되었어요! 확인 부탁드려요! 😊" : "내용을 모두 잘 확인하신 후 저장을 눌러주세요. 😊"}</p>
+              </div>
             </div>
+          </div>
           </div>
         </div>
       )}
@@ -3056,752 +3521,751 @@ const Cluster3Content = () => {
       {section4ModalOpen && (
         <div className="output-modal-overlay">
           <div className="modal-scroll-content">
-            <div className="output-modal">
-              <div className="output-modal-header">
-                <button className="modal-close-btn" onClick={handleCloseOutputModal}>
-                  <i className="ti ti-x"></i>
-                </button>
-                <div className="modal-header-top">
-                  <img src="/images/0/treasure.png" alt="treasure" style={{ width: "72px", height: "72px", objectFit: "contain" }} />
-                  <h3>Portfolio Output Top 5 [{currentOutputIndex + 1}]</h3>
-                </div>
-                <p className="modal-subtitle" style={{ visibility: isOutputEditMode ? "visible" : "hidden" }}>
-                  본인의 포트폴리오 결과물의 목표 {">"} 과정 {">"} 결과, 그리고 그 안에서 얻은 경험치들을 기업/사회/커리어 측면에서 어필이 될 수 있도록 작성하세요.<span style={{ fontStyle: "normal" }}>😊</span>
-                </p>
+          <div className="output-modal">
+            <div className="output-modal-header">
+              <button className="modal-close-btn" onClick={handleCloseOutputModal}>
+                <i className="ti ti-x"></i>
+              </button>
+              <div className="modal-header-top">
+                <img src="/images/0/treasure.png" alt="treasure" style={{ width: "72px", height: "72px", objectFit: "contain" }} />
+                <h3>Portfolio Output Top 5 [{currentOutputIndex + 1}]</h3>
               </div>
-              <div className="output-modal-body">
-                <div className="output-upper-section">
-                  <div className="output-left-column">
-                    <div className="output-title-row">
-                      <img src="/images/0/portfolio.png" alt="portfolio" className="title-icon" />
-                      <span className="output-user-title">
-                        <span className="user-name">윤재윤 님</span>
-                        <span style={{ marginLeft: "4px", fontSize: "23px", fontWeight: 700, color: isPX ? PX_ACCENT : "#faab07" }}>의 Output Top 5 [{currentOutputIndex + 1}]</span>
+              <p className="modal-subtitle" style={{ visibility: isOutputEditMode ? "visible" : "hidden" }}>
+                본인의 포트폴리오 결과물의 목표 {">"} 과정 {">"} 결과, 그리고 그 안에서 얻은 경험치들을 기업/사회/커리어 측면에서 어필이 될 수 있도록 작성하세요.<span style={{ fontStyle: "normal" }}>😊</span>
+              </p>
+            </div>
+            <div className="output-modal-body">
+              <div className="output-upper-section">
+                <div className="output-left-column">
+                  <div className="output-title-row">
+                    <img src="/images/0/portfolio.png" alt="portfolio" className="title-icon" />
+                    <span className="output-user-title">
+                      <span className="user-name">{displayName || "크루"} 님</span>
+                      <span style={{ marginLeft: "4px", fontSize: "23px", fontWeight: 700, color: isPX ? PX_ACCENT : "#faab07" }}>의 Output Top 5 [{currentOutputIndex + 1}]</span>
+                    </span>
+                    <div className="output-period" data-field="period">
+                      <div className="period-wrapper" ref={outputPeriodPickerRef}>
+                        <div className="period-display-row">
+                          <div className="period-display-left">
+                            {isOutputEditMode && <span className="required-mark">*</span>}
+                            <span className="period-value period-range-value">{formatPeriodRange(outputCards[currentOutputIndex])}</span>
+                          </div>
+                          {isOutputEditMode && (
+                            <button
+                              ref={outputPeriodTriggerRef}
+                              className="period-trigger-btn"
+                              onClick={() => {
+                                const range = getCardDateRange(outputCards[currentOutputIndex]);
+                                setOutputDateRange(range);
+                                setOutputRangeMonth(getInitialRangeMonth(range));
+                                const position = getCalendarPosition(outputPeriodTriggerRef.current);
+                                if (position) setOutputCalendarPosition(position);
+                                setOutputRangePickerOpen((open) => !open);
+                              }}
+                            >
+                              ▽
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="output-main-title output-field-with-count" data-field="mainTitle">
+                    {isOutputEditMode && (
+                      <span className="required-mark" style={{ position: "absolute", top: "4px", right: "6px", pointerEvents: "none", zIndex: 2 }}>
+                        *
                       </span>
-                      <div className="output-period" data-field="period">
-                        <div className="period-wrapper" ref={outputPeriodPickerRef}>
-                          <div className="period-display-row">
-                            <div className="period-display-left">
-                              {isOutputEditMode && <span className="required-mark">*</span>}
-                              <span className="period-value period-range-value">{formatPeriodRange(outputCards[currentOutputIndex])}</span>
-                            </div>
-                            {isOutputEditMode && (
-                              <button
-                                type="button"
-                                ref={outputPeriodTriggerRef}
-                                className="image-action-btn period-trigger-btn"
-                                onClick={() => {
-                                  const range = getCardDateRange(outputCards[currentOutputIndex]);
-                                  setOutputDateRange(range);
-                                  setOutputRangeMonth(getInitialRangeMonth(range));
-                                  const position = getCalendarPosition(outputPeriodTriggerRef.current);
-                                  if (position) setOutputCalendarPosition(position);
-                                  setOutputRangePickerOpen((open) => !open);
-                                }}
-                              >
-                                <i className="ti ti-chevron-down"></i>
-                              </button>
-                            )}
-                          </div>
+                    )}
+                    {isOutputEditMode ? (
+                      <input
+                        type="text"
+                        value={outputCards[currentOutputIndex].mainTitle || ""}
+                        onChange={(e) => {
+                          if (e.target.value.length <= 30) handleOutputChange("mainTitle", e.target.value);
+                        }}
+                        maxLength={30}
+                        placeholder="메인 제목을 작성하세요 (최대 30자)"
+                        className="output-main-title-input"
+                      />
+                    ) : (
+                      <h2 className="output-main-title-text">{outputCards[currentOutputIndex].mainTitle || "-"}</h2>
+                    )}
+                    {isOutputEditMode && <span className="char-count">{(outputCards[currentOutputIndex].mainTitle || "").length}/30</span>}
+                  </div>
+                  <div className="output-sub-title output-field-with-count" data-field="subTitle">
+                    {isOutputEditMode && (
+                      <span className="required-mark" style={{ position: "absolute", top: "4px", right: "1px", pointerEvents: "none", zIndex: 2 }}>
+                        *
+                      </span>
+                    )}
+                    {isOutputEditMode ? (
+                      <textarea
+                        value={outputCards[currentOutputIndex].subTitle || ""}
+                        onChange={(e) => {
+                          if (e.target.value.length <= 100) handleOutputChange("subTitle", e.target.value);
+                        }}
+                        maxLength={100}
+                        rows={2}
+                        placeholder="서브 제목을 작성하세요 (최대 100자, 2줄까지)"
+                        className="output-sub-title-input"
+                      />
+                    ) : (
+                      <p className="output-sub-title-text">{outputCards[currentOutputIndex].subTitle || "-"}</p>
+                    )}
+                    {isOutputEditMode && <span className="char-count">{(outputCards[currentOutputIndex].subTitle || "").length}/100</span>}
+                  </div>
+                  {/* (3) 기여도 + (4) 플랫폼 */}
+                  <div className="output-meta-row">
+                    <div className="output-contribution" data-field="contribution">
+                      <label>
+                        기여도
+                        {isOutputEditMode && (
+                          <span className="required-mark" style={{ marginLeft: "2px" }}>
+                            *
+                          </span>
+                        )}
+                      </label>
+                      <div className="contribution-bar-wrapper">
+                        <div className="contribution-bar">
+                          <div className="contribution-fill" style={{ width: `${outputCards[currentOutputIndex].contribution || 0}%` }} />
                         </div>
-                      </div>
-                    </div>
-                    <div className="output-main-title output-field-with-count" data-field="mainTitle">
-                      {isOutputEditMode && (
-                        <span className="required-mark" style={{ position: "absolute", top: "4px", right: "6px", pointerEvents: "none", zIndex: 2 }}>
-                          *
-                        </span>
-                      )}
-                      {isOutputEditMode ? (
-                        <input
-                          type="text"
-                          value={outputCards[currentOutputIndex].mainTitle || ""}
-                          onChange={(e) => {
-                            if (e.target.value.length <= 30) handleOutputChange("mainTitle", e.target.value);
-                          }}
-                          maxLength={30}
-                          placeholder="메인 제목을 작성하세요 (최대 30자)"
-                          className="output-main-title-input"
-                        />
-                      ) : (
-                        <h2 className="output-main-title-text">{outputCards[currentOutputIndex].mainTitle || "-"}</h2>
-                      )}
-                      {isOutputEditMode && <span className="char-count">{(outputCards[currentOutputIndex].mainTitle || "").length}/30</span>}
-                    </div>
-                    <div className="output-sub-title output-field-with-count" data-field="subTitle">
-                      {isOutputEditMode && (
-                        <span className="required-mark" style={{ position: "absolute", top: "4px", right: "1px", pointerEvents: "none", zIndex: 2 }}>
-                          *
-                        </span>
-                      )}
-                      {isOutputEditMode ? (
-                        <textarea
-                          value={outputCards[currentOutputIndex].subTitle || ""}
-                          onChange={(e) => {
-                            if (e.target.value.length <= 100) handleOutputChange("subTitle", e.target.value);
-                          }}
-                          maxLength={100}
-                          rows={2}
-                          placeholder="서브 제목을 작성하세요 (최대 100자, 2줄까지)"
-                          className="output-sub-title-input"
-                        />
-                      ) : (
-                        <p className="output-sub-title-text">{outputCards[currentOutputIndex].subTitle || "-"}</p>
-                      )}
-                      {isOutputEditMode && <span className="char-count">{(outputCards[currentOutputIndex].subTitle || "").length}/100</span>}
-                    </div>
-                    {/* (3) 기여도 + (4) 플랫폼 */}
-                    <div className="output-meta-row">
-                      <div className="output-contribution" data-field="contribution">
-                        <label>
-                          기여도
-                          {isOutputEditMode && (
-                            <span className="required-mark" style={{ marginLeft: "2px" }}>
-                              *
-                            </span>
-                          )}
-                        </label>
-                        <div className="contribution-bar-wrapper">
-                          <div className="contribution-bar">
-                            <div className="contribution-fill" style={{ width: `${outputCards[currentOutputIndex].contribution || 0}%` }} />
-                          </div>
-                          {isOutputEditMode ? (
-                            <div className="custom-dropdown small contribution-dropdown">
-                              <div className="dropdown-selected" onClick={(e) => toggleDropdown("outputContribution", e)}>
-                                <span>{outputCards[currentOutputIndex].contribution || 0}%</span>
-                                <i className="ti ti-chevron-down"></i>
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="contribution-value">{outputCards[currentOutputIndex].contribution || 0}%</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="output-platform" data-field="platform">
-                        <label>
-                          플랫폼
-                          {isOutputEditMode && (
-                            <span className="required-mark" style={{ marginLeft: "2px" }}>
-                              *
-                            </span>
-                          )}
-                        </label>
                         {isOutputEditMode ? (
-                          <div className="custom-dropdown output-platform-dropdown">
-                            <div className="dropdown-selected" onClick={(e) => toggleDropdown("outputPlatform", e)}>
-                              {outputCards[currentOutputIndex].platform ? (
-                                <>
-                                  {PLATFORM_ICONS[outputCards[currentOutputIndex].platform] && <img src={PLATFORM_ICONS[outputCards[currentOutputIndex].platform]} alt={outputCards[currentOutputIndex].platform} className="platform-icon" />}
-                                  <span>{outputCards[currentOutputIndex].platform}</span>
-                                </>
-                              ) : (
-                                <span className="placeholder">선택하세요</span>
-                              )}
+                          <div className="custom-dropdown small contribution-dropdown">
+                            <div className="dropdown-selected" onClick={(e) => toggleDropdown("outputContribution", e)}>
+                              <span>{outputCards[currentOutputIndex].contribution || 0}%</span>
                               <i className="ti ti-chevron-down"></i>
                             </div>
                           </div>
                         ) : (
-                          <span className="field-value" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                            {PLATFORM_ICONS[outputCards[currentOutputIndex].platform] && <img src={PLATFORM_ICONS[outputCards[currentOutputIndex].platform]} alt={outputCards[currentOutputIndex].platform} className="platform-icon" style={{ width: "20px", height: "20px" }} />}
-                            {outputCards[currentOutputIndex].platform || "-"}
-                          </span>
+                          <span className="contribution-value">{outputCards[currentOutputIndex].contribution || 0}%</span>
                         )}
                       </div>
                     </div>
-                    {/* 4~5단: 역할+사용기술(좌) / 링크(우) */}
-                    <div className="output-role-links-row">
-                      <div className="output-role-column">
-                        <div className="output-role-section" data-field="role">
-                          <div className="output-role-header">
-                            <label>
-                              역할
-                              {isOutputEditMode && (
-                                <span className="required-mark" style={{ marginLeft: "2px" }}>
-                                  *
-                                </span>
-                              )}
-                            </label>
-                            <div className="output-role-input-wrap" style={{ position: "relative", flex: 1 }}>
-                              {isOutputEditMode ? (
-                                <input
-                                  type="text"
-                                  value={outputCards[currentOutputIndex].roleDescription || ""}
-                                  onChange={(e) => {
-                                    if (e.target.value.length <= 50) handleOutputChange("roleDescription", e.target.value);
-                                  }}
-                                  maxLength={50}
-                                  placeholder="이 과정에서 어떤 역할을 했는지 작성하세요 (최대 50자)"
-                                  className="output-role-input"
-                                  style={{ paddingRight: "55px" }}
-                                />
-                              ) : (
-                                <p className="output-role-text">{outputCards[currentOutputIndex].roleDescription || "-"}</p>
-                              )}
-                              {isOutputEditMode && (
-                                <span className="char-count" style={{ position: "absolute", bottom: "8px", right: "10px", fontSize: "11px", color: "rgba(255,255,255,0.4)", pointerEvents: "none" }}>
-                                  {(outputCards[currentOutputIndex].roleDescription || "").length}/50
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="output-role-tags">
-                            {ROLE_OPTIONS.map((role) => {
-                              const isActive = (outputCards[currentOutputIndex].roles || []).includes(role.key);
-                              return (
-                                <button
-                                  key={role.key}
-                                  className={`role-tag ${isActive ? "active" : ""}`}
-                                  style={isActive ? { backgroundColor: role.color, color: "#1a1a1a", borderColor: role.color } : {}}
-                                  onClick={() => {
-                                    if (!isOutputEditMode) return;
-                                    const currentRoles = outputCards[currentOutputIndex].roles || [];
-                                    if (isActive) {
-                                      handleOutputChange(
-                                        "roles",
-                                        currentRoles.filter((r: string) => r !== role.key),
-                                      );
-                                    } else {
-                                      handleOutputChange("roles", [...currentRoles, role.key]);
-                                    }
-                                  }}
-                                  disabled={!isOutputEditMode}
-                                >
-                                  {role.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="output-links-section" data-field="links">
-                        {[0, 1, 2].map((i) => {
-                          const link = (outputCards[currentOutputIndex].links || ["", "", ""])[i];
-                          const dotColor = ["#FF6B6B", "#4ECDC4", isPX ? PX_ACCENT : "#FAAB07"][i];
-                          return (
-                            <div className="output-link-row" key={i} style={!isOutputEditMode ? { marginLeft: "9px" } : undefined}>
-                              <span className="link-dot" style={{ backgroundColor: dotColor, marginLeft: "auto", ...(i === 0 ? { marginRight: "18px" } : isOutputEditMode ? { marginRight: "15px" } : {}) }} />
-                              {isOutputEditMode && i === 0 && (
-                                <span className="required-mark" style={{ marginLeft: "-14px", marginRight: "-4px" }}>
-                                  *
-                                </span>
-                              )}
-                              {isOutputEditMode ? (
-                                <input
-                                  type="text"
-                                  value={link}
-                                  onChange={(e) => {
-                                    const updated = [...(outputCards[currentOutputIndex].links || ["", "", ""])];
-                                    updated[i] = e.target.value;
-                                    handleOutputChange("links", updated);
-                                  }}
-                                  placeholder="https://..."
-                                  className="output-link-input"
-                                  style={{ maxWidth: "193px" }}
-                                />
-                              ) : (
-                                <span className="output-link-text" style={{ maxWidth: "193px", fontSize: "13px", ...(i === 0 && { marginLeft: "-6px" }) }}>
-                                  {link ? (link.length > 20 ? link.substring(0, 20) + ".." : link) : "-"}
-                                </span>
-                              )}
-                              <button className="link-open-btn" onClick={() => link && window.open(link, "_blank")} disabled={!link}>
-                                <i className="ti ti-external-link"></i>
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="output-right-column">
-                    {/* (12) 메인 이미지 */}
-                    <div className="output-main-image" data-field="mainImage">
-                      <div className="image-preview" onClick={() => outputCards[currentOutputIndex].mainImage && setPreviewImage(outputCards[currentOutputIndex].mainImage)} style={{ position: "relative" }}>
-                        {outputCards[currentOutputIndex].mainImage ? (
-                          <img src={outputCards[currentOutputIndex].mainImage as string} alt="메인 이미지" style={{ objectFit: "cover", width: "100%", height: "100%" }} />
-                        ) : (
-                          <div className="empty-slot">
-                            <i className="ti ti-photo-plus"></i>
-                          </div>
-                        )}
-                        {isOutputEditMode && !outputCards[currentOutputIndex].mainImage && (
-                          <span className="required-mark" style={{ position: "absolute", bottom: "4px", left: "6px" }}>
+                    <div className="output-platform" data-field="platform">
+                      <label>
+                        플랫폼
+                        {isOutputEditMode && (
+                          <span className="required-mark" style={{ marginLeft: "2px" }}>
                             *
                           </span>
                         )}
-                        {isOutputEditMode && captionOpenIndex === 0 && (
-                          <div
-                            className="image-caption-overlay"
-                            style={{
-                              position: "absolute",
-                              bottom: 0,
-                              left: 0,
-                              right: 0,
-                              textAlign: "center",
-                              padding: "4px 6px",
-                              backgroundColor: "rgba(0, 0, 0, 0.6)",
-                              zIndex: 2,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              minHeight: "24px",
-                              height: "24px",
-                            }}
-                          >
-                            <input
-                              type="text"
-                              className="image-caption-input"
-                              value={outputCards[currentOutputIndex].mainImageCaption || ""}
-                              onChange={(e) => {
-                                if (e.target.value.length <= 20) handleOutputChange("mainImageCaption", e.target.value);
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              placeholder="캡션 입력 (최대 20자)"
-                              maxLength={20}
-                              autoFocus
-                              style={{
-                                width: "100%",
-                                background: "transparent",
-                                border: "none",
-                                color: "#fff",
-                                fontSize: "7pt",
-                                textAlign: "center",
-                                outline: "none",
-                                padding: 0,
-                                fontFamily: "inherit",
-                              }}
-                            />
+                      </label>
+                      {isOutputEditMode ? (
+                        <div className="custom-dropdown output-platform-dropdown">
+                          <div className="dropdown-selected" onClick={(e) => toggleDropdown("outputPlatform", e)}>
+                            {outputCards[currentOutputIndex].platform ? (
+                              <>
+                                {PLATFORM_ICONS[outputCards[currentOutputIndex].platform] && <img src={PLATFORM_ICONS[outputCards[currentOutputIndex].platform]} alt={outputCards[currentOutputIndex].platform} className="platform-icon" />}
+                                <span>{outputCards[currentOutputIndex].platform}</span>
+                              </>
+                            ) : (
+                              <span className="placeholder">선택하세요</span>
+                            )}
+                            <i className="ti ti-chevron-down"></i>
                           </div>
-                        )}
-                        {!(isOutputEditMode && captionOpenIndex === 0) && (
-                          <div
-                            className="image-caption-overlay"
-                            style={{
-                              position: "absolute",
-                              bottom: 0,
-                              left: 0,
-                              right: 0,
-                              textAlign: "center",
-                              padding: "4px 6px",
-                              backgroundColor: "rgba(0, 0, 0, 0.6)",
-                              zIndex: 2,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              minHeight: "24px",
-                              height: "24px",
-                            }}
-                          >
-                            <span style={{ color: "#fff", fontSize: "7pt", display: "block" }}>{outputCards[currentOutputIndex].mainImageCaption || ""}</span>
-                          </div>
-                        )}
-                      </div>
-                      {isOutputEditMode && (
-                        <div className="image-actions-overlay">
-                          <button className="image-action-btn" onClick={() => mainImageInputRef.current?.click()}>
-                            <i className="ti ti-upload"></i>
-                          </button>
-                          <button className="image-action-btn" onClick={() => handleOutputChange("mainImage", null)} disabled={!outputCards[currentOutputIndex].mainImage}>
-                            <i className="ti ti-trash"></i>
-                          </button>
                         </div>
+                      ) : (
+                        <span className="field-value" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          {PLATFORM_ICONS[outputCards[currentOutputIndex].platform] && <img src={PLATFORM_ICONS[outputCards[currentOutputIndex].platform]} alt={outputCards[currentOutputIndex].platform} className="platform-icon" style={{ width: "20px", height: "20px" }} />}
+                          {outputCards[currentOutputIndex].platform || "-"}
+                        </span>
                       )}
-                      {isOutputEditMode && (
-                        <button
-                          className={`image-action-btn image-caption-btn${captionOpenIndex === 0 ? " active" : ""}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setCaptionOpenIndex(captionOpenIndex === 0 ? null : 0);
-                          }}
-                          title="캡션"
-                          style={{ position: "absolute", bottom: "8px", right: "8px", zIndex: 3 }}
-                        >
-                          <i className="ti ti-text-caption"></i>
-                        </button>
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        ref={mainImageInputRef}
-                        style={{ display: "none" }}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleOutputChange("mainImage", URL.createObjectURL(file));
-                          e.target.value = "";
-                        }}
-                      />
                     </div>
                   </div>
-                </div>
-                {/* 하단: (좌) 사용기술+이미지2장 / (우) 정량지표+Report+Insight */}
-                <div className="output-bottom-row">
-                  <div className="output-bottom-left">
-                    <div className="output-tools-section" data-field="tools">
-                      <div className="output-tools-header">
-                        <label>
-                          사용 기술/도구
-                          {isOutputEditMode && (
-                            <span className="required-mark" style={{ marginLeft: "2px" }}>
-                              *
-                            </span>
-                          )}
-                        </label>
-                        <div className="selected-tools">
-                          {(() => {
-                            const sortedSelected = TOOL_OPTIONS.filter((t) => (outputCards[currentOutputIndex].tools || []).includes(t.key));
-                            return Array.from({ length: 5 }).map((_, i) => {
-                              const tool = sortedSelected[i] || null;
-                              return (
-                                <span key={i} className={`tool-icon-badge${!tool ? " empty" : ""}`} title={tool?.label || ""}>
-                                  {tool ? tool.icon ? <img src={tool.icon} alt={tool.label} /> : <span className="tool-placeholder">{tool.label.charAt(0)}</span> : <span className="tool-empty-slot" />}
-                                </span>
-                              );
-                            });
-                          })()}
+                  {/* 4~5단: 역할+사용기술(좌) / 링크(우) */}
+                  <div className="output-role-links-row">
+                    <div className="output-role-column">
+                      <div className="output-role-section" data-field="role">
+                        <div className="output-role-header">
+                          <label>
+                            역할
+                            {isOutputEditMode && (
+                              <span className="required-mark" style={{ marginLeft: "2px" }}>
+                                *
+                              </span>
+                            )}
+                          </label>
+                          <div className="output-role-input-wrap" style={{ position: "relative", flex: 1 }}>
+                            {isOutputEditMode ? (
+                              <input
+                                type="text"
+                                value={outputCards[currentOutputIndex].roleDescription || ""}
+                                onChange={(e) => {
+                                  if (e.target.value.length <= 50) handleOutputChange("roleDescription", e.target.value);
+                                }}
+                                maxLength={50}
+                                placeholder="이 과정에서 어떤 역할을 했는지 작성하세요 (최대 50자)"
+                                className="output-role-input"
+                                style={{ paddingRight: "55px" }}
+                              />
+                            ) : (
+                              <p className="output-role-text">{outputCards[currentOutputIndex].roleDescription || "-"}</p>
+                            )}
+                            {isOutputEditMode && (
+                              <span className="char-count" style={{ position: "absolute", bottom: "8px", right: "10px", fontSize: "11px", color: "rgba(255,255,255,0.4)", pointerEvents: "none" }}>
+                                {(outputCards[currentOutputIndex].roleDescription || "").length}/50
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        {isOutputEditMode && (
-                          <button type="button" className="image-action-btn tool-dropdown-btn" onClick={(e) => toggleDropdown("tools", e)}>
-                            <i className="ti ti-chevron-down"></i>
-                          </button>
-                        )}
+                        <div className="output-role-tags">
+                          {ROLE_OPTIONS.map((role) => {
+                            const isActive = (outputCards[currentOutputIndex].roles || []).includes(role.key);
+                            return (
+                              <button
+                                key={role.key}
+                                className={`role-tag ${isActive ? "active" : ""}`}
+                                style={isActive ? { backgroundColor: role.color, color: "#1a1a1a", borderColor: role.color } : {}}
+                                onClick={() => {
+                                  if (!isOutputEditMode) return;
+                                  const currentRoles = outputCards[currentOutputIndex].roles || [];
+                                  if (isActive) {
+                                    handleOutputChange(
+                                      "roles",
+                                      currentRoles.filter((r: string) => r !== role.key),
+                                    );
+                                  } else {
+                                    handleOutputChange("roles", [...currentRoles, role.key]);
+                                  }
+                                }}
+                                disabled={!isOutputEditMode}
+                              >
+                                {role.label}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
-                    <div className="output-sub-images" data-field="subImages">
-                      {[0, 1].map((slotIndex) => {
-                        const img = (outputCards[currentOutputIndex].subImages || [null, null])[slotIndex];
+                    <div className="output-links-section" data-field="links">
+                      {[0, 1, 2].map((i) => {
+                        const link = (outputCards[currentOutputIndex].links || ["", "", ""])[i];
+                        const dotColor = ["#FF6B6B", "#4ECDC4", isPX ? PX_ACCENT : "#FAAB07"][i];
                         return (
-                          <div className="output-sub-image-slot" key={slotIndex}>
-                            <div className="image-preview" onClick={() => img && setPreviewImage(img)} style={{ position: "relative" }}>
-                              {img ? (
-                                <img src={img} alt={`서브 이미지 ${slotIndex + 1}`} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
-                              ) : (
-                                <div className="empty-slot">
-                                  <i className="ti ti-photo-plus"></i>
-                                </div>
-                              )}
-                              {isOutputEditMode && !img && (
-                                <span className="required-mark" style={{ position: "absolute", bottom: "4px", left: "6px" }}>
-                                  *
-                                </span>
-                              )}
-                              {isOutputEditMode && captionOpenIndex === slotIndex + 1 && (
-                                <div
-                                  className="image-caption-overlay"
-                                  style={{
-                                    position: "absolute",
-                                    bottom: 0,
-                                    left: 0,
-                                    right: 0,
-                                    textAlign: "center",
-                                    padding: "4px 6px",
-                                    backgroundColor: "rgba(0, 0, 0, 0.6)",
-                                    zIndex: 2,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    minHeight: "24px",
-                                    height: "24px",
-                                  }}
-                                >
-                                  <input
-                                    type="text"
-                                    className="image-caption-input"
-                                    value={(outputCards[currentOutputIndex].subImageCaptions || ["", ""])[slotIndex] || ""}
-                                    onChange={(e) => {
-                                      if (e.target.value.length <= 20) {
-                                        const newCaptions = [...(outputCards[currentOutputIndex].subImageCaptions || ["", ""])];
-                                        newCaptions[slotIndex] = e.target.value;
-                                        handleOutputChange("subImageCaptions", newCaptions);
-                                      }
-                                    }}
-                                    onClick={(e) => e.stopPropagation()}
-                                    placeholder="캡션 입력 (최대 20자)"
-                                    maxLength={20}
-                                    autoFocus
-                                    style={{
-                                      width: "100%",
-                                      background: "transparent",
-                                      border: "none",
-                                      color: "#fff",
-                                      fontSize: "7pt",
-                                      textAlign: "center",
-                                      outline: "none",
-                                      padding: 0,
-                                      fontFamily: "inherit",
-                                    }}
-                                  />
-                                </div>
-                              )}
-                              {!(isOutputEditMode && captionOpenIndex === slotIndex + 1) && (
-                                <div
-                                  className="image-caption-overlay"
-                                  style={{
-                                    position: "absolute",
-                                    bottom: 0,
-                                    left: 0,
-                                    right: 0,
-                                    textAlign: "center",
-                                    padding: "4px 6px",
-                                    backgroundColor: "rgba(0, 0, 0, 0.6)",
-                                    zIndex: 2,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    minHeight: "24px",
-                                    height: "24px",
-                                  }}
-                                >
-                                  <span style={{ color: "#fff", fontSize: "7pt", display: "block" }}>{(outputCards[currentOutputIndex].subImageCaptions || ["", ""])[slotIndex] || ""}</span>
-                                </div>
-                              )}
-                            </div>
-                            {isOutputEditMode && (
-                              <div className="image-actions-overlay">
-                                <button className="image-action-btn" onClick={() => subImageInputRefs.current[slotIndex]?.click()}>
-                                  <i className="ti ti-upload"></i>
-                                </button>
-                                <button
-                                  className="image-action-btn"
-                                  onClick={() => {
-                                    const updated = [...(outputCards[currentOutputIndex].subImages || [null, null])];
-                                    if (updated[slotIndex]) URL.revokeObjectURL(updated[slotIndex] as string);
-                                    updated[slotIndex] = null;
-                                    handleOutputChange("subImages", updated);
-                                  }}
-                                  disabled={!img}
-                                >
-                                  <i className="ti ti-trash"></i>
-                                </button>
-                              </div>
+                          <div className="output-link-row" key={i} style={!isOutputEditMode ? { marginLeft: "9px" } : undefined}>
+                            <span className="link-dot" style={{ backgroundColor: dotColor, marginLeft: "auto", ...(i === 0 ? { marginRight: "18px" } : (isOutputEditMode ? { marginRight: "15px" } : {})) }} />
+                            {isOutputEditMode && i === 0 && (
+                              <span className="required-mark" style={{ marginLeft: "-14px", marginRight: "-4px" }}>
+                                *
+                              </span>
                             )}
-                            {isOutputEditMode && (
-                              <button
-                                className={`image-action-btn image-caption-btn${captionOpenIndex === slotIndex + 1 ? " active" : ""}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setCaptionOpenIndex(captionOpenIndex === slotIndex + 1 ? null : slotIndex + 1);
+                            {isOutputEditMode ? (
+                              <input
+                                type="text"
+                                value={link}
+                                onChange={(e) => {
+                                  const updated = [...(outputCards[currentOutputIndex].links || ["", "", ""])];
+                                  updated[i] = e.target.value;
+                                  handleOutputChange("links", updated);
                                 }}
-                                title="캡션"
-                                style={{ position: "absolute", bottom: "8px", right: "8px", zIndex: 3 }}
-                              >
-                                <i className="ti ti-text-caption"></i>
-                              </button>
+                                placeholder="https://..."
+                                className="output-link-input"
+                                style={{ maxWidth: "193px" }}
+                              />
+                            ) : (
+                              <span className="output-link-text" style={{ maxWidth: "193px", fontSize: "13px", ...(i === 0 && { marginLeft: "-6px" }) }}>
+                                {link ? (link.length > 20 ? link.substring(0, 20) + ".." : link) : "-"}
+                              </span>
                             )}
-                            <input
-                              type="file"
-                              accept="image/*"
-                              ref={(el) => {
-                                subImageInputRefs.current[slotIndex] = el;
-                              }}
-                              style={{ display: "none" }}
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  const updated = [...(outputCards[currentOutputIndex].subImages || [null, null])];
-                                  updated[slotIndex] = URL.createObjectURL(file);
-                                  handleOutputChange("subImages", updated);
-                                }
-                                e.target.value = "";
-                              }}
-                            />
+                            <button className="link-open-btn" onClick={() => link && window.open(link, "_blank")} disabled={!link}>
+                              <i className="ti ti-external-link"></i>
+                            </button>
                           </div>
                         );
                       })}
                     </div>
                   </div>
-                  <div className="output-stats-column">
-                    <div className="output-stats-top-row">
-                      <div className="output-metrics-section" data-field="metrics">
-                        <h5 className="output-section-title">주요 정량 지표</h5>
-                        <div className="output-metrics-rows">
-                          {[0, 1, 2].map((rowIndex) => {
-                            const col1Index = rowIndex * 2;
-                            const col2Index = rowIndex * 2 + 1;
-                            const metrics = outputCards[currentOutputIndex].metrics || ["", "", "", "", "", ""];
-                            const col1Val = metrics[col1Index] || "";
-                            const col2Val = metrics[col2Index] || "";
-                            return (
-                              <div className="output-metric-row" key={rowIndex}>
-                                <span className="metric-bullet">·</span>
-                                <div className="metric-cell col-1">
-                                  {isOutputEditMode && rowIndex === 0 && (
-                                    <span className="required-mark">*</span>
-                                  )}
-                                  <input
-                                    type="text"
-                                    className="output-metric-input"
-                                    value={col1Val}
-                                    onChange={
-                                      isOutputEditMode
-                                        ? (e) => {
-                                            if (e.target.value.length > 8) return;
-                                            const updated = [...metrics];
-                                            updated[col1Index] = e.target.value;
-                                            handleOutputChange("metrics", updated);
-                                          }
-                                        : undefined
-                                    }
-                                    disabled={!isOutputEditMode}
-                                    readOnly={!isOutputEditMode}
-                                    maxLength={8}
-                                    placeholder={`지표명, ${rowIndex + 1}`}
-                                  />
-                                  {isOutputEditMode && <span className="metric-counter">{col1Val.length}/8</span>}
-                                </div>
-                                <div className="metric-cell col-2">
-                                  <input
-                                    type="text"
-                                    className="output-metric-input"
-                                    value={col2Val}
-                                    onChange={
-                                      isOutputEditMode
-                                        ? (e) => {
-                                            if (e.target.value.length > 10) return;
-                                            const updated = [...metrics];
-                                            updated[col2Index] = e.target.value;
-                                            handleOutputChange("metrics", updated);
-                                          }
-                                        : undefined
-                                    }
-                                    disabled={!isOutputEditMode}
-                                    readOnly={!isOutputEditMode}
-                                    maxLength={10}
-                                    placeholder="지표값을 써주세요."
-                                  />
-                                  {isOutputEditMode && <span className="metric-counter">{col2Val.length}/10</span>}
-                                </div>
-                              </div>
-                            );
-                          })}
+                </div>
+                <div className="output-right-column">
+                  {/* (12) 메인 이미지 */}
+                  <div className="output-main-image" data-field="mainImage">
+                    <div className="image-preview" onClick={() => outputCards[currentOutputIndex].mainImage && setPreviewImage(outputCards[currentOutputIndex].mainImage)} style={{ position: "relative" }}>
+                      {outputCards[currentOutputIndex].mainImage ? (
+                        <img src={outputCards[currentOutputIndex].mainImage as string} alt="메인 이미지" style={{ objectFit: "cover", width: "100%", height: "100%" }} />
+                      ) : (
+                        <div className="empty-slot">
+                          <i className="ti ti-photo-plus"></i>
                         </div>
-                      </div>
-                      <div className="output-report-section" data-field="report" style={{ position: "relative" }}>
-                        <h5 className="output-section-title">
-                          Output Report
-                          {isOutputEditMode && (
-                            <span className="required-mark" style={{ marginLeft: "2px" }}>
-                              *
-                            </span>
-                          )}
-                        </h5>
-                        <textarea
-                          value={outputCards[currentOutputIndex].report || ""}
-                          onChange={
-                            isOutputEditMode
-                              ? (e) => {
-                                  if (e.target.value.length <= 100) handleOutputChange("report", e.target.value);
-                                }
-                              : undefined
-                          }
-                          maxLength={100}
-                          placeholder={isOutputEditMode ? "이 아웃풋에서 어떤 결과가 나왔는지를 정성적으로 작성 (최대 100자)" : ""}
-                          className="output-report-textarea"
-                          rows={1}
-                          style={{ paddingBottom: "20px" }}
-                          disabled={!isOutputEditMode}
-                          readOnly={!isOutputEditMode}
-                        />
-                        {isOutputEditMode && (
-                          <span
-                            className="char-count"
-                            style={{
-                              position: "absolute",
-                              bottom: "8px",
-                              right: "10px",
-                              fontSize: "11px",
-                              color: "rgba(255,255,255,0.4)",
-                              pointerEvents: "none",
-                              zIndex: 1,
+                      )}
+                      {isOutputEditMode && !outputCards[currentOutputIndex].mainImage && (
+                        <span className="required-mark" style={{ position: "absolute", bottom: "4px", left: "6px" }}>
+                          *
+                        </span>
+                      )}
+                      {isOutputEditMode && captionOpenIndex === 0 && (
+                        <div
+                          className="image-caption-overlay"
+                          style={{
+                            position: "absolute",
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            textAlign: "center",
+                            padding: "4px 6px",
+                            backgroundColor: "rgba(0, 0, 0, 0.6)",
+                            zIndex: 2,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            minHeight: "24px",
+                            height: "24px",
+                          }}
+                        >
+                          <input
+                            type="text"
+                            className="image-caption-input"
+                            value={outputCards[currentOutputIndex].mainImageCaption || ""}
+                            onChange={(e) => {
+                              if (e.target.value.length <= 20) handleOutputChange("mainImageCaption", e.target.value);
                             }}
-                          >
-                            {(outputCards[currentOutputIndex].report || "").length}/100
+                            onClick={(e) => e.stopPropagation()}
+                            placeholder="캡션 입력 (최대 20자)"
+                            maxLength={20}
+                            autoFocus
+                            style={{
+                              width: "100%",
+                              background: "transparent",
+                              border: "none",
+                              color: "#fff",
+                              fontSize: "7pt",
+                              textAlign: "center",
+                              outline: "none",
+                              padding: 0,
+                              fontFamily: "inherit",
+                            }}
+                          />
+                        </div>
+                      )}
+                      {!(isOutputEditMode && captionOpenIndex === 0) && (
+                        <div
+                          className="image-caption-overlay"
+                          style={{
+                            position: "absolute",
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            textAlign: "center",
+                            padding: "4px 6px",
+                            backgroundColor: "rgba(0, 0, 0, 0.6)",
+                            zIndex: 2,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            minHeight: "24px",
+                            height: "24px",
+                          }}
+                        >
+                          <span style={{ color: "#fff", fontSize: "7pt", display: "block" }}>{outputCards[currentOutputIndex].mainImageCaption || ""}</span>
+                        </div>
+                      )}
+                    </div>
+                    {isOutputEditMode && (
+                      <div className="image-actions-overlay">
+                        <button className="image-action-btn" onClick={() => mainImageInputRef.current?.click()}>
+                          <i className="ti ti-upload"></i>
+                        </button>
+                        <button className="image-action-btn" onClick={() => handleOutputChange("mainImage", null)} disabled={!outputCards[currentOutputIndex].mainImage}>
+                          <i className="ti ti-trash"></i>
+                        </button>
+                      </div>
+                    )}
+                    {isOutputEditMode && (
+                      <button
+                        className={`image-action-btn image-caption-btn${captionOpenIndex === 0 ? " active" : ""}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCaptionOpenIndex(captionOpenIndex === 0 ? null : 0);
+                        }}
+                        title="캡션"
+                        style={{ position: "absolute", bottom: "8px", right: "8px", zIndex: 3 }}
+                      >
+                        <i className="ti ti-text-caption"></i>
+                      </button>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      ref={mainImageInputRef}
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleOutputChange("mainImage", URL.createObjectURL(file));
+                        e.target.value = "";
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+              {/* 하단: (좌) 사용기술+이미지2장 / (우) 정량지표+Report+Insight */}
+              <div className="output-bottom-row">
+                <div className="output-bottom-left">
+                  <div className="output-tools-section" data-field="tools">
+                    <div className="output-tools-header">
+                      <label>
+                        사용 기술/도구
+                        {isOutputEditMode && (
+                          <span className="required-mark" style={{ marginLeft: "2px" }}>
+                            *
                           </span>
                         )}
+                      </label>
+                      <div className="selected-tools">
+                        {(() => {
+                          const sortedSelected = TOOL_OPTIONS.filter((t) => (outputCards[currentOutputIndex].tools || []).includes(t.key));
+                          return Array.from({ length: 5 }).map((_, i) => {
+                            const tool = sortedSelected[i] || null;
+                            return (
+                              <span key={i} className={`tool-icon-badge${!tool ? " empty" : ""}`} title={tool?.label || ""}>
+                                {tool ? tool.icon ? <img src={tool.icon} alt={tool.label} /> : <span className="tool-placeholder">{tool.label.charAt(0)}</span> : <span className="tool-empty-slot" />}
+                              </span>
+                            );
+                          });
+                        })()}
+                      </div>
+                      {isOutputEditMode && (
+                        <button className="tool-dropdown-btn" onClick={(e) => toggleDropdown("tools", e)}>
+                          ▽
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="output-sub-images" data-field="subImages">
+                    {[0, 1].map((slotIndex) => {
+                      const img = (outputCards[currentOutputIndex].subImages || [null, null])[slotIndex];
+                      return (
+                        <div className="output-sub-image-slot" key={slotIndex}>
+                          <div className="image-preview" onClick={() => img && setPreviewImage(img)} style={{ position: "relative" }}>
+                            {img ? (
+                              <img src={img} alt={`서브 이미지 ${slotIndex + 1}`} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
+                            ) : (
+                              <div className="empty-slot">
+                                <i className="ti ti-photo-plus"></i>
+                              </div>
+                            )}
+                            {isOutputEditMode && !img && (
+                              <span className="required-mark" style={{ position: "absolute", bottom: "4px", left: "6px" }}>
+                                *
+                              </span>
+                            )}
+                            {isOutputEditMode && captionOpenIndex === slotIndex + 1 && (
+                              <div
+                                className="image-caption-overlay"
+                                style={{
+                                  position: "absolute",
+                                  bottom: 0,
+                                  left: 0,
+                                  right: 0,
+                                  textAlign: "center",
+                                  padding: "4px 6px",
+                                  backgroundColor: "rgba(0, 0, 0, 0.6)",
+                                  zIndex: 2,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  minHeight: "24px",
+                                  height: "24px",
+                                }}
+                              >
+                                <input
+                                  type="text"
+                                  className="image-caption-input"
+                                  value={(outputCards[currentOutputIndex].subImageCaptions || ["", ""])[slotIndex] || ""}
+                                  onChange={(e) => {
+                                    if (e.target.value.length <= 20) {
+                                      const newCaptions = [...(outputCards[currentOutputIndex].subImageCaptions || ["", ""])];
+                                      newCaptions[slotIndex] = e.target.value;
+                                      handleOutputChange("subImageCaptions", newCaptions);
+                                    }
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  placeholder="캡션 입력 (최대 20자)"
+                                  maxLength={20}
+                                  autoFocus
+                                  style={{
+                                    width: "100%",
+                                    background: "transparent",
+                                    border: "none",
+                                    color: "#fff",
+                                    fontSize: "7pt",
+                                    textAlign: "center",
+                                    outline: "none",
+                                    padding: 0,
+                                    fontFamily: "inherit",
+                                  }}
+                                />
+                              </div>
+                            )}
+                            {!(isOutputEditMode && captionOpenIndex === slotIndex + 1) && (
+                              <div
+                                className="image-caption-overlay"
+                                style={{
+                                  position: "absolute",
+                                  bottom: 0,
+                                  left: 0,
+                                  right: 0,
+                                  textAlign: "center",
+                                  padding: "4px 6px",
+                                  backgroundColor: "rgba(0, 0, 0, 0.6)",
+                                  zIndex: 2,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  minHeight: "24px",
+                                  height: "24px",
+                                }}
+                              >
+                                <span style={{ color: "#fff", fontSize: "7pt", display: "block" }}>{(outputCards[currentOutputIndex].subImageCaptions || ["", ""])[slotIndex] || ""}</span>
+                              </div>
+                            )}
+                          </div>
+                          {isOutputEditMode && (
+                            <div className="image-actions-overlay">
+                              <button className="image-action-btn" onClick={() => subImageInputRefs.current[slotIndex]?.click()}>
+                                <i className="ti ti-upload"></i>
+                              </button>
+                              <button
+                                className="image-action-btn"
+                                onClick={() => {
+                                  const updated = [...(outputCards[currentOutputIndex].subImages || [null, null])];
+                                  if (updated[slotIndex]) URL.revokeObjectURL(updated[slotIndex] as string);
+                                  updated[slotIndex] = null;
+                                  handleOutputChange("subImages", updated);
+                                }}
+                                disabled={!img}
+                              >
+                                <i className="ti ti-trash"></i>
+                              </button>
+                            </div>
+                          )}
+                          {isOutputEditMode && (
+                            <button
+                              className={`image-action-btn image-caption-btn${captionOpenIndex === slotIndex + 1 ? " active" : ""}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCaptionOpenIndex(captionOpenIndex === slotIndex + 1 ? null : slotIndex + 1);
+                              }}
+                              title="캡션"
+                              style={{ position: "absolute", bottom: "8px", right: "8px", zIndex: 3 }}
+                            >
+                              <i className="ti ti-text-caption"></i>
+                            </button>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            ref={(el) => {
+                              subImageInputRefs.current[slotIndex] = el;
+                            }}
+                            style={{ display: "none" }}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const updated = [...(outputCards[currentOutputIndex].subImages || [null, null])];
+                                updated[slotIndex] = URL.createObjectURL(file);
+                                handleOutputChange("subImages", updated);
+                              }
+                              e.target.value = "";
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="output-stats-column">
+                  <div className="output-stats-top-row">
+                    <div className="output-metrics-section" data-field="metrics">
+                      <h5 className="output-section-title">주요 정량 지표</h5>
+                      <div className="output-metrics-rows">
+                        {[0, 1, 2].map((rowIndex) => {
+                          const col1Index = rowIndex * 2;
+                          const col2Index = rowIndex * 2 + 1;
+                          const metrics = outputCards[currentOutputIndex].metrics || ["", "", "", "", "", ""];
+                          const col1Val = metrics[col1Index] || "";
+                          const col2Val = metrics[col2Index] || "";
+                          return (
+                            <div className="output-metric-row" key={rowIndex} style={rowIndex === 0 ? { position: "relative" } : undefined}>
+                              <span className="metric-bullet">·</span>
+                              {isOutputEditMode && rowIndex === 0 && (
+                                <span className="required-mark" style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", pointerEvents: "none", zIndex: 2 }}>*</span>
+                              )}
+                              <div className="metric-cell col-1">
+                                <input
+                                  type="text"
+                                  className="output-metric-input"
+                                  value={col1Val}
+                                  onChange={
+                                    isOutputEditMode
+                                      ? (e) => {
+                                          if (e.target.value.length > 8) return;
+                                          const updated = [...metrics];
+                                          updated[col1Index] = e.target.value;
+                                          handleOutputChange("metrics", updated);
+                                        }
+                                      : undefined
+                                  }
+                                  disabled={!isOutputEditMode}
+                                  readOnly={!isOutputEditMode}
+                                  maxLength={8}
+                                  placeholder=""
+                                />
+                                {isOutputEditMode && <span className="metric-counter">{col1Val.length}/8</span>}
+                              </div>
+                              <div className="metric-cell col-2">
+                                <input
+                                  type="text"
+                                  className="output-metric-input"
+                                  value={col2Val}
+                                  onChange={
+                                    isOutputEditMode
+                                      ? (e) => {
+                                          if (e.target.value.length > 10) return;
+                                          const updated = [...metrics];
+                                          updated[col2Index] = e.target.value;
+                                          handleOutputChange("metrics", updated);
+                                        }
+                                      : undefined
+                                  }
+                                  disabled={!isOutputEditMode}
+                                  readOnly={!isOutputEditMode}
+                                  maxLength={10}
+                                  placeholder=""
+                                />
+                                {isOutputEditMode && <span className="metric-counter">{col2Val.length}/10</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                    <div className="output-insight-section" data-field="insight">
+                    <div className="output-report-section" data-field="report" style={{ position: "relative" }}>
                       <h5 className="output-section-title">
-                        Output Insight
+                        Output Report
                         {isOutputEditMode && (
                           <span className="required-mark" style={{ marginLeft: "2px" }}>
                             *
                           </span>
                         )}
                       </h5>
-                      <div style={{ position: "relative" }}>
-                        <textarea
-                          value={outputCards[currentOutputIndex].insight || ""}
-                          onChange={
-                            isOutputEditMode
-                              ? (e) => {
-                                  if (e.target.value.length <= 200) handleOutputChange("insight", e.target.value);
-                                }
-                              : undefined
-                          }
-                          maxLength={200}
-                          placeholder={isOutputEditMode ? "이 아웃풋 결과물을 도출하면서 어떤 것을 배우고, 경험했는지, 그리고 어떤 것을 느꼈는지 등에 대한 인싸이트를 작성 (최대 200자)" : ""}
-                          className="output-insight-textarea"
-                          rows={2}
-                          style={{ paddingBottom: "20px" }}
-                          disabled={!isOutputEditMode}
-                          readOnly={!isOutputEditMode}
-                        />
-                        {isOutputEditMode && (
-                          <span className="char-count" style={{ position: "absolute", bottom: "8px", right: "10px", fontSize: "11px", color: "rgba(255,255,255,0.4)", pointerEvents: "none" }}>
-                            {(outputCards[currentOutputIndex].insight || "").length}/200
-                          </span>
-                        )}
-                      </div>
+                      <textarea
+                        value={outputCards[currentOutputIndex].report || ""}
+                        onChange={
+                          isOutputEditMode
+                            ? (e) => {
+                                if (e.target.value.length <= 100) handleOutputChange("report", e.target.value);
+                              }
+                            : undefined
+                        }
+                        maxLength={100}
+                        placeholder={isOutputEditMode ? "이 아웃풋에서 어떤 결과가 나왔는지를 정성적으로 작성 (최대 100자)" : ""}
+                        className="output-report-textarea"
+                        rows={1}
+                        style={{ paddingBottom: "20px" }}
+                        disabled={!isOutputEditMode}
+                        readOnly={!isOutputEditMode}
+                      />
+                      {isOutputEditMode && (
+                        <span
+                          className="char-count"
+                          style={{
+                            position: "absolute",
+                            bottom: "8px",
+                            right: "10px",
+                            fontSize: "11px",
+                            color: "rgba(255,255,255,0.4)",
+                            pointerEvents: "none",
+                            zIndex: 1,
+                          }}
+                        >
+                          {(outputCards[currentOutputIndex].report || "").length}/100
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="output-insight-section" data-field="insight">
+                    <h5 className="output-section-title">
+                      Output Insight
+                      {isOutputEditMode && (
+                        <span className="required-mark" style={{ marginLeft: "2px" }}>
+                          *
+                        </span>
+                      )}
+                    </h5>
+                    <div style={{ position: "relative" }}>
+                      <textarea
+                        value={outputCards[currentOutputIndex].insight || ""}
+                        onChange={
+                          isOutputEditMode
+                            ? (e) => {
+                                if (e.target.value.length <= 200) handleOutputChange("insight", e.target.value);
+                              }
+                            : undefined
+                        }
+                        maxLength={200}
+                        placeholder={isOutputEditMode ? "이 아웃풋 결과물을 도출하면서 어떤 것을 배우고, 경험했는지, 그리고 어떤 것을 느꼈는지 등에 대한 인싸이트를 작성 (최대 200자)" : ""}
+                        className="output-insight-textarea"
+                        rows={2}
+                        style={{ paddingBottom: "20px" }}
+                        disabled={!isOutputEditMode}
+                        readOnly={!isOutputEditMode}
+                      />
+                      {isOutputEditMode && (
+                        <span className="char-count" style={{ position: "absolute", bottom: "8px", right: "10px", fontSize: "11px", color: "rgba(255,255,255,0.4)", pointerEvents: "none" }}>
+                          {(outputCards[currentOutputIndex].insight || "").length}/200
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
-              <div className="output-modal-footer">
-                <div className="modal-footer-top">
-                  <span className="modal-help-icon" onClick={() => setShowHelpModal(true)} style={{ cursor: "pointer" }}>
-                    🔎
-                  </span>
-                  <div className="modal-footer-nav">
-                    <button className="nav-btn prev" onClick={handlePrevOutput} disabled={isOutputEditMode || currentOutputIndex === 0} title={isOutputEditMode ? "편집 중에는 이동할 수 없습니다" : ""}>
-                      <i className="ti ti-chevron-left"></i>
-                    </button>
-                    <button className="nav-btn next" onClick={handleNextOutput} disabled={isOutputEditMode || currentOutputIndex >= MAX_OUTPUT_CARDS - 1} title={isOutputEditMode ? "편집 중에는 이동할 수 없습니다" : ""}>
-                      <i className="ti ti-chevron-right"></i>
-                    </button>
-                  </div>
-                  <div className="modal-footer-right">
-                    {!isOutputEditMode ? (
-                      <button
-                        className="modal-edit-btn"
-                        onClick={async () => {
-                          if (!canEditOutput) {
-                            await popup.alert("관리자의 허가가 필요합니다.");
-                            return;
-                          }
-                          setIsOutputEditMode(true);
-                        }}
-                      >
-                        수정
-                      </button>
-                    ) : (
-                      <>
-                        <button className="modal-cancel-btn" onClick={handleCancelOutput}>
-                          취소
-                        </button>
-                        <button className="modal-reset-btn" onClick={handleResetOutput}>
-                          초기화
-                        </button>
-                        <button className="modal-save-btn" onClick={handleSaveOutput}>
-                          저장
-                        </button>
-                      </>
-                    )}
-                  </div>
+            </div>
+            <div className="output-modal-footer">
+              <div className="modal-footer-top">
+                <span className="modal-help-icon" onClick={() => setShowHelpModal(true)} style={{ cursor: "pointer" }}>
+                  🔎
+                </span>
+                <div className="modal-footer-nav">
+                  <button className="nav-btn prev" onClick={handlePrevOutput} disabled={isOutputEditMode || currentOutputIndex === 0} title={isOutputEditMode ? "편집 중에는 이동할 수 없습니다" : ""}>
+                    <i className="ti ti-chevron-left"></i>
+                  </button>
+                  <button className="nav-btn next" onClick={handleNextOutput} disabled={isOutputEditMode || currentOutputIndex >= unlockedOutputCount - 1 || currentOutputIndex >= MAX_OUTPUT_CARDS - 1} title={isOutputEditMode ? "편집 중에는 이동할 수 없습니다" : ""}>
+                    <i className="ti ti-chevron-right"></i>
+                  </button>
                 </div>
-                <div className="modal-footer-bottom" style={{ visibility: isOutputEditMode ? "visible" : "hidden" }}>
-                  <p className={`modal-footer-notice ${outputFooterNotice === "error" ? "notice-error" : ""}`}>{outputFooterNotice === "error" ? "필수 사항이 누락되었어요! 확인 부탁드려요! 😊" : "내용을 모두 잘 확인하신 후 저장을 눌러주세요. 😊"}</p>
+                <div className="modal-footer-right">
+                  {!isOutputEditMode ? (
+                    <button
+                      className="modal-edit-btn"
+                      onClick={async () => {
+                        if (!canEditOutput) {
+                          await popup.alert("관리자의 허가가 필요합니다.");
+                          return;
+                        }
+                        setIsOutputEditMode(true);
+                      }}
+                    >
+                      수정
+                    </button>
+                  ) : (
+                    <>
+                      <button className="modal-cancel-btn" onClick={handleCancelOutput}>
+                        취소
+                      </button>
+                      <button className="modal-reset-btn" onClick={handleResetOutput}>
+                        초기화
+                      </button>
+                      <button className="modal-save-btn" onClick={handleSaveOutput} disabled={isSavingTopCard}>
+                        {isSavingTopCard ? "저장 중..." : "저장"}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
+              <div className="modal-footer-bottom" style={{ visibility: isOutputEditMode ? "visible" : "hidden" }}>
+                <p className={`modal-footer-notice ${outputFooterNotice === "error" ? "notice-error" : ""}`}>{outputFooterNotice === "error" ? "필수 사항이 누락되었어요! 확인 부탁드려요! 😊" : "내용을 모두 잘 확인하신 후 저장을 눌러주세요. 😊"}</p>
+              </div>
             </div>
+          </div>
           </div>
         </div>
       )}
@@ -3809,755 +4273,755 @@ const Cluster3Content = () => {
       {isDetailModalOpen && (
         <div className="output-modal-overlay">
           <div className="modal-scroll-content">
-            <div className="output-modal detail-modal-variant">
-              <div className="output-modal-header">
-                <button className="modal-close-btn" onClick={handleCloseDetailModal}>
-                  <i className="ti ti-x"></i>
-                </button>
-                <div className="modal-header-top">
-                  <img src="/images/0/treasure.png" alt="treasure" style={{ width: "72px", height: "72px", objectFit: "contain" }} />
-                  <h3>Portfolio Output Detail 10 [{currentDetailIndex + 1}]</h3>
-                </div>
-                <p className="modal-subtitle" style={{ visibility: isDetailEditMode ? "visible" : "hidden" }}>
-                  본인의 포트폴리오 결과물의 목표 {">"} 과정 {">"} 결과, 그리고 그 안에서 얻은 경험치들을 기업/사회/커리어 측면에서 어필이 될 수 있도록 작성하세요.<span style={{ fontStyle: "normal" }}>😊</span>
-                </p>
+          <div className="output-modal detail-modal-variant">
+            <div className="output-modal-header">
+              <button className="modal-close-btn" onClick={handleCloseDetailModal}>
+                <i className="ti ti-x"></i>
+              </button>
+              <div className="modal-header-top">
+                <img src="/images/0/treasure.png" alt="treasure" style={{ width: "72px", height: "72px", objectFit: "contain" }} />
+                <h3>Portfolio Output Detail 10 [{currentDetailIndex + 1}]</h3>
               </div>
-              <div className="output-modal-body">
-                <div className="output-upper-section">
-                  <div className="output-left-column">
-                    <div className="output-title-row">
-                      <img src="/images/0/portfolio.png" alt="portfolio" className="title-icon" />
-                      <span className="output-user-title">
-                        <span className="user-name">윤재윤 님</span>
-                        <span style={{ marginLeft: "4px", fontSize: "23px", fontWeight: 700, color: isPX ? PX_ACCENT : "#faab07" }}>의 Output Detail 10 [{currentDetailIndex + 1}]</span>
+              <p className="modal-subtitle" style={{ visibility: isDetailEditMode ? "visible" : "hidden" }}>
+                본인의 포트폴리오 결과물의 목표 {">"} 과정 {">"} 결과, 그리고 그 안에서 얻은 경험치들을 기업/사회/커리어 측면에서 어필이 될 수 있도록 작성하세요.<span style={{ fontStyle: "normal" }}>😊</span>
+              </p>
+            </div>
+            <div className="output-modal-body">
+              <div className="output-upper-section">
+                <div className="output-left-column">
+                  <div className="output-title-row">
+                    <img src="/images/0/portfolio.png" alt="portfolio" className="title-icon" />
+                    <span className="output-user-title">
+                      <span className="user-name">{displayName || "크루"} 님</span>
+                      <span style={{ marginLeft: "4px", fontSize: "23px", fontWeight: 700, color: isPX ? PX_ACCENT : "#faab07" }}>의 Output Detail 10 [{currentDetailIndex + 1}]</span>
+                    </span>
+                    <div className="output-period" data-field="period">
+                      <div className="period-wrapper" ref={detailPeriodPickerRef}>
+                        <div className="period-display-row">
+                          <div className="period-display-left">
+                            {isDetailEditMode && <span className="required-mark">*</span>}
+                            <span className="period-value period-range-value">{formatPeriodRange(detailCards[currentDetailIndex])}</span>
+                          </div>
+                          {isDetailEditMode && (
+                            <button
+                              ref={detailPeriodTriggerRef}
+                              className="period-trigger-btn"
+                              onClick={() => {
+                                const range = getCardDateRange(detailCards[currentDetailIndex]);
+                                setDetailDateRange(range);
+                                setDetailRangeMonth(getInitialRangeMonth(range));
+                                const position = getCalendarPosition(detailPeriodTriggerRef.current);
+                                if (position) setDetailCalendarPosition(position);
+                                setDetailRangePickerOpen((open) => !open);
+                              }}
+                            >
+                              ▽
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="output-main-title output-field-with-count" data-field="mainTitle">
+                    {isDetailEditMode && (
+                      <span className="required-mark" style={{ position: "absolute", top: "4px", right: "6px", pointerEvents: "none", zIndex: 2 }}>
+                        *
                       </span>
-                      <div className="output-period" data-field="period">
-                        <div className="period-wrapper" ref={detailPeriodPickerRef}>
-                          <div className="period-display-row">
-                            <div className="period-display-left">
-                              {isDetailEditMode && <span className="required-mark">*</span>}
-                              <span className="period-value period-range-value">{formatPeriodRange(detailCards[currentDetailIndex])}</span>
-                            </div>
-                            {isDetailEditMode && (
-                              <button
-                                type="button"
-                                ref={detailPeriodTriggerRef}
-                                className="image-action-btn period-trigger-btn"
-                                onClick={() => {
-                                  const range = getCardDateRange(detailCards[currentDetailIndex]);
-                                  setDetailDateRange(range);
-                                  setDetailRangeMonth(getInitialRangeMonth(range));
-                                  const position = getCalendarPosition(detailPeriodTriggerRef.current);
-                                  if (position) setDetailCalendarPosition(position);
-                                  setDetailRangePickerOpen((open) => !open);
-                                }}
-                              >
-                                <i className="ti ti-chevron-down"></i>
-                              </button>
-                            )}
-                          </div>
+                    )}
+                    {isDetailEditMode ? (
+                      <input
+                        type="text"
+                        value={detailCards[currentDetailIndex].mainTitle || ""}
+                        onChange={(e) => {
+                          if (e.target.value.length <= 30) handleDetailChange("mainTitle", e.target.value);
+                        }}
+                        maxLength={30}
+                        placeholder="메인 제목을 작성하세요 (최대 30자)"
+                        className="output-main-title-input"
+                      />
+                    ) : (
+                      <h2 className="output-main-title-text">{detailCards[currentDetailIndex].mainTitle || "-"}</h2>
+                    )}
+                    {isDetailEditMode && <span className="char-count">{(detailCards[currentDetailIndex].mainTitle || "").length}/30</span>}
+                  </div>
+                  <div className="output-sub-title output-field-with-count" data-field="subTitle">
+                    {isDetailEditMode && (
+                      <span className="required-mark" style={{ position: "absolute", top: "4px", right: "1px", pointerEvents: "none", zIndex: 2 }}>
+                        *
+                      </span>
+                    )}
+                    {isDetailEditMode ? (
+                      <textarea
+                        value={detailCards[currentDetailIndex].subTitle || ""}
+                        onChange={(e) => {
+                          if (e.target.value.length <= 100) handleDetailChange("subTitle", e.target.value);
+                        }}
+                        maxLength={100}
+                        rows={2}
+                        placeholder="서브 제목을 작성하세요 (최대 100자, 2줄까지)"
+                        className="output-sub-title-input"
+                      />
+                    ) : (
+                      <p className="output-sub-title-text">{detailCards[currentDetailIndex].subTitle || "-"}</p>
+                    )}
+                    {isDetailEditMode && <span className="char-count">{(detailCards[currentDetailIndex].subTitle || "").length}/100</span>}
+                  </div>
+                  {/* (3) 기여도 + (4) 플랫폼 */}
+                  <div className="output-meta-row">
+                    <div className="output-contribution" data-field="contribution">
+                      <label>
+                        기여도
+                        {isDetailEditMode && (
+                          <span className="required-mark" style={{ marginLeft: "2px" }}>
+                            *
+                          </span>
+                        )}
+                      </label>
+                      <div className="contribution-bar-wrapper">
+                        <div className="contribution-bar">
+                          <div className="contribution-fill" style={{ width: `${detailCards[currentDetailIndex].contribution || 0}%` }} />
                         </div>
-                      </div>
-                    </div>
-                    <div className="output-main-title output-field-with-count" data-field="mainTitle">
-                      {isDetailEditMode && (
-                        <span className="required-mark" style={{ position: "absolute", top: "4px", right: "6px", pointerEvents: "none", zIndex: 2 }}>
-                          *
-                        </span>
-                      )}
-                      {isDetailEditMode ? (
-                        <input
-                          type="text"
-                          value={detailCards[currentDetailIndex].mainTitle || ""}
-                          onChange={(e) => {
-                            if (e.target.value.length <= 30) handleDetailChange("mainTitle", e.target.value);
-                          }}
-                          maxLength={30}
-                          placeholder="메인 제목을 작성하세요 (최대 30자)"
-                          className="output-main-title-input"
-                        />
-                      ) : (
-                        <h2 className="output-main-title-text">{detailCards[currentDetailIndex].mainTitle || "-"}</h2>
-                      )}
-                      {isDetailEditMode && <span className="char-count">{(detailCards[currentDetailIndex].mainTitle || "").length}/30</span>}
-                    </div>
-                    <div className="output-sub-title output-field-with-count" data-field="subTitle">
-                      {isDetailEditMode && (
-                        <span className="required-mark" style={{ position: "absolute", top: "4px", right: "1px", pointerEvents: "none", zIndex: 2 }}>
-                          *
-                        </span>
-                      )}
-                      {isDetailEditMode ? (
-                        <textarea
-                          value={detailCards[currentDetailIndex].subTitle || ""}
-                          onChange={(e) => {
-                            if (e.target.value.length <= 100) handleDetailChange("subTitle", e.target.value);
-                          }}
-                          maxLength={100}
-                          rows={2}
-                          placeholder="서브 제목을 작성하세요 (최대 100자, 2줄까지)"
-                          className="output-sub-title-input"
-                        />
-                      ) : (
-                        <p className="output-sub-title-text">{detailCards[currentDetailIndex].subTitle || "-"}</p>
-                      )}
-                      {isDetailEditMode && <span className="char-count">{(detailCards[currentDetailIndex].subTitle || "").length}/100</span>}
-                    </div>
-                    {/* (3) 기여도 + (4) 플랫폼 */}
-                    <div className="output-meta-row">
-                      <div className="output-contribution" data-field="contribution">
-                        <label>
-                          기여도
-                          {isDetailEditMode && (
-                            <span className="required-mark" style={{ marginLeft: "2px" }}>
-                              *
-                            </span>
-                          )}
-                        </label>
-                        <div className="contribution-bar-wrapper">
-                          <div className="contribution-bar">
-                            <div className="contribution-fill" style={{ width: `${detailCards[currentDetailIndex].contribution || 0}%` }} />
-                          </div>
-                          {isDetailEditMode ? (
-                            <div className="custom-dropdown small contribution-dropdown">
-                              <div className="dropdown-selected" onClick={(e) => toggleDropdown("detailContribution", e)}>
-                                <span>{detailCards[currentDetailIndex].contribution || 0}%</span>
-                                <i className="ti ti-chevron-down"></i>
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="contribution-value">{detailCards[currentDetailIndex].contribution || 0}%</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="output-platform" data-field="platform">
-                        <label>
-                          플랫폼
-                          {isDetailEditMode && (
-                            <span className="required-mark" style={{ marginLeft: "2px" }}>
-                              *
-                            </span>
-                          )}
-                        </label>
                         {isDetailEditMode ? (
-                          <div className="custom-dropdown output-platform-dropdown">
-                            <div className="dropdown-selected" onClick={(e) => toggleDropdown("detailPlatform", e)}>
-                              {detailCards[currentDetailIndex].platform ? (
-                                <>
-                                  {PLATFORM_ICONS[detailCards[currentDetailIndex].platform] && <img src={PLATFORM_ICONS[detailCards[currentDetailIndex].platform]} alt={detailCards[currentDetailIndex].platform} className="platform-icon" />}
-                                  <span>{detailCards[currentDetailIndex].platform}</span>
-                                </>
-                              ) : (
-                                <span className="placeholder">선택하세요</span>
-                              )}
+                          <div className="custom-dropdown small contribution-dropdown">
+                            <div className="dropdown-selected" onClick={(e) => toggleDropdown("detailContribution", e)}>
+                              <span>{detailCards[currentDetailIndex].contribution || 0}%</span>
                               <i className="ti ti-chevron-down"></i>
                             </div>
                           </div>
                         ) : (
-                          <span className="field-value" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                            {PLATFORM_ICONS[detailCards[currentDetailIndex].platform] && <img src={PLATFORM_ICONS[detailCards[currentDetailIndex].platform]} alt={detailCards[currentDetailIndex].platform} className="platform-icon" style={{ width: "20px", height: "20px" }} />}
-                            {detailCards[currentDetailIndex].platform || "-"}
-                          </span>
+                          <span className="contribution-value">{detailCards[currentDetailIndex].contribution || 0}%</span>
                         )}
                       </div>
                     </div>
-                    {/* 4~5단: 역할+사용기술(좌) / 링크(우) */}
-                    <div className="output-role-links-row">
-                      <div className="output-role-column">
-                        <div className="output-role-section" data-field="role">
-                          <div className="output-role-header">
-                            <label>
-                              역할
-                              {isDetailEditMode && (
-                                <span className="required-mark" style={{ marginLeft: "2px" }}>
-                                  *
-                                </span>
-                              )}
-                            </label>
-                            <div className="output-role-input-wrap" style={{ position: "relative", flex: 1 }}>
-                              {isDetailEditMode ? (
-                                <input
-                                  type="text"
-                                  value={detailCards[currentDetailIndex].roleDescription || ""}
-                                  onChange={(e) => {
-                                    if (e.target.value.length <= 50) handleDetailChange("roleDescription", e.target.value);
-                                  }}
-                                  maxLength={50}
-                                  placeholder="이 과정에서 어떤 역할을 했는지 작성하세요 (최대 50자)"
-                                  className="output-role-input"
-                                  style={{ paddingRight: "55px" }}
-                                />
-                              ) : (
-                                <p className="output-role-text">{detailCards[currentDetailIndex].roleDescription || "-"}</p>
-                              )}
-                              {isDetailEditMode && (
-                                <span className="char-count" style={{ position: "absolute", bottom: "8px", right: "10px", fontSize: "11px", color: "rgba(255,255,255,0.4)", pointerEvents: "none" }}>
-                                  {(detailCards[currentDetailIndex].roleDescription || "").length}/50
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="output-role-tags">
-                            {ROLE_OPTIONS.map((role) => {
-                              const isActive = (detailCards[currentDetailIndex].roles || []).includes(role.key);
-                              return (
-                                <button
-                                  key={role.key}
-                                  className={`role-tag ${isActive ? "active" : ""}`}
-                                  style={isActive ? { backgroundColor: role.color, color: "#1a1a1a", borderColor: role.color } : {}}
-                                  onClick={() => {
-                                    if (!isDetailEditMode) return;
-                                    const currentRoles = detailCards[currentDetailIndex].roles || [];
-                                    if (isActive) {
-                                      handleDetailChange(
-                                        "roles",
-                                        currentRoles.filter((r: string) => r !== role.key),
-                                      );
-                                    } else {
-                                      handleDetailChange("roles", [...currentRoles, role.key]);
-                                    }
-                                  }}
-                                  disabled={!isDetailEditMode}
-                                >
-                                  {role.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="output-links-section" data-field="links">
-                        {[0, 1, 2].map((i) => {
-                          const link = (detailCards[currentDetailIndex].links || ["", "", ""])[i];
-                          const dotColor = ["#FF6B6B", "#4ECDC4", isPX ? PX_ACCENT : "#FAAB07"][i];
-                          return (
-                            <div className="output-link-row" key={i} style={!isDetailEditMode ? { marginLeft: "9px" } : undefined}>
-                              <span className="link-dot" style={{ backgroundColor: dotColor, marginLeft: "auto", ...(i === 0 ? { marginRight: "18px" } : isDetailEditMode ? { marginRight: "15px" } : {}) }} />
-                              {isDetailEditMode && i === 0 && (
-                                <span className="required-mark" style={{ marginLeft: "-14px", marginRight: "-4px" }}>
-                                  *
-                                </span>
-                              )}
-                              {isDetailEditMode ? (
-                                <input
-                                  type="text"
-                                  value={link}
-                                  onChange={(e) => {
-                                    const updated = [...(detailCards[currentDetailIndex].links || ["", "", ""])];
-                                    updated[i] = e.target.value;
-                                    handleDetailChange("links", updated);
-                                  }}
-                                  placeholder="https://..."
-                                  className="output-link-input"
-                                  style={{ maxWidth: "193px" }}
-                                />
-                              ) : (
-                                <span className="output-link-text" style={{ maxWidth: "193px", fontSize: "13px", ...(i === 0 && { marginLeft: "-6px" }) }}>
-                                  {link ? (link.length > 20 ? link.substring(0, 20) + ".." : link) : "-"}
-                                </span>
-                              )}
-                              <button className="link-open-btn" onClick={() => link && window.open(link, "_blank")} disabled={!link}>
-                                <i className="ti ti-external-link"></i>
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="output-right-column">
-                    {/* (12) 메인 이미지 */}
-                    <div className="output-main-image" data-field="mainImage">
-                      <div className="image-preview" onClick={() => detailCards[currentDetailIndex].mainImage && setPreviewImage(detailCards[currentDetailIndex].mainImage)} style={{ position: "relative" }}>
-                        {detailCards[currentDetailIndex].mainImage ? (
-                          <img src={detailCards[currentDetailIndex].mainImage as string} alt="메인 이미지" style={{ objectFit: "cover", width: "100%", height: "100%" }} />
-                        ) : (
-                          <div className="empty-slot">
-                            <i className="ti ti-photo-plus"></i>
-                          </div>
-                        )}
-                        {isDetailEditMode && !detailCards[currentDetailIndex].mainImage && (
-                          <span className="required-mark" style={{ position: "absolute", bottom: "4px", left: "6px" }}>
+                    <div className="output-platform" data-field="platform">
+                      <label>
+                        플랫폼
+                        {isDetailEditMode && (
+                          <span className="required-mark" style={{ marginLeft: "2px" }}>
                             *
                           </span>
                         )}
-                        {isDetailEditMode && detailCaptionOpenIndex === 0 && (
-                          <div
-                            className="image-caption-overlay"
-                            style={{
-                              position: "absolute",
-                              bottom: 0,
-                              left: 0,
-                              right: 0,
-                              textAlign: "center",
-                              padding: "4px 6px",
-                              backgroundColor: "rgba(0, 0, 0, 0.6)",
-                              zIndex: 2,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              minHeight: "24px",
-                              height: "24px",
-                            }}
-                          >
-                            <input
-                              type="text"
-                              className="image-caption-input"
-                              value={detailCards[currentDetailIndex].mainImageCaption || ""}
-                              onChange={(e) => {
-                                if (e.target.value.length <= 20) handleDetailChange("mainImageCaption", e.target.value);
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              placeholder="캡션 입력 (최대 20자)"
-                              maxLength={20}
-                              autoFocus
-                              style={{
-                                width: "100%",
-                                background: "transparent",
-                                border: "none",
-                                color: "#fff",
-                                fontSize: "7pt",
-                                textAlign: "center",
-                                outline: "none",
-                                padding: 0,
-                                fontFamily: "inherit",
-                              }}
-                            />
+                      </label>
+                      {isDetailEditMode ? (
+                        <div className="custom-dropdown output-platform-dropdown">
+                          <div className="dropdown-selected" onClick={(e) => toggleDropdown("detailPlatform", e)}>
+                            {detailCards[currentDetailIndex].platform ? (
+                              <>
+                                {PLATFORM_ICONS[detailCards[currentDetailIndex].platform] && <img src={PLATFORM_ICONS[detailCards[currentDetailIndex].platform]} alt={detailCards[currentDetailIndex].platform} className="platform-icon" />}
+                                <span>{detailCards[currentDetailIndex].platform}</span>
+                              </>
+                            ) : (
+                              <span className="placeholder">선택하세요</span>
+                            )}
+                            <i className="ti ti-chevron-down"></i>
                           </div>
-                        )}
-                        {!(isDetailEditMode && detailCaptionOpenIndex === 0) && (
-                          <div
-                            className="image-caption-overlay"
-                            style={{
-                              position: "absolute",
-                              bottom: 0,
-                              left: 0,
-                              right: 0,
-                              textAlign: "center",
-                              padding: "4px 6px",
-                              backgroundColor: "rgba(0, 0, 0, 0.6)",
-                              zIndex: 2,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              minHeight: "24px",
-                              height: "24px",
-                            }}
-                          >
-                            <span style={{ color: "#fff", fontSize: "7pt", display: "block" }}>{detailCards[currentDetailIndex].mainImageCaption || ""}</span>
-                          </div>
-                        )}
-                      </div>
-                      {isDetailEditMode && (
-                        <div className="image-actions-overlay">
-                          <button className="image-action-btn" onClick={() => detailMainImageInputRef.current?.click()}>
-                            <i className="ti ti-upload"></i>
-                          </button>
-                          <button className="image-action-btn" onClick={() => handleDetailChange("mainImage", null)} disabled={!detailCards[currentDetailIndex].mainImage}>
-                            <i className="ti ti-trash"></i>
-                          </button>
                         </div>
+                      ) : (
+                        <span className="field-value" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          {PLATFORM_ICONS[detailCards[currentDetailIndex].platform] && <img src={PLATFORM_ICONS[detailCards[currentDetailIndex].platform]} alt={detailCards[currentDetailIndex].platform} className="platform-icon" style={{ width: "20px", height: "20px" }} />}
+                          {detailCards[currentDetailIndex].platform || "-"}
+                        </span>
                       )}
-                      {isDetailEditMode && (
-                        <button
-                          className={`image-action-btn image-caption-btn${detailCaptionOpenIndex === 0 ? " active" : ""}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDetailCaptionOpenIndex(detailCaptionOpenIndex === 0 ? null : 0);
-                          }}
-                          title="캡션"
-                          style={{ position: "absolute", bottom: "8px", right: "8px", zIndex: 3 }}
-                        >
-                          <i className="ti ti-text-caption"></i>
-                        </button>
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        ref={detailMainImageInputRef}
-                        style={{ display: "none" }}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleDetailChange("mainImage", URL.createObjectURL(file));
-                          e.target.value = "";
-                        }}
-                      />
                     </div>
                   </div>
-                </div>
-                {/* 하단: (좌) 사용기술+이미지2장 / (우) 정량지표+Report+Insight */}
-                <div className="output-bottom-row">
-                  <div className="output-bottom-left">
-                    <div className="output-tools-section" data-field="detailTools">
-                      <div className="output-tools-header">
-                        <label>
-                          사용 기술/도구
-                          {isDetailEditMode && (
-                            <span className="required-mark" style={{ marginLeft: "2px" }}>
-                              *
-                            </span>
-                          )}
-                        </label>
-                        <div className="selected-tools">
-                          {(() => {
-                            const sortedSelected = TOOL_OPTIONS.filter((t) => (detailCards[currentDetailIndex].tools || []).includes(t.key));
-                            return Array.from({ length: 5 }).map((_, i) => {
-                              const tool = sortedSelected[i] || null;
-                              return (
-                                <span key={i} className={`tool-icon-badge${!tool ? " empty" : ""}`} title={tool?.label || ""}>
-                                  {tool ? tool.icon ? <img src={tool.icon} alt={tool.label} /> : <span className="tool-placeholder">{tool.label.charAt(0)}</span> : <span className="tool-empty-slot" />}
-                                </span>
-                              );
-                            });
-                          })()}
+                  {/* 4~5단: 역할+사용기술(좌) / 링크(우) */}
+                  <div className="output-role-links-row">
+                    <div className="output-role-column">
+                      <div className="output-role-section" data-field="role">
+                        <div className="output-role-header">
+                          <label>
+                            역할
+                            {isDetailEditMode && (
+                              <span className="required-mark" style={{ marginLeft: "2px" }}>
+                                *
+                              </span>
+                            )}
+                          </label>
+                          <div className="output-role-input-wrap" style={{ position: "relative", flex: 1 }}>
+                            {isDetailEditMode ? (
+                              <input
+                                type="text"
+                                value={detailCards[currentDetailIndex].roleDescription || ""}
+                                onChange={(e) => {
+                                  if (e.target.value.length <= 50) handleDetailChange("roleDescription", e.target.value);
+                                }}
+                                maxLength={50}
+                                placeholder="이 과정에서 어떤 역할을 했는지 작성하세요 (최대 50자)"
+                                className="output-role-input"
+                                style={{ paddingRight: "55px" }}
+                              />
+                            ) : (
+                              <p className="output-role-text">{detailCards[currentDetailIndex].roleDescription || "-"}</p>
+                            )}
+                            {isDetailEditMode && (
+                              <span className="char-count" style={{ position: "absolute", bottom: "8px", right: "10px", fontSize: "11px", color: "rgba(255,255,255,0.4)", pointerEvents: "none" }}>
+                                {(detailCards[currentDetailIndex].roleDescription || "").length}/50
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        {isDetailEditMode && (
-                          <button type="button" className="image-action-btn tool-dropdown-btn" onClick={(e) => toggleDropdown("detailTools", e)}>
-                            <i className="ti ti-chevron-down"></i>
-                          </button>
-                        )}
+                        <div className="output-role-tags">
+                          {ROLE_OPTIONS.map((role) => {
+                            const isActive = (detailCards[currentDetailIndex].roles || []).includes(role.key);
+                            return (
+                              <button
+                                key={role.key}
+                                className={`role-tag ${isActive ? "active" : ""}`}
+                                style={isActive ? { backgroundColor: role.color, color: "#1a1a1a", borderColor: role.color } : {}}
+                                onClick={() => {
+                                  if (!isDetailEditMode) return;
+                                  const currentRoles = detailCards[currentDetailIndex].roles || [];
+                                  if (isActive) {
+                                    handleDetailChange(
+                                      "roles",
+                                      currentRoles.filter((r: string) => r !== role.key),
+                                    );
+                                  } else {
+                                    handleDetailChange("roles", [...currentRoles, role.key]);
+                                  }
+                                }}
+                                disabled={!isDetailEditMode}
+                              >
+                                {role.label}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
-                    <div className="output-sub-images" data-field="subImages">
-                      {[0, 1].map((slotIndex) => {
-                        const img = (detailCards[currentDetailIndex].subImages || [null, null])[slotIndex];
+                    <div className="output-links-section" data-field="links">
+                      {[0, 1, 2].map((i) => {
+                        const link = (detailCards[currentDetailIndex].links || ["", "", ""])[i];
+                        const dotColor = ["#FF6B6B", "#4ECDC4", isPX ? PX_ACCENT : "#FAAB07"][i];
                         return (
-                          <div className="output-sub-image-slot" key={slotIndex}>
-                            <div className="image-preview" onClick={() => img && setPreviewImage(img)} style={{ position: "relative" }}>
-                              {img ? (
-                                <img src={img} alt={`서브 이미지 ${slotIndex + 1}`} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
-                              ) : (
-                                <div className="empty-slot">
-                                  <i className="ti ti-photo-plus"></i>
-                                </div>
-                              )}
-                              {isDetailEditMode && !img && (
-                                <span className="required-mark" style={{ position: "absolute", bottom: "4px", left: "6px" }}>
-                                  *
-                                </span>
-                              )}
-                              {isDetailEditMode && detailCaptionOpenIndex === slotIndex + 1 && (
-                                <div
-                                  className="image-caption-overlay"
-                                  style={{
-                                    position: "absolute",
-                                    bottom: 0,
-                                    left: 0,
-                                    right: 0,
-                                    textAlign: "center",
-                                    padding: "4px 6px",
-                                    backgroundColor: "rgba(0, 0, 0, 0.6)",
-                                    zIndex: 2,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    minHeight: "24px",
-                                    height: "24px",
-                                  }}
-                                >
-                                  <input
-                                    type="text"
-                                    className="image-caption-input"
-                                    value={(detailCards[currentDetailIndex].subImageCaptions || ["", ""])[slotIndex] || ""}
-                                    onChange={(e) => {
-                                      if (e.target.value.length <= 20) {
-                                        const newCaptions = [...(detailCards[currentDetailIndex].subImageCaptions || ["", ""])];
-                                        newCaptions[slotIndex] = e.target.value;
-                                        handleDetailChange("subImageCaptions", newCaptions);
-                                      }
-                                    }}
-                                    onClick={(e) => e.stopPropagation()}
-                                    placeholder="캡션 입력 (최대 20자)"
-                                    maxLength={20}
-                                    autoFocus
-                                    style={{
-                                      width: "100%",
-                                      background: "transparent",
-                                      border: "none",
-                                      color: "#fff",
-                                      fontSize: "7pt",
-                                      textAlign: "center",
-                                      outline: "none",
-                                      padding: 0,
-                                      fontFamily: "inherit",
-                                    }}
-                                  />
-                                </div>
-                              )}
-                              {!(isDetailEditMode && detailCaptionOpenIndex === slotIndex + 1) && (
-                                <div
-                                  className="image-caption-overlay"
-                                  style={{
-                                    position: "absolute",
-                                    bottom: 0,
-                                    left: 0,
-                                    right: 0,
-                                    textAlign: "center",
-                                    padding: "4px 6px",
-                                    backgroundColor: "rgba(0, 0, 0, 0.6)",
-                                    zIndex: 2,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    minHeight: "24px",
-                                    height: "24px",
-                                  }}
-                                >
-                                  <span style={{ color: "#fff", fontSize: "7pt", display: "block" }}>{(detailCards[currentDetailIndex].subImageCaptions || ["", ""])[slotIndex] || ""}</span>
-                                </div>
-                              )}
-                            </div>
-                            {isDetailEditMode && (
-                              <div className="image-actions-overlay">
-                                <button className="image-action-btn" onClick={() => detailSubImageInputRefs.current[slotIndex]?.click()}>
-                                  <i className="ti ti-upload"></i>
-                                </button>
-                                <button
-                                  className="image-action-btn"
-                                  onClick={() => {
-                                    const updated = [...(detailCards[currentDetailIndex].subImages || [null, null])];
-                                    if (updated[slotIndex]) URL.revokeObjectURL(updated[slotIndex] as string);
-                                    updated[slotIndex] = null;
-                                    handleDetailChange("subImages", updated);
-                                  }}
-                                  disabled={!img}
-                                >
-                                  <i className="ti ti-trash"></i>
-                                </button>
-                              </div>
+                          <div className="output-link-row" key={i} style={!isDetailEditMode ? { marginLeft: "9px" } : undefined}>
+                            <span className="link-dot" style={{ backgroundColor: dotColor, marginLeft: "auto", ...(i === 0 ? { marginRight: "18px" } : (isDetailEditMode ? { marginRight: "15px" } : {})) }} />
+                            {isDetailEditMode && i === 0 && (
+                              <span className="required-mark" style={{ marginLeft: "-14px", marginRight: "-4px" }}>
+                                *
+                              </span>
                             )}
-                            {isDetailEditMode && (
-                              <button
-                                className={`image-action-btn image-caption-btn${detailCaptionOpenIndex === slotIndex + 1 ? " active" : ""}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDetailCaptionOpenIndex(detailCaptionOpenIndex === slotIndex + 1 ? null : slotIndex + 1);
+                            {isDetailEditMode ? (
+                              <input
+                                type="text"
+                                value={link}
+                                onChange={(e) => {
+                                  const updated = [...(detailCards[currentDetailIndex].links || ["", "", ""])];
+                                  updated[i] = e.target.value;
+                                  handleDetailChange("links", updated);
                                 }}
-                                title="캡션"
-                                style={{ position: "absolute", bottom: "8px", right: "8px", zIndex: 3 }}
-                              >
-                                <i className="ti ti-text-caption"></i>
-                              </button>
+                                placeholder="https://..."
+                                className="output-link-input"
+                                style={{ maxWidth: "193px" }}
+                              />
+                            ) : (
+                              <span className="output-link-text" style={{ maxWidth: "193px", fontSize: "13px", ...(i === 0 && { marginLeft: "-6px" }) }}>
+                                {link ? (link.length > 20 ? link.substring(0, 20) + ".." : link) : "-"}
+                              </span>
                             )}
-                            <input
-                              type="file"
-                              accept="image/*"
-                              ref={(el) => {
-                                detailSubImageInputRefs.current[slotIndex] = el;
-                              }}
-                              style={{ display: "none" }}
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  const updated = [...(detailCards[currentDetailIndex].subImages || [null, null])];
-                                  updated[slotIndex] = URL.createObjectURL(file);
-                                  handleDetailChange("subImages", updated);
-                                }
-                                e.target.value = "";
-                              }}
-                            />
+                            <button className="link-open-btn" onClick={() => link && window.open(link, "_blank")} disabled={!link}>
+                              <i className="ti ti-external-link"></i>
+                            </button>
                           </div>
                         );
                       })}
                     </div>
                   </div>
-                  <div className="output-stats-column">
-                    <div className="output-stats-top-row">
-                      <div className="output-metrics-section" data-field="metrics">
-                        <h5 className="output-section-title">주요 정량 지표</h5>
-                        <div className="output-metrics-rows">
-                          {[0, 1, 2].map((rowIndex) => {
-                            const col1Index = rowIndex * 2;
-                            const col2Index = rowIndex * 2 + 1;
-                            const metrics = detailCards[currentDetailIndex].metrics || ["", "", "", "", "", ""];
-                            const col1Val = metrics[col1Index] || "";
-                            const col2Val = metrics[col2Index] || "";
-                            return (
-                              <div className="output-metric-row" key={rowIndex}>
-                                <span className="metric-bullet">·</span>
-                                <div className="metric-cell col-1">
-                                  {isDetailEditMode && rowIndex === 0 && (
-                                    <span className="required-mark">*</span>
-                                  )}
-                                  <input
-                                    type="text"
-                                    className="output-metric-input"
-                                    value={col1Val}
-                                    onChange={
-                                      isDetailEditMode
-                                        ? (e) => {
-                                            if (e.target.value.length > 8) return;
-                                            const updated = [...metrics];
-                                            updated[col1Index] = e.target.value;
-                                            handleDetailChange("metrics", updated);
-                                          }
-                                        : undefined
-                                    }
-                                    disabled={!isDetailEditMode}
-                                    readOnly={!isDetailEditMode}
-                                    maxLength={8}
-                                    placeholder={`지표명, ${rowIndex + 1}`}
-                                  />
-                                  {isDetailEditMode && <span className="metric-counter">{col1Val.length}/8</span>}
-                                </div>
-                                <div className="metric-cell col-2">
-                                  <input
-                                    type="text"
-                                    className="output-metric-input"
-                                    value={col2Val}
-                                    onChange={
-                                      isDetailEditMode
-                                        ? (e) => {
-                                            if (e.target.value.length > 10) return;
-                                            const updated = [...metrics];
-                                            updated[col2Index] = e.target.value;
-                                            handleDetailChange("metrics", updated);
-                                          }
-                                        : undefined
-                                    }
-                                    disabled={!isDetailEditMode}
-                                    readOnly={!isDetailEditMode}
-                                    maxLength={10}
-                                    placeholder="지표값을 써주세요."
-                                  />
-                                  {isDetailEditMode && <span className="metric-counter">{col2Val.length}/10</span>}
-                                </div>
-                              </div>
-                            );
-                          })}
+                </div>
+                <div className="output-right-column">
+                  {/* (12) 메인 이미지 */}
+                  <div className="output-main-image" data-field="mainImage">
+                    <div className="image-preview" onClick={() => detailCards[currentDetailIndex].mainImage && setPreviewImage(detailCards[currentDetailIndex].mainImage)} style={{ position: "relative" }}>
+                      {detailCards[currentDetailIndex].mainImage ? (
+                        <img src={detailCards[currentDetailIndex].mainImage as string} alt="메인 이미지" style={{ objectFit: "cover", width: "100%", height: "100%" }} />
+                      ) : (
+                        <div className="empty-slot">
+                          <i className="ti ti-photo-plus"></i>
                         </div>
-                      </div>
-                      <div className="output-report-section" data-field="report" style={{ position: "relative" }}>
-                        <h5 className="output-section-title">
-                          Output Report
-                          {isDetailEditMode && (
-                            <span className="required-mark" style={{ marginLeft: "2px" }}>
-                              *
-                            </span>
-                          )}
-                        </h5>
-                        <textarea
-                          value={detailCards[currentDetailIndex].report || ""}
-                          onChange={
-                            isDetailEditMode
-                              ? (e) => {
-                                  if (e.target.value.length <= 100) handleDetailChange("report", e.target.value);
-                                }
-                              : undefined
-                          }
-                          maxLength={100}
-                          placeholder={isDetailEditMode ? "이 아웃풋에서 어떤 결과가 나왔는지를 정성적으로 작성 (최대 100자)" : ""}
-                          className="output-report-textarea"
-                          rows={1}
-                          style={{ paddingBottom: "20px" }}
-                          disabled={!isDetailEditMode}
-                          readOnly={!isDetailEditMode}
-                        />
-                        {isDetailEditMode && (
-                          <span
-                            className="char-count"
-                            style={{
-                              position: "absolute",
-                              bottom: "8px",
-                              right: "10px",
-                              fontSize: "11px",
-                              color: "rgba(255,255,255,0.4)",
-                              pointerEvents: "none",
-                              zIndex: 1,
+                      )}
+                      {isDetailEditMode && !detailCards[currentDetailIndex].mainImage && (
+                        <span className="required-mark" style={{ position: "absolute", bottom: "4px", left: "6px" }}>
+                          *
+                        </span>
+                      )}
+                      {isDetailEditMode && detailCaptionOpenIndex === 0 && (
+                        <div
+                          className="image-caption-overlay"
+                          style={{
+                            position: "absolute",
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            textAlign: "center",
+                            padding: "4px 6px",
+                            backgroundColor: "rgba(0, 0, 0, 0.6)",
+                            zIndex: 2,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            minHeight: "24px",
+                            height: "24px",
+                          }}
+                        >
+                          <input
+                            type="text"
+                            className="image-caption-input"
+                            value={detailCards[currentDetailIndex].mainImageCaption || ""}
+                            onChange={(e) => {
+                              if (e.target.value.length <= 20) handleDetailChange("mainImageCaption", e.target.value);
                             }}
-                          >
-                            {(detailCards[currentDetailIndex].report || "").length}/100
+                            onClick={(e) => e.stopPropagation()}
+                            placeholder="캡션 입력 (최대 20자)"
+                            maxLength={20}
+                            autoFocus
+                            style={{
+                              width: "100%",
+                              background: "transparent",
+                              border: "none",
+                              color: "#fff",
+                              fontSize: "7pt",
+                              textAlign: "center",
+                              outline: "none",
+                              padding: 0,
+                              fontFamily: "inherit",
+                            }}
+                          />
+                        </div>
+                      )}
+                      {!(isDetailEditMode && detailCaptionOpenIndex === 0) && (
+                        <div
+                          className="image-caption-overlay"
+                          style={{
+                            position: "absolute",
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            textAlign: "center",
+                            padding: "4px 6px",
+                            backgroundColor: "rgba(0, 0, 0, 0.6)",
+                            zIndex: 2,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            minHeight: "24px",
+                            height: "24px",
+                          }}
+                        >
+                          <span style={{ color: "#fff", fontSize: "7pt", display: "block" }}>{detailCards[currentDetailIndex].mainImageCaption || ""}</span>
+                        </div>
+                      )}
+                    </div>
+                    {isDetailEditMode && (
+                      <div className="image-actions-overlay">
+                        <button className="image-action-btn" onClick={() => detailMainImageInputRef.current?.click()}>
+                          <i className="ti ti-upload"></i>
+                        </button>
+                        <button className="image-action-btn" onClick={() => handleDetailChange("mainImage", null)} disabled={!detailCards[currentDetailIndex].mainImage}>
+                          <i className="ti ti-trash"></i>
+                        </button>
+                      </div>
+                    )}
+                    {isDetailEditMode && (
+                      <button
+                        className={`image-action-btn image-caption-btn${detailCaptionOpenIndex === 0 ? " active" : ""}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDetailCaptionOpenIndex(detailCaptionOpenIndex === 0 ? null : 0);
+                        }}
+                        title="캡션"
+                        style={{ position: "absolute", bottom: "8px", right: "8px", zIndex: 3 }}
+                      >
+                        <i className="ti ti-text-caption"></i>
+                      </button>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      ref={detailMainImageInputRef}
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleDetailChange("mainImage", URL.createObjectURL(file));
+                        e.target.value = "";
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+              {/* 하단: (좌) 사용기술+이미지2장 / (우) 정량지표+Report+Insight */}
+              <div className="output-bottom-row">
+                <div className="output-bottom-left">
+                  <div className="output-tools-section" data-field="detailTools">
+                    <div className="output-tools-header">
+                      <label>
+                        사용 기술/도구
+                        {isDetailEditMode && (
+                          <span className="required-mark" style={{ marginLeft: "2px" }}>
+                            *
                           </span>
                         )}
+                      </label>
+                      <div className="selected-tools">
+                        {(() => {
+                          const sortedSelected = TOOL_OPTIONS.filter((t) => (detailCards[currentDetailIndex].tools || []).includes(t.key));
+                          return Array.from({ length: 5 }).map((_, i) => {
+                            const tool = sortedSelected[i] || null;
+                            return (
+                              <span key={i} className={`tool-icon-badge${!tool ? " empty" : ""}`} title={tool?.label || ""}>
+                                {tool ? tool.icon ? <img src={tool.icon} alt={tool.label} /> : <span className="tool-placeholder">{tool.label.charAt(0)}</span> : <span className="tool-empty-slot" />}
+                              </span>
+                            );
+                          });
+                        })()}
+                      </div>
+                      {isDetailEditMode && (
+                        <button className="tool-dropdown-btn" onClick={(e) => toggleDropdown("detailTools", e)}>
+                          ▽
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="output-sub-images" data-field="subImages">
+                    {[0, 1].map((slotIndex) => {
+                      const img = (detailCards[currentDetailIndex].subImages || [null, null])[slotIndex];
+                      return (
+                        <div className="output-sub-image-slot" key={slotIndex}>
+                          <div className="image-preview" onClick={() => img && setPreviewImage(img)} style={{ position: "relative" }}>
+                            {img ? (
+                              <img src={img} alt={`서브 이미지 ${slotIndex + 1}`} style={{ objectFit: "cover", width: "100%", height: "100%" }} />
+                            ) : (
+                              <div className="empty-slot">
+                                <i className="ti ti-photo-plus"></i>
+                              </div>
+                            )}
+                            {isDetailEditMode && !img && (
+                              <span className="required-mark" style={{ position: "absolute", bottom: "4px", left: "6px" }}>
+                                *
+                              </span>
+                            )}
+                            {isDetailEditMode && detailCaptionOpenIndex === slotIndex + 1 && (
+                              <div
+                                className="image-caption-overlay"
+                                style={{
+                                  position: "absolute",
+                                  bottom: 0,
+                                  left: 0,
+                                  right: 0,
+                                  textAlign: "center",
+                                  padding: "4px 6px",
+                                  backgroundColor: "rgba(0, 0, 0, 0.6)",
+                                  zIndex: 2,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  minHeight: "24px",
+                                  height: "24px",
+                                }}
+                              >
+                                <input
+                                  type="text"
+                                  className="image-caption-input"
+                                  value={(detailCards[currentDetailIndex].subImageCaptions || ["", ""])[slotIndex] || ""}
+                                  onChange={(e) => {
+                                    if (e.target.value.length <= 20) {
+                                      const newCaptions = [...(detailCards[currentDetailIndex].subImageCaptions || ["", ""])];
+                                      newCaptions[slotIndex] = e.target.value;
+                                      handleDetailChange("subImageCaptions", newCaptions);
+                                    }
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  placeholder="캡션 입력 (최대 20자)"
+                                  maxLength={20}
+                                  autoFocus
+                                  style={{
+                                    width: "100%",
+                                    background: "transparent",
+                                    border: "none",
+                                    color: "#fff",
+                                    fontSize: "7pt",
+                                    textAlign: "center",
+                                    outline: "none",
+                                    padding: 0,
+                                    fontFamily: "inherit",
+                                  }}
+                                />
+                              </div>
+                            )}
+                            {!(isDetailEditMode && detailCaptionOpenIndex === slotIndex + 1) && (
+                              <div
+                                className="image-caption-overlay"
+                                style={{
+                                  position: "absolute",
+                                  bottom: 0,
+                                  left: 0,
+                                  right: 0,
+                                  textAlign: "center",
+                                  padding: "4px 6px",
+                                  backgroundColor: "rgba(0, 0, 0, 0.6)",
+                                  zIndex: 2,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  minHeight: "24px",
+                                  height: "24px",
+                                }}
+                              >
+                                <span style={{ color: "#fff", fontSize: "7pt", display: "block" }}>{(detailCards[currentDetailIndex].subImageCaptions || ["", ""])[slotIndex] || ""}</span>
+                              </div>
+                            )}
+                          </div>
+                          {isDetailEditMode && (
+                            <div className="image-actions-overlay">
+                              <button className="image-action-btn" onClick={() => detailSubImageInputRefs.current[slotIndex]?.click()}>
+                                <i className="ti ti-upload"></i>
+                              </button>
+                              <button
+                                className="image-action-btn"
+                                onClick={() => {
+                                  const updated = [...(detailCards[currentDetailIndex].subImages || [null, null])];
+                                  if (updated[slotIndex]) URL.revokeObjectURL(updated[slotIndex] as string);
+                                  updated[slotIndex] = null;
+                                  handleDetailChange("subImages", updated);
+                                }}
+                                disabled={!img}
+                              >
+                                <i className="ti ti-trash"></i>
+                              </button>
+                            </div>
+                          )}
+                          {isDetailEditMode && (
+                            <button
+                              className={`image-action-btn image-caption-btn${detailCaptionOpenIndex === slotIndex + 1 ? " active" : ""}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDetailCaptionOpenIndex(detailCaptionOpenIndex === slotIndex + 1 ? null : slotIndex + 1);
+                              }}
+                              title="캡션"
+                              style={{ position: "absolute", bottom: "8px", right: "8px", zIndex: 3 }}
+                            >
+                              <i className="ti ti-text-caption"></i>
+                            </button>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            ref={(el) => {
+                              detailSubImageInputRefs.current[slotIndex] = el;
+                            }}
+                            style={{ display: "none" }}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const updated = [...(detailCards[currentDetailIndex].subImages || [null, null])];
+                                updated[slotIndex] = URL.createObjectURL(file);
+                                handleDetailChange("subImages", updated);
+                              }
+                              e.target.value = "";
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="output-stats-column">
+                  <div className="output-stats-top-row">
+                    <div className="output-metrics-section" data-field="metrics">
+                      <h5 className="output-section-title">주요 정량 지표</h5>
+                      <div className="output-metrics-rows">
+                        {[0, 1, 2].map((rowIndex) => {
+                          const col1Index = rowIndex * 2;
+                          const col2Index = rowIndex * 2 + 1;
+                          const metrics = detailCards[currentDetailIndex].metrics || ["", "", "", "", "", ""];
+                          const col1Val = metrics[col1Index] || "";
+                          const col2Val = metrics[col2Index] || "";
+                          return (
+                            <div className="output-metric-row" key={rowIndex} style={rowIndex === 0 ? { position: "relative" } : undefined}>
+                              <span className="metric-bullet">·</span>
+                              {isDetailEditMode && rowIndex === 0 && (
+                                <span className="required-mark" style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", pointerEvents: "none", zIndex: 2 }}>*</span>
+                              )}
+                              <div className="metric-cell col-1">
+                                <input
+                                  type="text"
+                                  className="output-metric-input"
+                                  value={col1Val}
+                                  onChange={
+                                    isDetailEditMode
+                                      ? (e) => {
+                                          if (e.target.value.length > 8) return;
+                                          const updated = [...metrics];
+                                          updated[col1Index] = e.target.value;
+                                          handleDetailChange("metrics", updated);
+                                        }
+                                      : undefined
+                                  }
+                                  disabled={!isDetailEditMode}
+                                  readOnly={!isDetailEditMode}
+                                  maxLength={8}
+                                  placeholder=""
+                                />
+                                {isDetailEditMode && <span className="metric-counter">{col1Val.length}/8</span>}
+                              </div>
+                              <div className="metric-cell col-2">
+                                <input
+                                  type="text"
+                                  className="output-metric-input"
+                                  value={col2Val}
+                                  onChange={
+                                    isDetailEditMode
+                                      ? (e) => {
+                                          if (e.target.value.length > 10) return;
+                                          const updated = [...metrics];
+                                          updated[col2Index] = e.target.value;
+                                          handleDetailChange("metrics", updated);
+                                        }
+                                      : undefined
+                                  }
+                                  disabled={!isDetailEditMode}
+                                  readOnly={!isDetailEditMode}
+                                  maxLength={10}
+                                  placeholder=""
+                                />
+                                {isDetailEditMode && <span className="metric-counter">{col2Val.length}/10</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                    <div className="output-insight-section" data-field="insight">
+                    <div className="output-report-section" data-field="report" style={{ position: "relative" }}>
                       <h5 className="output-section-title">
-                        Output Insight
+                        Output Report
                         {isDetailEditMode && (
                           <span className="required-mark" style={{ marginLeft: "2px" }}>
                             *
                           </span>
                         )}
                       </h5>
-                      <div style={{ position: "relative" }}>
-                        <textarea
-                          value={detailCards[currentDetailIndex].insight || ""}
-                          onChange={
-                            isDetailEditMode
-                              ? (e) => {
-                                  if (e.target.value.length <= 200) handleDetailChange("insight", e.target.value);
-                                }
-                              : undefined
-                          }
-                          maxLength={200}
-                          placeholder={isDetailEditMode ? "이 아웃풋 결과물을 도출하면서 어떤 것을 배우고, 경험했는지, 그리고 어떤 것을 느꼈는지 등에 대한 인싸이트를 작성 (최대 200자)" : ""}
-                          className="output-insight-textarea"
-                          rows={2}
-                          style={{ paddingBottom: "20px" }}
-                          disabled={!isDetailEditMode}
-                          readOnly={!isDetailEditMode}
-                        />
-                        {isDetailEditMode && (
-                          <span className="char-count" style={{ position: "absolute", bottom: "8px", right: "10px", fontSize: "11px", color: "rgba(255,255,255,0.4)", pointerEvents: "none" }}>
-                            {(detailCards[currentDetailIndex].insight || "").length}/200
-                          </span>
-                        )}
-                      </div>
+                      <textarea
+                        value={detailCards[currentDetailIndex].report || ""}
+                        onChange={
+                          isDetailEditMode
+                            ? (e) => {
+                                if (e.target.value.length <= 100) handleDetailChange("report", e.target.value);
+                              }
+                            : undefined
+                        }
+                        maxLength={100}
+                        placeholder={isDetailEditMode ? "이 아웃풋에서 어떤 결과가 나왔는지를 정성적으로 작성 (최대 100자)" : ""}
+                        className="output-report-textarea"
+                        rows={1}
+                        style={{ paddingBottom: "20px" }}
+                        disabled={!isDetailEditMode}
+                        readOnly={!isDetailEditMode}
+                      />
+                      {isDetailEditMode && (
+                        <span
+                          className="char-count"
+                          style={{
+                            position: "absolute",
+                            bottom: "8px",
+                            right: "10px",
+                            fontSize: "11px",
+                            color: "rgba(255,255,255,0.4)",
+                            pointerEvents: "none",
+                            zIndex: 1,
+                          }}
+                        >
+                          {(detailCards[currentDetailIndex].report || "").length}/100
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="output-insight-section" data-field="insight">
+                    <h5 className="output-section-title">
+                      Output Insight
+                      {isDetailEditMode && (
+                        <span className="required-mark" style={{ marginLeft: "2px" }}>
+                          *
+                        </span>
+                      )}
+                    </h5>
+                    <div style={{ position: "relative" }}>
+                      <textarea
+                        value={detailCards[currentDetailIndex].insight || ""}
+                        onChange={
+                          isDetailEditMode
+                            ? (e) => {
+                                if (e.target.value.length <= 200) handleDetailChange("insight", e.target.value);
+                              }
+                            : undefined
+                        }
+                        maxLength={200}
+                        placeholder={isDetailEditMode ? "이 아웃풋 결과물을 도출하면서 어떤 것을 배우고, 경험했는지, 그리고 어떤 것을 느꼈는지 등에 대한 인싸이트를 작성 (최대 200자)" : ""}
+                        className="output-insight-textarea"
+                        rows={2}
+                        style={{ paddingBottom: "20px" }}
+                        disabled={!isDetailEditMode}
+                        readOnly={!isDetailEditMode}
+                      />
+                      {isDetailEditMode && (
+                        <span className="char-count" style={{ position: "absolute", bottom: "8px", right: "10px", fontSize: "11px", color: "rgba(255,255,255,0.4)", pointerEvents: "none" }}>
+                          {(detailCards[currentDetailIndex].insight || "").length}/200
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
-              <div className="output-modal-footer">
-                <div className="modal-footer-top">
-                  <span className="modal-help-icon" onClick={() => setShowHelpModal(true)} style={{ cursor: "pointer" }}>
-                    🔎
-                  </span>
-                  <div className="modal-footer-nav">
-                    <button className="nav-btn prev" onClick={handlePrevDetail} disabled={isDetailEditMode || currentDetailIndex === 0} title={isDetailEditMode ? "편집 중에는 이동할 수 없습니다" : ""}>
-                      <i className="ti ti-chevron-left"></i>
+            </div>
+            <div className="output-modal-footer">
+              <div className="modal-footer-top">
+                <span className="modal-help-icon" onClick={() => setShowHelpModal(true)} style={{ cursor: "pointer" }}>
+                  🔎
+                </span>
+                <div className="modal-footer-nav">
+                  <button className="nav-btn prev" onClick={handlePrevDetail} disabled={isDetailEditMode || currentDetailIndex === 0} title={isDetailEditMode ? "편집 중에는 이동할 수 없습니다" : ""}>
+                    <i className="ti ti-chevron-left"></i>
+                  </button>
+                  <button className="nav-btn next" onClick={handleNextDetail} disabled={isDetailEditMode || currentDetailIndex >= unlockedDetailCount - 1 || currentDetailIndex >= MAX_DETAIL_CARDS - 1} title={isDetailEditMode ? "편집 중에는 이동할 수 없습니다" : ""}>
+                    <i className="ti ti-chevron-right"></i>
+                  </button>
+                </div>
+                <div className="modal-footer-right">
+                  {!isDetailEditMode ? (
+                    <button
+                      className="modal-edit-btn"
+                      onClick={async () => {
+                        if (!canEditDetail) {
+                          await popup.alert("관리자의 허가가 필요합니다.");
+                          return;
+                        }
+                        setIsDetailEditMode(true);
+                      }}
+                    >
+                      수정
                     </button>
-                    <button className="nav-btn next" onClick={handleNextDetail} disabled={isDetailEditMode || currentDetailIndex >= MAX_DETAIL_CARDS - 1} title={isDetailEditMode ? "편집 중에는 이동할 수 없습니다" : ""}>
-                      <i className="ti ti-chevron-right"></i>
-                    </button>
-                  </div>
-                  <div className="modal-footer-right">
-                    {!isDetailEditMode ? (
-                      <button
-                        className="modal-edit-btn"
-                        onClick={async () => {
-                          if (!canEditDetail) {
-                            await popup.alert("관리자의 허가가 필요합니다.");
-                            return;
-                          }
-                          setIsDetailEditMode(true);
-                        }}
-                      >
-                        수정
+                  ) : (
+                    <>
+                      <button className="modal-cancel-btn" onClick={handleCancelDetail}>
+                        취소
                       </button>
-                    ) : (
-                      <>
-                        <button className="modal-cancel-btn" onClick={handleCancelDetail}>
-                          취소
-                        </button>
-                        <button className="modal-reset-btn" onClick={handleResetDetail}>
-                          초기화
-                        </button>
-                        <button className="modal-save-btn" onClick={handleSaveDetail}>
-                          저장
-                        </button>
-                      </>
-                    )}
-                  </div>
+                      <button className="modal-reset-btn" onClick={handleResetDetail}>
+                        초기화
+                      </button>
+                      <button className="modal-save-btn" onClick={handleSaveDetail} disabled={isSavingTopCard}>
+                        {isSavingTopCard ? "저장 중..." : "저장"}
+                      </button>
+                    </>
+                  )}
                 </div>
-                <div className="modal-footer-bottom" style={{ visibility: isDetailEditMode ? "visible" : "hidden" }}>
-                  <p className={`modal-footer-notice ${detailFooterNotice === "error" ? "notice-error" : ""}`}>{detailFooterNotice === "error" ? "필수 사항이 누락되었어요! 확인 부탁드려요! 😊" : "내용을 모두 잘 확인하신 후 저장을 눌러주세요. 😊"}</p>
-                </div>
+              </div>
+              <div className="modal-footer-bottom" style={{ visibility: isDetailEditMode ? "visible" : "hidden" }}>
+                <p className={`modal-footer-notice ${detailFooterNotice === "error" ? "notice-error" : ""}`}>{detailFooterNotice === "error" ? "필수 사항이 누락되었어요! 확인 부탁드려요! 😊" : "내용을 모두 잘 확인하신 후 저장을 눌러주세요. 😊"}</p>
               </div>
             </div>
           </div>
+          </div>
         </div>
       )}
+
 
       {/* 섹션 5 모달 - Detail 10 링크 편집 (detail-modal이 대체, 주석 처리) */}
       {false && section5ModalOpen && (

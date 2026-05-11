@@ -6,9 +6,11 @@ import { useSession } from "next-auth/react";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useProfile } from "@/contexts/ProfileContext";
+import { dedupedJson } from "@/lib/fetch-dedupe";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { DUMMY_USER_PROFILE, DUMMY_SIDEBAR_EXTRA } from "@/constants/dummyData";
+import { SECTION2_SLOGAN_DEFAULTS } from "@/constants/dummyData/cluster2-section2-default";
 import { useResumeCardHeight } from "@/hooks/useResumeCardHeight";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { usePopup } from "@/components/ui/popup";
@@ -35,7 +37,7 @@ const Sidebar = () => {
   // SSR-safe: 첫 렌더는 항상 [0], 마운트 후 useEffect에서 random 갱신
   const [tabBg, setTabBg] = useState(IDENTITY_TAB_IMAGES[0]);
   const { data: session, status: sessionStatus } = useSession();
-  const { mask } = useDataMasking();
+  const { mask, isAdmin } = useDataMasking();
   const searchParams = useSearchParams();
   const pathname = usePathname();
   // PX 라우트 컨텍스트 — pathname segment 중 하나라도 -px 로 끝나면 PX 색 사용.
@@ -49,6 +51,16 @@ const Sidebar = () => {
   const shouldFetchProfile = !!targetUserId || sessionStatus === "authenticated";
   const hasFetchIdentity = !!targetUserId || !!sessionUserId;
   const { fetchProfile: fetchCachedProfile, profileData: cachedProfile, clearCache: clearProfileCache } = useProfile();
+
+  // 어드민이 다른 유저 편집 시 targetUserId를 API URL에 추가
+  const apiUrl = (path: string) => {
+    if (targetUserId && session?.user?.isAdmin) {
+      const separator = path.includes('?') ? '&' : '?';
+      return `${path}${separator}targetUserId=${targetUserId}`;
+    }
+    return path;
+  };
+
   // SSR-safe: localStorage를 render time에 읽으면 SSR(false)/client(true) 불일치 → stateful로 변환
   const [demoMode, setDemoMode] = useState(false);
   const [isOwner, setIsOwner] = useState(true);
@@ -214,7 +226,7 @@ const Sidebar = () => {
     return;
     const applyDemoByName = () => {
       // 데모 모드에서는 URL의 userId를 이름으로 직접 사용
-      const name = decodeURIComponent(targetUserId);
+      const name = decodeURIComponent(targetUserId || "");
 
         const demoProfiles: Record<string, typeof DUMMY_USER_PROFILE> = {
           윤재윤: DUMMY_USER_PROFILE,
@@ -329,6 +341,9 @@ const Sidebar = () => {
   // Hydration 에러 방지를 위한 마운트 상태
   const [isMounted, setIsMounted] = useState(false);
   const [hasData, setHasData] = useState(false); // 데이터 있음/없음 상태 (SSR-safe 기본)
+  // fetch 가 한 번이라도 완료(성공/실패)되었는지 — render gate 무한 skeleton 방지용.
+  // (잘못된 UUID / 본인 프로필 미존재 등으로 영구 실패해도 defaultProfile 로 fallthrough.)
+  const [fetchSettled, setFetchSettled] = useState(false);
   useEffect(() => {
     setIsMounted(true);
     // 마운트 후 demo 모드 확정 + tabBg random 갱신
@@ -357,6 +372,8 @@ const Sidebar = () => {
 
   // 캐시된 프로필 데이터로 즉시 초기화 (클러스터 탭 전환 시 깜빡임 방지)
   const cacheInitRef = useRef(false);
+  // 슬로건이 프로필보다 먼저 도착했을 때 임시로 보관하는 버퍼 (병렬 fetch 시 경쟁 상태 방지)
+  const pendingSloganRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (demoMode) return; // 더미 모드면 캐시 초기화 스킵
     if (cacheInitRef.current || !cachedProfile?.data) return;
@@ -364,6 +381,15 @@ const Sidebar = () => {
 
     const profile = cachedProfile.data;
     setHasData(true);
+
+    // 슬로건 우선순위: pending(네트워크로 먼저 도착) → sessionStorage 캐시 → bio 폴백
+    let cachedSlogan: string | null = null;
+    try {
+      if (typeof window !== "undefined") {
+        cachedSlogan = sessionStorage.getItem(`sidebar:slogan1:${targetUserId || "self"}`);
+      }
+    } catch {}
+    const initialQuote = pendingSloganRef.current || cachedSlogan || profile.bio || "";
 
     const addressParts = (profile.address || "").split(" ");
     setUserProfile({
@@ -384,7 +410,7 @@ const Sidebar = () => {
       graduationStatus: "",
       gpa: "",
       gpaMax: "",
-      quote: profile.bio || "",
+      quote: initialQuote,
       photo: profile.profile_photo_url || "",
     });
 
@@ -429,6 +455,9 @@ const Sidebar = () => {
       if (s.hexagonLink1) setIconLink1(s.hexagonLink1);
       if (s.hexagonLink2) setIconLink2(s.hexagonLink2);
       if (s.hexagonLink3) setIconLink3(s.hexagonLink3);
+    }
+    if (cachedProfile.growthPeriodStats?.approvedWeeks !== undefined) {
+      setApprovedWeeksCount(cachedProfile.growthPeriodStats.approvedWeeks);
     }
   }, [cachedProfile]);
 
@@ -603,6 +632,7 @@ const Sidebar = () => {
   const [isPhoneCommentModalOpen, setIsPhoneCommentModalOpen] = useState(false);
   const [isPhoneEditing, setIsPhoneEditing] = useState(false);
   const phoneCommentSnapshot = useRef("");
+  const profileFormSnapshotRef = useRef<typeof formData | null>(null);
   const [isPhoneHelpModalOpen, setIsPhoneHelpModalOpen] = useState(false);
   const [showSearchTooltip, setShowSearchTooltip] = useState(false);
   const [isDebugPanelOpen, setIsDebugPanelOpen] = useState(false);
@@ -619,11 +649,17 @@ const Sidebar = () => {
     else if (segs.some((s) => s.endsWith("-ec"))) setDebugPanelType("EC");
   }, [pathname]);
   const [crewStatus, setCrewStatus] = useState<"Running" | "Complete" | "On Rest" | "Recharging" | "Next Challenge">("Running");
+  const [approvedWeeksCount, setApprovedWeeksCount] = useState<number | null>(null);
   const [isArrowShaking, setIsArrowShaking] = useState(false);
   const [tooltipVisible, setTooltipVisible] = useState<"email" | "school" | "major" | "hexagon1" | "hexagon2" | "hexagon3" | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const normalizeDirtyValue = (value: unknown) => (value ?? "").toString().trim();
   const isPhoneCommentDirty = () => normalizeDirtyValue(formData.phoneComment) !== normalizeDirtyValue(phoneCommentSnapshot.current);
+  const isProfileEditDirty = () => {
+    const snap = profileFormSnapshotRef.current;
+    if (!snap) return false;
+    return JSON.stringify(formData) !== JSON.stringify(snap);
+  };
 
   // Sidebar 모달 배경 스크롤 차단
   const isSidebarModalOpen = isEditModalOpen || isPhoneCommentModalOpen || isPhoneHelpModalOpen;
@@ -778,7 +814,7 @@ const Sidebar = () => {
           graduationStatus: userProfile.graduationStatus,
           gpa: userProfile.gpa,
           gpaMax: userProfile.gpaMax,
-          quote: userProfile.quote || defaultProfile.quote,
+          quote: userProfile.quote || SECTION2_SLOGAN_DEFAULTS.slogans[0].content,
           photo: userProfile.photo || defaultProfile.photo,
           // membership 필드 — 기존 sub-text 두 줄에 매핑 (UI 구조 미변경).
           team: userProfile.team,
@@ -803,6 +839,7 @@ const Sidebar = () => {
       if (!sessionUserId) {
         console.log("[fetchUserProfile] skipped: authenticated session has no user id", { sessionStatus, hasSession: !!session });
         setHasData(false);
+        setFetchSettled(true);
         return;
       }
     }
@@ -841,6 +878,7 @@ const Sidebar = () => {
         badges: cachedResult.badges,
         seasonHistories: cachedResult.seasonHistories,
         resumeCardSettings: cachedResult.resumeCardSettings,
+        growthPeriodStats: cachedResult.growthPeriodStats,
       };
 
       if (result.success && result.data) {
@@ -848,16 +886,28 @@ const Sidebar = () => {
         setHasData(true);
         const profile = result.data;
 
-        // 본인 여부 확인
-        const currentUserId = sessionUserId;
+        // 본인 여부 확인 (어드민 계정은 모든 프로필 편집 가능)
+        const currentUserId = session?.user?.id;
         const fetchedProfileId = profile.id;
         console.log("[isOwner] session.user.id:", currentUserId, "| targetUserId:", targetUserId, "| profile.id:", fetchedProfileId);
-        if (currentUserId) {
+        if (session?.user?.isAdmin) {
+          console.log("[isOwner] 어드민(마더) 계정 — 전체 편집 권한");
+          setIsOwner(true);
+        } else if (currentUserId) {
           const ownerCheck = !targetUserId || targetUserId === currentUserId || fetchedProfileId === currentUserId;
           console.log("[isOwner] 결과:", ownerCheck, "| !targetUserId:", !targetUserId, "| url일치:", targetUserId === currentUserId, "| profile일치:", fetchedProfileId === currentUserId);
           setIsOwner(ownerCheck);
         }
         const addressParts = (profile.address || "").split(" ");
+
+        // 슬로건 우선순위: 병렬 fetch로 먼저 도착한 pending → sessionStorage 캐시 → bio 폴백
+        let cachedSlogan: string | null = null;
+        try {
+          if (typeof window !== "undefined") {
+            cachedSlogan = sessionStorage.getItem(`sidebar:slogan1:${targetUserId || "self"}`);
+          }
+        } catch {}
+        const initialQuote = pendingSloganRef.current || cachedSlogan || profile.bio || "";
 
         setUserProfile({
           name: profile.display_name || "",
@@ -880,7 +930,7 @@ const Sidebar = () => {
           graduationStatus: "",
           gpa: "",
           gpaMax: "",
-          quote: profile.bio || "",
+          quote: initialQuote,
           photo: profile.profile_photo_url || "",
           // user_memberships 에서 enrich된 값 — 기존 sub-text 두 줄(enrollPeriod / gpa 자리)에 사용.
           team: profile.team_name || "",
@@ -888,8 +938,8 @@ const Sidebar = () => {
           membershipLevel: profile.membership_level || "",
         });
 
-        // 학력 + 슬로건 데이터 병렬 로드 (성능 최적화)
-        Promise.all([fetchEducations(), fetchSlogan()]);
+        // 학력은 프로필 응답 후 로드 (슬로건은 별도 useEffect에서 이미 병렬 실행)
+        fetchEducations();
 
         // DB status → crewStatus 매핑
         const statusMap: Record<string, "Running" | "Complete" | "On Rest" | "Recharging" | "Next Challenge"> = {
@@ -957,12 +1007,21 @@ const Sidebar = () => {
           if (s.hexagonLink2) setIconLink2(s.hexagonLink2);
           if (s.hexagonLink3) setIconLink3(s.hexagonLink3);
         }
+
+        // 성장 성공 주차 수 (cluster-4-card의 cumulativeApprovedWeeks와 동일 소스)
+        if (result.growthPeriodStats?.approvedWeeks !== undefined) {
+          setApprovedWeeksCount(result.growthPeriodStats.approvedWeeks);
+        } else {
+          setApprovedWeeksCount(null);
+        }
       }
     } catch (error) {
       console.error("프로필 로드 오류:", error);
       console.log("[hasData] catch에서 false로 설정됨", error);
       setHasData(false);
       setHasSeasonData(false);
+    } finally {
+      setFetchSettled(true);
     }
   };
 
@@ -970,10 +1029,9 @@ const Sidebar = () => {
   const fetchEducations = async () => {
     try {
       const apiUrl = targetUserId ? `/api/educations?userId=${targetUserId}` : "/api/educations";
-      const response = await fetch(apiUrl);
-      const result = await response.json();
+      const result: any = await dedupedJson(apiUrl);
 
-      if (result.success && result.data && result.data.length > 0) {
+      if (result?.success && result.data && result.data.length > 0) {
         // 최종학력 (isFinal: true) 찾기
         const finalEducation = result.data.find((edu: { isFinal: boolean }) => edu.isFinal);
         if (finalEducation) {
@@ -999,19 +1057,28 @@ const Sidebar = () => {
   };
 
   // 슬로건 데이터 가져오기 (user_introductions에서)
+  // 프로필 fetch와 병렬로 실행 → 프로필보다 먼저 도착하면 pendingSloganRef에 보관
   const fetchSlogan = async () => {
     try {
       const apiUrl = targetUserId ? `/api/slogans?userId=${targetUserId}` : "/api/slogans";
-      const response = await fetch(apiUrl);
-      const result = await response.json();
+      const result: any = await dedupedJson(apiUrl);
 
-      if (result.success && result.data?.slogan1?.content) {
+      if (result?.success && result.data?.slogan1?.content) {
+        const content = result.data.slogan1.content as string;
+        // sessionStorage 캐싱 → 다음 방문 시 즉시 표시
+        try {
+          if (typeof window !== "undefined") {
+            sessionStorage.setItem(`sidebar:slogan1:${targetUserId || "self"}`, content);
+          }
+        } catch {}
         setUserProfile((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            quote: result.data.slogan1.content,
-          };
+          if (!prev) {
+            // 프로필이 아직 도착 안 함 → pending에 보관, 프로필 setUserProfile 시 사용됨
+            pendingSloganRef.current = content;
+            return prev;
+          }
+          pendingSloganRef.current = null;
+          return { ...prev, quote: content };
         });
       }
     } catch (error) {
@@ -1019,7 +1086,7 @@ const Sidebar = () => {
     }
   };
 
-  // 세션 또는 targetUserId 변경 시 프로필 로드
+  // 세션 또는 targetUserId 변경 시 프로필 + 슬로건 병렬 로드 (플리커 최소화)
   // sessionStatus를 deps에 포함 — loading→authenticated/unauthenticated 전환 시 effect 재실행 보장.
   // (session reference가 null→null로 유지되는 unauthenticated 케이스에서 fetch가 영영 skip되던 회귀 방지)
   // pathname을 deps에 포함 — 뒤로가기로 cluster-* 복귀 시 segment 재사용 케이스에서도 effect 재실행 보장.
@@ -1028,6 +1095,7 @@ const Sidebar = () => {
     if (demoMode) return; // 더미 모드면 API 안 부름
     if (shouldFetchProfile) {
       fetchUserProfile();
+      fetchSlogan();
     }
   }, [shouldFetchProfile, sessionStatus, sessionUserId, targetUserId, demoMode, pathname]);
 
@@ -1063,15 +1131,27 @@ const Sidebar = () => {
     const handleSloganUpdated = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (detail?.slogan1?.content !== undefined) {
+        const newContent = detail.slogan1.content || "";
+        // sessionStorage 캐시도 함께 갱신 (다음 방문 플리커 방지)
+        try {
+          if (typeof window !== "undefined") {
+            const key = `sidebar:slogan1:${targetUserId || "self"}`;
+            if (newContent) {
+              sessionStorage.setItem(key, newContent);
+            } else {
+              sessionStorage.removeItem(key);
+            }
+          }
+        } catch {}
         setUserProfile((prev) => {
           if (!prev) return prev;
-          return { ...prev, quote: detail.slogan1.content || "" };
+          return { ...prev, quote: newContent };
         });
       }
     };
     window.addEventListener("sloganUpdated", handleSloganUpdated);
     return () => window.removeEventListener("sloganUpdated", handleSloganUpdated);
-  }, []);
+  }, [targetUserId]);
 
   // 학력 변경 이벤트 수신 → .resume-card 즉시 반영
   useEffect(() => {
@@ -1208,7 +1288,11 @@ const Sidebar = () => {
   // 프로필 데이터 로드 함수
   const loadProfile = async () => {
     try {
-      const response = await fetch("/api/profile/");
+      // 어드민이 다른 유저 프로필 편집 시 해당 유저의 데이터 로드
+      const profileUrl = targetUserId && session?.user?.isAdmin
+        ? `/api/profile/?userId=${targetUserId}`
+        : "/api/profile/";
+      const response = await fetch(profileUrl);
       const result = await response.json();
 
       if (result.success && result.data) {
@@ -1285,11 +1369,14 @@ const Sidebar = () => {
       return;
     }
 
-    const approved = await checkApprovalStatus();
+    // 어드민(마더) 계정은 승인 체크 건너뛰기
+    if (!session.user?.isAdmin) {
+      const approved = await checkApprovalStatus();
 
-    if (!approved) {
-      await showAlert("아직 회원 상태가 어드민 승인 대기 중입니다.");
-      return;
+      if (!approved) {
+        await showAlert("아직 회원 상태가 어드민 승인 대기 중입니다.");
+        return;
+      }
     }
 
     // 승인된 경우 프로필 로드 후 모달 열기
@@ -1355,8 +1442,8 @@ const Sidebar = () => {
         display_name: `${formData.lastName}${formData.firstName}`.trim(),
         eng_name: `${formData.lastNameEng}${formData.firstNameEng}`.trim(),
         gender: formData.gender === "male" ? "남" : formData.gender === "female" ? "여" : null,
-        birth_date: formData.birthDate || null,
-        address: `${formData.addressCity} ${formData.addressDistrict}`.trim(),
+        birth_date: formData.birthDate && /^\d{4}-\d{2}-\d{2}$/.test(formData.birthDate) ? formData.birthDate : null,
+        address: `${formData.addressCity} ${formData.addressDistrict}`.trim() || null,
         phone: formData.phone ? `010-${formData.phone}` : null,
         email: formData.emailId && formData.emailDomain ? `${formData.emailId}@${formData.emailDomain === "직접입력" ? formData.customEmailDomain : formData.emailDomain}` : null,
         vision: formData.vision || null,
@@ -1364,7 +1451,7 @@ const Sidebar = () => {
         contact_available: formData.phoneComment || null,
       };
 
-      const response = await fetch("/api/profile/", {
+      const response = await fetch(apiUrl("/api/profile/"), {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -1597,7 +1684,7 @@ const Sidebar = () => {
       // 배지 데이터는 실제 API 데이터 사용 (hasBadgeData가 true인 경우)
       animateNumber(setBadge1, hasBadgeData ? badgeData.stars : currentStats.badge1, 1000), // 별 (단감)
       animateNumber(setBadge2, hasBadgeData ? badgeData.shields : currentStats.badge2, 1000), // 방패 (인절미) - DB에서 이미 계산된 값
-      animateNumber(setBadge3, hasBadgeData ? Math.abs(badgeData.lightnings || 0) : currentStats.badge3, 1000), // 번개 (어흥)
+      animateNumber(setBadge3, hasBadgeData ? Math.abs(badgeData.lightnings || 0) : currentStats.badge3, 1000), // 번개 (어흥) - 양수로 표시
       animateNumber(setSkill1, currentStats.skill1, 1000),
       animateNumber(setSkill2, currentStats.skill2, 1000),
       animateNumber(setSkill3, currentStats.skill3, 1000),
@@ -1739,7 +1826,9 @@ const Sidebar = () => {
 
   // 3) Fetch 대기 중: 식별자(targetUserId 또는 session.user.id)가 있는데 hasData=false → skeleton.
   //    (식별자 없으면 fetch가 일어나지 않으므로 무한 skeleton 회피하고 정상 렌더로 fallthrough)
-  if (!demoMode && !hasData && hasUserIdentity) {
+  //    fetchSettled=true 면 fetch 가 한 번이라도 완료된 상태 — 영구 실패(잘못된 UUID/본인 프로필 미존재 등)
+  //    여도 무한 skeleton('블랙 화면') 회피하고 defaultProfile 로 fallthrough.
+  if (!demoMode && !hasData && hasUserIdentity && !fetchSettled) {
     return renderSkeleton("Loading…");
   }
 
@@ -1823,7 +1912,6 @@ const Sidebar = () => {
             } as React.CSSProperties
           }
         >
-          {console.log('[render cardScale]', cardScale)}
           {/* 프로필 수정 버튼: resume-card(고정 크기, position:relative) 기준 absolute 배치 — 콘텐츠 로딩/스크롤 무관 */}
           {/* <button
               onClick={isOwner || demoMode ? handleEditButtonClick : undefined}
@@ -2109,7 +2197,7 @@ const Sidebar = () => {
                           cursor: "default",
                         }}
                       >
-                        <span style={{ color: currentProfile.lightColor }}>·</span> {mask.email(currentProfile.email)}
+                        <span style={{ color: currentProfile.lightColor }}>·</span> {currentProfile.email || '-'}
                       </span>
                     </div>
                     <div className="detail-row">
@@ -2270,7 +2358,7 @@ const Sidebar = () => {
                     : "/images/0/cluster 1/금장_OK.png";
                   return <Image src={medalSrc} alt="Medal" width={512} height={512} />;
                 })()}
-                <span className="medal-week-num">{resumeCardSettings?.medalWeekOverride ?? (demoMode ? 12 : 0)}</span>
+                <span className="medal-week-num">{resumeCardSettings?.medalWeekOverride ?? (demoMode ? 12 : (approvedWeeksCount ?? 0))}</span>
               </div>
               <div
                 className={`medal-text ${crewStatus === "Next Challenge" ? "long" : crewStatus === "Recharging" ? "medium" : crewStatus === "Complete" ? "short-medium" : ""} ${crewStatus === "Complete" ? "medal-complete" : crewStatus === "Running" ? "medal-running" : crewStatus === "On Rest" ? "medal-onrest" : crewStatus === "Recharging" ? "medal-recharging" : crewStatus === "Next Challenge" ? "medal-next" : ""}`}

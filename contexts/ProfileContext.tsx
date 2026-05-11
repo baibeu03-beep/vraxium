@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
+import { dedupedJson, invalidateDedupe } from "@/lib/fetch-dedupe";
 
 // Profile 데이터 타입
 interface ProfileData {
@@ -115,17 +116,32 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return null;
     }
 
+    // targetUserId 가 UUID 형식 아니면 API 호출 전에 즉시 실패 처리 — 불필요한 400 응답 차단.
+    // (URL 의 userId 가 잘리거나 잘못 입력된 케이스에서 무한 skeleton 으로 빠지는 것 방지)
+    if (targetUserId) {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(targetUserId)) {
+        const errorMsg = '유효하지 않은 사용자 ID 형식입니다.';
+        console.warn('[ProfileContext] UUID 형식 오류로 fetch 스킵:', targetUserId);
+        setError(errorMsg);
+        setErrorTimestamp(now);
+        setLastErrorUserId(targetUserId);
+        return null;
+      }
+    }
+
     setIsLoading(true);
     setError(null);
 
     try {
       const apiUrl = targetUserId ? `/api/profile/?userId=${targetUserId}` : '/api/profile/';
-      const response = await fetch(apiUrl);
-      const result = await response.json();
+      // forceRefresh 면 dedupe 캐시 무효화 후 새로 요청
+      if (forceRefresh) invalidateDedupe(apiUrl);
+      const result: any = await dedupedJson(apiUrl);
 
-      if (!response.ok || !result.success) {
-        const errorMsg = result.error || 'Failed to fetch profile';
-        console.warn('[ProfileContext] API 응답 실패:', response.status, errorMsg);
+      if (!result || !result.success) {
+        const errorMsg = result?.error || 'Failed to fetch profile';
+        console.warn('[ProfileContext] API 응답 실패:', errorMsg);
         setError(errorMsg);
         setErrorTimestamp(now);
         setLastErrorUserId(targetUserId);
@@ -182,6 +198,8 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setError(null);
     setErrorTimestamp(0);
     setLastErrorUserId(null);
+    // 모듈 레벨 dedupe 캐시도 같이 무효화 — Cluster4Content 등 다른 호출처와 일관성 유지
+    invalidateDedupe('/api/profile');
   }, []);
 
   // 세션 변경 시 캐시 초기화

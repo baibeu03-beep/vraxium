@@ -18,13 +18,28 @@ export async function GET(request: NextRequest) {
 
     // 주차별 프로젝트와 사용자 기록을 함께 조회
     if (weekId) {
-      // 1. 해당 주차의 모든 프로젝트 조회
-      const { data: projects, error: projectsError } = await supabaseAdmin
-        .from('career_projects')
-        .select('*')
+      // 1. junction 으로 해당 주차에 개설된 라인 ID 조회 (is_active=true 만)
+      const { data: junctionRows, error: junctionError } = await supabaseAdmin
+        .from('career_project_weeks')
+        .select('project_id')
         .eq('week_id', weekId)
         .eq('is_active', true)
-        .order('created_at', { ascending: false })
+
+      if (junctionError) {
+        console.error('Error fetching career_project_weeks:', junctionError)
+        return NextResponse.json({ error: junctionError.message }, { status: 500 })
+      }
+
+      const activeProjectIds = (junctionRows || []).map(r => r.project_id)
+
+      // 2. 해당 라인들 본문 조회
+      const { data: projects, error: projectsError } = activeProjectIds.length > 0
+        ? await supabaseAdmin
+            .from('career_projects')
+            .select('*')
+            .in('id', activeProjectIds)
+            .order('created_at', { ascending: false })
+        : { data: [], error: null }
 
       console.log('[career-records API] weekId:', weekId, 'projects found:', projects?.length, 'error:', projectsError)
 
@@ -61,10 +76,10 @@ export async function GET(request: NextRequest) {
       const combinedData = projects?.map(project => {
         const userRecord = recordsByProjectId.get(project.id)
         return {
-          // 프로젝트 정보
+          // 프로젝트 정보 — week_id 는 junction 기반이라 요청 파라미터를 그대로 사용
           id: project.id,
           project_id: project.id,
-          week_id: project.week_id,
+          week_id: weekId,
           company_name: project.company_name,
           company_logo_url: project.company_logo_url,
           job_position: project.job_position,
@@ -73,6 +88,8 @@ export async function GET(request: NextRequest) {
           line_code: project.line_code,
           line_name: project.line_name,
           output_links: project.output_links,
+          output_images: project.output_images || null,
+          company_homepage_links: project.company_homepage_links || null,
           secondary_info_deadline: project.secondary_info_deadline || null,
           weeks: null,
           created_at: project.created_at,
@@ -85,12 +102,13 @@ export async function GET(request: NextRequest) {
           grade_points: userRecord?.grade_points || null,
           career_code: userRecord?.career_code || null,
 
-          // 감독자 정보 (기록이 있는 경우)
-          supervisor_name: userRecord?.supervisor_name || null,
-          supervisor_position: userRecord?.supervisor_position || null,
-          supervisor_department: userRecord?.supervisor_department || null,
-          supervisor_company: userRecord?.supervisor_company || null,
-          supervisor_profile_img: userRecord?.supervisor_profile_img || null,
+          // 감독자 정보 — 어드민이 career_projects 레벨에서 지정한 값을 우선,
+          // 없으면 기존 career_records 의 값을 폴백 (구 데이터 호환)
+          supervisor_name: project.supervisor_name || userRecord?.supervisor_name || null,
+          supervisor_position: project.supervisor_position || userRecord?.supervisor_position || null,
+          supervisor_department: project.supervisor_department || userRecord?.supervisor_department || null,
+          supervisor_company: project.supervisor_company || userRecord?.supervisor_company || null,
+          supervisor_profile_img: project.supervisor_profile_img || userRecord?.supervisor_profile_img || null,
         }
       }) || []
 
@@ -136,7 +154,13 @@ export async function GET(request: NextRequest) {
           id,
           line_code,
           line_name,
-          output_links
+          output_links,
+          output_images,
+          supervisor_name,
+          supervisor_position,
+          supervisor_department,
+          supervisor_company,
+          supervisor_profile_img
         ),
         weeks!career_records_week_id_fkey (
           id,

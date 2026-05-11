@@ -1,7 +1,7 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getUserProfile } from "@/lib/get-user-profile";
+import { extractTargetUserId } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -21,27 +21,12 @@ export async function GET(request: Request) {
     if (targetUserId) {
       userId = targetUserId;
     } else {
-      const session = await getServerSession(authOptions);
+      const { profile, error } = await getUserProfile();
 
-      if (!session?.user?.email) {
-        return NextResponse.json(
-          { error: "로그인이 필요합니다." },
-          { status: 401 }
-        );
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: error.status });
       }
 
-      const { data: profile, error: profileError } = await supabaseAdmin
-        .from("user_profiles")
-        .select("id")
-        .eq("email", session.user.email)
-        .maybeSingle();
-
-      if (profileError || !profile) {
-        return NextResponse.json(
-          { error: "프로필을 찾을 수 없습니다." },
-          { status: 404 }
-        );
-      }
       userId = profile.id;
     }
 
@@ -70,13 +55,11 @@ export async function GET(request: Request) {
 // PUT: 클럽 리뷰 링크 저장
 export async function PUT(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const targetUserId = extractTargetUserId(request);
+    const { profile, error } = await getUserProfile("id", targetUserId);
 
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { error: "로그인이 필요합니다." },
-        { status: 401 }
-      );
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
     }
 
     if (!supabaseAdmin) {
@@ -85,20 +68,6 @@ export async function PUT(request: Request) {
 
     const body = await request.json();
     const { cluvingReviewLink } = body;
-
-    // user_profiles에서 사용자 ID 조회
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("user_profiles")
-      .select("id")
-      .eq("email", session.user.email)
-      .maybeSingle();
-
-    if (profileError || !profile) {
-      return NextResponse.json(
-        { error: "프로필을 찾을 수 없습니다." },
-        { status: 404 }
-      );
-    }
 
     // 기존 레코드 확인
     const { data: existingIntro } = await supabaseAdmin

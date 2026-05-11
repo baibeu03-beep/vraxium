@@ -118,11 +118,6 @@ const menu = [
         url: "/faq",
       },
       {
-        id: "6.2",
-        title: "Error",
-        url: "/404",
-      },
-      {
         id: "6.3",
         title: "Profile",
         submenus: [

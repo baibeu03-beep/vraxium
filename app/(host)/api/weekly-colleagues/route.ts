@@ -1,8 +1,8 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase-server";
 import { getCachedTeams, getCachedParts } from "@/lib/cached-data";
+import { getUserProfile } from "@/lib/get-user-profile";
+import { extractTargetUserId } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -157,39 +157,22 @@ export async function GET(request: Request) {
 // POST: 연계 동료 저장 (전체 덮어쓰기)
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const targetUserId = extractTargetUserId(request);
+    const { profile: userProfile, error } = await getUserProfile("id", targetUserId);
 
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { error: "로그인이 필요합니다." },
-        { status: 401 }
-      );
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
     }
 
     const supabase = createAdminClient();
 
     const body = await request.json();
     const { weekCardId, colleagues } = body;
-    // colleagues: [{ colleagueId, rank, message }]
 
     if (!weekCardId) {
       return NextResponse.json(
         { error: "주차 정보가 필요합니다." },
         { status: 400 }
-      );
-    }
-
-    // 작성자 프로필 조회
-    const { data: userProfile, error: profileError } = await supabase
-      .from("user_profiles")
-      .select("id")
-      .eq("email", session.user.email)
-      .maybeSingle();
-
-    if (profileError || !userProfile) {
-      return NextResponse.json(
-        { error: "프로필을 찾을 수 없습니다." },
-        { status: 404 }
       );
     }
 

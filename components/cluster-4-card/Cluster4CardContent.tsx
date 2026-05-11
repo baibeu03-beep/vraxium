@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import { useSearchParams, usePathname } from "next/navigation";
 import { getFixedDropdownPosition } from "@/utils/documentZoom";
 import { useModalScroll } from "@/utils/useModalScroll";
+import { useDebugLayout } from "@/utils/debugLayout";
 import { usePopup } from "@/components/ui/popup";
 import { supabase } from "@/lib/supabase";
 import { useDataMasking } from "@/hooks/useDataMasking";
@@ -14,6 +15,18 @@ import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
 import DetailLogModal from "./DetailLogModal";
 import confetti from "canvas-confetti";
+import HelpModalBody from "@/components/shared/HelpModalBody";
+
+// 주차 결과 결정 시점 = N+1주(목) 12:01 KST = N(월) 00:00 + 10일 12시간 1분
+// 이 시점에 동시에 확정:
+//   - 라인 카드: '강화 대기' → '강화 성공' (이행자) — 미이행자는 진행 중 phase 부터 즉시 '강화 실패'
+//   - 주차 카드: '집계 중' → '성장 성공' / '성장 실패' / '휴식(개인)' / '휴식(공식)'
+// 2차 정보 / weekly_activities.deadline / opened_at+48h 는 영향을 주지 않는다 (2026 정책).
+// startDate: 'YYYY-MM-DD' (KST 기준 주차 시작일, 월요일).
+const computeResultDecidedMs = (startDate: string): number => {
+  const weekStartMs = new Date(`${startDate}T00:00:00+09:00`).getTime();
+  return weekStartMs + (10 * 24 + 12) * 3600 * 1000 + 60 * 1000;
+};
 
 interface Cluster4CardContentProps {
   weekId: string;
@@ -32,6 +45,11 @@ interface DBWeekData {
   isClubBreak: boolean;
   holidayName: string | null;
   growthStatus: string;
+  // 활동 라인 단위 판정에서 사용. growthStatus 는 phase 기반(진행 중/집계 중/...)이라
+  // 결과 결정 phase 이전에는 휴식 여부가 묻혀버림. 이 플래그는 phase 와 무관하게
+  // '운영진이 정해둔' 휴식 여부를 그대로 유지한다.
+  isPersonalRest: boolean;
+  isOfficialRest: boolean;
 }
 
 interface SelectedColleague {
@@ -210,6 +228,13 @@ const KEYWORD_GROUPS: KeywordGroup[] = [
   },
 ];
 
+// 기업 로고 클릭 → 기업 홈페이지 1번 링크 새 탭. URL 없으면 동작 안 함.
+const handleCompanyLogoClick = (e: React.MouseEvent, url: string | null | undefined) => {
+  if (!url) return
+  e.stopPropagation()
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
 const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 세션 및 본인 프로필 여부 확인
   const { data: session } = useSession();
@@ -238,9 +263,77 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     const t = text || "-";
     return t.length > maxLen ? t.slice(0, maxLen) + ".." : t;
   };
-  const isOwner = !urlUserId || session?.user?.id === urlUserId;
-  // TODO: 백엔드 연동 시 API에서 받아오기
-  const isAdmin = false;
+  // 어드민(마더) 계정은 모든 프로필 편집 가능
+  const isOwner = session?.user?.isAdmin || !urlUserId || session?.user?.id === urlUserId;
+  const isAdmin = !!session?.user?.isAdmin;
+
+  // 로그인한 본인의 display_name (From 라벨 등에 사용)
+  const [myDisplayName, setMyDisplayName] = useState<string>("");
+  // 주차 리뷰 모달 인적사항 카드용 프로필 (페이지 주인 기준 — urlUserId 우선, 없으면 본인)
+  const [reviewerProfile, setReviewerProfile] = useState<{
+    displayName: string;
+    profilePhotoUrl: string;
+    gender: string;
+    age: number | null;
+    school: string;
+    major: string;
+    vision: string;
+  }>({ displayName: "", profilePhotoUrl: "", gender: "", age: null, school: "", major: "", vision: "" });
+
+  useEffect(() => {
+    // urlUserId 가 있으면 비로그인이라도 공개 프로필을 표시할 수 있도록 fetch.
+    // (서버에서 비로그인이면 자동 마스킹되므로 안전.)
+    const targetId = urlUserId || session?.user?.id;
+    if (!targetId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [profileRes, eduRes] = await Promise.all([
+          fetch(`/api/profile/?userId=${targetId}`),
+          fetch(`/api/educations?userId=${targetId}`),
+        ]);
+        const profileJson = await profileRes.json().catch(() => null);
+        const eduJson = await eduRes.json().catch(() => null);
+        if (cancelled) return;
+
+        const p = profileJson?.data;
+        if (p?.display_name) setMyDisplayName(p.display_name);
+
+        const eduFirst = Array.isArray(eduJson?.data) && eduJson.data.length > 0 ? eduJson.data[0] : null;
+
+        let age: number | null = null;
+        if (p?.birth_date) {
+          const birthYear = new Date(p.birth_date).getFullYear();
+          const currentYear = new Date().getFullYear();
+          if (!Number.isNaN(birthYear)) age = currentYear - birthYear;
+        }
+
+        setReviewerProfile({
+          displayName: p?.display_name || "",
+          profilePhotoUrl: p?.profile_photo_url || "",
+          gender: p?.gender || "",
+          age,
+          school: eduFirst?.school || "",
+          major: eduFirst?.major1 && eduFirst.major1 !== "-" ? eduFirst.major1 : "",
+          vision: p?.vision || "",
+        });
+      } catch {
+        // 무시 — fallback으로 session.user.name 사용
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id, urlUserId]);
+
+  // 어드민이 다른 유저 편집 시 targetUserId를 API URL에 추가
+  const apiUrl = (path: string) => {
+    if (urlUserId && session?.user?.isAdmin) {
+      const separator = path.includes("?") ? "&" : "?";
+      return `${path}${separator}targetUserId=${urlUserId}`;
+    }
+    return path;
+  };
 
   // 승인 상태 확인 함수
   const checkApprovalStatus = async () => {
@@ -267,8 +360,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       openModalFn();
       return;
     } // 더미 모드: 체크 스킵
-    // TODO: 개발 완료 후 로그인 체크 원복
     if (!session) {
+      alert("로그인이 필요합니다.");
+      return;
+    }
+
+    // 어드민(마더) 계정은 승인 체크 건너뛰기
+    if (session.user?.isAdmin) {
       openModalFn();
       return;
     }
@@ -287,12 +385,21 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const [weekData, setWeekData] = useState<DBWeekData | null>(null);
   const [isLoadingWeek, setIsLoadingWeek] = useState(true);
 
+  // 주차 결과 결정 시점 (N+1주(목) 12:01 KST) 도달 여부.
+  // 라인 카드 '강화 대기 → 강화 성공' 과 주차 카드 '집계 중 → 성장 성공/실패/휴식' 이 동시에 확정.
+  // 2차 정보 작성 여부는 강화 판정에 영향을 주지 않는다 (2026 정책).
+  const resultsDecided = !!(
+    weekData?.startDate && Date.now() >= computeResultDecidedMs(weekData.startDate)
+  );
+
   // 팀/파트/역할/포인트 데이터 상태
   const [teamName, setTeamName] = useState<string | null>(null);
   const [partName, setPartName] = useState<string | null>(null);
   const [generation, setGeneration] = useState<number | null>(null);
   const [managedTeamName, setManagedTeamName] = useState<string | null>(null);
   const [roleLabel, setRoleLabel] = useState<string | null>(null);
+  // 해당 주차 시점의 raw 역할 코드 (예: crew_partleader / crew_agent / crew_regular ...) — 매니징 라인 적용 여부 판단용
+  const [userWeekRole, setUserWeekRole] = useState<string | null>(null);
   const [weekPoints, setWeekPoints] = useState<{ star: number; lightning: number; shield: number }>({ star: 0, lightning: 0, shield: 0 });
   const [cumulativeInjeolmi, setCumulativeInjeolmi] = useState<number>(0);
   const [cumulativeApprovedWeeks, setCumulativeApprovedWeeks] = useState<number>(0);
@@ -310,8 +417,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     activity_type_id: string;
     title: string | null;
     is_active: boolean;
-    opened_at: string | null; // 개설 시각 (48시간 이내에만 2차 정보 작성 가능)
+    opened_at: string | null;
+    deadline?: string | null; // 어드민 직접 지정 마감 (옵션 — 없으면 시스템 기본 N+1주(목) 12:00 KST)
     output_links: OutputLink[] | null; // 운영진이 입력한 output links
+    output_images?: Array<{ url: string; caption: string }> | null; // 운영진이 업로드한 이미지 (최대 2)
+    team_id?: string | null; // 실무경험만 NOT NULL
   }
   const [weeklyActivities, setWeeklyActivities] = useState<WeeklyActivity[]>([]);
 
@@ -353,11 +463,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     activity_type_id: string;
     sub_title: string | null;
     output_links: OutputLink[] | null;
+    growth_point?: string | null;
+    image_urls?: (string | null)[] | null;
+    image_captions?: string[] | null;
   }
   const [weekActivityDetails, setWeekActivityDetails] = useState<ActivityDetail[]>([]);
 
   // 활동별 평점 (activity_type_id → points)
   const [activityRatings, setActivityRatings] = useState<Map<string, number>>(new Map());
+
+  // 어드민 개별 권한 부여 (secondary_info_grants)
+  interface SecondaryInfoGrant { activity_type_id: string; deadline: string; }
+  const [secondaryInfoGrants, setSecondaryInfoGrants] = useState<SecondaryInfoGrant[]>([]);
 
   // DB에서 가져온 activity_types 정보
   interface ActivityTypeInfo {
@@ -366,6 +483,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     line_code: string;
     cluster_id: string;
     description: string | null;
+    reward_star?: number; // 라인 이행 시 기본 보상 — 평점 표시 시 차감용
   }
   const [activityTypesMap, setActivityTypesMap] = useState<Map<string, ActivityTypeInfo>>(new Map());
   const [competencyTypeIds, setCompetencyTypeIds] = useState<string[]>([]);
@@ -401,6 +519,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     line_code: string | null;
     line_name: string | null;
     output_links: { desc: string; url: string }[] | null;
+    output_images?: { url: string; caption: string }[] | null;
+    company_homepage_links?: string[] | null;
     secondary_info_deadline: string | null;
     created_at: string;
     weeks?: {
@@ -712,14 +832,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     if (fileName) {
       return `/images/0/cluster4/icon/실무 경험/${fileName}`;
     }
-    return "/images/0/cluster4/icon/실무 경험/실무 경험 - default.png";
+    return "/images/0/cluster4/icon/2 실무 경험.png";
   };
 
   // workExp 모달 전용: 라인명 → 아이콘 파일 매칭 (부분 키워드 매칭)
   // 실제 파일: [매니징] 파트장.png / [매니징] 에이전트.png / 실무 경험 - [커리어|생산성|콘텐츠|퍼포먼스]...png
   const getWorkExpIcon = (lineName: string): string => {
     const basePath = "/images/0/cluster4/icon/실무 경험/";
-    if (!lineName) return basePath + "실무 경험 - default.png";
+    const fallbackIcon = "/images/0/cluster4/icon/2 실무 경험.png";
+    if (!lineName) return fallbackIcon;
 
     // 매니징 라인은 파트장/에이전트로 세부 분기 (파일명 네이밍이 다름)
     if (lineName.includes("매니징")) {
@@ -738,7 +859,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       if (lineName.includes(keyword)) return basePath + file;
     }
 
-    return basePath + "실무 경험 - default.png";
+    return fallbackIcon;
   };
 
   // 시즌 이름 변환 맵
@@ -803,6 +924,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           isClubBreak: dummyWeek.isClubBreak,
           holidayName: dummyWeek.holidayName,
           growthStatus: dummyWeek.growthStatus,
+          isPersonalRest: dummyWeek.growthStatus === "휴식(개인)",
+          isOfficialRest: dummyWeek.growthStatus === "휴식(공식)" || dummyWeek.isBreakSeason,
         });
       } else {
         setWeekData({
@@ -817,6 +940,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           isClubBreak: false,
           holidayName: null,
           growthStatus: "성공",
+          isPersonalRest: false,
+          isOfficialRest: false,
         });
       }
 
@@ -911,20 +1036,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       try {
         setIsLoadingWeek(true);
 
-        // ========== 1단계: 모든 독립 데이터 최대 병렬 로드 ==========
-        const profileUrl = urlUserId ? `/api/profile?userId=${urlUserId}&context=card` : "/api/profile?context=card";
+        // ========== 1단계: 프로필 API (weekId 번들) + 보조 API 최대 병렬 로드 ==========
+        const profileUrl = urlUserId
+          ? `/api/profile?userId=${urlUserId}&context=card&weekId=${weekId}`
+          : `/api/profile?context=card&weekId=${weekId}`;
         const earlyUserId = urlUserId || null;
 
-        // 기본 DB + 프로필 쿼리
-        const basePromise = Promise.all([
-          supabase.from("activity_types").select("id, name, line_code, cluster_id, description, eligible_min_approved_weeks, eligible_max_approved_weeks, count_once_in_total").eq("is_active", true),
-          supabase.from("weeks").select("id, week_number, start_date, end_date, is_club_break, holiday_name, seasons (id, year, name)").eq("id", weekId).single(),
-          fetch(profileUrl),
-          supabase.from("weeks").select("id, start_date, end_date, season_id, seasons(name)").order("start_date", { ascending: false }),
-          supabase.from("weekly_activities").select("id, activity_type_id, title, is_active, opened_at, output_links").eq("week_id", weekId),
-        ]);
-
-        // urlUserId가 있으면 API fetch + DB 쿼리도 동시 시작
+        // 프로필 API (주차 번들 포함) + 보조 API 동시 시작
         const earlyApiPromise = earlyUserId
           ? Promise.all([
               fetch(`/api/career-records?week_id=${weekId}&user_id=${earlyUserId}`, { cache: "no-store" })
@@ -939,24 +1057,37 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             ])
           : Promise.resolve([null, null, null] as const);
 
-        const earlyDbPromise = earlyUserId
-          ? Promise.all([
-              supabase.from("user_weekly_growth").select("is_success, is_resting, is_club_break, failure_reason").eq("user_id", earlyUserId).eq("week_id", weekId).maybeSingle(),
-              supabase.from("points").select("week_id, point_type, points").eq("user_id", earlyUserId),
-              supabase.from("user_weekly_growth").select("week_id, weeks!inner(end_date)").eq("user_id", earlyUserId).eq("is_success", true),
-            ])
-          : null;
-
         // 모든 병렬 요청 동시 대기
-        const [baseResults, earlyApiResults, earlyDbResults] = await Promise.all([basePromise, earlyApiPromise, earlyDbPromise]);
-        const [activityTypesResult, currentWeekResult, profileResponse, allUserWeeksResult, activitiesResult] = baseResults;
+        const [profileResponse, earlyApiResults] = await Promise.all([fetch(profileUrl), earlyApiPromise]);
         const [earlyCareerResult, earlyReputationsResult, earlyColleaguesResult] = earlyApiResults;
 
-        const activityTypesData = activityTypesResult.data;
-        const currentWeek = currentWeekResult.data;
-        const weekError = currentWeekResult.error;
+        // 프로필 정보 처리 (weekBundle 포함)
+        const profileResult = await profileResponse.json();
+        if (!profileResponse.ok || !profileResult.data?.id) {
+          console.error("Failed to fetch profile");
+          return;
+        }
 
-        if (weekError) throw weekError;
+        const userId = profileResult.data.id;
+        setCurrentUserId(userId);
+        const apiActivityWeekIds = profileResult.activityWeekIds || [];
+        const apiRestWeekIds = profileResult.restWeekIds || [];
+        const apiApprovedActivities = profileResult.approvedActivities || [];
+        const apiActivityRecords = profileResult.activityRecords || [];
+        const apiActivityDetails = profileResult.activityDetails || [];
+        const apiActivityPoints = profileResult.activityPoints || [];
+
+        // profile API에서 제공하는 teams, parts 사용
+        const apiTeams = profileResult.teams || [];
+        const apiParts = profileResult.parts || [];
+        const apiUserTeamParts = profileResult.userTeamParts || [];
+
+        // ========== weekBundle에서 주차 관련 데이터 추출 (서버 사이드 번들) ==========
+        const wb = profileResult.weekBundle;
+        if (!wb || !wb.currentWeek) throw new Error("Week not found");
+
+        const activityTypesData = wb.activityTypes;
+        const currentWeek = wb.currentWeek;
 
         // activity_types 처리
         const typesMap = new Map<string, ActivityTypeInfo>();
@@ -966,7 +1097,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         const experienceInfos: ExperienceTypeInfo[] = [];
 
         if (activityTypesData) {
-          activityTypesData.forEach((at) => {
+          activityTypesData.forEach((at: any) => {
             typesMap.set(at.id, at);
             if (at.cluster_id === "practical_competency") {
               competencyIds.push(at.id);
@@ -990,7 +1121,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         }
 
         // 현재 주차 정보 처리
-        if (!currentWeek) throw new Error("Week not found");
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const seasonData = currentWeek.seasons as any;
         const rawSeasonName = seasonData?.name || "";
@@ -1006,72 +1136,68 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           seasonName = "시즌 전환";
         }
 
-        // 프로필 정보 처리
-        const profileResult = await profileResponse.json();
-        if (!profileResponse.ok || !profileResult.data?.id) {
-          console.error("Failed to fetch profile");
-          return;
-        }
-
-        const userId = profileResult.data.id;
-        setCurrentUserId(userId);
-        const apiActivityWeekIds = profileResult.activityWeekIds || [];
-        const apiRestWeekIds = profileResult.restWeekIds || [];
-        const apiApprovedActivities = profileResult.approvedActivities || [];
-        const apiActivityRecords = profileResult.activityRecords || [];
-        const apiActivityDetails = profileResult.activityDetails || [];
-        const apiActivityPoints = profileResult.activityPoints || [];
-
-        // profile API에서 제공하는 teams, parts 사용
-        const apiTeams = profileResult.teams || [];
-        const apiParts = profileResult.parts || [];
-        const apiUserTeamParts = profileResult.userTeamParts || [];
-
-        // ========== 2단계: userId 의존 데이터 (Stage 1에서 선행 실행 안 된 경우만) ==========
         const today = new Date().toISOString().split("T")[0];
         const userStartDate = profileResult.growthInfo?.startDate || "1900-01-01";
 
-        let weeklyGrowthResult, pointsResult, successWeeksResult;
-        if (earlyDbResults) {
-          // Stage 1에서 이미 병렬 실행됨
-          [weeklyGrowthResult, pointsResult, successWeeksResult] = earlyDbResults;
-        } else {
-          // urlUserId가 없어서 profile에서 userId를 받은 후에야 실행 가능
-          [weeklyGrowthResult, pointsResult, successWeeksResult] = await Promise.all([
-            supabase.from("user_weekly_growth").select("is_success, is_resting, is_club_break, failure_reason").eq("user_id", userId).eq("week_id", weekId).maybeSingle(),
-            supabase.from("points").select("week_id, point_type, points").eq("user_id", userId),
-            supabase.from("user_weekly_growth").select("week_id, weeks!inner(end_date)").eq("user_id", userId).eq("is_success", true),
-          ]);
-        }
+        // weekBundle에서 직접 사용 (클라이언트 Supabase 쿼리 제거)
+        const weeklyGrowthData = wb.weeklyGrowth;
+        const allPointsData = wb.allPoints || [];
+        const successWeeksData = wb.successWeeks || [];
+        const allUserWeeksData = wb.allWeeks || [];
 
-        // 누적 주차는 Stage 1의 allUserWeeksResult를 클라이언트 필터로 대체
-        const allWeeksForCumulative = (allUserWeeksResult.data || []).filter((w: any) => w.end_date && w.end_date <= currentWeek.end_date);
+        // 누적 주차 필터
+        const allWeeksForCumulative = allUserWeeksData.filter((w: any) => w.end_date && w.end_date <= currentWeek.end_date);
         const allWeeksResult = { data: allWeeksForCumulative };
 
-        // 성장 상태 결정
-        const weeklyGrowth = weeklyGrowthResult.data;
+        // 성장 상태 결정 (Cluster41Content 와 동일한 phase 로직 — 동기화 필수)
+        //   - VISIBLE_OFFSET_MINUTES  = N(월) 00:01   = 1m
+        //   - COUNTING_START_HOURS    = N(일) 00:00   = 144h
+        //   - RESULT_DECIDED_MINUTES  = N+1(목) 12:01 = 252h 1m
+        //     라인 카드 '강화 대기 → 강화 성공' 도 동일 시점에 확정 — computeResultDecidedMs / resultsDecided 와 동기.
+        const VISIBLE_OFFSET_MINUTES = 1;
+        const COUNTING_START_HOURS = 144;
+        const RESULT_DECIDED_MINUTES = 252 * 60 + 1;
+
+        const weeklyGrowth = weeklyGrowthData;
         const onboardingWeekId = profileResult.onboardingWeekId;
         const isCurrentWeekOnboarding = weekId === onboardingWeekId;
 
+        // phase(진행 중/집계 중) 와 무관하게 운영진이 마킹한 휴식 여부.
+        // 활동 라인 단위(실무 정보/역량/경험/경력) 판정에서 사용.
+        const userIsOnOfficialRestForWeek = !isCurrentWeekOnboarding && (
+          isBreakSeason
+          || !!weeklyGrowth?.is_club_break
+          || (!weeklyGrowth && !!currentWeek.is_club_break)
+        );
+        const userIsOnPersonalRestForWeek = !isCurrentWeekOnboarding && (
+          !!weeklyGrowth?.is_resting
+          || (!weeklyGrowth && apiRestWeekIds.includes(currentWeek.id))
+        );
+
+        // 휴식만 phase 우회 — 온보딩 주차도 일반 phase(진행 중 → 집계 중) 거치고 결정 시점에 무조건 성공.
         let growthStatus = "실패";
-        // 온보딩 주차(무적 주차)는 무조건 성공
-        if (isCurrentWeekOnboarding) {
-          growthStatus = "성공";
-        } else if (weeklyGrowth) {
-          if (weeklyGrowth.is_club_break || isBreakSeason) {
-            growthStatus = "휴식(공식)";
-          } else if (weeklyGrowth.is_resting) {
-            growthStatus = "휴식(개인)";
-          } else if (weeklyGrowth.is_success) {
-            growthStatus = "성공";
-          } else {
-            growthStatus = "실패";
-          }
+        if (userIsOnOfficialRestForWeek) {
+          // 클럽 공식 휴식 주차(전환 주차 포함)는 phase 우회하고 카드 노출 시점부터 바로 '휴식(공식)'.
+          growthStatus = "휴식(공식)";
+        } else if (userIsOnPersonalRestForWeek) {
+          // 개인 휴식 크루도 phase 우회하고 카드 노출 시점부터 바로 '휴식(개인)'.
+          growthStatus = "휴식(개인)";
         } else {
-          if (currentWeek.is_club_break || isBreakSeason) {
-            growthStatus = "휴식(공식)";
-          } else if (apiRestWeekIds.includes(currentWeek.id)) {
-            growthStatus = "휴식(개인)";
+          const weekStartMs = new Date(currentWeek.start_date + "T00:00:00+09:00").getTime();
+          const elapsedMs = Date.now() - weekStartMs;
+          const hoursSinceStart = elapsedMs / 3600000;
+          const minutesSinceStart = elapsedMs / 60000;
+
+          if (minutesSinceStart >= VISIBLE_OFFSET_MINUTES && hoursSinceStart < COUNTING_START_HOURS) {
+            growthStatus = "진행 중";
+          } else if (hoursSinceStart >= COUNTING_START_HOURS && minutesSinceStart < RESULT_DECIDED_MINUTES) {
+            growthStatus = "집계 중";
+          } else if (isCurrentWeekOnboarding) {
+            // N+1(목) 12:01 이후 — 온보딩(무적) 주차는 무조건 성공.
+            growthStatus = "성공";
+          } else if (weeklyGrowth) {
+            // 휴식은 위에서 이미 처리됨 — 여기는 성공/실패만 결정.
+            growthStatus = weeklyGrowth.is_success ? "성공" : "실패";
           } else if (apiActivityWeekIds.includes(currentWeek.id)) {
             growthStatus = "성공";
           }
@@ -1089,6 +1215,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           isClubBreak: currentWeek.is_club_break || false,
           holidayName: currentWeek.holiday_name,
           growthStatus,
+          isPersonalRest: userIsOnPersonalRestForWeek,
+          isOfficialRest: userIsOnOfficialRestForWeek,
         });
 
         // 팀/파트 정보 처리 (profile API 데이터 활용)
@@ -1122,27 +1250,40 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
         if (userRole) {
           setRoleLabel(roleLabels[userRole.role] || userRole.role);
+          setUserWeekRole(userRole.role || null);
         } else if (profileResult.data?.role) {
           setRoleLabel(roleLabels[profileResult.data.role] || profileResult.data.role);
+          setUserWeekRole(profileResult.data.role || null);
         }
 
         // 포인트 정보 처리
-        const allPointsData = pointsResult.data || [];
-        const weekPointsData = allPointsData.filter((p) => p.week_id === weekId);
+        const weekPointsData = allPointsData.filter((p: any) => p.week_id === weekId);
         if (weekPointsData.length > 0) {
-          const star = weekPointsData.filter((p) => p.point_type === "star").reduce((sum, p) => sum + p.points, 0);
-          const lightning = weekPointsData.filter((p) => p.point_type === "lightning").reduce((sum, p) => sum + p.points, 0);
-          const shield = weekPointsData.filter((p) => p.point_type === "shield").reduce((sum, p) => sum + p.points, 0);
+          const star = weekPointsData.filter((p: any) => p.point_type === "star").reduce((sum: number, p: any) => sum + p.points, 0);
+          const lightning = weekPointsData.filter((p: any) => p.point_type === "lightning").reduce((sum: number, p: any) => sum + p.points, 0);
+          const shield = weekPointsData.filter((p: any) => p.point_type === "shield").reduce((sum: number, p: any) => sum + p.points, 0);
           setWeekPoints({ star, lightning, shield });
         }
 
+        // 누적 인절미 계산 (현재 시즌 내, 현재 주차까지의 shield 합계 - lightning 합계)
+        const currentSeasonId = seasonData?.id;
+        const seasonWeekIds = new Set(
+          allWeeksForCumulative
+            .filter((w: any) => w.season_id === currentSeasonId)
+            .map((w: any) => w.id)
+        );
+        const seasonPointsData = allPointsData.filter((p: any) => seasonWeekIds.has(p.week_id));
+        const totalShields = seasonPointsData.filter((p: any) => p.point_type === "shield").reduce((sum: number, p: any) => sum + p.points, 0);
+        const totalLightnings = seasonPointsData.filter((p: any) => p.point_type === "lightning").reduce((sum: number, p: any) => sum + p.points, 0);
+        setCumulativeInjeolmi(totalShields - totalLightnings);
+
         // 누적 성공 주차 수 계산
         let currentApprovedCount = 0;
-        const successWeeksData = successWeeksResult.data || [];
         if (successWeeksData.length > 0) {
+          // 온보딩 주차 이전의 성공 주차는 제외 (크루가 합류하기 전 주차)
           currentApprovedCount = successWeeksData.filter((sw: any) => {
             const weekEndDate = sw.weeks?.end_date;
-            return weekEndDate && weekEndDate <= currentWeek.end_date;
+            return weekEndDate && weekEndDate <= currentWeek.end_date && weekEndDate >= userStartDate;
           }).length;
         }
 
@@ -1159,20 +1300,24 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             }
           }
         }
-        setCumulativeApprovedWeeks(currentApprovedCount);
+        // 현재 주차가 활동 주차이면 eligible 체크에 포함 (+1)
+        const currentWeekIsActive = !currentWeek.is_club_break && weekId !== onboardingWeekIdForCount;
+        const currentWeekAlreadyInSuccess = successWeeksData.some((sw: any) => sw.week_id === weekId);
+        const cumulativeForEligible = currentApprovedCount + (currentWeekIsActive && !currentWeekAlreadyInSuccess ? 1 : 0);
+        setCumulativeApprovedWeeks(cumulativeForEligible);
 
         // 이전/다음 주차 ID 가져오기
-        const allUserWeeks = allUserWeeksResult.data;
+        const allUserWeeks = allUserWeeksData;
 
         if (allUserWeeks && allUserWeeks.length > 0) {
           // 클라이언트에서 날짜 필터링 + break 시즌 제외
-          const filteredWeeks = allUserWeeks.filter((w) => {
+          const filteredWeeks = allUserWeeks.filter((w: any) => {
             const sName = (w.seasons as any)?.name || "";
             const isBreakSeason = sName.toLowerCase().includes("break");
             return w.start_date >= userStartDate && w.start_date <= today && !isBreakSeason;
           });
 
-          const currentIndex = filteredWeeks.findIndex((w) => w.id === weekId);
+          const currentIndex = filteredWeeks.findIndex((w: any) => w.id === weekId);
 
           if (currentIndex !== -1) {
             // 내림차순 정렬이므로: index-1 = 더 최근(다음), index+1 = 더 과거(이전)
@@ -1185,13 +1330,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           }
         }
 
-        // 9. 주간 활동 데이터 처리 (이미 병렬로 가져옴)
-        const activitiesData = activitiesResult.data;
-        const activitiesError = activitiesResult.error;
+        // 9. 주간 활동 데이터 처리 (weekBundle에서 가져옴)
+        const activitiesData = wb.weeklyActivities;
 
-        if (activitiesError) {
-          console.error("주간 활동 데이터 로드 오류:", activitiesError);
-        } else if (activitiesData) {
+        if (activitiesData) {
           setWeeklyActivities(activitiesData);
 
           // 11. 파트별 강화 집계 계산
@@ -1220,12 +1362,22 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           const filteredActivityDetails = apiActivityDetails.filter((ad: { week_id: string }) => ad.week_id === weekId);
           setWeekActivityDetails(filteredActivityDetails);
 
-          // 13. 평점 매핑 (activity_records.id → points → activity_type_id)
+          // 12-1. 어드민 개별 권한 (secondary_info_grants) - weekBundle에서 가져옴
+          if (wb.secondaryInfoGrants) {
+            setSecondaryInfoGrants(wb.secondaryInfoGrants as SecondaryInfoGrant[]);
+          }
+
+          // 13. 평점 매핑 — points.line_id (= activity_types.id) + 현재 주차 매칭.
+          //   어드민(compliance-manage)은 (reward_star + 보너스 평점) 을 한 행에 합산해 저장하므로,
+          //   화면 표시는 라인의 reward_star 만큼 차감해 실제 평점(0~10) 만 노출.
+          //   (예: 26봄 9주차부터 실무 경험 reward_star=10 → 저장 20 = 평점 10 으로 환산)
+          //   apiActivityPoints 는 given_at desc 정렬이므로 동일 키 중복 시 최신 값이 우선.
           const ratingsMap = new Map<string, number>();
-          filteredActivityRecords.forEach((ar: { id: string; activity_type_id: string }) => {
-            const pointData = apiActivityPoints.find((p: { activity_id: string }) => p.activity_id === ar.id);
-            if (pointData) {
-              ratingsMap.set(ar.activity_type_id, pointData.points);
+          apiActivityPoints.forEach((p: { line_id: string | null; week_id: string | null; points: number }) => {
+            if (p.line_id && p.week_id === weekId && !ratingsMap.has(p.line_id)) {
+              const baseStar = typesMap.get(p.line_id)?.reward_star || 0;
+              const rating = Math.max(0, (p.points || 0) - baseStar);
+              ratingsMap.set(p.line_id, rating);
             }
           });
           setActivityRatings(ratingsMap);
@@ -1246,36 +1398,42 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           setAllUserCompletedActivities(allCompletedActivities);
 
           // 누적 성공 주차 수 (현재 주차 포함) - 위에서 계산된 값 사용
-          const currentCumulativeApproved = currentApprovedCount;
+          const currentCumulativeApproved = cumulativeForEligible;
 
-          // 실무 정보: 온보딩 주차면 0 (강화율 계산에서 제외), 아니면 해당 주차의 활성화된 활동 수
-          const infoTotal = isOnboardingWeekLocal ? 0 : activeActivities.filter((a) => infoTypesList.includes(a.activity_type_id)).length;
+          // 실무 정보: 해당 주차의 활성화된 활동 수 (온보딩 주차도 정상 계산)
+          const infoTotal = activeActivities.filter((a) => infoTypesList.includes(a.activity_type_id)).length;
 
-          // 실무 역량: 온보딩 주차면 0 (강화율 계산에서 제외), 아니면 1 (매주 최대 1개 선택 가능)
-          const competencyTotal = isOnboardingWeekLocal ? 0 : 1;
+          // 실무 역량: 평소 매주 최대 1개. 공식 휴식 주차는 기본 0이지만, 예외적으로 개설된 활동이 있으면 1.
+          const hasActiveCompetency = activeActivities.some((a) => competencyTypesList.includes(a.activity_type_id));
+          const competencyTotal = (currentWeek.is_club_break || isBreakSeason)
+            ? (hasActiveCompetency ? 1 : 0)
+            : 1;
 
-          // 실무 경험: eligible 조건 체크 (cluster-4-1과 동일한 로직)
+          // 실무 경험: 해당 주차에 개설된 experience 활동 중 eligible 조건 체크
+          // eligible_min/max 룰 적용 시점: 2026년 봄 시즌 9주차부터
+          // 그 이전에는 개설된 모든 실무 경험 활동이 적격 (룰 없이 전부 카운트)
+          const isEligibilityRuleActive = seasonData && (
+            seasonData.year > 2026 ||
+            (seasonData.year === 2026 && seasonData.name !== 'spring') ||
+            (seasonData.year === 2026 && seasonData.name === 'spring' && currentWeek.week_number >= 9)
+          );
           let experienceTotal = 0;
-          if (!isOnboardingWeekLocal) {
-            const experienceActivities = activeActivities.filter((a) => experienceTypesList.includes(a.activity_type_id));
+          // 해당 주차에 개설된(is_active) experience 활동만 대상으로 함 (온보딩 주차도 정상 계산)
+          const activeExperienceActivities = activeActivities.filter((a) => experienceTypesList.includes(a.activity_type_id));
+          activeExperienceActivities.forEach((a) => {
+            const typeInfo = experienceInfos.find((info) => info.id === a.activity_type_id);
 
-            experienceActivities.forEach((a) => {
-              const typeInfo = experienceInfos.find((info) => info.id === a.activity_type_id);
+            if (!typeInfo) {
+              experienceTotal++;
+              return;
+            }
 
-              if (!typeInfo) {
-                experienceTotal++; // 정보가 없으면 기본 포함
-                return;
-              }
-
-              // eligible_min/max 체크 (null이면 제한 없음)
+            if (isEligibilityRuleActive) {
               const minWeek = typeInfo.eligible_min_approved_weeks ?? 1;
               const maxWeek = typeInfo.eligible_max_approved_weeks ?? 999;
 
-              // 누적 주차가 eligible 범위 내인지 확인
               if (currentCumulativeApproved >= minWeek && currentCumulativeApproved <= maxWeek) {
-                // count_once_in_total 체크 (1회만 가능한 활동)
                 if (typeInfo.count_once_in_total) {
-                  // 이미 이전 주차에서 완료했는지 확인
                   const previouslyCompleted = allCompletedActivities.some((ca: { week_id: string; activity_type_id: string }) => ca.activity_type_id === a.activity_type_id && ca.week_id !== weekId);
                   if (!previouslyCompleted) {
                     experienceTotal++;
@@ -1284,49 +1442,76 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   experienceTotal++;
                 }
               }
-            });
-          }
+            } else {
+              // 룰 적용 이전: 개설된 모든 실무 경험 활동 카운트
+              experienceTotal++;
+            }
+          });
 
           // 실무 경력: career_records 기반으로 계산됨 (별도 useEffect에서 처리)
           // 여기서는 초기값 0으로 설정, career_records 로드 후 덮어씀
 
-          // success 계산 (강화 성공 기준: is_completed + (48시간 경과 OR 2차 정보 기입))
+          // success 계산 (강화 성공 기준: is_completed + 결정 시점 도달 — N+1 목 12:01 KST)
           // 해당 주차의 완료된 활동만 필터링
           type CompletedActivity = { week_id: string; activity_type_id: string };
           const weekCompletedActivities = allCompletedActivities.filter((a: CompletedActivity) => a.week_id === weekId);
 
-          // 강화 성공 여부 판단 헬퍼 함수 (getEnhancementStatus와 동일한 로직)
+          // 결정 시점 (N+1 목 12:01 KST) 도달 여부 — getEnhancementStatus 와 동일 기준
+          const isResultsDecidedHere = currentWeek?.start_date
+            ? Date.now() >= computeResultDecidedMs(currentWeek.start_date)
+            : false;
+
+          // 강화 성공 여부 판단 헬퍼 (2차 정보 / deadline 무관, 결정 시점만 본다)
           const isEnhancementSuccess = (activityTypeId: string): boolean => {
-            // 1. 활동 완료 여부 확인
-            const isCompleted = weekCompletedActivities.some((a: CompletedActivity) => a.activity_type_id === activityTypeId);
-            if (!isCompleted) return false;
-
-            // 2. 2차 정보 기입 여부 확인
-            const detail = filteredActivityDetails.find((d: { activity_type_id: string; sub_title: string | null; output_links: OutputLink[] | null }) => d.activity_type_id === activityTypeId);
-            const hasSecondaryInfo = detail && (detail.sub_title || (detail.output_links && detail.output_links.length > 0));
-            if (hasSecondaryInfo) return true;
-
-            // 3. 48시간 경과 여부 확인
-            const activity = activitiesData.find((a) => a.activity_type_id === activityTypeId);
-            if (!activity?.opened_at) return false;
-
-            const openedTime = new Date(activity.opened_at).getTime();
-            const now = Date.now();
-            const elapsed = now - openedTime;
-            const deadline = 48 * 60 * 60 * 1000; // 48시간 (밀리초)
-
-            return elapsed >= deadline;
+            if (!isResultsDecidedHere) return false;
+            return weekCompletedActivities.some((a: CompletedActivity) => a.activity_type_id === activityTypeId);
           };
 
           const infoSuccess = infoTypesList.filter((activityTypeId) => isEnhancementSuccess(activityTypeId)).length;
-          // 실무 역량 success: 온보딩 주차면 0 (강화율 계산에서 제외)
-          const competencySuccess = isOnboardingWeekLocal ? 0 : competencyTypesList.some((activityTypeId) => isEnhancementSuccess(activityTypeId)) ? 1 : 0;
-          const experienceSuccess = isOnboardingWeekLocal ? 0 : experienceTypesList.filter((activityTypeId) => isEnhancementSuccess(activityTypeId)).length;
+          // 실무 역량 success (온보딩 주차도 정상 계산)
+          const competencySuccess = competencyTypesList.some((activityTypeId) => isEnhancementSuccess(activityTypeId)) ? 1 : 0;
+          // 실무 경험 success: 개설된 활동 중 eligible한 타입의 강화 성공만 카운트
+          const eligibleExperienceTypes: string[] = [];
+          {
+            activeExperienceActivities.forEach((a) => {
+              const typeInfo = experienceInfos.find((info) => info.id === a.activity_type_id);
+              if (!typeInfo) {
+                eligibleExperienceTypes.push(a.activity_type_id);
+                return;
+              }
+              if (isEligibilityRuleActive) {
+                const minWeek = typeInfo.eligible_min_approved_weeks ?? 1;
+                const maxWeek = typeInfo.eligible_max_approved_weeks ?? 999;
+                if (currentCumulativeApproved >= minWeek && currentCumulativeApproved <= maxWeek) {
+                  if (typeInfo.count_once_in_total) {
+                    const previouslyCompleted = allCompletedActivities.some((ca: { week_id: string; activity_type_id: string }) => ca.activity_type_id === a.activity_type_id && ca.week_id !== weekId);
+                    if (!previouslyCompleted) eligibleExperienceTypes.push(typeInfo.id);
+                  } else {
+                    eligibleExperienceTypes.push(typeInfo.id);
+                  }
+                }
+              } else {
+                eligibleExperienceTypes.push(a.activity_type_id);
+              }
+            });
+          }
+          const experienceSuccess = eligibleExperienceTypes.filter((activityTypeId) => isEnhancementSuccess(activityTypeId)).length;
           // 실무 경력 success: career_records 기반으로 계산됨 (별도 useEffect에서 처리)
 
-          setInfoStats({ total: infoTotal, success: infoSuccess });
-          setCompetencyStats({ total: competencyTotal, success: competencySuccess });
-          setExperienceStats({ total: experienceTotal, success: experienceSuccess });
+          // 개인 휴식 크루는 통계를 0으로 강제 (해당 주차에 활동 자체가 없는 게 정상).
+          // 공식 휴식 주차는 강제로 0 처리하지 않음 — 예외적으로 개설된 활동이 있으면 자연스럽게 반영.
+          // phase(집계 중/진행 중)에 가려지지 않도록 phase-독립 플래그를 사용.
+          const isPersonalRest = userIsOnPersonalRestForWeek;
+          if (isPersonalRest) {
+            setInfoStats({ total: 0, success: 0 });
+            setCompetencyStats({ total: 0, success: 0 });
+            setExperienceStats({ total: 0, success: 0 });
+            setCareerStats({ total: 0, success: 0 });
+          } else {
+            setInfoStats({ total: infoTotal, success: infoSuccess });
+            setCompetencyStats({ total: competencyTotal, success: competencySuccess });
+            setExperienceStats({ total: experienceTotal, success: experienceSuccess });
+          }
           // careerStats는 career_records useEffect에서 설정됨
         }
 
@@ -1395,28 +1580,29 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     fetchCareerRecords();
   }, [currentUserId, weekId, urlUserId]);
 
-  // 실무 경력 통계 업데이트 (computed status 기반)
-  // total: 해당 주차의 전체 프로젝트 수 (제한 없음)
-  // success: 강화 성공한 프로젝트 수 (computed enhanced - 최대 total개)
+  // 실무 경력 통계 업데이트 (computed status 기반) — cluster-4-1 / ranking API 와 정합.
+  // total: 해당 주차에 어드민이 개설한 career_projects 수 (cap 5).
+  //   ※ careerRecords 는 /api/career-records 응답 = 그 주차 모든 projects + 유저 레코드 머지.
+  //      따라서 careerRecords.length 자체가 career_projects 수와 같음.
+  // success: 강화 성공한 프로젝트 수 (computed enhanced) — 최대 total 까지 cap.
+  // 운영 정책: 크루는 한 주에 최대 5개까지 참여 가능 → 분모/분자 모두 5 cap.
   useEffect(() => {
-    // 전체 프로젝트 수 (제한 없음)
-    const rawTotal = careerRecords.length;
-    const total = rawTotal;
-    // computed status 기반: pending이어도 2차 정보 작성 or 마감 경과 시 성공으로 카운트
-    const enhancedCount = careerRecords.filter((r, index) => {
+    // 개인 휴식 → 경력 통계 0 으로 강제. phase(집계 중) 와 무관하게 적용.
+    if (weekData?.isPersonalRest) {
+      setCareerStats({ total: 0, success: 0 });
+      return;
+    }
+    const total = Math.min(careerRecords.length, 5);
+    // computed status: pending → 결정 시점(N+1 목 12:01 KST) 이후에만 enhanced 로 승격.
+    //   2차 정보 / secondary_info_deadline 은 강화 성공/실패 판정에 영향 없음 (2026 정책).
+    const enhancedCount = careerRecords.filter((r) => {
       if (r.enhancement_status === "enhanced") return true;
-      if (r.enhancement_status === "pending") {
-        const activityType = (careerTypeIds.length > 0 ? careerTypeIds : ["practical_project"])[index];
-        const detail = activityType ? weekActivityDetails.find((d) => d.activity_type_id === activityType) : null;
-        const hasSecondaryInfo = detail && ((detail.sub_title && detail.sub_title.trim() !== "") || (detail.output_links && detail.output_links.some((link: { url?: string }) => link?.url && link.url.trim() !== "")));
-        const deadlinePassed = r.secondary_info_deadline ? new Date(r.secondary_info_deadline) <= new Date() : false;
-        return hasSecondaryInfo || deadlinePassed;
-      }
+      if (r.enhancement_status === "pending") return resultsDecided;
       return false;
     }).length;
     const success = Math.min(enhancedCount, total);
     setCareerStats({ total, success });
-  }, [careerRecords, weekActivityDetails]);
+  }, [careerRecords, weekData, resultsDecided]);
 
   // 키워드 목록 가져오기 (모달 열릴 때 lazy load)
   const fetchKeywordsIfNeeded = async () => {
@@ -1620,24 +1806,59 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     setCanEditColleague(isDemoMode);
   }, [isDemoMode]);
 
+  // Weekly Review / 연계동료 작성 시간 윈도우
+  // 앵커 = weekData.startDate (= N주차 월요일 00:00 KST)
+  //   144h(=6d 0h)  → N주차 일요일 00:00 KST  → +1min = 일 00:01 (오픈)
+  //   252h(=10d 12h) → N+1주차 목요일 12:00 KST (마감, 시스템 여유분)
+  // 데모/어드민은 우회.
+  const requireWriteWindow = async (): Promise<boolean> => {
+    if (isDemoMode) return true;
+    if (session?.user?.isAdmin) return true;
+    if (!weekData?.startDate) {
+      await popup.alert("주차 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.");
+      return false;
+    }
+    const anchorMs = new Date(`${weekData.startDate}T00:00:00+09:00`).getTime();
+    const openMs = anchorMs + 144 * 3600 * 1000 + 60 * 1000;
+    const closeMs = anchorMs + 252 * 3600 * 1000;
+    const now = Date.now();
+    if (now < openMs || now >= closeMs) {
+      await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
+      return false;
+    }
+    return true;
+  };
+
   // 일반 모드 백엔드 승인 상태 → 모든 canEdit* 플래그에 일괄 반영
+  // 다른 크루 카드 열람 시(isOwner=false)에는 승인됐어도 수정 비활성화
+  // 어드민(마더) 계정은 승인/소유 무관하게 모든 라인 카드 수정 가능
   useEffect(() => {
     if (isDemoMode) return; // 데모 모드는 위 useEffect들이 true로 셋업
+    if (session?.user?.isAdmin) {
+      setCanEditReputation(true);
+      setCanEditColleague(true);
+      setCanEditWorkInfo(true);
+      setCanEditWorkAbility(true);
+      setCanEditWorkExp(true);
+      setCanEditWorkCareer(true);
+      return;
+    }
     let cancelled = false;
     (async () => {
       const approved = await checkApprovalStatus();
       if (cancelled) return;
-      setCanEditReputation(approved);
-      setCanEditColleague(approved);
-      setCanEditWorkInfo(approved);
-      setCanEditWorkAbility(approved);
-      setCanEditWorkExp(approved);
-      setCanEditWorkCareer(approved);
+      const editable = approved && isOwner;
+      setCanEditReputation(editable);
+      setCanEditColleague(editable);
+      setCanEditWorkInfo(editable);
+      setCanEditWorkAbility(editable);
+      setCanEditWorkExp(editable);
+      setCanEditWorkCareer(editable);
     })();
     return () => {
       cancelled = true;
     };
-  }, [isDemoMode, session]);
+  }, [isDemoMode, session, isOwner]);
 
   // 작업 3: 이번 주 내가 보낸 평판 리스트 (중복 방지 + 7명 제한 체크용 — best-effort)
   // TODO: [백엔드 작업 필요]
@@ -1676,6 +1897,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 주차 평판 카드 상세보기 모달 상태
   const [reputationViewModalOpen, setReputationViewModalOpen] = useState(false);
   const [selectedReputationCard, setSelectedReputationCard] = useState<any>(null);
+  // 어드민 평판 수정 시 사용하는 평판 ID
+  const [editingWeeklyReputationId, setEditingWeeklyReputationId] = useState<string | null>(null);
 
   // 연계 동료 카드 상세보기 모달 상태
   const [colleagueViewModalOpen, setColleagueViewModalOpen] = useState(false);
@@ -1687,20 +1910,29 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
+    if (!(await requireWriteWindow())) return;
     if (!selectedColleagueCard) return;
-    // TODO: [백엔드 작업 필요] 일반 모드 — DB 삭제 API 호출
-    //   엔드포인트: DELETE /api/weekly-colleagues/[id] (현재 route.ts 미구현)
-    //   구현 후 아래 활성화:
-    // if (!isDemoMode) {
-    //   try {
-    //     await fetch(`/api/weekly-colleagues/${selectedColleagueCard.id}`, { method: "DELETE" });
-    //   } catch (err) {
-    //     console.error("[colleague] 삭제 API 실패:", err);
-    //     alert("삭제에 실패했습니다.");
-    //     return;
-    //   }
-    // }
-    setSelectedColleagues((prev) => prev.filter((c) => c.id !== selectedColleagueCard.id));
+
+    const remaining = selectedColleagues.filter((c) => c.id !== selectedColleagueCard.id);
+
+    // 일반 모드: API로 동기화 (POST가 주차 단위로 전체 교체)
+    if (!isDemoMode) {
+      try {
+        const payload = remaining.map((c) => ({ colleagueId: c.id, rank: c.rank, message: c.message || "" }));
+        const res = await fetch(apiUrl("/api/weekly-colleagues"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ weekCardId: weekId, colleagues: payload }),
+        });
+        if (!res.ok) throw new Error("삭제 실패");
+      } catch (err) {
+        console.error("[colleague] 삭제 API 실패:", err);
+        alert("삭제에 실패했습니다.");
+        return;
+      }
+    }
+
+    setSelectedColleagues(remaining);
     setColleagueViewModalOpen(false);
     setSelectedColleagueCard(null);
   };
@@ -1738,14 +1970,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   // workInfo View 모달 — 편집 모드 입력 state (보기 모드에서는 selectedWorkInfoCard 직접 표시)
   const [editingSubTitle, setEditingSubTitle] = useState<string>("");
-  // TODO: [백엔드 작업 필요] weekly_activity_details에 growth_point 컬럼 추가 — 백엔드 머지 후 selectedWorkInfoCard.growthPoint로 교체
   const [editingGrowthPoint, setEditingGrowthPoint] = useState<string>("");
   const [editingOutputLinks, setEditingOutputLinks] = useState<{ desc: string; url: string }[]>(Array(5).fill({ desc: "", url: "" }));
-  // TODO: [백엔드 작업 필요] weekly_activity_details에 image_urls(text[]) 컬럼 추가 — 백엔드 머지 후 selectedWorkInfoCard.images 사용 + URL.createObjectURL 결과를 서버 업로드로 교체
   const [editingImages, setEditingImages] = useState<(string | null)[]>(createEmptyWorkInfoImages);
   const imageFileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
-  // TODO: [백엔드 작업 필요] image_captions 컬럼 추가 — 백엔드 머지 후 card.imageCaptions 사용
   const [editingImageCaptions, setEditingImageCaptions] = useState<string[]>(createEmptyWorkInfoCaptions);
   // cluster3 captionOpenIndex 패턴 — 활성 슬롯 idx(null=비활성)
   const [activeCaptionIdx, setActiveCaptionIdx] = useState<number | null>(null);
@@ -1822,8 +2051,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const [showCareerHelpModal, setShowCareerHelpModal] = useState(false);
 
   // Weekly Review 박스 — unfurl 애니메이션 (작업 0~2)
+  // [Fix] 초기값을 true로: viewport 감지 트리거 실패 케이스 회피 — 박스가 항상 보이도록
   const weeklyReviewRef = useRef<HTMLDivElement>(null);
-  const [isReviewUnfurled, setIsReviewUnfurled] = useState(false);
+  const [isReviewUnfurled, setIsReviewUnfurled] = useState(true);
 
   const [canEditWorkCareer, setCanEditWorkCareer] = useState<boolean>(isDemoMode);
   useEffect(() => {
@@ -1832,6 +2062,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   // Weekly Review 박스 — scroll + getBoundingClientRect (1회성 unfurl)
   // clip-path: inset(0 100% 0 0)로 IntersectionObserver dead-lock 회피
+  // [Fix] window 스크롤이 박스 영역을 못 닿으면 unfurl이 영원히 안 일어나는 문제 — 마운트 후 200ms 안에 무조건 unfurl
   useEffect(() => {
     const target = weeklyReviewRef.current;
     if (!target) return;
@@ -1848,12 +2079,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     };
 
     const initialTimer = setTimeout(checkVisible, 100);
+    // viewport 감지 실패해도 마운트 후 일정 시간 뒤 무조건 unfurl
+    const fallbackTimer = setTimeout(() => setIsReviewUnfurled(true), 200);
 
     window.addEventListener("scroll", checkVisible, { passive: true });
     window.addEventListener("resize", checkVisible, { passive: true });
 
     return () => {
       clearTimeout(initialTimer);
+      clearTimeout(fallbackTimer);
       window.removeEventListener("scroll", checkVisible);
       window.removeEventListener("resize", checkVisible);
     };
@@ -1915,7 +2149,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     const card = selectedWorkInfoCard;
     // 스냅샷: 비교 대상 필드만 (subTitle/growthPoint/outputLinks/images)
     const initialOutputLinks = card?.outputLinks && card.outputLinks.length > 0 ? card.outputLinks.map((l: { desc: string; url: string }) => ({ desc: l.desc || "", url: l.url || "" })) : Array(5).fill({ desc: "", url: "" });
-    // TODO: [백엔드 작업 필요] card.images / card.imageCaptions로 교체. 현재는 항상 빈 슬롯 4개로 초기화.
     const initialImages = normalizeWorkInfoImages(card?.images);
     const initialCaptions = normalizeWorkInfoCaptions(card?.imageCaptions);
     workInfoSnapshot.current = {
@@ -1956,15 +2189,106 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
-    // 편집 모드 유지. confirm 후 스냅샷 복원.
-    const snap = workInfoSnapshot.current;
-    if (snap && (await popup.confirm("내용을 모두 초기화하시겠어요?"))) {
-      setEditingSubTitle(snap.subTitle || "");
-      setEditingGrowthPoint(snap.growthPoint || "");
-      setEditingOutputLinks(snap.outputLinks && snap.outputLinks.length > 0 ? snap.outputLinks.map((l: { desc: string; url: string }) => ({ desc: l.desc || "", url: l.url || "" })) : Array(5).fill({ desc: "", url: "" }));
-      setEditingImages(normalizeWorkInfoImages(snap.images));
-      setEditingImageCaptions(normalizeWorkInfoCaptions(snap.imageCaptions));
+    // 초기화 = 모든 필드를 빈 값으로 (Weekly Review 와 동일 패턴 — "초기화" 라벨대로 비우기)
+    if (!(await popup.confirm("내용을 모두 초기화하시겠어요?"))) return;
+    setEditingSubTitle("");
+    setEditingGrowthPoint("");
+    setEditingOutputLinks(Array(5).fill({ desc: "", url: "" }));
+    setEditingImages(createEmptyWorkInfoImages());
+    setEditingImageCaptions(createEmptyWorkInfoCaptions());
+  };
+
+  // 아웃풋 이미지 ↔ 캡션 1:1 페어 검증 — 한쪽만 채워진 첫 슬롯과 종류 반환, 모두 정상이면 null
+  const findImageCaptionMismatch = (
+    images: (string | null)[],
+    captions: string[],
+    startIdx: number = 0,
+  ): { slot: number; type: "missing-caption" | "missing-image" } | null => {
+    for (let i = startIdx; i < images.length; i++) {
+      const hasImage = !!images[i];
+      const hasCaption = !!(captions[i] && captions[i].trim());
+      if (hasImage && !hasCaption) return { slot: i + 1, type: "missing-caption" };
+      if (!hasImage && hasCaption) return { slot: i + 1, type: "missing-image" };
     }
+    return null;
+  };
+
+  const captionMismatchMessage = (m: { slot: number; type: "missing-caption" | "missing-image" }) =>
+    m.type === "missing-caption"
+      ? `아웃풋 이미지 ${m.slot}번의 캡션을 입력해주세요.\n이미지와 캡션은 한 쌍이에요. 😊`
+      : `아웃풋 ${m.slot}번에 이미지를 올려주세요.\n캡션만 입력할 수 없어요. 이미지와 캡션은 한 쌍이에요. 😊`;
+
+  // blob: URL 배열을 Supabase Storage로 업로드 → 영구 URL 배열 반환. http(s)/data URL은 그대로 통과.
+  const persistImageUrls = async (
+    images: (string | null)[],
+    activityTypeId: string,
+  ): Promise<(string | null)[]> => {
+    const result: (string | null)[] = [];
+    for (let i = 0; i < images.length; i++) {
+      const url = images[i];
+      if (!url) {
+        result.push(null);
+        continue;
+      }
+      if (!url.startsWith("blob:")) {
+        result.push(url);
+        continue;
+      }
+      const blob = await (await fetch(url)).blob();
+      const ext = (blob.type.split("/")[1] || "jpg").replace("jpeg", "jpg");
+      const file = new File([blob], `slot-${i}.${ext}`, { type: blob.type });
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("week_id", weekId);
+      formData.append("activity_type_id", activityTypeId);
+      formData.append("slot_index", String(i));
+      const res = await fetch(apiUrl("/api/activity-details/upload-image"), {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `이미지 업로드 실패 (slot ${i + 1})`);
+      }
+      const data = await res.json();
+      result.push(data.url as string);
+    }
+    return result;
+  };
+
+  // user_activity_details 저장 (모달 저장 공용 헬퍼). 데모 모드에서는 API 호출 스킵.
+  const persistActivityDetailToServer = async (params: {
+    activityTypeId: string;
+    subTitle: string | null;
+    outputLinks: { desc: string; url: string }[] | null;
+    growthPoint: string | null;
+    images: (string | null)[];
+    imageCaptions: string[];
+  }): Promise<{ images: (string | null)[] }> => {
+    if (isDemoMode) return { images: params.images };
+    if (!currentUserId || !weekId) return { images: params.images };
+    const persistedImages = await persistImageUrls(params.images, params.activityTypeId);
+    const adminCount = getAdminOutputLinksCount(params.activityTypeId);
+    const userLinks = (params.outputLinks || []).slice(adminCount).filter((l) => l.url?.trim() !== "");
+    const res = await fetch(apiUrl("/api/activity-details"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: currentUserId,
+        week_id: weekId,
+        activity_type_id: params.activityTypeId,
+        sub_title: params.subTitle,
+        output_links: userLinks.length > 0 ? userLinks : null,
+        growth_point: params.growthPoint,
+        image_urls: persistedImages,
+        image_captions: params.imageCaptions,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "저장에 실패했습니다.");
+    }
+    return { images: persistedImages };
   };
 
   const handleSaveWorkInfo = async () => {
@@ -1972,31 +2296,53 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
-    // 필수필드 검증: Sub Title / Growth Point / 이미지 1·2번
-    // cluster2/cluster3 표준 패턴: footerNotice + field-missing 깜빡임 + scrollIntoView
-    const missing: string[] = [];
-    if (!editingSubTitle.trim()) missing.push("subTitle");
-    if (!editingGrowthPoint.trim()) missing.push("growthPoint");
-    if (!editingImages[0]) missing.push("image0");
-    if (!editingImages[1]) missing.push("image1");
-    if (missing.length > 0) {
-      setWorkInfoFooterNotice("error");
-      const targetEl = document.querySelector(`.workinfo-view-modal [data-field="${missing[0]}"]`);
-      if (targetEl) {
-        targetEl.classList.add("field-missing");
-        targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
-        setTimeout(() => targetEl.classList.remove("field-missing"), 900);
+    // 아웃풋 이미지 ↔ 캡션 1:1 페어 검증 (이미지 1개 = 캡션 1개, 한쪽만 입력 불가)
+    {
+      const mismatch = findImageCaptionMismatch(editingImages, editingImageCaptions);
+      if (mismatch) {
+        setWorkInfoFooterNotice("error");
+        await popup.alert(captionMismatchMessage(mismatch));
+        return;
       }
-      return;
     }
+    // 모든 필드 옵셔널 — 일부만 기입해도 저장 가능
     // 저장 직전 confirm — 사용자 의도 재확인
     if (!(await popup.confirm("저장하시겠습니까?"))) return;
-    // sub_title + output_links 저장 (weekActivityDetails + selectedWorkInfoCard 동시 갱신)
-    // TODO: [백엔드 작업 필요] growth_point + image_urls 컬럼 추가 후 sub_title과 동일 패턴으로 저장. blob: URL은 서버 업로드 → 영구 URL 교체 필요.
     if (selectedWorkInfoCard?.activityType) {
       const newSubTitle = editingSubTitle.trim() || null;
       const newOutputLinks = editingOutputLinks;
-      setWeekActivityDetails((prev) => prev.map((d) => (d.activity_type_id === selectedWorkInfoCard.activityType ? { ...d, sub_title: newSubTitle, output_links: newOutputLinks } : d)));
+      const newGrowthPoint = editingGrowthPoint.trim() || null;
+      let persistedImages: (string | null)[] = editingImages;
+      try {
+        const persisted = await persistActivityDetailToServer({
+          activityTypeId: selectedWorkInfoCard.activityType,
+          subTitle: newSubTitle,
+          outputLinks: newOutputLinks,
+          growthPoint: newGrowthPoint,
+          images: editingImages,
+          imageCaptions: editingImageCaptions,
+        });
+        persistedImages = persisted.images;
+      } catch (err) {
+        console.error("workInfo 저장 실패:", err);
+        alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
+        return;
+      }
+      setEditingImages(persistedImages);
+      setWeekActivityDetails((prev) => {
+        const next = {
+          week_id: weekId,
+          activity_type_id: selectedWorkInfoCard.activityType,
+          sub_title: newSubTitle,
+          output_links: newOutputLinks,
+          growth_point: newGrowthPoint,
+          image_urls: persistedImages,
+          image_captions: editingImageCaptions,
+        };
+        const idx = prev.findIndex((d) => d.activity_type_id === selectedWorkInfoCard.activityType);
+        if (idx < 0) return [...prev, next];
+        return prev.map((d) => (d.activity_type_id === selectedWorkInfoCard.activityType ? { ...d, ...next } : d));
+      });
       setSelectedWorkInfoCard((prev: any) =>
         prev
           ? {
@@ -2004,7 +2350,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               subTitle: newSubTitle || "",
               outputLinks: newOutputLinks,
               growthPoint: editingGrowthPoint,
-              images: editingImages,
+              images: persistedImages,
               imageCaptions: editingImageCaptions,
             }
           : prev,
@@ -2014,7 +2360,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         subTitle: newSubTitle || "",
         growthPoint: editingGrowthPoint,
         outputLinks: JSON.parse(JSON.stringify(newOutputLinks)),
-        images: [...editingImages],
+        images: [...persistedImages],
         imageCaptions: [...editingImageCaptions],
       };
     }
@@ -2065,7 +2411,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>, idx: number) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    // TODO: [백엔드 작업 필요] 실제 모드에서는 서버 업로드 후 영구 URL로 교체. 현재는 blob: URL (미리보기 전용).
+    // 미리보기는 blob: URL로, 실제 업로드는 저장 시점(persistImageUrls)에서 일괄 처리.
     const url = URL.createObjectURL(file);
     setEditingImages((prev) => {
       const next = [...prev];
@@ -2177,14 +2523,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
-    const snap = workAbilitySnapshot.current;
-    if (snap && (await popup.confirm("내용을 모두 초기화하시겠어요?"))) {
-      setEditingAbilitySubTitle(snap.subTitle || "");
-      setEditingAbilityGrowthPoint(snap.growthPoint || "");
-      setEditingAbilityOutputLinks(snap.outputLinks && snap.outputLinks.length > 0 ? snap.outputLinks.map((l: { desc: string; url: string }) => ({ desc: l.desc || "", url: l.url || "" })) : Array(5).fill({ desc: "", url: "" }));
-      setEditingAbilityImages(normalizeWorkInfoImages(snap.images));
-      setEditingAbilityImageCaptions(normalizeWorkInfoCaptions(snap.imageCaptions));
-    }
+    // 초기화 = 모든 필드를 빈 값으로
+    if (!(await popup.confirm("내용을 모두 초기화하시겠어요?"))) return;
+    setEditingAbilitySubTitle("");
+    setEditingAbilityGrowthPoint("");
+    setEditingAbilityOutputLinks(Array(5).fill({ desc: "", url: "" }));
+    setEditingAbilityImages(createEmptyWorkInfoImages());
+    setEditingAbilityImageCaptions(createEmptyWorkInfoCaptions());
   };
 
   const handleSaveWorkAbility = async () => {
@@ -2192,31 +2537,47 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
-    const missing: string[] = [];
-    if (!editingAbilitySubTitle.trim()) missing.push("subTitle");
-    if (!editingAbilityGrowthPoint.trim()) missing.push("growthPoint");
-    if (!editingAbilityImages[0]) missing.push("image0");
-    if (!editingAbilityImages[1]) missing.push("image1");
-    if (missing.length > 0) {
-      setWorkAbilityFooterNotice("error");
-      const targetEl = document.querySelector(`.workability-view-modal [data-field="${missing[0]}"]`);
-      if (targetEl) {
-        targetEl.classList.add("field-missing");
-        targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
-        setTimeout(() => targetEl.classList.remove("field-missing"), 900);
+    // 아웃풋 이미지 ↔ 캡션 1:1 페어 검증 (이미지 1개 = 캡션 1개, 한쪽만 입력 불가)
+    {
+      const mismatch = findImageCaptionMismatch(editingAbilityImages, editingAbilityImageCaptions);
+      if (mismatch) {
+        setWorkAbilityFooterNotice("error");
+        await popup.alert(captionMismatchMessage(mismatch));
+        return;
       }
-      return;
     }
+    // 모든 필드 옵셔널 — 일부만 기입해도 저장 가능
     if (!(await popup.confirm("저장하시겠습니까?"))) return;
     if (selectedWorkAbilityCard?.activityTypeId) {
       const newSubTitle = editingAbilitySubTitle.trim() || null;
       const newOutputLinks = editingAbilityOutputLinks;
+      const newGrowthPoint = editingAbilityGrowthPoint.trim() || null;
+      let persistedImages: (string | null)[] = editingAbilityImages;
+      try {
+        const persisted = await persistActivityDetailToServer({
+          activityTypeId: selectedWorkAbilityCard.activityTypeId,
+          subTitle: newSubTitle,
+          outputLinks: newOutputLinks,
+          growthPoint: newGrowthPoint,
+          images: editingAbilityImages,
+          imageCaptions: editingAbilityImageCaptions,
+        });
+        persistedImages = persisted.images;
+      } catch (err) {
+        console.error("workAbility 저장 실패:", err);
+        alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
+        return;
+      }
+      setEditingAbilityImages(persistedImages);
       setWeekActivityDetails((prev) => {
         const nextDetail = {
           week_id: weekId,
           activity_type_id: selectedWorkAbilityCard.activityTypeId,
           sub_title: newSubTitle,
           output_links: newOutputLinks,
+          growth_point: newGrowthPoint,
+          image_urls: persistedImages,
+          image_captions: editingAbilityImageCaptions,
         };
         const existingIndex = prev.findIndex((d) => d.activity_type_id === selectedWorkAbilityCard.activityTypeId);
         if (existingIndex < 0) return [...prev, nextDetail];
@@ -2229,7 +2590,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               subTitle: newSubTitle || "",
               outputLinks: newOutputLinks,
               growthPoint: editingAbilityGrowthPoint,
-              images: editingAbilityImages,
+              images: persistedImages,
               imageCaptions: editingAbilityImageCaptions,
             }
           : prev,
@@ -2238,7 +2599,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         subTitle: newSubTitle || "",
         growthPoint: editingAbilityGrowthPoint,
         outputLinks: JSON.parse(JSON.stringify(newOutputLinks)),
-        images: [...editingAbilityImages],
+        images: [...persistedImages],
         imageCaptions: [...editingAbilityImageCaptions],
       };
     }
@@ -2347,7 +2708,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     for (let i = 0; i < WORKINFO_IMAGE_SLOT_COUNT; i++) {
       if ((snapCaptions[i] || "") !== (editingExpImageCaptions[i] || "")) return true;
     }
-    if (editingExpRating !== (snap.rating || 0)) return true;
+    // 라인 평점은 어드민 전용 — dirty 판단 대상 아님
     return false;
   };
 
@@ -2404,15 +2765,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
-    const snap = workExpSnapshot.current;
-    if (snap && (await popup.confirm("내용을 모두 초기화하시겠어요?"))) {
-      setEditingExpSubTitle(snap.subTitle || "");
-      setEditingExpGrowthPoint(snap.growthPoint || "");
-      setEditingExpOutputLinks(snap.outputLinks && snap.outputLinks.length > 0 ? snap.outputLinks.map((l: { desc: string; url: string }) => ({ desc: l.desc || "", url: l.url || "" })) : Array(5).fill({ desc: "", url: "" }));
-      setEditingExpImages(normalizeWorkInfoImages(snap.images));
-      setEditingExpImageCaptions(normalizeWorkInfoCaptions(snap.imageCaptions));
-      setEditingExpRating(snap.rating || 0);
-    }
+    // 초기화 = 크루 입력 필드만 빈 값으로 (라인 평점은 어드민 전용 → 손 대지 않음)
+    if (!(await popup.confirm("내용을 모두 초기화하시겠어요?"))) return;
+    setEditingExpSubTitle("");
+    setEditingExpGrowthPoint("");
+    setEditingExpOutputLinks(Array(5).fill({ desc: "", url: "" }));
+    setEditingExpImages(createEmptyWorkInfoImages());
+    setEditingExpImageCaptions(createEmptyWorkInfoCaptions());
   };
 
   const handleSaveWorkExp = async () => {
@@ -2420,27 +2779,52 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
-    const missing: string[] = [];
-    if (!editingExpSubTitle.trim()) missing.push("subTitle");
-    if (!editingExpGrowthPoint.trim()) missing.push("growthPoint");
-    if (!editingExpImages[0]) missing.push("image0");
-    if (!editingExpImages[1]) missing.push("image1");
-    if (editingExpRating <= 0) missing.push("rating");
-    if (missing.length > 0) {
-      setWorkExpFooterNotice("error");
-      const targetEl = document.querySelector(`.workexp-view-modal [data-field="${missing[0]}"]`);
-      if (targetEl) {
-        targetEl.classList.add("field-missing");
-        targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
-        setTimeout(() => targetEl.classList.remove("field-missing"), 900);
+    // 아웃풋 이미지 ↔ 캡션 1:1 페어 검증 (이미지 1개 = 캡션 1개, 한쪽만 입력 불가)
+    {
+      const mismatch = findImageCaptionMismatch(editingExpImages, editingExpImageCaptions);
+      if (mismatch) {
+        setWorkExpFooterNotice("error");
+        await popup.alert(captionMismatchMessage(mismatch));
+        return;
       }
-      return;
     }
+    // 모든 필드 옵셔널 — 일부만 기입해도 저장 가능 (라인 평점은 어드민 전용)
     if (!(await popup.confirm("저장하시겠습니까?"))) return;
     if (selectedWorkExpCard?.activityTypeId) {
       const newSubTitle = editingExpSubTitle.trim() || null;
       const newOutputLinks = editingExpOutputLinks;
-      setWeekActivityDetails((prev) => prev.map((d) => (d.activity_type_id === selectedWorkExpCard.activityTypeId ? { ...d, sub_title: newSubTitle, output_links: newOutputLinks } : d)));
+      const newGrowthPoint = editingExpGrowthPoint.trim() || null;
+      let persistedImages: (string | null)[] = editingExpImages;
+      try {
+        const persisted = await persistActivityDetailToServer({
+          activityTypeId: selectedWorkExpCard.activityTypeId,
+          subTitle: newSubTitle,
+          outputLinks: newOutputLinks,
+          growthPoint: newGrowthPoint,
+          images: editingExpImages,
+          imageCaptions: editingExpImageCaptions,
+        });
+        persistedImages = persisted.images;
+      } catch (err) {
+        console.error("workExp 저장 실패:", err);
+        alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
+        return;
+      }
+      setEditingExpImages(persistedImages);
+      setWeekActivityDetails((prev) => {
+        const nextDetail = {
+          week_id: weekId,
+          activity_type_id: selectedWorkExpCard.activityTypeId,
+          sub_title: newSubTitle,
+          output_links: newOutputLinks,
+          growth_point: newGrowthPoint,
+          image_urls: persistedImages,
+          image_captions: editingExpImageCaptions,
+        };
+        const existingIndex = prev.findIndex((d) => d.activity_type_id === selectedWorkExpCard.activityTypeId);
+        if (existingIndex < 0) return [...prev, nextDetail];
+        return prev.map((d) => (d.activity_type_id === selectedWorkExpCard.activityTypeId ? { ...d, ...nextDetail } : d));
+      });
       setSelectedWorkExpCard((prev: any) =>
         prev
           ? {
@@ -2448,10 +2832,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               subTitle: newSubTitle || "",
               outputLinks: newOutputLinks,
               growthPoint: editingExpGrowthPoint,
-              images: editingExpImages,
+              images: persistedImages,
               imageCaptions: editingExpImageCaptions,
-              rating: editingExpRating / 2, // 별 표시(5점 만점)로 변환
-              ratingCount: `${editingExpRating} / 10`,
+              // rating은 어드민(compliance-manage)에서만 갱신 — 크루 저장 시 건드리지 않음
             }
           : prev,
       );
@@ -2459,7 +2842,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         subTitle: newSubTitle || "",
         growthPoint: editingExpGrowthPoint,
         outputLinks: JSON.parse(JSON.stringify(newOutputLinks)),
-        images: [...editingExpImages],
+        images: [...persistedImages],
         imageCaptions: [...editingExpImageCaptions],
         rating: editingExpRating,
       };
@@ -2618,14 +3001,36 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
-    const snap = workCareerSnapshot.current;
-    if (snap && (await popup.confirm("내용을 모두 초기화하시겠어요?"))) {
-      setEditingCareerSubTitle(snap.subTitle || "");
-      setEditingCareerGrowthPoint(snap.growthPoint || "");
-      setEditingCareerOutputLinks(snap.outputLinks && snap.outputLinks.length > 0 ? snap.outputLinks.map((l: { desc: string; url: string }) => ({ desc: l.desc || "", url: l.url || "" })) : Array(5).fill({ desc: "", url: "" }));
-      setEditingCareerImages(normalizeWorkCareerImages(snap.images));
-      setEditingCareerImageCaptions(normalizeWorkCareerCaptions(snap.imageCaptions));
+    // 초기화 = 크루가 입력한 값만 비움. 어드민이 등록한 슬롯(output_images, output_links 앞쪽)은 유지.
+    if (!(await popup.confirm("내용을 모두 초기화하시겠어요?"))) return;
+    const careerIdx = (selectedWorkCareerCard?.id || 1) - 1;
+    const careerRecord = careerRecords[careerIdx];
+    const adminImgs = (careerRecord?.output_images || []).filter((i) => i?.url?.trim());
+    const adminLinks = (careerRecord?.output_links || []).filter((l) => l?.url?.trim());
+    setEditingCareerSubTitle("");
+    setEditingCareerGrowthPoint("");
+    const resetLinks: { desc: string; url: string }[] = [];
+    for (let i = 0; i < 5; i++) {
+      if (i < adminLinks.length) {
+        resetLinks.push({ desc: adminLinks[i].desc || "", url: adminLinks[i].url || "" });
+      } else {
+        resetLinks.push({ desc: "", url: "" });
+      }
     }
+    setEditingCareerOutputLinks(resetLinks);
+    const resetImages: (string | null)[] = [];
+    const resetCaptions: string[] = [];
+    for (let i = 0; i < WORKCAREER_IMAGE_SLOT_COUNT; i++) {
+      if (i < adminImgs.length) {
+        resetImages.push(adminImgs[i].url);
+        resetCaptions.push(adminImgs[i].caption || "");
+      } else {
+        resetImages.push(null);
+        resetCaptions.push("");
+      }
+    }
+    setEditingCareerImages(resetImages);
+    setEditingCareerImageCaptions(resetCaptions);
   };
 
   const handleSaveWorkCareer = async () => {
@@ -2633,27 +3038,75 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
-    const missing: string[] = [];
-    if (!editingCareerSubTitle.trim()) missing.push("subTitle");
-    if (!editingCareerGrowthPoint.trim()) missing.push("growthPoint");
-    if (!editingCareerImages[0]) missing.push("image0");
-    if (!editingCareerImages[1]) missing.push("image1");
-    if (missing.length > 0) {
-      setWorkCareerFooterNotice("error");
-      const targetEl = document.querySelector(`.workcareer-view-modal [data-field="${missing[0]}"]`);
-      if (targetEl) {
-        targetEl.classList.add("field-missing");
-        targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
-        setTimeout(() => targetEl.classList.remove("field-missing"), 900);
+    // 아웃풋 이미지 ↔ 캡션 1:1 페어 검증 — 어드민 슬롯은 크루가 편집 불가하므로 제외 (한쪽만 입력 불가)
+    {
+      const careerIdxForCheck = (selectedWorkCareerCard?.id || 1) - 1;
+      const adminImgCountForCheck = (careerRecords[careerIdxForCheck]?.output_images || []).filter((i) => i?.url?.trim()).length;
+      const mismatch = findImageCaptionMismatch(editingCareerImages, editingCareerImageCaptions, adminImgCountForCheck);
+      if (mismatch) {
+        setWorkCareerFooterNotice("error");
+        await popup.alert(captionMismatchMessage(mismatch));
+        return;
       }
-      return;
     }
+    // 모든 필드 옵셔널 — 일부만 기입해도 저장 가능
     if (!(await popup.confirm("저장하시겠습니까?"))) return;
     const activityType = workCareerActivityTypes[(selectedWorkCareerCard?.id || 1) - 1];
     if (activityType) {
       const newSubTitle = editingCareerSubTitle.trim() || null;
       const newOutputLinks = editingCareerOutputLinks;
-      setWeekActivityDetails((prev) => prev.map((d) => (d.activity_type_id === activityType ? { ...d, sub_title: newSubTitle, output_links: newOutputLinks } : d)));
+      const newGrowthPoint = editingCareerGrowthPoint.trim() || null;
+      // 어드민 output_images 가 차지한 슬롯은 user_activity_details 에 저장하지 않음 (출처 분리)
+      const careerIdx = (selectedWorkCareerCard?.id || 1) - 1;
+      const adminImgsForSave = (careerRecords[careerIdx]?.output_images || []).filter((i) => i?.url?.trim());
+      const adminImgCount = adminImgsForSave.length;
+      const crewImagesToSave = editingCareerImages.slice(adminImgCount);
+      const crewCaptionsToSave = editingCareerImageCaptions.slice(adminImgCount);
+      let persistedCrewImages: (string | null)[] = crewImagesToSave;
+      try {
+        const persisted = await persistActivityDetailToServer({
+          activityTypeId: activityType,
+          subTitle: newSubTitle,
+          outputLinks: newOutputLinks,
+          growthPoint: newGrowthPoint,
+          images: crewImagesToSave,
+          imageCaptions: crewCaptionsToSave,
+        });
+        persistedCrewImages = persisted.images;
+      } catch (err) {
+        console.error("workCareer 저장 실패:", err);
+        alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
+        return;
+      }
+      // 화면 상태는 어드민 + 크루 머지 결과로 복원
+      const mergedImages: (string | null)[] = [];
+      const mergedCaptions: string[] = [];
+      for (let i = 0; i < WORKCAREER_IMAGE_SLOT_COUNT; i++) {
+        if (i < adminImgCount) {
+          mergedImages.push(adminImgsForSave[i].url);
+          mergedCaptions.push(adminImgsForSave[i].caption || "");
+        } else {
+          const crewIdx = i - adminImgCount;
+          mergedImages.push(persistedCrewImages[crewIdx] || null);
+          mergedCaptions.push(crewCaptionsToSave[crewIdx] || "");
+        }
+      }
+      setEditingCareerImages(mergedImages);
+      setEditingCareerImageCaptions(mergedCaptions);
+      setWeekActivityDetails((prev) => {
+        const nextDetail = {
+          week_id: weekId,
+          activity_type_id: activityType,
+          sub_title: newSubTitle,
+          output_links: newOutputLinks,
+          growth_point: newGrowthPoint,
+          image_urls: persistedCrewImages,
+          image_captions: crewCaptionsToSave,
+        };
+        const existingIndex = prev.findIndex((d) => d.activity_type_id === activityType);
+        if (existingIndex < 0) return [...prev, nextDetail];
+        return prev.map((d) => (d.activity_type_id === activityType ? { ...d, ...nextDetail } : d));
+      });
       setSelectedWorkCareerCard((prev: any) =>
         prev
           ? {
@@ -2661,9 +3114,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               subTitle: newSubTitle || "",
               outputLinks: newOutputLinks,
               growthPoint: editingCareerGrowthPoint,
-              // TODO: [백엔드 작업 필요] 이미지 저장 DB 컬럼 확정 후 연동 — 현재는 isDemoMode 더미 저장
-              images: editingCareerImages,
-              imageCaptions: editingCareerImageCaptions,
+              images: mergedImages,
+              imageCaptions: mergedCaptions,
             }
           : prev,
       );
@@ -2671,8 +3123,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         subTitle: newSubTitle || "",
         growthPoint: editingCareerGrowthPoint,
         outputLinks: JSON.parse(JSON.stringify(newOutputLinks)),
-        images: [...editingCareerImages],
-        imageCaptions: [...editingCareerImageCaptions],
+        images: [...mergedImages],
+        imageCaptions: [...mergedCaptions],
       };
     }
     await popup.alert("저장되었습니다.");
@@ -2714,11 +3166,22 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     });
   };
 
+  // 어드민 output_images 가 차지한 앞쪽 슬롯 수 (이 인덱스 미만은 크루 편집 불가)
+  const getCareerAdminSlotCount = (): number => {
+    const careerIdx = (selectedWorkCareerCard?.id || 1) - 1;
+    return (careerRecords[careerIdx]?.output_images || []).filter((i) => i?.url?.trim()).length;
+  };
+
   const triggerCareerImageUpload = (idx: number) => {
+    if (idx < getCareerAdminSlotCount()) return;
     careerImageFileInputRefs.current[idx]?.click();
   };
 
   const handleCareerImageFileChange = (e: React.ChangeEvent<HTMLInputElement>, idx: number) => {
+    if (idx < getCareerAdminSlotCount()) {
+      e.target.value = "";
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
     const url = URL.createObjectURL(file);
@@ -2731,6 +3194,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleCareerImageDelete = (idx: number) => {
+    if (idx < getCareerAdminSlotCount()) return;
     setEditingCareerImages((prev) => {
       const next = prev.filter((_, i) => i !== idx);
       while (next.length < WORKCAREER_IMAGE_SLOT_COUNT) next.push(null);
@@ -2744,6 +3208,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleCareerCaptionChange = (idx: number, value: string) => {
+    if (idx < getCareerAdminSlotCount()) return;
     setEditingCareerImageCaptions((prev) => {
       const next = [...prev];
       next[idx] = value;
@@ -2759,6 +3224,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 모달 열릴 때 배경 스크롤 잠금
   const anyModalOpen = workInfoModalOpen || workAbilityModalOpen || workExpModalOpen || workCareerModalOpen || headerModalOpen || reputationViewModalOpen || colleagueViewModalOpen || workInfoViewModalOpen || workAbilityViewModalOpen || workExpViewModalOpen || workCareerViewModalOpen;
   useModalScroll(anyModalOpen);
+
+  // [임시 진단] cluster-4 work-view-modal 깨짐 원인 추적 — ?debugLayout=1 일 때만 콘솔 로그.
+  // 사용자 환경(zoom/DPR/viewport)에서 재현 시 정보 수집용. 검증 후 호출부 제거할 것.
+  useDebugLayout(workInfoViewModalOpen, "workinfo-view-modal");
+  useDebugLayout(workExpViewModalOpen, "workexp-view-modal");
+  useDebugLayout(workAbilityViewModalOpen, "workability-view-modal");
+  useDebugLayout(workCareerViewModalOpen, "workcareer-view-modal");
 
   // card-desc의 … → .. 교체 (line-clamp 렌더링 완료 후)
   useEffect(() => {
@@ -2886,6 +3358,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
+    if (!(await requireWriteWindow())) return;
     if (!isColleagueEditFormValid()) {
       setColleagueSaveAttemptFailed(true);
       setColleagueFieldErrorFlash(true);
@@ -3035,7 +3508,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         message: c.message || "",
       }));
 
-      const res = await fetch("/api/weekly-colleagues", {
+      const res = await fetch(apiUrl("/api/weekly-colleagues"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3227,20 +3700,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       return;
     }
 
-    // 일반 모드 — TODO: 백엔드 엔드포인트 확정 후 조정
     try {
-      const res = await fetch(`/api/weekly-reviews?weekCardId=${weekId}`);
+      // 페이지 주인의 리뷰를 가져와야 함 — urlUserId 우선, 없으면 본인
+      const ownerId = urlUserId || session?.user?.id;
+      const params = new URLSearchParams({ weekCardId: weekId });
+      if (ownerId) params.set("userId", ownerId);
+      const res = await fetch(`/api/weekly-reviews?${params.toString()}`);
       if (!res.ok) {
         setWeeklyReviewFromDB(null);
         return;
       }
-      const data = await res.json();
-      let record = null;
-      if (Array.isArray(data)) {
-        record = data.length > 0 ? data[0] : null;
-      } else if (data && data.id) {
-        record = data;
-      }
+      const json = await res.json();
+      const record = json?.success && json?.data ? json.data : null;
       if (record) {
         setWeeklyReviewFromDB({
           id: record.id,
@@ -3262,7 +3733,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   useEffect(() => {
     if (!weekId) return;
     fetchWeeklyReview();
-  }, [weekId, isDemoMode]);
+    // urlUserId / session 변경 시에도 재조회 (페이지 주인이 바뀌면 다른 리뷰)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekId, isDemoMode, urlUserId, session?.user?.id]);
 
   // 주차 리뷰 — 검증 함수
   const isWeeklyReviewValid = (): boolean => {
@@ -3288,7 +3761,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       return { id: `demo-weekly-review-${Date.now()}`, weekCardId: weekId, created_at: now };
     }
 
-    // 일반 모드 — TODO: 백엔드 엔드포인트 확정 후 조정
     try {
       const endpoint = isUpdate ? `/api/weekly-reviews/${weeklyReviewFromDB?.id}` : "/api/weekly-reviews";
       const method = isUpdate ? "PUT" : "POST";
@@ -3297,9 +3769,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ weekCardId: weekId, rating: weeklyReviewData.rating, content: weeklyReviewData.content }),
       });
-      if (!res.ok) return null;
-      const data = await res.json();
-      return { id: data.id, weekCardId: data.weekCardId, created_at: data.created_at, updated_at: data.updated_at };
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        console.error("[weekly-review] API 응답 오류:", res.status, errJson);
+        return null;
+      }
+      const json = await res.json();
+      const record = json?.success && json?.data ? json.data : null;
+      if (!record) return null;
+      return { id: record.id, weekCardId: record.weekCardId, created_at: record.created_at, updated_at: record.updated_at };
     } catch (err) {
       console.error("[weekly-review] API 예외:", err);
       return null;
@@ -3370,11 +3848,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   // 주차 리뷰 — 푸터 핸들러
+  // [임시] 주차 리뷰는 관리자 승인 가드 해제 — 본인 회고 영역이라 승인 게이트 없이 작성 허용
+  // 단, 본인 페이지(또는 어드민)에서만 수정 가능 — 타 크루 페이지에서는 열람만
   const handleWeeklyReviewEditClick = async () => {
-    if (!canEditReputation) {
-      await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
+    if (!isOwner) {
+      await popup.alert("본인 주차 리뷰만 수정할 수 있습니다.");
       return;
     }
+    if (!(await requireWriteWindow())) return;
     setWeeklyReviewFormSnapshot({ rating: weeklyReviewData.rating, content: weeklyReviewData.content });
     setWeeklyReviewSaveAttemptFailed(false);
     setWeeklyReviewFieldErrorFlash(false);
@@ -3403,10 +3884,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleWeeklyReviewReset = async () => {
-    if (!isDemoMode && !canEditReputation) {
-      await popup.alert("관리자 승인 후 수정할 수 있습니다.");
-      return;
-    }
     if (!(await popup.confirm("작성 내용을 모두 초기화하시겠습니까?"))) return;
     // 초기화 = snapshot 복원이 아니라 모든 필드를 빈 값으로 (사용자 기대치: "초기화" 라벨대로 비우기)
     setWeeklyReviewData({ rating: 0, content: "" });
@@ -3415,10 +3892,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleWeeklyReviewSave = async () => {
-    if (!isDemoMode && !canEditReputation) {
-      await popup.alert("관리자 승인 후 수정할 수 있습니다.");
+    if (!isOwner) {
+      await popup.alert("본인 주차 리뷰만 저장할 수 있습니다.");
       return;
     }
+    if (!(await requireWriteWindow())) return;
     if (!isWeeklyReviewValid()) {
       setWeeklyReviewSaveAttemptFailed(true);
       setWeeklyReviewFieldErrorFlash(true);
@@ -3634,6 +4112,49 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
     setSaveAttemptFailed(false);
 
+    // 수정 모드 — 기존 평판 PUT (어드민 전체 / 일반 유저는 본인 작성분)
+    if (editingWeeklyReputationId) {
+      if (!window.confirm("저장하시겠습니까?")) return;
+      setReputationSaving(true);
+      try {
+        const res = await fetch("/api/weekly-reputations", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: editingWeeklyReputationId,
+            rating: reputationEditData.rating,
+            content: reputationEditData.content.trim(),
+            keyword: reputationEditData.keyword,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok) {
+          alert(json.error || "수정에 실패했습니다.");
+          return;
+        }
+        await fetchWeeklyReputations();
+        if (selectedReputationCard) {
+          setSelectedReputationCard({
+            ...selectedReputationCard,
+            rating: reputationEditData.rating / 2,
+            ratingCount: `${reputationEditData.rating} / 10`,
+            description: reputationEditData.content,
+            tagText: `#${reputationEditData.keyword}`,
+          });
+        }
+        alert("수정되었습니다.");
+        setHeaderModalOpen(false);
+        setReputationEditData({ rating: 0, content: "", keyword: "" });
+        setEditingWeeklyReputationId(null);
+        if (selectedReputationCard) setReputationViewModalOpen(true);
+      } catch {
+        alert("서버 오류가 발생했습니다.");
+      } finally {
+        setReputationSaving(false);
+      }
+      return;
+    }
+
     // 편집 진입 경로 여부 — view에서 [수정] 클릭 시 selectedReputationCard 유지됨, 신규 진입 시 null
     const wasEditEntry = !!selectedReputationCard;
 
@@ -3717,7 +4238,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
   };
 
-  // 주차 평판 저장 함수 — 작업 2: 결과 반환 형태로 리팩토링 (post-save 처리는 handleFormSave에서)
+  // 주차 평판 저장 함수 — 결과 반환 형태로 리팩토링 (post-save 처리는 handleFormSave에서)
   // 성공 시 { id, created_at } 반환, 실패 시 null. 모달/폼 상태 변경은 호출부에서 담당.
   const saveWeeklyReputation = async (): Promise<{ id: string; created_at: string } | null> => {
     if (isDemoMode) {
@@ -3756,7 +4277,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     setReputationSaveSuccess(false);
 
     try {
-      const res = await fetch("/api/weekly-reputations", {
+      const res = await fetch(apiUrl("/api/weekly-reputations"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3795,16 +4316,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const restImage = "/images/0/cluster4/주차%20이미지/휴식(개인,공식).png";
 
   // 휴식 모드 체크 (휴식(개인), 휴식(공식)일 때 모든 카드 비활성화)
-  const isRestMode = weekData?.growthStatus?.includes("휴식") || false;
+  // phase(진행 중/집계 중) 와 무관하게 운영진이 마킹한 휴식 여부를 본다 — 봄 9주차가 아직
+  // 결과 결정 시점 이전이라 growthStatus 가 "집계 중" 으로 잡혀도, 개인 휴식 크루의
+  // 활동 라인은 '해당 없음' 으로 표시되어야 한다.
+  const isRestMode = !!(weekData?.isPersonalRest || weekData?.isOfficialRest);
 
   // 시즌명과 주차번호로 월/주차 계산하여 이미지 경로 생성
-  const getWeekImagePath = (data: DBWeekData) => {
-    // 시즌별 시작 월 매핑
+  // primary 는 holiday_name 접미사를 포함한 1차 경로, stripped 는 holiday 없는 폴백.
+  // (holiday_name 에 '시험 기간' 같이 디스크 파일에 없는 값이 들어와도 stripped 로 자동 복구)
+  const getWeekImagePath = (data: DBWeekData): { primary: string; stripped: string } => {
     const seasonStartMonth: { [key: string]: number } = {
-      겨울: 1, // 1월
-      봄: 3, // 3월
-      여름: 7, // 7월
-      가을: 9, // 9월
+      겨울: 1,
+      봄: 3,
+      여름: 7,
+      가을: 9,
     };
 
     const startMonth = seasonStartMonth[data.seasonName] || 1;
@@ -3812,15 +4337,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     const month = startMonth + monthOffset;
     const weekOfMonth = ((data.weekNumber - 1) % 4) + 1;
 
-    // 공휴일이 있는 경우 파일명에 추가
     const holidaySuffix = data.holidayName ? ` ${data.holidayName}` : "";
-
-    // 파일명 형식: "겨울 1주차 (1월 1주차).png" 또는 "겨울 6주차 (2월 2주차 설,구정).png"
-    return `/images/0/cluster4/주차 이미지/${data.seasonName} ${data.weekNumber}주차 (${month}월 ${weekOfMonth}주차${holidaySuffix}).png`;
+    const base = `/images/0/cluster4/주차 이미지/${data.seasonName} ${data.weekNumber}주차 (${month}월 ${weekOfMonth}주차`;
+    return {
+      primary: `${base}${holidaySuffix}).png`,
+      stripped: `${base}).png`,
+    };
   };
 
   // 휴식 모드일 때는 휴식 전용 이미지 사용, 아닐 때는 시즌/주차에 맞는 이미지
-  const currentImage = isRestMode ? restImage : weekData ? getWeekImagePath(weekData) : "/images/0/cluster4/주차 이미지/겨울 1주차 (1월 1주차).png";
+  const computedWeekPaths = weekData ? getWeekImagePath(weekData) : null;
+  const currentImage = isRestMode ? restImage : (computedWeekPaths ? computedWeekPaths.primary : "/images/0/cluster4/주차 이미지/겨울 1주차 (1월 1주차).png");
+  const currentImageStripped = !isRestMode && computedWeekPaths && computedWeekPaths.stripped !== computedWeekPaths.primary ? computedWeekPaths.stripped : null;
   const currentTitle = weekData ? (weekData.isBreakSeason ? `${weekData.seasonYear} ${weekData.toSeasonName} 시즌, 전환 주차` : `${weekData.seasonYear} ${weekData.seasonName} 시즌, ${weekData.weekNumber}주차`) : "로딩 중...";
 
   // 날짜 포맷팅 함수 (2025 - 01 - 06 (월) 형식)
@@ -3894,86 +4422,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 주차 평판 데이터 (API 데이터 기반)
   // 주차 평판 더미 데이터 (비로그인 / 데이터 미입력 시 폴백)
   const dummyReputations = [
-    {
-      id: "dummy-rep-1",
-      name: "오준",
-      gender: "남",
-      age: 22,
-      profileImg: "/images/0/crew profile/남 1.webp",
-      university: "한대",
-      major: "경영",
-      team: "기획",
-      part: "전략",
-      nickname: "짧음",
-      role: "심화",
-      rating: 0.5,
-      ratingCount: "1 / 10",
-      description: "짧은코멘트",
-      fm: 85,
-      tagColor: "tag--pink",
-      tagText: "#힘",
-      isEmpty: false,
-    },
-    {
-      id: "dummy-rep-2",
-      name: "김서연아",
-      gender: "여",
-      age: 25,
-      profileImg: "/images/0/crew profile/여 1.jpg",
-      university: "성균관대학교",
-      major: "컴퓨터공학",
-      team: "마케팅전략",
-      part: "브랜드콘텐츠",
-      nickname: "중간닉네임임",
-      role: "운영진(앰배서더)",
-      rating: 3,
-      ratingCount: "6 / 10",
-      description: "중간길이의코멘트입니다이번주",
-      fm: 92,
-      tagColor: "tag--red",
-      tagText: "#추진력있는",
-      isEmpty: false,
-    },
-    {
-      id: "dummy-rep-3",
-      name: "알렉산더워싱턴",
-      gender: "남",
-      age: 29,
-      profileImg: "/images/0/crew profile/남 2.jpg",
-      university: "한국예술종합",
-      major: "미디어커뮤니케이션",
-      team: "엔터테인먼트사업",
-      part: "글로벌마케팅전략",
-      nickname: "엔비디아구글테슬라쿵",
-      role: "일반(정규)",
-      rating: 5,
-      ratingCount: "10 / 10",
-      description: "가나다라마바사아자차카타파하가나다라마바사아자차카타파하가나다라마바사아자차카타파하가나다라마바사아자차카타파하가나다라마바사아자차카타파하가나다라마바사아자차카타파하가나다라마바사아자차일이",
-      fm: 78,
-      tagColor: "tag--yellow",
-      tagText: "#끈기와인내의결과물",
-      isEmpty: false,
-    },
-    {
-      id: "dummy-rep-4",
-      name: "최지우",
-      gender: "여",
-      age: 24,
-      profileImg: "/images/0/crew profile/여 2.jpg",
-      university: "연세대학교",
-      major: "경영학",
-      team: "전략기획",
-      part: "리서치",
-      nickname: "네번째슬롯",
-      role: "일반",
-      rating: 4,
-      ratingCount: "8 / 10",
-      description: "네번째 슬롯 테스트용 평판 코멘트입니다.",
-      fm: 65,
-      tagColor: "tag--purple",
-      tagText: "#꼼꼼함",
-      isEmpty: false,
-    },
+    { id: "dummy-rep-1", name: "-", gender: "-", age: "-", profileImg: "", university: "-", major: "-", team: "-", part: "-", nickname: "-", role: "", rating: 0, ratingCount: "- / 10", description: "-", rawRating: 0, rawKeyword: "-", fm: 0, tagColor: "tag--pink", tagText: "#-", isEmpty: true },
+    { id: "dummy-rep-2", name: "-", gender: "-", age: "-", profileImg: "", university: "-", major: "-", team: "-", part: "-", nickname: "-", role: "", rating: 0, ratingCount: "- / 10", description: "-", rawRating: 0, rawKeyword: "-", fm: 0, tagColor: "tag--red", tagText: "#-", isEmpty: true },
+    { id: "dummy-rep-3", name: "-", gender: "-", age: "-", profileImg: "", university: "-", major: "-", team: "-", part: "-", nickname: "-", role: "", rating: 0, ratingCount: "- / 10", description: "-", rawRating: 0, rawKeyword: "-", fm: 0, tagColor: "tag--yellow", tagText: "#-", isEmpty: true },
   ];
 
   const reputationData = useMemo(() => {
@@ -4077,39 +4528,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   // 연계 동료 더미 데이터 (비로그인 / 데이터 미입력 시 폴백)
   const dummyColleagues = [
-    { id: "dummy-col-1", name: "윤아", gender: "여", age: "21", profileImg: "/images/0/crew profile/여 3.jpg", university: "한대", major: "경영", team: "기획", part: "전략", nickname: "윤아", role: "심화", date: "2026 - 03 - 01 (토)", message: "좋은 동료", isEmpty: false },
-    {
-      id: "dummy-col-2",
-      name: "박진우",
-      gender: "남",
-      age: "26",
-      profileImg: "/images/0/crew profile/남 2.jpg",
-      university: "성균관대학교",
-      major: "컴퓨터공학",
-      team: "마케팅전략",
-      part: "브랜드콘텐츠",
-      nickname: "마케팅장인",
-      role: "운영진(앰배서더)",
-      date: "2026 - 03 - 02 (일)",
-      message: "기술적인 부분에서 큰 도움을 받았고 앞으로도 함께 성장하고 싶습니다",
-      isEmpty: false,
-    },
-    {
-      id: "dummy-col-3",
-      name: "크리스티나앤더슨",
-      gender: "여",
-      age: "28",
-      profileImg: "/images/0/crew profile/여 4.webp",
-      university: "한국예술종합",
-      major: "미디어커뮤니케이션",
-      team: "엔터테인먼트사업",
-      part: "글로벌마케팅전략",
-      nickname: "글로벌마케터의꿈나무",
-      role: "일반(정규)",
-      date: "2026 - 03 - 03 (월)",
-      message: "다양한 관점에서 프로젝트를 바라보는 시각이 인상적이었고 특히 글로벌 마케팅 전략 수립 과정에서 보여준 리더십과 커뮤니케이션 능력이 뛰어났습니다",
-      isEmpty: false,
-    },
+    { id: "dummy-col-1", name: "-", gender: "-", age: "-", profileImg: "", university: "-", major: "-", team: "-", part: "-", nickname: "-", role: "", date: "-", message: "", isEmpty: true },
+    { id: "dummy-col-2", name: "-", gender: "-", age: "-", profileImg: "", university: "-", major: "-", team: "-", part: "-", nickname: "-", role: "", date: "-", message: "", isEmpty: true },
+    { id: "dummy-col-3", name: "-", gender: "-", age: "-", profileImg: "", university: "-", major: "-", team: "-", part: "-", nickname: "-", role: "", date: "-", message: "", isEmpty: true },
   ];
 
   // 연계 동료 데이터 (API 데이터 기반)
@@ -4303,7 +4724,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     },
   };
   // code(with/without space) → map entry 조회 헬퍼
-  const workExpCardLineCodes = Object.keys(workExpLineMap);
   const lookupWorkExpMapping = (code?: string | null) => {
     if (!code) return undefined;
     const noSpace = code.replace(/\s+/g, "");
@@ -4322,11 +4742,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const allActivityTypes = [...workInfoActivityTypes, ...workAbilityActivityTypes, ...workExpActivityTypes, ...workCareerActivityTypes];
 
   // 실무 역량: 유저가 완료한 활동 찾기 (is_completed = true인 것 중 첫 번째)
+  // activity_record가 있으면 weekly_activities.is_active 여부와 관계없이 표시
   const findFirstCompletedAbilityActivity = () => {
     for (const actType of workAbilityActivityTypes) {
-      const activity = weeklyActivities.find((a) => a.activity_type_id === actType && a.is_active);
       const record = weekActivityRecords.find((ar) => ar.activity_type_id === actType);
-      if (activity && record?.is_completed) return activity;
+      if (record?.is_completed) {
+        const activity = weeklyActivities.find((a) => a.activity_type_id === actType);
+        if (activity) return activity;
+        // weekly_activities에 없어도 activity_types 정보로 대체
+        const typeInfo = activityTypesMap.get(actType);
+        if (typeInfo) return { activity_type_id: actType, title: typeInfo.name, is_active: false, week_id: weekId } as any;
+      }
     }
     return null;
   };
@@ -4343,9 +4769,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 실무 역량: 유저가 선택한(record가 있는) 활동 찾기
   const findFirstSelectedAbilityActivity = () => {
     for (const actType of workAbilityActivityTypes) {
-      const activity = weeklyActivities.find((a) => a.activity_type_id === actType && a.is_active);
       const record = weekActivityRecords.find((ar) => ar.activity_type_id === actType);
-      if (activity && record) return activity; // record가 있으면 유저가 선택한 것
+      if (record) {
+        const activity = weeklyActivities.find((a) => a.activity_type_id === actType);
+        if (activity) return activity;
+        const typeInfo = activityTypesMap.get(actType);
+        if (typeInfo) return { activity_type_id: actType, title: typeInfo.name, is_active: false, week_id: weekId } as any;
+      }
     }
     return null;
   };
@@ -4361,13 +4791,58 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     return activityTypesMap.get(activityTypeId);
   };
 
-  // 강화 상태 판단 함수 (2차 정보 기입 OR 48시간 기준)
-  // - 해당 없음: weekly_activities.is_active = false (활동 미개설) 또는 온보딩 주차(무적 주차)
-  // - 강화 실패: 활동 개설됨 + 카페 댓글 집계에서 이행하지 않음 (is_completed = false)
-  // - 강화 대기: 활동 개설됨 + 이행함 (is_completed = true) + 48시간 미경과 + 2차 정보 미기입
-  // - 강화 성공: 활동 개설됨 + 이행함 (is_completed = true) + (48시간 경과 OR 2차 정보 기입)
+  // 매니징 라인은 사용자 역할에 따라 적용 여부가 갈림 — 라인명에 _파트장/_에이전트 표기.
+  // 라인이 사용자의 역할과 맞지 않으면 강화 실패가 아니라 '해당 없음' 처리해야 함
+  // (활동이 애초에 그 역할에게 개설되지 않으므로).
+  const isLineForOtherRole = (activityTypeId: string): boolean => {
+    const lineName = activityTypesMap.get(activityTypeId)?.name || workExpLineMap[activityTypeId.replace(/\s+/g, "")]?.lineName || "";
+    if (!lineName) return false;
+    const role = userWeekRole || "";
+    if (lineName.includes("파트장")) {
+      return !role.includes("partleader") && !role.includes("part_leader");
+    }
+    if (lineName.includes("에이전트")) {
+      return !role.includes("agent");
+    }
+    return false;
+  };
+
+  // 강화 상태 판단 함수 (결정 시점 기반: N+1주(목) 12:01 KST)
+  // - 해당 없음: 활동 미개설(is_active=false) / 온보딩 주차(무적 주차) / 개인 휴식 / 역할 미스매치 / 누적 주차 외
+  // - 강화 실패: 활동 개설됨 + 카페 댓글 집계에서 이행하지 않음 (is_completed = false) — 진행 중에도 즉시 표시
+  // - 강화 대기: 활동 개설됨 + 이행함 (is_completed = true) + 결정 시점 이전
+  // - 강화 성공: 활동 개설됨 + 이행함 (is_completed = true) + 결정 시점 이후
+  // - empty: 더미데이터의 sentinel 플래그 (record.is_empty)
+  // ※ 2차 정보 작성 여부 / weekly_activities.deadline / opened_at+48h 는 강화 성공/실패 판정에 영향을 주지 않는다.
   type EnhancementStatus = "success" | "waiting" | "failed" | "not_applicable" | "empty";
   const getEnhancementStatus = (activityType: string): EnhancementStatus => {
+    // 클럽 온보딩 주차(무적 주차)는 모든 활동이 해당 없음
+    if (isOnboardingWeek) return "not_applicable";
+
+    // 개인 휴식 크루는 모든 활동이 해당 없음. 공식 휴식이라도 예외적으로 개설된 활동은 정상 평가.
+    // phase(집계 중/진행 중) 와 무관하게 적용 — growthStatus 가 phase 로 가려져도 휴식 플래그를 본다.
+    if (weekData?.isPersonalRest) return "not_applicable";
+
+    // 매니징 라인 — 사용자 역할이 다른 역할용 라인이면 '해당 없음'
+    // 단, 실제 이행 기록이 있으면 운영진이 예외 부여한 케이스이므로 일반 흐름 유지
+    if (isLineForOtherRole(activityType)) {
+      const hasRecord = weekActivityRecords.some((ar) => ar.activity_type_id === activityType);
+      if (!hasRecord) return "not_applicable";
+    }
+
+    // 실무 경험 활동의 eligible 조건 체크 (누적 주차 범위 밖이면 해당 없음)
+    // 단, 실제 이행 기록이 있으면 운영진이 진행 주차 외 라인을 예외 처리한 케이스이므로
+    // 일반 흐름을 타도록 폴백 (예: 진행 2주차 크루의 [생산성] 상호 피드백)
+    const expInfo = experienceTypeInfos.find((info) => info.id === activityType);
+    if (expInfo) {
+      const minWeek = expInfo.eligible_min_approved_weeks ?? 1;
+      const maxWeek = expInfo.eligible_max_approved_weeks ?? 999;
+      if (cumulativeApprovedWeeks < minWeek || cumulativeApprovedWeeks > maxWeek) {
+        const hasRecord = weekActivityRecords.some((ar) => ar.activity_type_id === activityType);
+        if (!hasRecord) return "not_applicable";
+      }
+    }
+
     // 해당 활동 정보 가져오기
     const activity = weeklyActivities.find((a) => a.activity_type_id === activityType);
 
@@ -4378,46 +4853,21 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     //    (운영 데이터에는 is_empty 필드가 없으므로 항상 falsy → 기존 분기 영향 없음)
     if ((record as { is_empty?: boolean } | undefined)?.is_empty) return "empty";
 
-    // 1. 해당 없음: 활동이 개설되지 않음 AND 크루가 참여하지도 않음
-    if (!activity?.is_active && (!record || !record.is_completed)) return "not_applicable";
+    // 활동이 개설되지 않음(is_active=false) → 그 주차에 요구되지 않는 라인 → '해당 없음'.
+    // (cluster-4-1 / cluster-4-ranking 통계와 정합 — 양쪽 모두 is_active=true 라인만 분모에 포함.)
+    // expInfo 가 있어도 "운영진 개설 누락 시그널" 로 강화 실패 처리하지 않음:
+    // 운영진의 개설 결정이 곧 그 주차에 라인이 요구되는지의 source of truth.
+    if (!activity?.is_active) {
+      return "not_applicable";
+    }
 
     if (!record || !record.is_completed) {
-      // 레코드 없거나 is_completed = false → 강화 실패
+      // 레코드 없거나 is_completed = false → 강화 실패 (진행 중 phase에도 즉시 표시)
       return "failed";
     }
 
-    // 3. is_completed = true인 경우, 2차 정보 기입 여부 확인
-    const detail = weekActivityDetails.find((d) => d.activity_type_id === activityType);
-    const hasSecondaryInfo = detail && ((detail.sub_title && detail.sub_title.trim() !== "") || (detail.output_links && detail.output_links.some((link: { url?: string }) => link?.url && link.url.trim() !== "")));
-
-    // 2차 정보가 기입되어 있으면 바로 강화 성공
-    if (hasSecondaryInfo) {
-      return "success";
-    }
-
-    // 4. 2차 정보 미기입 시, 48시간 경과 여부 확인
-    const openedAt = activity?.opened_at;
-    if (!openedAt) {
-      // 개설 시각이 없으면 대기 상태로 처리
-      console.log(`[getEnhancementStatus] ${activityType}: no opened_at -> waiting`);
-      return "waiting";
-    }
-
-    const openedTime = new Date(openedAt).getTime();
-    const now = Date.now();
-    const elapsed = now - openedTime;
-    const deadline = 48 * 60 * 60 * 1000; // 48시간 (밀리초)
-    const hoursElapsed = Math.floor(elapsed / (60 * 60 * 1000));
-
-    console.log(`[getEnhancementStatus] ${activityType}: openedAt=${openedAt}, elapsed=${hoursElapsed}h, deadline=48h, result=${elapsed >= deadline ? "success" : "waiting"}`);
-
-    if (elapsed >= deadline) {
-      // 48시간 경과 → 강화 성공 (2차 정보 없이도 자동 성공)
-      return "success";
-    } else {
-      // 48시간 미경과 + 2차 정보 미기입 → 강화 대기
-      return "waiting";
-    }
+    // 이행함 (is_completed = true) — 결정 시점 도달 여부로 결정
+    return resultsDecided ? "success" : "waiting";
   };
 
   // 강화 상태별 아이콘
@@ -4435,30 +4885,50 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     return weekActivityDetails.find((ad) => ad.activity_type_id === activityType);
   };
 
-  // 48시간 이내인지 확인
-  const isWithin48Hours = (openedAt: string | null): boolean => {
-    if (!openedAt) return false;
-    const openedTime = new Date(openedAt).getTime();
-    const now = Date.now();
-    const elapsed = now - openedTime;
-    const deadline = 48 * 60 * 60 * 1000; // 48시간 (밀리초)
-    return elapsed < deadline;
+  // 2차 정보 작성 마감 시간 이내인지 확인.
+  // - 어드민이 weekly_activities.deadline 을 직접 지정한 경우 우선 적용 (옛날 주차 보정 등 특수 오버라이드)
+  // - 그 외 기본 시스템 마감: N+1주(목) 12:00 KST = weekStart(월 00:00) + 252h
+  //   (= requireWriteWindow / 라인 강화 결정(목 12:01)과 페어인 마감점 — 12:00 닫고 1분 뒤 결과 확정)
+  const isBeforeDeadline = (activity: { opened_at: string | null; deadline?: string | null } | null): boolean => {
+    if (!activity) return false;
+    if (activity.deadline) {
+      return Date.now() < new Date(activity.deadline).getTime();
+    }
+    if (!weekData?.startDate) return false;
+    const closeMs = new Date(`${weekData.startDate}T00:00:00+09:00`).getTime() + 252 * 3600 * 1000;
+    return Date.now() < closeMs;
   };
 
-  // 활동이 개설되었고 48시간 이내인지 확인 (운영진이 개설해야만 + 48시간 이내에만 사용자가 2차 정보 입력 가능)
+  // 어드민 개별 권한(grant)이 활성 상태인지 확인
+  const hasActiveGrant = (activityType: string): boolean => {
+    const grant = secondaryInfoGrants.find((g) => g.activity_type_id === activityType);
+    if (!grant) return false;
+    return new Date(grant.deadline).getTime() > Date.now();
+  };
+
+  // 활동이 개설되었고 마감 전인지 확인, 또는 어드민 개별 grant가 있는지 확인
   const isActivityActive = (activityType: string): boolean => {
+    // Path 1: 기존 플로우 — 파트 개설 + 마감 전
     const activity = weeklyActivities.find((a) => a.activity_type_id === activityType);
-    if (!activity?.is_active) return false;
-    // 48시간 이내인지 확인
-    return isWithin48Hours(activity.opened_at);
+    if (activity?.is_active && isBeforeDeadline(activity)) return true;
+    // Path 2: 어드민 개별 권한 부여 (예외 메커니즘)
+    if (hasActiveGrant(activityType)) return true;
+    return false;
   };
 
-  // 활동이 개설되었지만 48시간이 지났는지 확인 (마감 표시용)
+  // 활동이 개설되었지만 마감 시간이 지났는지 확인 (마감 표시용)
   const isActivityExpired = (activityType: string): boolean => {
+    // 어드민 grant가 활성이면 만료 아님
+    if (hasActiveGrant(activityType)) return false;
     const activity = weeklyActivities.find((a) => a.activity_type_id === activityType);
-    if (!activity?.is_active) return false;
-    // 개설은 되었지만 48시간이 지남
-    return !isWithin48Hours(activity.opened_at);
+    if (!activity?.is_active) {
+      // 파트 개설 안 됐지만, 만료된 grant가 있으면 만료로 표시
+      const grant = secondaryInfoGrants.find((g) => g.activity_type_id === activityType);
+      if (grant && new Date(grant.deadline).getTime() <= Date.now()) return true;
+      return false;
+    }
+    // 개설은 되었지만 마감 시간이 지남
+    return !isBeforeDeadline(activity);
   };
 
   // 실무 역량: 아무 activity type이나 개설되었는지 확인
@@ -4484,21 +4954,44 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   // 남은 시간 계산 (표시용)
+  // - 어드민 deadline 직접 지정 시 그것 기준
+  // - 그 외 기본: N+1주(목) 12:00 KST = weekStart + 252h
   const getRemainingTime = (activityType: string): { hours: number; minutes: number } | null => {
-    const activity = weeklyActivities.find((a) => a.activity_type_id === activityType);
-    if (!activity?.is_active || !activity.opened_at) return null;
-
-    const openedTime = new Date(activity.opened_at).getTime();
     const now = Date.now();
-    const elapsed = now - openedTime;
-    const deadline = 48 * 60 * 60 * 1000;
-    const remaining = deadline - elapsed;
 
-    if (remaining <= 0) return null;
+    const activity = weeklyActivities.find((a) => a.activity_type_id === activityType);
+    if (activity?.is_active) {
+      let deadlineTime: number | null = null;
+      if (activity.deadline) {
+        deadlineTime = new Date(activity.deadline).getTime();
+      } else if (weekData?.startDate) {
+        deadlineTime = new Date(`${weekData.startDate}T00:00:00+09:00`).getTime() + 252 * 3600 * 1000;
+      }
+      if (deadlineTime) {
+        const remaining = deadlineTime - now;
+        if (remaining > 0) {
+          return {
+            hours: Math.floor(remaining / (60 * 60 * 1000)),
+            minutes: Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000)),
+          };
+        }
+      }
+    }
 
-    const hours = Math.floor(remaining / (60 * 60 * 1000));
-    const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
-    return { hours, minutes };
+    // 어드민 grant 확인
+    const grant = secondaryInfoGrants.find((g) => g.activity_type_id === activityType);
+    if (grant) {
+      const deadlineTime = new Date(grant.deadline).getTime();
+      const remaining = deadlineTime - now;
+      if (remaining > 0) {
+        return {
+          hours: Math.floor(remaining / (60 * 60 * 1000)),
+          minutes: Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000)),
+        };
+      }
+    }
+
+    return null;
   };
 
   // 특정 activity types 중 하나라도 개설되었는지 확인
@@ -4542,6 +5035,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     const activity = weeklyActivities.find((a) => a.activity_type_id === activityType);
     return activity?.output_links || [];
   };
+
+  // 운영진이 업로드한 output images 가져오기 (최대 2)
+  const getAdminOutputImages = (activityType: string): Array<{ url: string; caption: string }> => {
+    // 실무 경력: career_projects.output_images (career_records API 가 project 정보 같이 반환)
+    const careerIndex = (careerTypeIds.length > 0 ? careerTypeIds : ["practical_project"]).indexOf(activityType);
+    if (careerIndex >= 0 && careerRecords[careerIndex]) {
+      const imgs = careerRecords[careerIndex].output_images || [];
+      return imgs.filter((i) => i?.url?.trim());
+    }
+    const activity = weeklyActivities.find((a) => a.activity_type_id === activityType);
+    return (activity?.output_images || []).filter((i) => i?.url?.trim());
+  };
+  const getAdminOutputImagesCount = (activityType: string): number => getAdminOutputImages(activityType).length;
 
   // 편집 모달 열 때 초기화
   const initializeEditingDetails = () => {
@@ -4600,15 +5106,28 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       // 운영진 링크 이후의 사용자 링크만 필터링 (빈 링크 제외)
       const userLinks = detail.outputLinks.slice(adminCount).filter((link) => link.url.trim() !== "");
 
-      const response = await fetch("/api/activity-details", {
+      // 기존 DB 데이터와 비교하여 변경이 없으면 스킵
+      const existing = getActivityDetail(activityType);
+      const newSubTitle = detail.subTitle || null;
+      const newOutputLinks = userLinks.length > 0 ? userLinks : null;
+      const existingSubTitle = existing?.sub_title || null;
+      const existingOutputLinks = existing?.output_links && existing.output_links.length > 0 ? existing.output_links : null;
+
+      if (newSubTitle === existingSubTitle &&
+          JSON.stringify(newOutputLinks) === JSON.stringify(existingOutputLinks)) {
+        setIsSaving(false);
+        return; // 변경 없음 — API 호출 스킵
+      }
+
+      const response = await fetch(apiUrl("/api/activity-details"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_id: currentUserId,
           week_id: weekId,
           activity_type_id: activityType,
-          sub_title: detail.subTitle || null,
-          output_links: userLinks.length > 0 ? userLinks : null,
+          sub_title: newSubTitle,
+          output_links: newOutputLinks,
         }),
       });
 
@@ -4626,31 +5145,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
   };
 
-  // 통계 재계산 함수 (저장 후 즉시 업데이트용 - 강화 성공 기준: is_completed + (48시간 경과 OR 2차 정보 기입))
+  // 통계 재계산 함수 (저장 후 즉시 업데이트용 - 강화 성공 기준: is_completed + 결정 시점 도달)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const recalculateStats = (updatedDetails: ActivityDetail[]) => {
+  const recalculateStats = (_updatedDetails: ActivityDetail[]) => {
     const activeActivities = weeklyActivities.filter((a) => a.is_active);
 
-    // 강화 성공 여부 판단 헬퍼 함수
+    // 강화 성공 여부 판단 헬퍼 (2차 정보 / deadline 무관, 결정 시점만 본다 — getEnhancementStatus 와 동일)
     const isEnhancementSuccessLocal = (activityTypeId: string): boolean => {
-      // 1. 활동 완료 여부 확인
-      if (!weekApprovedTypes.has(activityTypeId)) return false;
-
-      // 2. 2차 정보 기입 여부 확인 (저장 후 업데이트된 데이터 사용)
-      const detail = updatedDetails.find((d) => d.activity_type_id === activityTypeId);
-      const hasSecondaryInfo = detail && (detail.sub_title || (detail.output_links && detail.output_links.length > 0));
-      if (hasSecondaryInfo) return true;
-
-      // 3. 48시간 경과 여부 확인
-      const activity = weeklyActivities.find((a) => a.activity_type_id === activityTypeId);
-      if (!activity?.opened_at) return false;
-
-      const openedTime = new Date(activity.opened_at).getTime();
-      const now = Date.now();
-      const elapsed = now - openedTime;
-      const deadline = 48 * 60 * 60 * 1000; // 48시간 (밀리초)
-
-      return elapsed >= deadline;
+      if (!resultsDecided) return false;
+      return weekApprovedTypes.has(activityTypeId);
     };
 
     const calcStats = (types: string[]) => {
@@ -4661,8 +5164,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     };
 
     const infoTypes = ["calendar", "essay", "forum", "infodesk", "session", "wisdom", "practical_lecture", "community", "etc_a"];
-    // 온보딩 주차면 강화율 계산에서 제외 (이력은 보이되 수치에 미반영)
-    if (isOnboardingWeek) {
+    // 온보딩 주차 / 개인 휴식이면 강화율 0. 공식 휴식은 예외 활동 있으면 자연스럽게 반영.
+    // phase(집계 중) 에 가려지지 않도록 phase-독립 플래그 사용.
+    if (isOnboardingWeek || weekData?.isPersonalRest) {
       setInfoStats({ total: 0, success: 0 });
       setCompetencyStats({ total: 0, success: 0 });
       setExperienceStats({ total: 0, success: 0 });
@@ -4670,7 +5174,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     } else {
       setInfoStats(calcStats(infoTypes));
       const competencyCalc = calcStats(competencyTypeIds);
-      setCompetencyStats({ total: 1, success: competencyCalc.success > 0 ? 1 : 0 });
+      // 평소 매주 최대 1개. 공식 휴식 주차는 예외 개설 있을 때만 1.
+      const isClubBreakNow = !!weekData?.isOfficialRest;
+      const competencyTotalNow = isClubBreakNow ? (competencyCalc.total > 0 ? 1 : 0) : 1;
+      setCompetencyStats({ total: competencyTotalNow, success: competencyCalc.success > 0 ? 1 : 0 });
       setExperienceStats(calcStats(experienceTypeIds));
       setCareerStats(calcStats(careerTypeIds));
     }
@@ -4759,6 +5266,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         activityType,
         title: activity?.title || "-", // 운영진이 입력한 Main Title (없으면 '-')
         subTitle: detail?.sub_title || "",
+        growthPoint: detail?.growth_point || "",
         verified: true,
         category: config?.category || activityType,
         tagColor: config?.tagColor || "",
@@ -4769,33 +5277,23 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         isFailed: enhancementStatus === "failed",
         isEmpty: false,
         outputLinks: mergedOutputLinks,
+        images: normalizeWorkInfoImages(detail?.image_urls || undefined),
+        imageCaptions: normalizeWorkInfoCaptions(detail?.image_captions || undefined),
       };
     }),
   ];
 
-  // 휴식 모드일 때 실무 정보 카드 전부 '해당 없음' + 보이드
+  // 휴식 모드(공식/개인) — 카드 전부 '해당 없음' 상태로, Main Title 도 강제로 '-'.
+  // 본문 중 카테고리/아이콘 등은 보존하고 Main Title 만 차폐. 라인 개설 여부와 무관.
   const effectiveWorkInfoCards = isRestMode
-    ? [
-        ...workInfoActivityTypes.map((activityType, index) => {
-          const config = activityTypeConfig[activityType];
-          return {
-            id: index + 1,
-            activityType,
-            title: "-",
-            subTitle: "",
-            verified: false,
-            category: config?.category || activityType,
-            tagColor: config?.tagColor || "",
-            status: "not_applicable" as EnhancementStatus,
-            statusIcon: enhancementStatusIcons["not_applicable"],
-            icon: config?.icon || "",
-            isFruit: config?.isFruit || false,
-            isFailed: false,
-            isEmpty: false,
-            outputLinks: [],
-          };
-        }),
-      ]
+    ? workInfoCards.map((card) => ({
+        ...card,
+        title: "",
+        status: "not_applicable" as EnhancementStatus,
+        statusIcon: enhancementStatusIcons["not_applicable"],
+        verified: false,
+        isFailed: false,
+      }))
     : workInfoCards;
 
   const workAbilityCards = workAbilityCardLineCodes.map((lineCodeKey, index) => {
@@ -4831,10 +5329,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       badge: mapping.lineName,
       title: activity?.title || mapping.mainTitle,
       subTitle: detail?.sub_title || "",
-      growthPoint: "",
+      growthPoint: detail?.growth_point || "",
       outputLinks: mergedOutputLinks,
-      images: null as (string | null)[] | null,
-      imageCaptions: null as string[] | null,
+      images: normalizeWorkInfoImages(detail?.image_urls || undefined) as (string | null)[] | null,
+      imageCaptions: normalizeWorkInfoCaptions(detail?.image_captions || undefined) as string[] | null,
       icon: getWorkAbilityIcon(mapping.lineName),
       status: enhancementStatus,
       statusIcon: enhancementStatusIcons[enhancementStatus],
@@ -4845,33 +5343,78 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     };
   });
 
+  // 휴식 모드(공식/개인) — 본문(Main Title, lineCode, lineName, Sub Title) 모두 강제 '-'.
+  // 휴식 주차에는 실무 역량 라인이 의미 없으므로 본문 전부 차폐, 상태도 '해당 없음'.
   const effectiveWorkAbilityCards = isRestMode
     ? workAbilityCards.map((card) => ({
         ...card,
-        title: "-",
+        title: "",
         subTitle: "",
-        growthPoint: "",
-        outputLinks: Array(5).fill({ desc: "", url: "" }),
+        lineCode: "-",
+        lineName: "-",
+        code: "-",
+        badge: "-",
         status: "not_applicable" as EnhancementStatus,
         statusIcon: enhancementStatusIcons.not_applicable,
         enhancementStatus: "not_applicable" as EnhancementStatus,
         isFailed: false,
-        hasActivity: false,
       }))
     : workAbilityCards;
 
-  // 실무 경험 카드 데이터 (동적 생성 + 빈 카드)
-  const workExpCards = [
-    ...workExpCardLineCodes.map((lineCodeKey, index) => {
-      const matchedActivityTypeId = workExpActivityTypes.find((typeId) => {
-        const lineCode = activityTypesMap.get(typeId)?.line_code || typeId;
-        return lineCode.replace(/\s+/g, "") === lineCodeKey;
-      });
-      const activityTypeId = matchedActivityTypeId || lineCodeKey;
+  // 실무 역량: 단일 표시 카드 — 강화 성공/실패/대기인 카드 우선, 모두 not_applicable이면 보이드.
+  // 크루가 활동 중(휴식/온보딩 아님)이면 매칭 실패 시 '강화 실패'로 폴백.
+  // 휴식 주차 — 모든 카드가 not_applicable 이라 status 기반 매칭이 안 되므로, 운영진이 실제
+  // 개설한 라인(hasActivity) 을 우선 찾아 본문(Main Title 등) 을 보여주고 상태만 '해당 없음'.
+  const matchedAbilityCard = isRestMode
+    ? effectiveWorkAbilityCards.find((c) => c.hasActivity)
+    : effectiveWorkAbilityCards.find((c) => c.enhancementStatus !== "not_applicable");
+  const isAbilityCardVoid = !matchedAbilityCard;
+  const abilityVoidFallbackStatus: EnhancementStatus =
+    isRestMode || isOnboardingWeek ? "not_applicable" : "failed";
+  const displayedAbilityCard = matchedAbilityCard ?? {
+    id: 0,
+    activityTypeId: "",
+    code: "-",
+    lineCode: "-",
+    lineName: "-",
+    badge: "-",
+    title: "",
+    subTitle: "",
+    growthPoint: "",
+    outputLinks: [] as { desc: string; url: string }[],
+    images: null as (string | null)[] | null,
+    imageCaptions: null as string[] | null,
+    icon: "",
+    status: abilityVoidFallbackStatus,
+    statusIcon: enhancementStatusIcons[abilityVoidFallbackStatus],
+    enhancementStatus: abilityVoidFallbackStatus,
+    isFailed: abilityVoidFallbackStatus === "failed",
+    isEmpty: true,
+    hasActivity: false,
+  };
+
+  // 실무 경험 카드 데이터 — 이 크루에게 어드민/시스템이 실제로 처리한 라인만 동적 생성.
+  // 운영진이 크루별로 실무 경험 라인을 임의 대체/지정 가능 → hardcoded workExpLineMap 6 라인을
+  // 기준으로 띄우면 운영진 결정과 무관한 카드가 강제로 노출됨.
+  // weeklyActivities.is_active=true (전체 일괄 개설) 만으로는 부족 — 어드민이 그 주차에
+  // 이 크루에게 라인을 적용 안 했어도 is_active 가 true 일 수 있음. source of truth 는
+  // user_activity_records 존재 여부 (크루 이행 인증 시 또는 어드민이 강화 성공/실패 마크 시 생성).
+  // workExpLineMap 은 라인 본문이 비어있을 때 표시용 fallback 으로만 사용.
+  const adminProcessedExpTypeIds: string[] = [];
+  const seenExpTypeIds = new Set<string>();
+  weekActivityRecords.forEach((ar) => {
+    if (experienceTypeIds.includes(ar.activity_type_id) && !seenExpTypeIds.has(ar.activity_type_id)) {
+      seenExpTypeIds.add(ar.activity_type_id);
+      adminProcessedExpTypeIds.push(ar.activity_type_id);
+    }
+  });
+
+  const workExpCards = adminProcessedExpTypeIds.map((activityTypeId, index) => {
       const activityType = activityTypesMap.get(activityTypeId);
       const activity = weeklyActivities.find((a) => a.activity_type_id === activityTypeId);
       const detail = weekActivityDetails.find((d) => d.activity_type_id === activityTypeId);
       const enhStatus = getEnhancementStatus(activityTypeId);
+      const lineCodeKey = (activityType?.line_code || "").replace(/\s+/g, "");
       const fallbackMapping = workExpLineMap[lineCodeKey];
       const hasActivity = !!activity;
 
@@ -4899,65 +5442,120 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         }
       }
 
+      // 어드민 output_images(weekly_activities.output_images) 와 크루 image_urls 병합 — workCareer 와 동일 패턴.
+      // 어드민 슬롯 우선, 그 다음 크루 슬롯. 레거시로 image_urls 에 어드민 URL 이 같이 저장된 경우 중복 제거.
+      const adminImgs = (activity?.output_images || []).filter((i: { url?: string }) => i?.url?.trim());
+      const adminUrlSet = new Set(adminImgs.map((i: { url: string }) => i.url));
+      const rawCrewImgs: (string | null | undefined)[] = detail?.image_urls || [];
+      const rawCrewCaps: string[] = detail?.image_captions || [];
+      const filteredCrewImgs: (string | null)[] = [];
+      const filteredCrewCaps: string[] = [];
+      for (let i = 0; i < rawCrewImgs.length; i++) {
+        const u = rawCrewImgs[i];
+        if (u && adminUrlSet.has(u)) continue;
+        filteredCrewImgs.push(u || null);
+        filteredCrewCaps.push(rawCrewCaps[i] || "");
+      }
+      const mergedImages: (string | null)[] = [];
+      const mergedCaptions: string[] = [];
+      for (let i = 0; i < WORKINFO_IMAGE_SLOT_COUNT; i++) {
+        if (i < adminImgs.length) {
+          mergedImages.push(adminImgs[i].url);
+          mergedCaptions.push(adminImgs[i].caption || "");
+        } else {
+          const crewIdx = i - adminImgs.length;
+          mergedImages.push(filteredCrewImgs[crewIdx] || null);
+          mergedCaptions.push(filteredCrewCaps[crewIdx] || "");
+        }
+      }
+
       return {
         id: index + 1,
         activityTypeId,
-        // is_empty sentinel: enhStatus === "empty"일 때 콘텐츠 필드를 빈 값으로 강제.
-        // (work-info/work-career와 일관 — fallbackMapping/lookupWorkExpMapping 우회로
-        //  모달에서 "준비 중입니다" / "-" placeholder 표시 보장)
-        code: enhStatus === "empty" ? "-" : (activityType?.line_code || fallbackMapping?.lineCode || "-"),
-        // badge/title은 빈 문자열로 — null은 <img alt={card.badge}>에서 타입 충돌 (alt: string | undefined).
-        // 빈 문자열도 ||-체인에서 falsy로 평가되어 모달의 "카테고리"/"준비 중입니다" fallback 정상 작동.
-        badge: enhStatus === "empty" ? "" : (activityType?.name || fallbackMapping?.lineName || "-"),
-        title: enhStatus === "empty" ? "" : (activity?.title || fallbackMapping?.mainTitle || "-"),
-        subTitle: enhStatus === "empty" ? "" : (detail?.sub_title || ""),
-        // TODO: [백엔드 작업 필요] weekly_activity_details에 growth_point 컬럼 추가
-        growthPoint: "",
+        code: activityType?.line_code || fallbackMapping?.lineCode || "-",
+        badge: activityType?.name || fallbackMapping?.lineName || "-",
+        title: activity?.title || fallbackMapping?.mainTitle || "-",
+        subTitle: detail?.sub_title || "",
+        growthPoint: detail?.growth_point || "",
         outputLinks: mergedOutputLinks,
-        // TODO: [백엔드 작업 필요] image_urls / image_captions 컬럼 추가
-        images: [],
-        imageCaptions: [],
+        images: normalizeWorkInfoImages(mergedImages),
+        imageCaptions: normalizeWorkInfoCaptions(mergedCaptions),
         verified: enhStatus === "success",
         rating: rating,
         ratingCount: hasActivity ? `${ratingScore} / 10` : "- / 10",
         hasWeb: (detail?.output_links?.length || 0) > 0,
         icon: getWorkExpIcon(fallbackMapping?.lineName || activityType?.name || ""),
-        // work-info/work-career의 is_empty sentinel 패턴과 동일.
-        // getEnhancementStatus가 record.is_empty === true일 때 "empty" 반환.
-        isEmpty: enhStatus === "empty",
+        isEmpty: false,
         enhancementStatus: enhStatus,
-        // empty 상태는 sentinel이므로 hasActivity=true로 강제 — 모달 L8310 statusKey의
-        // 'failed' 오버라이드 회피. (대시보드 리스트 L6030는 enhStatus !== "empty" 가드로 무영향)
-        hasActivity: enhStatus === "empty" || hasActivity,
+        hasActivity,
       };
-    }),
-  ];
+    });
 
-  // 휴식 모드일 때 실무 경험 카드 — 해당 없음 + 보이드
+  // 4칸 슬롯 규칙: 해당되는(=not_applicable이 아닌) 라인만 좌측부터 채우고,
+  // 부족한 칸은 보이드 '-' 카드로 패딩한다. 어드민이 한 주에 적용 가능한 실무 경험 라인은
+  // 운영 정책상 최대 4개로 가정하므로 slice(0, 4) 로 자른다.
+  const buildVoidWorkExpCard = (n: number) => ({
+    id: 1000 + n,
+    activityTypeId: "",
+    code: "-",
+    badge: "-",
+    title: "-",
+    subTitle: "",
+    growthPoint: "",
+    outputLinks: [] as { desc: string; url: string }[],
+    images: normalizeWorkInfoImages(undefined),
+    imageCaptions: normalizeWorkInfoCaptions(undefined),
+    verified: false,
+    rating: 0,
+    ratingCount: "- / 10",
+    hasWeb: false,
+    icon: "",
+    isEmpty: true,
+    enhancementStatus: "not_applicable" as EnhancementStatus,
+    hasActivity: false,
+  });
+
+  // 휴식 모드(공식/개인) — 운영진 개설 여부와 무관하게 Main Title 강제 '-'.
+  // 별점/카테고리 등 본문은 보존, Main Title 만 차폐. 미개설 라인은 void 카드로 패딩.
   const effectiveWorkExpCards = isRestMode
-    ? workExpCards.map((card) => ({
-        ...card,
-        title: "-",
-        hasActivity: false,
-        enhancementStatus: "not_applicable" as EnhancementStatus,
-        isFailed: false,
-      }))
-    : workExpCards;
+    ? [
+        ...workExpCards
+          .filter((c) => c.hasActivity)
+          .map((card) => ({
+            ...card,
+            title: "",
+            enhancementStatus: "not_applicable" as EnhancementStatus,
+            isFailed: false,
+          })),
+        buildVoidWorkExpCard(0),
+        buildVoidWorkExpCard(1),
+        buildVoidWorkExpCard(2),
+        buildVoidWorkExpCard(3),
+      ]
+    : [
+        ...workExpCards.filter((c) => c.enhancementStatus !== "not_applicable"),
+        buildVoidWorkExpCard(0),
+        buildVoidWorkExpCard(1),
+        buildVoidWorkExpCard(2),
+        buildVoidWorkExpCard(3),
+      ];
+
+  // 실무 경험 통계 — 카드 표시 기준(getEnhancementStatus 결과)에 맞춰 derive.
+  // 운영진이 개설한 활동 중 이 크루에게 해당 없음(역할/이력 외)인 라인은 카운트에서 제외.
+  const experienceStatsDisplay = {
+    total: workExpCards.filter((c) => c.enhancementStatus !== "not_applicable").length,
+    success: workExpCards.filter((c) => c.enhancementStatus === "success").length,
+  };
 
   // 실무 경력 카드 데이터 (DB에서 가져온 프로젝트 기반 데이터 변환)
   const workCareerCards =
     careerRecords.length > 0
       ? careerRecords.map((record, index) => {
-          // 강화 상태 계산: pending일 때 2차 정보 작성 또는 마감 기한 경과 시 강화 성공으로 표시
+          // 강화 상태 계산: pending → 결정 시점(N+1 목 12:01 KST) 이후에만 enhanced 로 승격.
+          // 2차 정보 / secondary_info_deadline 은 강화 성공/실패 판정에 영향 없음 (2026 정책).
           let computedStatus = record.enhancement_status;
-          if (record.enhancement_status === "pending") {
-            const activityType = workCareerActivityTypes[index];
-            const detail = activityType ? weekActivityDetails.find((d) => d.activity_type_id === activityType) : null;
-            const hasSecondaryInfo = detail && ((detail.sub_title && detail.sub_title.trim() !== "") || (detail.output_links && detail.output_links.some((link: { url?: string }) => link?.url && link.url.trim() !== "")));
-            const deadlinePassed = record.secondary_info_deadline ? new Date(record.secondary_info_deadline) <= new Date() : false;
-            if (hasSecondaryInfo || deadlinePassed) {
-              computedStatus = "enhanced";
-            }
+          if (record.enhancement_status === "pending" && resultsDecided) {
+            computedStatus = "enhanced";
           }
 
           // 강화 상태에 따른 배지 결정
@@ -4968,6 +5566,35 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             return "/images/0/cluster4/icon/8 해당 없음.png";
           };
 
+          // 어드민 output_images 와 크루 user_activity_details.image_urls 를 합쳐 3슬롯 채움.
+          // 레거시 데이터(과거 저장 로직이 어드민 URL 까지 image_urls 에 함께 저장한 케이스)
+          // 중복 노출 방지를 위해, 크루 슬롯에서 어드민 URL 과 동일한 항목은 걸러냄.
+          const adminImgs = (record.output_images || []).filter((i) => i?.url?.trim());
+          const adminUrlSet = new Set(adminImgs.map((i) => i.url));
+          const careerActivityType = workCareerActivityTypes[index];
+          const careerDetail = careerActivityType ? weekActivityDetails.find((d) => d.activity_type_id === careerActivityType) : null;
+          const rawCrewImgs = careerDetail?.image_urls || [];
+          const rawCrewCaps = careerDetail?.image_captions || [];
+          const crewImgs: (string | null)[] = [];
+          const crewCaps: string[] = [];
+          for (let i = 0; i < rawCrewImgs.length; i++) {
+            const u = rawCrewImgs[i];
+            if (u && adminUrlSet.has(u)) continue;
+            crewImgs.push(u || null);
+            crewCaps.push(rawCrewCaps[i] || "");
+          }
+          const mergedImages: (string | null)[] = [];
+          const mergedCaptions: string[] = [];
+          for (let i = 0; i < WORKCAREER_IMAGE_SLOT_COUNT; i++) {
+            if (i < adminImgs.length) {
+              mergedImages.push(adminImgs[i].url);
+              mergedCaptions.push(adminImgs[i].caption || "");
+            } else {
+              const crewIdx = i - adminImgs.length;
+              mergedImages.push(crewImgs[crewIdx] || null);
+              mergedCaptions.push(crewCaps[crewIdx] || "");
+            }
+          }
           return {
             id: index + 1,
             code: record.line_code || record.career_code || "-",
@@ -4978,17 +5605,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             likes: "0,99",
             hasWeb: (record.output_links?.length || 0) > 0,
             icon: record.company_logo_url || "/images/0/cluster4/icon/default-company.png",
-            supervisorImg: record.supervisor_profile_img || "/images/0/crew profile/default.jpg",
+            companyHomepageUrl: (record.company_homepage_links && record.company_homepage_links[0]) || null,
+            supervisorImg: record.supervisor_profile_img || "/images/0/cluster4/icon/실무 경력/감독자.jpg",
             supervisorName: record.supervisor_name || "-",
             supervisorDept: record.supervisor_department || "",
-            supervisorCompany: record.supervisor_company || "",
+            supervisorCompany: record.company_name || record.supervisor_company || "",
             supervisorPosition: record.supervisor_position || "",
             statusBadge: getStatusBadge(computedStatus),
             grade: record.grade || "",
             isNotApplicable: computedStatus === "not_applicable",
-            // work-info의 is_empty sentinel 패턴과 동일 — record.is_empty === true일 때만 isEmpty: true.
-            // 운영 데이터에는 is_empty 필드가 없으므로 항상 falsy → 기존 카드 동작 유지.
-            isEmpty: (record as { is_empty?: boolean }).is_empty === true,
+            isEmpty: false,
             isFailed: computedStatus === "failed",
             // 추가 정보 (상세 보기용)
             projectDescription: (() => {
@@ -5003,6 +5629,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             lineName: record.line_name,
             outputLinks: record.output_links,
             secondaryInfoDeadline: record.secondary_info_deadline || null,
+            // 어드민 output_images 우선, 남은 슬롯은 크루 user_activity_details.image_urls 로 채움
+            images: mergedImages,
+            imageCaptions: mergedCaptions,
           };
         })
       : [];
@@ -5039,7 +5668,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     secondaryInfoDeadline: null as string | null,
   });
 
-  // 휴식 모드일 때 실무 경력 카드 전부 '해당 없음'으로 강제
+  // 휴식 모드일 때 실무 경력 카드 전부 '해당 없음'으로 강제. 본문(프로젝트명 등)은 보존.
   const effectiveWorkCareerCards = isRestMode
     ? workCareerCards.map((card) => ({
         ...card,
@@ -5093,6 +5722,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
     return stars;
   };
+
+  if (isLoadingWeek) {
+    return <div className="cluster4-card-content weekly-card-detail" style={{ marginRight: "27px", minHeight: "400px" }} />;
+  }
 
   return (
     <div className="cluster4-card-content weekly-card-detail" style={{ marginRight: "27px" }}>
@@ -5163,24 +5796,82 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             <div
               className="edit-icon"
               onClick={async () => {
-                if (!isDemoMode && isOwner) {
+                // 임시: 마더 계정(어드민) 외에는 주차 평판 작성/수정 비활성화
+                if (!isDemoMode && !session?.user?.isAdmin) {
+                  await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
+                  return;
+                }
+                if (!isDemoMode && isOwner && !session?.user?.isAdmin) {
                   await popup.alert("주차 평판은 타 크루만이 작성할 수 있습니다.");
                   return;
                 }
                 handleEditClick(() => {
+                  if (!isDemoMode && !canEditReputation) {
+                    alert("관리자 승인 후 작성할 수 있습니다.");
+                    return;
+                  }
+                  // 이미 작성한 평판이 있는지 확인 (편집 경로 진입)
+                  const myExistingRep = !isDemoMode && session?.user?.id
+                    ? weeklyReputations.find((r: any) => r.reviewer_id === session.user.id)
+                    : null;
+
                   setHeaderModalType("타크루");
                   setHeaderModalOpen(true);
-                  // reputation-form 리디자인 2단계 — 초기 상태 + 스냅샷 캡처
-                  const initial = { rating: 0, content: "", keyword: "" };
-                  setReputationEditData(initial);
-                  setFormSnapshot(initial);
-                  setFormKeywordMode("select");
+                  setFormKeywordMode(myExistingRep ? "select" : "select");
                   setSelectedKeywordTemp("");
-                  setIsReputationFormEditing(false); // 사용자 요청: 기본 보기 모드 ([수정] 버튼 표시)
                   setSaveAttemptFailed(false);
-                  setSelectedReputationCard(null); // 신규 작성 경로 — 편집 경로와 구분
                   fetchCrewListIfNeeded();
                   fetchKeywordsIfNeeded();
+
+                  if (myExistingRep) {
+                    // 편집 모드: 기존 데이터 로드
+                    const existing = {
+                      rating: myExistingRep.rating || 0,
+                      content: myExistingRep.content || "",
+                      keyword: myExistingRep.keyword || "",
+                    };
+                    setReputationEditData(existing);
+                    setFormSnapshot(existing);
+                    setEditingWeeklyReputationId(myExistingRep.id);
+                    // reviewer 프로필 + 평판 데이터 모두 포함 (reputationData useMemo와 동일 매핑)
+                    const reviewer = myExistingRep.reviewer;
+                    let age: string | number = "-";
+                    if (reviewer?.birth_date) {
+                      const birthYear = new Date(reviewer.birth_date).getFullYear();
+                      const currentYear = new Date().getFullYear();
+                      age = currentYear - birthYear;
+                    }
+                    setSelectedReputationCard({
+                      id: myExistingRep.id,
+                      name: reviewer?.display_name || "-",
+                      gender: reviewer?.gender || "-",
+                      age,
+                      profileImg: reviewer?.profile_photo_url || "",
+                      university: reviewer?.university || "-",
+                      major: reviewer?.major_first || "-",
+                      team: reviewer?.teamName || "-",
+                      part: reviewer?.partName || "-",
+                      nickname: reviewer?.vision || "-",
+                      role: reviewer?.role ? roleLabels[reviewer.role] || reviewer.role : "일반",
+                      rating: (myExistingRep.rating || 0) / 2,
+                      ratingCount: `${myExistingRep.rating || 0} / 10`,
+                      description: myExistingRep.content || "",
+                      fm: 1,
+                      tagColor: "tag--pink",
+                      tagText: `#${myExistingRep.keyword || "-"}`,
+                      createdAt: myExistingRep.created_at || null,
+                      isEmpty: false,
+                    });
+                    setIsReputationFormEditing(true);
+                  } else {
+                    // 신규 작성 경로
+                    const initial = { rating: 0, content: "", keyword: "" };
+                    setReputationEditData(initial);
+                    setFormSnapshot(initial);
+                    setEditingWeeklyReputationId(null);
+                    setIsReputationFormEditing(true);
+                    setSelectedReputationCard(null);
+                  }
                 });
               }}
               style={{ cursor: "pointer" }}
@@ -5197,8 +5888,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               src={currentImage}
               alt="주차 이미지"
               className="main-week-image"
+              data-stripped-src={currentImageStripped || undefined}
               onError={(e) => {
-                (e.target as HTMLImageElement).src = "/images/0/cluster4/주차 이미지/휴식(개인,공식).png";
+                const img = e.currentTarget;
+                const stripped = img.dataset.strippedSrc;
+                if (img.dataset.fallbackStep !== "1" && stripped) {
+                  img.dataset.fallbackStep = "1";
+                  img.src = stripped;
+                } else {
+                  img.src = "/images/0/cluster4/주차 이미지/휴식(개인,공식).png";
+                }
               }}
             />
             {/* 뱃지 두 개 */}
@@ -5290,7 +5989,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 <div className="info-badge week" style={{ alignSelf: "flex-end" }}>
                   <img src="/images/0/cluster4/icon/icon - 7.png" alt="week" />
                   <span>
-                    <span className="highlight">{weekData?.growthStatus === "진행 중" || weekData?.growthStatus === "집계 중" ? "+1" : cumulativeApprovedWeeks}</span> / 30 주차
+                    <span className="highlight">{weekData?.growthStatus === "진행 중" || weekData?.growthStatus === "집계 중" ? "+1" : cumulativeApprovedWeeks}</span> / 25 주차
                   </span>
                 </div>
                 <button
@@ -5588,6 +6287,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       await popup.alert("연계 크루는 본인만이 작성할 수 있습니다.");
                       return;
                     }
+                    if (!(await requireWriteWindow())) return;
                     handleEditClick(() => {
                       handleOpenColleagueEdit();
                     });
@@ -5772,11 +6472,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <span className="growth-count">
                 <img src="/images/0/cluster4/icon/icon - 0 - 3star.png" alt="star" className="star-icon" /> 총{" "}
                 <span style={{ display: "inline-block", minWidth: "2ch", textAlign: "right", color: "white", fontSize: 19, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>
-                  {infoStats.total + competencyStats.total + experienceStats.total + careerStats.total}
+                  {isRestMode ? "-" : infoStats.total + competencyStats.total + experienceStatsDisplay.total + careerStats.total}
                 </span>{" "}
                 개 중{" "}
                 <span className="highlight" style={{ display: "inline-block", minWidth: "2ch", textAlign: "right" }}>
-                  {infoStats.success + competencyStats.success + experienceStats.success + careerStats.success}
+                  {isRestMode ? "-" : infoStats.success + competencyStats.success + experienceStatsDisplay.success + careerStats.success}
                 </span>
                 개
               </span>
@@ -5787,7 +6487,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 style={{
                   width: isRestMode
                     ? "100%"
-                    : `${infoStats.total + competencyStats.total + experienceStats.total + careerStats.total > 0 ? Math.ceil(((infoStats.success + competencyStats.success + experienceStats.success + careerStats.success) / (infoStats.total + competencyStats.total + experienceStats.total + careerStats.total)) * 100) : isOnboardingWeek ? 100 : 0}%`,
+                    : `${infoStats.total + competencyStats.total + experienceStatsDisplay.total + careerStats.total > 0 ? Math.ceil(((infoStats.success + competencyStats.success + experienceStatsDisplay.success + careerStats.success) / (infoStats.total + competencyStats.total + experienceStatsDisplay.total + careerStats.total)) * 100) : isOnboardingWeek ? 100 : 0}%`,
                 }}
               ></div>
               {isRestMode && <span className="rest-message">휴식주차로서 집계되지 않습니다</span>}
@@ -5798,8 +6498,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <span className="number">
                 {isRestMode
                   ? "-"
-                  : infoStats.total + competencyStats.total + experienceStats.total + careerStats.total > 0
-                    ? Math.ceil(((infoStats.success + competencyStats.success + experienceStats.success + careerStats.success) / (infoStats.total + competencyStats.total + experienceStats.total + careerStats.total)) * 100)
+                  : infoStats.total + competencyStats.total + experienceStatsDisplay.total + careerStats.total > 0
+                    ? Math.ceil(((infoStats.success + competencyStats.success + experienceStatsDisplay.success + careerStats.success) / (infoStats.total + competencyStats.total + experienceStatsDisplay.total + careerStats.total)) * 100)
                     : isOnboardingWeek
                       ? 100
                       : 0}
@@ -5858,9 +6558,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </span>
             </div>
             <span className="section-count">
-              총 <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>{infoStats.total}</span> 개 중{" "}
+              총 <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>{isRestMode ? "-" : infoStats.total}</span> 개 중{" "}
               <span className="highlight" style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right" }}>
-                {infoStats.success}
+                {isRestMode ? "-" : infoStats.success}
               </span>{" "}
               개
             </span>
@@ -5882,12 +6582,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   key={card.id}
                   className={`work-info-card ${isEmpty ? "empty" : ""} ${card.status === "empty" ? "is-empty-card" : ""}`}
                   onClick={async () => {
-                    if (!isEmpty) {
-                      setSelectedWorkInfoCard(card);
-                      setWorkInfoViewModalOpen(true);
-                    }
+                    setSelectedWorkInfoCard(card);
+                    setWorkInfoViewModalOpen(true);
                   }}
-                  style={{ cursor: isEmpty ? "default" : "pointer" }}
+                  style={{ cursor: "pointer" }}
                 >
                   <div className="card-content-area">
                     <div className="card-title-row">
@@ -5952,9 +6650,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </span>
             </div>
             <span className="section-count">
-              총 <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>{experienceStats.total}</span> 개 중{" "}
+              총 <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>{(isOnboardingWeek || isRestMode) ? "-" : experienceStatsDisplay.total}</span> 개 중{" "}
               <span className="highlight" style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right" }}>
-                {experienceStats.success}
+                {(isOnboardingWeek || isRestMode) ? "-" : experienceStatsDisplay.success}
               </span>{" "}
               개
             </span>
@@ -5962,7 +6660,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <span className="rate-label">파트 강화율</span>
               <span className="rate-value">
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                  {isRestMode ? "-" : experienceStats.total > 0 ? Math.ceil((experienceStats.success / experienceStats.total) * 100) : 0}
+                  {(isOnboardingWeek || isRestMode) ? "-" : experienceStatsDisplay.total > 0 ? Math.ceil((experienceStatsDisplay.success / experienceStatsDisplay.total) * 100) : 0}
                 </span>
                 %
               </span>
@@ -5977,14 +6675,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   key={card.id}
                   className={`work-exp-card ${isEmpty ? "empty" : ""}`}
                   onClick={async () => {
-                    // 빈 카드(is_empty sentinel)도 모달 열어 void 상태 표시.
-                    // work-exp는 placeholder 패턴 없음 (모든 카드가 activityTypeId 보유).
-                    if (!isEmpty || card.activityTypeId) {
-                      setSelectedWorkExpCard(card);
-                      setWorkExpViewModalOpen(true);
-                    }
+                    setSelectedWorkExpCard(card);
+                    setWorkExpViewModalOpen(true);
                   }}
-                  style={{ cursor: !isEmpty || card.activityTypeId ? "pointer" : "default" }}
+                  style={{ cursor: "pointer" }}
                 >
                   <div className="card-top-row">
                     <div className={`card-icon-area ${!isEmpty && card.enhancementStatus === "failed" ? "failed" : ""}`}>
@@ -6033,7 +6727,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       <span className="sub-label">Sub Title</span>
                     </div>
                     <span className="sub-desc">
-                      {isEmpty || isRestMode
+                      {isEmpty
                         ? "-"
                         : (() => {
                             const text = weekActivityDetails.find((d) => d.activity_type_id === card.activityTypeId)?.sub_title || "-";
@@ -6043,9 +6737,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     {!isEmpty && <img src="/images/0/cluster4/icon - 더보기.png" alt="더보기" className="card-arrow" />}
                   </div>
                   {!isEmpty && card.enhancementStatus !== "empty" && (
-                    <div className={`status-badge ${isRestMode ? "not_applicable" : !card.hasActivity ? "failed" : card.enhancementStatus}`}>
+                    <div className={`status-badge ${isRestMode || isOnboardingWeek ? "not_applicable" : !card.hasActivity ? "failed" : card.enhancementStatus}`}>
                       {(() => {
-                        if (isRestMode) return <img src="/images/0/cluster4/icon/8 해당 없음.png" alt="해당 없음" />;
+                        if (isRestMode || isOnboardingWeek) return <img src="/images/0/cluster4/icon/8 해당 없음.png" alt="해당 없음" />;
                         if (!card.hasActivity) return <img src="/images/0/cluster4/icon/7 강화 실패.png" alt="강화 실패" />;
                         const statusImages: Record<string, string> = {
                           success: "/images/0/cluster4/icon/5 강화 성공.png",
@@ -6094,9 +6788,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </span>
             </div>
             <span className="section-count">
-              총 <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>{competencyStats.total}</span> 개 중{" "}
+              총 <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>{(isOnboardingWeek || isRestMode) ? "-" : competencyStats.total}</span> 개 중{" "}
               <span className="highlight" style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right" }}>
-                {competencyStats.success}
+                {(isOnboardingWeek || isRestMode) ? "-" : competencyStats.success}
               </span>{" "}
               개
             </span>
@@ -6104,20 +6798,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <span className="rate-label">파트 강화율</span>
               <span className="rate-value">
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                  {isRestMode ? "-" : competencyStats.total > 0 ? Math.ceil((competencyStats.success / competencyStats.total) * 100) : 0}
+                  {(isOnboardingWeek || isRestMode) ? "-" : competencyStats.total > 0 ? Math.ceil((competencyStats.success / competencyStats.total) * 100) : 0}
                 </span>
                 %
               </span>
             </div>
           </div>
           <div className="work-ability-cards">
-            {effectiveWorkAbilityCards.slice(0, 1).map((card) => {
+            {[displayedAbilityCard].map((card) => {
               const isFailedCard = card.enhancementStatus === "failed";
-              const isNotApplicableCard = card.enhancementStatus === "not_applicable";
+              const usePlaceholder = isAbilityCardVoid;
               return (
                 <div
-                  key={card.code}
-                  className={`work-ability-card ${isNotApplicableCard ? "empty" : ""}`}
+                  key={isAbilityCardVoid ? "void" : card.code}
+                  className={`work-ability-card ${usePlaceholder ? "empty" : ""}`}
                   onClick={async () => {
                     setSelectedWorkAbilityCard(card);
                     setWorkAbilityViewModalOpen(true);
@@ -6148,12 +6842,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       <span className="code-tag">{card.lineCode}</span>
                       <span className="info-tag">{card.lineName}</span>
                     </div>
-                    <p className="main-desc">{isNotApplicableCard ? "-" : card.title || "준비 중입니다"}</p>
+                    <p className="main-desc">{usePlaceholder ? "-" : card.title || "-"}</p>
                     <div className="sub-title-row">
                       <img src="/images/0/cluster4/icon/icon - 11 - file.png" alt="icon" className="sub-icon" />
                       <span className="sub-label">Sub Title</span>
                     </div>
-                    <span className="sub-desc">{isNotApplicableCard ? "-" : card.subTitle || "-"}</span>
+                    <span className="sub-desc">{usePlaceholder ? "-" : card.subTitle || "-"}</span>
                     <img src="/images/0/cluster4/icon - 더보기.png" alt="더보기" className="card-arrow" />
                   </div>
                   {card.enhancementStatus !== "empty" && (
@@ -6198,9 +6892,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </span>
             </div>
             <span className="section-count">
-              총 <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>{careerStats.total}</span> 개 중{" "}
+              총 <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>{(isOnboardingWeek || isRestMode) ? "-" : careerStats.total}</span> 개 중{" "}
               <span className="highlight" style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right" }}>
-                {careerStats.success}
+                {(isOnboardingWeek || isRestMode) ? "-" : careerStats.success}
               </span>{" "}
               개
             </span>
@@ -6208,7 +6902,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <span className="rate-label">파트 강화율</span>
               <span className="rate-value">
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                  {isRestMode ? "-" : careerStats.total > 0 ? Math.ceil((careerStats.success / careerStats.total) * 100) : 0}
+                  {(isOnboardingWeek || isRestMode) ? "-" : careerStats.total > 0 ? Math.ceil((careerStats.success / careerStats.total) * 100) : 0}
                 </span>
                 %
               </span>
@@ -6222,14 +6916,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   <div
                     className={`work-career-card ${isEmpty ? "empty" : ""} ${card.isFailed ? "failed" : ""} ${card.isNotApplicable ? "not-applicable" : ""}`}
                     onClick={async () => {
-                      // record 기반 빈 카드(is_empty sentinel)는 모달 열어 void 상태 표시.
-                      // 무경력 placeholder(emptyCareerCard, recordId: null)는 기존대로 클릭 차단.
-                      if (!isEmpty || card.recordId) {
-                        setSelectedWorkCareerCard(card);
-                        setWorkCareerViewModalOpen(true);
-                      }
+                      setSelectedWorkCareerCard(card);
+                      setWorkCareerViewModalOpen(true);
                     }}
-                    style={{ cursor: !isEmpty || card.recordId ? "pointer" : "default" }}
+                    style={{ cursor: "pointer" }}
                   >
                     {card.isFailed && <div className="card-overlay failed"></div>}
                     <div className="card-top-row">
@@ -6441,7 +7131,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                             {getEnhancementStatus(card.activityType) === "failed"
                               ? "❌ 강화에 실패하여 2차 정보를 작성할 수 없습니다."
                               : isActivityExpired(card.activityType)
-                                ? "⏰ 2차 정보 작성 기간이 마감되었습니다. (개설 후 48시간 경과)"
+                                ? "⏰ 2차 정보 작성 기간이 마감되었습니다 (수 오후 22시까지)"
                                 : "⚠️ 이 활동은 아직 개설되지 않았습니다. 운영진이 개설한 후 편집할 수 있습니다."}
                           </p>
                         </div>
@@ -6641,7 +7331,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           }}
                         >
                           <p style={{ margin: 0, color: isAbilityFailed || isAnyAbilityActivityExpired() ? "#dc2626" : "#856404", fontSize: "14px" }}>
-                            {isAbilityFailed ? "❌ 강화에 실패하여 2차 정보를 작성할 수 없습니다." : isAnyAbilityActivityExpired() ? "⏰ 2차 정보 작성 기간이 마감되었습니다. (개설 후 48시간 경과)" : "⚠️ 이 활동은 아직 개설되지 않았습니다. 운영진이 개설한 후 편집할 수 있습니다."}
+                            {isAbilityFailed ? "❌ 강화에 실패하여 2차 정보를 작성할 수 없습니다." : isAnyAbilityActivityExpired() ? "⏰ 2차 정보 작성 기간이 마감되었습니다 (수 오후 22시까지)" : "⚠️ 이 활동은 아직 개설되지 않았습니다. 운영진이 개설한 후 편집할 수 있습니다."}
                           </p>
                         </div>
                       )}
@@ -6868,7 +7558,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                 }}
                               >
                                 <p style={{ margin: 0, color: isFailed || isExpired ? "#dc2626" : "#856404", fontSize: "14px" }}>
-                                  {isFailed ? "❌ 강화에 실패하여 2차 정보를 작성할 수 없습니다." : isExpired ? "⏰ 2차 정보 작성 기간이 마감되었습니다. (개설 후 48시간 경과)" : "⚠️ 이 활동은 아직 개설되지 않았습니다. 운영진이 개설한 후 편집할 수 있습니다."}
+                                  {isFailed ? "❌ 강화에 실패하여 2차 정보를 작성할 수 없습니다." : isExpired ? "⏰ 2차 정보 작성 기간이 마감되었습니다 (수 오후 22시까지)" : "⚠️ 이 활동은 아직 개설되지 않았습니다. 운영진이 개설한 후 편집할 수 있습니다."}
                                 </p>
                               </div>
                             )}
@@ -7062,7 +7752,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           if (isDeadlineExpired)
                             return (
                               <div style={{ padding: "16px", backgroundColor: "#fee2e2", border: "1px solid #ef4444", borderRadius: "8px", marginBottom: "16px" }}>
-                                <p style={{ margin: 0, color: "#dc2626", fontSize: "14px" }}>⏰ 2차 정보 작성 기간이 마감되었습니다. (마감: {new Date(card.secondaryInfoDeadline!).toLocaleString("ko-KR")})</p>
+                                <p style={{ margin: 0, color: "#dc2626", fontSize: "14px" }}>⏰ 2차 정보 작성 기간이 마감되었습니다</p>
                               </div>
                             );
                           if (!card.secondaryInfoDeadline)
@@ -7253,7 +7943,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 {colleagueEditData.selectedColleague ? (
                   <div className={`selected-colleague ${colleagueSaveAttemptFailed && !colleagueEditData.selectedColleague ? `field-error ${colleagueFieldErrorFlash ? "flash" : ""}` : ""}`}>
                     <div className="crew-info">
-                      <span className="crew-number">No.{colleagueEditData.selectedColleague.number ?? colleagueEditData.selectedColleague.id}</span>
+                      <span className="crew-number">{colleagueEditData.selectedColleague.number ?? colleagueEditData.selectedColleague.id}</span>
                       <span className="crew-divider">|</span>
                       <span className="crew-name">{colleagueEditData.selectedColleague.name || "-"}</span>
                       <span className="crew-divider">|</span>
@@ -7294,7 +7984,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         {colleagueSearchResults.map((crew) => (
                           <div key={crew.id} className="search-result-item">
                             <div className="crew-info">
-                              <span className="crew-number">No.{crew.number ?? crew.id}</span>
+                              <span className="crew-number">{crew.number ?? crew.id}</span>
                               <span className="crew-divider">|</span>
                               <span className="crew-name">{crew.name || "-"}</span>
                               <span className="crew-divider">|</span>
@@ -7343,7 +8033,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 </div>
                 <div className="modal-footer-right">
                   {!isColleagueEditing ? (
-                    <button type="button" className="modal-edit-btn" onClick={() => handleEditClick(() => setIsColleagueEditing(true))}>
+                    <button
+                      type="button"
+                      className="modal-edit-btn"
+                      onClick={async () => {
+                        if (!(await requireWriteWindow())) return;
+                        handleEditClick(() => setIsColleagueEditing(true));
+                      }}
+                    >
                       수정
                     </button>
                   ) : (
@@ -7481,9 +8178,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           if (saveAttemptFailed) setSaveAttemptFailed(false); // 사용자 요청: 입력 시 에러 자동 해제
                         }
                       }}
+                      onClick={() => {
+                        // select 모드 + 편집 중일 때 input 클릭으로도 키워드 picker 열기
+                        if (isReputationFormEditing && formKeywordMode === "select") {
+                          handleKeywordModeChange("select");
+                        }
+                      }}
                       placeholder={formKeywordMode === "write" ? "해당 크루의 한 주 활동의 특징을 키워드로 입력해주세요." : "선택 버튼을 눌러 키워드를 선택하세요"}
                       maxLength={10}
                       readOnly={!isReputationFormEditing || formKeywordMode === "select"}
+                      style={isReputationFormEditing && formKeywordMode === "select" ? { cursor: "pointer" } : undefined}
                       onKeyDown={(e) => {
                         if (!isReputationFormEditing || formKeywordMode === "select") {
                           e.preventDefault();
@@ -7704,6 +8408,50 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   <span>{formatReputationTime(selectedReputationCard.createdAt)}</span>
                 </div>
               </div>
+
+              {/* 어드민 전용: 수정/삭제 버튼 */}
+              {session?.user?.isAdmin && !selectedReputationCard.isEmpty && (
+                <div style={{ display: "flex", gap: "8px", marginTop: "16px", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={() => {
+                      setReputationEditData({
+                        rating: selectedReputationCard.rawRating || 0,
+                        content: selectedReputationCard.description || "",
+                        keyword: selectedReputationCard.rawKeyword || "",
+                      });
+                      setEditingWeeklyReputationId(selectedReputationCard.id);
+                      setReputationViewModalOpen(false);
+                      setHeaderModalType("타크루");
+                      setHeaderModalOpen(true);
+                      fetchKeywordsIfNeeded();
+                    }}
+                    style={{ padding: "8px 16px", background: "rgba(250, 171, 7, 0.2)", border: "1px solid #FAAB07", borderRadius: "6px", color: "#FAAB07", fontSize: "13px", cursor: "pointer" }}
+                  >
+                    수정
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!confirm("이 평판을 삭제하시겠습니까?")) return;
+                      try {
+                        const res = await fetch(`/api/weekly-reputations?id=${selectedReputationCard.id}`, { method: "DELETE" });
+                        const json = await res.json();
+                        if (json.success) {
+                          alert("삭제되었습니다.");
+                          setReputationViewModalOpen(false);
+                          fetchWeeklyReputations();
+                        } else {
+                          alert(json.error || "삭제 실패");
+                        }
+                      } catch {
+                        alert("삭제 중 오류 발생");
+                      }
+                    }}
+                    style={{ padding: "8px 16px", background: "rgba(255, 60, 60, 0.2)", border: "1px solid #ff3c3c", borderRadius: "6px", color: "#ff3c3c", fontSize: "13px", cursor: "pointer" }}
+                  >
+                    삭제
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -7791,7 +8539,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <div className="colleague-fromto">
                 <span className="fromto-block fromto-from">
                   <span className="fromto-label">From -</span>
-                  <span className="fromto-name">{selectedColleagueCard.fromName || session?.user?.name || "-"}</span>
+                  <span className="fromto-name">{selectedColleagueCard.fromName || myDisplayName || session?.user?.name || "-"}</span>
                   <span className="fromto-suffix">님</span>
                 </span>
                 <span className="fromto-arrow">→</span>
@@ -7853,34 +8601,42 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       {/* 1열: 프로필 사진 (3행 차지) */}
                       <div className="personal-photo">
                         {/* TODO: [백엔드 작업 필요] profile API의 photo URL 사용 — 현재는 데모 더미 또는 기본 아이콘 */}
-                        <img src={isDemoMode ? "/images/0/crew profile/남 1.webp" : "/images/0/crew profile/남 1.webp"} alt="profile" />
+                        <img
+                          src={
+                            isDemoMode
+                              ? "/images/0/crew profile/남 1.webp"
+                              : reviewerProfile.profilePhotoUrl || "/images/0/crew profile/남 1.webp"
+                          }
+                          alt="profile"
+                          onError={(e) => { (e.target as HTMLImageElement).src = "/images/0/crew profile/남 1.webp"; }}
+                        />
                       </div>
 
                       {/* 2열: 인적사항 텍스트 컬럼 (3행 stack) */}
                       <div className="personal-info">
                         {/* 1행 — 이름·성별·나이 + 역할/키워드 태그 (태그는 우측 정렬) */}
                         <div className="personal-row-1">
-                          <span className="personal-name">{isDemoMode ? "홍길동" : "—"}</span>
+                          <span className="personal-name">{isDemoMode ? "홍길동" : (reviewerProfile.displayName || session?.user?.name || "—")}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{isDemoMode ? "남" : "—"}</span>
+                          <span className="personal-gender">{isDemoMode ? "남" : (reviewerProfile.gender || "—")}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-age">{isDemoMode ? "22" : "—"} 세</span>
+                          <span className="personal-age">{isDemoMode ? "22" : (reviewerProfile.age ?? "—")} 세</span>
                           <div className="personal-tags">
                             {/* TODO: [백엔드 작업 필요] role 필드 (운영진/앰배서더/일반 등) — profile API에 추가 필요 */}
-                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : "역할", "역할")}</span>
-                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : "키워드", "키워드")}</span>
+                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : (roleLabel || "—"), "—")}</span>
+                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : (reviewerProfile.vision || "-"), "-")}</span>
                           </div>
                         </div>
 
                         {/* 2행 — 학교·학과 (필드명/값 분리, 고정폭, 말줄임 없음) */}
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "서울대" : "—"}</span>
+                            <span className="field-value">{isDemoMode ? "서울대" : (reviewerProfile.school || "—")}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "경영" : "—"}</span>
+                            <span className="field-value">{isDemoMode ? "경영" : (reviewerProfile.major || "—")}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
@@ -7900,7 +8656,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       </div>
 
                       <div className="personal-line-status line-info-row">
-                        {(selectedWorkInfoCard.status as string) === "empty" ? (
+                        {selectedWorkInfoCard.isEmpty || (selectedWorkInfoCard.status as string) === "empty" ? (
                           <div className="line-enhance-void" aria-label="빈 카드">
                             <span className="void-mark" />
                             <span className="void-mark" />
@@ -7990,14 +8746,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         <i className="ti ti-pin"></i>
                         Main Title
                       </h4>
-                      <div className="text-block-content main-title-readonly">{selectedWorkInfoCard.title && selectedWorkInfoCard.title !== "-" ? selectedWorkInfoCard.title : "준비 중입니다"}</div>
+                      <div className="text-block-content main-title-readonly">{selectedWorkInfoCard.title && selectedWorkInfoCard.title !== "-" ? selectedWorkInfoCard.title : "-"}</div>
                     </div>
 
                     {/* Sub Title — 사용자 입력 200자 (필수) */}
                     <div className="workinfo-text-block text-block-sub" data-field="subTitle">
                       <h4 className="text-block-title">
                         <i className="ti ti-pin"></i>
-                        Sub Title {workInfoViewIsEditing && <span className="required-mark">*</span>}
+                        Sub Title
                       </h4>
                       {workInfoViewIsEditing ? (
                         <div className="text-block-edit">
@@ -8018,11 +8774,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     </div>
 
                     {/* Growth Point — 사용자 입력 100자 (필수) */}
-                    {/* TODO: [백엔드 작업 필요] weekly_activity_details에 growth_point 컬럼 추가 + API 확장 후, sub_title과 동일 패턴으로 데이터 연결 */}
                     <div className="workinfo-text-block text-block-growth" data-field="growthPoint">
                       <h4 className="text-block-title">
                         <i className="ti ti-pin"></i>
-                        Growth Point {workInfoViewIsEditing && <span className="required-mark">*</span>}
+                        Growth Point
                       </h4>
                       {workInfoViewIsEditing ? (
                         <div className="text-block-edit">
@@ -8044,35 +8799,49 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   </div>
                 </div>
 
-                {/* ──── 우측 — 이미지 2×2 그리드 (1·2번 필수, 순차 업로드, 클릭 시 확대) ──── */}
+                {/* ──── 우측 — 이미지 2×2 그리드 ──── */}
+                {/* 슬롯 0·1: 운영진 이미지 (read-only), 슬롯 2·3: 크루 이미지 (옵셔널) */}
                 <div className="workinfo-right">
                   <div className="workinfo-image-grid images-grid">
                     {Array.from({ length: WORKINFO_IMAGE_SLOT_COUNT }).map((_, imageIdx) => {
-                      // 보기 모드는 카드 데이터, 편집 모드는 editingImages
-                      // TODO: [백엔드 작업 필요] selectedWorkInfoCard.images 필드 보장 후 fallback 제거
+                      // 운영진 이미지 슬롯 분기
+                      const adminImages = selectedWorkInfoCard?.activityType ? getAdminOutputImages(selectedWorkInfoCard.activityType) : []
+                      const adminCount = adminImages.length
+                      const isAdminSlot = imageIdx < 2
+                      // 슬롯 idx → 데이터 출처
+                      // 0,1: adminImages[0], adminImages[1]
+                      // 2,3: 크루 이미지 (image_urls[0], image_urls[1])
                       const viewImages = normalizeWorkInfoImages(selectedWorkInfoCard?.images);
                       const viewCaptions = normalizeWorkInfoCaptions(selectedWorkInfoCard?.imageCaptions);
-                      const imagesForState = workInfoViewIsEditing ? editingImages : viewImages;
-                      const captionsForState = workInfoViewIsEditing ? editingImageCaptions : viewCaptions;
-                      const image = imagesForState[imageIdx] || null;
-                      const caption = captionsForState[imageIdx] || "";
-                      const isEnabled = imageIdx === 0 || !!imagesForState[imageIdx - 1];
-                      const isRequired = imageIdx < 2; // 1·2번만 필수
+                      const crewImagesForState = workInfoViewIsEditing ? editingImages : viewImages;
+                      const crewCaptionsForState = workInfoViewIsEditing ? editingImageCaptions : viewCaptions;
+                      let image: string | null = null
+                      let caption = ""
+                      if (isAdminSlot) {
+                        const adminImg = adminImages[imageIdx]
+                        image = adminImg?.url || null
+                        caption = adminImg?.caption || ""
+                      } else {
+                        const crewSlotIdx = imageIdx - 2
+                        image = crewImagesForState[crewSlotIdx] || null
+                        caption = crewCaptionsForState[crewSlotIdx] || ""
+                      }
+                      // 어드민 슬롯은 클릭/편집/삭제 모두 비활성, 크루 슬롯만 편집 가능
+                      const slotIsEditable = workInfoViewIsEditing && !isAdminSlot
+                      const crewSlotIdx = imageIdx - 2 // 슬롯 2,3 → 크루 image_urls[0,1]
                       return (
-                        <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${!isEnabled ? " disabled" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
-                          {workInfoViewIsEditing && isRequired && <span className="image-required-mark">*</span>}
+                        <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${isAdminSlot && !image ? " disabled" : ""}${isAdminSlot ? " admin-slot" : ""}`} style={{ position: "relative" }}>
                           {image ? (
-                            <div className="image-preview" onClick={() => handleImagePreview(imageIdx)}>
+                            <div className="image-preview" onClick={() => !isAdminSlot && handleImagePreview(crewSlotIdx)}>
                               <img src={image} alt={`이미지 ${imageIdx + 1}`} />
-                              {/* cluster3 image-actions-overlay 패턴: 편집 모드에서 항상 표시 */}
-                              {workInfoViewIsEditing && (
+                              {slotIsEditable && (
                                 <div className="image-actions-overlay">
                                   <button
                                     type="button"
                                     className="image-action-btn"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      triggerImageUpload(imageIdx);
+                                      triggerImageUpload(crewSlotIdx);
                                     }}
                                     title="교체"
                                     aria-label="교체"
@@ -8084,7 +8853,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                     className="image-action-btn image-delete-btn"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleImageDelete(imageIdx);
+                                      handleImageDelete(crewSlotIdx);
                                     }}
                                     title="삭제"
                                     aria-label="삭제"
@@ -8098,63 +8867,50 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                             <div
                               className="image-preview"
                               onClick={async () => {
-                                if (workInfoViewIsEditing && isEnabled) triggerImageUpload(imageIdx);
+                                if (slotIsEditable) triggerImageUpload(crewSlotIdx);
                               }}
                             >
-                              {/* 빈 슬롯에서도 편집 모드면 cluster3 image-actions-overlay 표시 (업로드 아이콘) */}
-                              {workInfoViewIsEditing && (
+                              {slotIsEditable && (
                                 <div className="image-actions-overlay">
                                   <button
                                     type="button"
                                     className="image-action-btn"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      triggerImageUpload(imageIdx);
+                                      triggerImageUpload(crewSlotIdx);
                                     }}
-                                    disabled={!isEnabled}
                                     title="업로드"
                                     aria-label="업로드"
                                   >
                                     <i className="ti ti-upload"></i>
                                   </button>
-                                  <button
-                                    type="button"
-                                    className="image-action-btn image-delete-btn"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleImageDelete(imageIdx);
-                                    }}
-                                    disabled
-                                    title="??젣"
-                                    aria-label="??젣"
-                                  >
-                                    <i className="ti ti-trash"></i>
-                                  </button>
                                 </div>
                               )}
                               <div className="empty-slot">
-                                <i className="ti ti-photo-plus"></i>
+                                {isAdminSlot ? <span style={{ color: "#aaa", fontSize: 12 }}>운영진 미업로드</span> : <i className="ti ti-photo-plus"></i>}
                               </div>
                             </div>
                           )}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            ref={(el) => {
-                              imageFileInputRefs.current[imageIdx] = el;
-                            }}
-                            style={{ display: "none" }}
-                            onChange={(e) => handleImageFileChange(e, imageIdx)}
-                          />
-                          {/* 캡션 바 — 이미지/빈 슬롯/disabled 무관하게 항상 렌더 (cluster3 image-caption-overlay 패턴) */}
+                          {!isAdminSlot && (
+                            <input
+                              type="file"
+                              accept="image/*"
+                              ref={(el) => {
+                                imageFileInputRefs.current[crewSlotIdx] = el;
+                              }}
+                              style={{ display: "none" }}
+                              onChange={(e) => handleImageFileChange(e, crewSlotIdx)}
+                            />
+                          )}
+                          {/* 캡션 바 — 어드민 슬롯은 보기 전용, 크루 슬롯만 편집 가능 */}
                           <div className="image-caption-overlay">
-                            {workInfoViewIsEditing && activeCaptionIdx === imageIdx ? (
+                            {slotIsEditable && activeCaptionIdx === crewSlotIdx ? (
                               <input
                                 type="text"
                                 className="caption-input"
-                                value={editingImageCaptions[imageIdx] || ""}
+                                value={editingImageCaptions[crewSlotIdx] || ""}
                                 onChange={(e) => {
-                                  if (e.target.value.length <= 20) handleCaptionChange(imageIdx, e.target.value);
+                                  if (e.target.value.length <= 20) handleCaptionChange(crewSlotIdx, e.target.value);
                                 }}
                                 onClick={(e) => e.stopPropagation()}
                                 placeholder="캡션 입력 (최대 20자)"
@@ -8165,16 +8921,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                               <span className="caption-text">{caption}</span>
                             )}
                           </div>
-                          {/* 캡션 토글 아이콘 — cluster3 Cluster3Content.tsx:3431 패턴. 편집 모드에서만 표시 */}
-                          {workInfoViewIsEditing && (
+                          {slotIsEditable && (
                             <button
                               type="button"
-                              className={`image-action-btn image-caption-btn${activeCaptionIdx === imageIdx ? " active" : ""}`}
+                              className={`image-action-btn image-caption-btn${activeCaptionIdx === crewSlotIdx ? " active" : ""}`}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setActiveCaptionIdx(activeCaptionIdx === imageIdx ? null : imageIdx);
+                                setActiveCaptionIdx(activeCaptionIdx === crewSlotIdx ? null : crewSlotIdx);
                               }}
-                              title={activeCaptionIdx === imageIdx ? "캡션 저장" : "캡션 편집"}
+                              title={activeCaptionIdx === crewSlotIdx ? "캡션 저장" : "캡션 편집"}
                               aria-label="캡션"
                               style={{ position: "absolute", bottom: "8px", right: "8px", zIndex: 3 }}
                             >
@@ -8273,30 +9028,38 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   <div className="workinfo-personal-card">
                     <div className="personal-grid">
                       <div className="personal-photo">
-                        <img src={isDemoMode ? "/images/0/crew profile/남 1.webp" : "/images/0/crew profile/남 1.webp"} alt="profile" />
+                        <img
+                          src={
+                            isDemoMode
+                              ? "/images/0/crew profile/남 1.webp"
+                              : reviewerProfile.profilePhotoUrl || "/images/0/crew profile/남 1.webp"
+                          }
+                          alt="profile"
+                          onError={(e) => { (e.target as HTMLImageElement).src = "/images/0/crew profile/남 1.webp"; }}
+                        />
                       </div>
 
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{isDemoMode ? "홍길동" : "—"}</span>
+                          <span className="personal-name">{isDemoMode ? "홍길동" : (reviewerProfile.displayName || session?.user?.name || "—")}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{isDemoMode ? "남" : "—"}</span>
+                          <span className="personal-gender">{isDemoMode ? "남" : (reviewerProfile.gender || "—")}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-age">{isDemoMode ? "22" : "—"} 세</span>
+                          <span className="personal-age">{isDemoMode ? "22" : (reviewerProfile.age ?? "—")} 세</span>
                           <div className="personal-tags">
-                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : "역할", "역할")}</span>
-                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : "키워드", "키워드")}</span>
+                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : (roleLabel || "—"), "—")}</span>
+                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : (reviewerProfile.vision || "-"), "-")}</span>
                           </div>
                         </div>
 
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "서울대" : "—"}</span>
+                            <span className="field-value">{isDemoMode ? "서울대" : (reviewerProfile.school || "—")}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "경영" : "—"}</span>
+                            <span className="field-value">{isDemoMode ? "경영" : (reviewerProfile.major || "—")}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
@@ -8321,8 +9084,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           failed: "강화 실패",
                           not_applicable: "해당 없음",
                         };
-                        // 카드 status-badge(L5920)와 동일 우선순위로 평가: isRestMode → !hasActivity → enhancementStatus
-                        const statusKey = isRestMode ? "not_applicable" : !selectedWorkExpCard.hasActivity ? "failed" : (selectedWorkExpCard.enhancementStatus as string);
+                        // 카드 status-badge와 동일 우선순위로 평가: isEmpty(보이드) → isRestMode/온보딩 → !hasActivity → enhancementStatus
+                        const statusKey = selectedWorkExpCard.isEmpty ? "empty" : (isRestMode || isOnboardingWeek) ? "not_applicable" : !selectedWorkExpCard.hasActivity ? "failed" : (selectedWorkExpCard.enhancementStatus as string);
                         const statusText = enhanceStatusTextMap[statusKey] || "—";
                         const statusImages: Record<string, string> = {
                           success: "/images/0/cluster4/icon/5 강화 성공.png",
@@ -8409,13 +9172,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         <i className="ti ti-pin"></i>
                         Main Title
                       </h4>
-                      <div className="text-block-content main-title-readonly">{lookupWorkExpMapping(selectedWorkExpCard.code)?.mainTitle || (selectedWorkExpCard.title && selectedWorkExpCard.title !== "-" ? selectedWorkExpCard.title : "준비 중입니다")}</div>
+                      <div className="text-block-content main-title-readonly">{lookupWorkExpMapping(selectedWorkExpCard.code)?.mainTitle || (selectedWorkExpCard.title && selectedWorkExpCard.title !== "-" ? selectedWorkExpCard.title : "-")}</div>
                     </div>
 
                     <div className="workinfo-text-block text-block-sub" data-field="subTitle">
                       <h4 className="text-block-title">
                         <i className="ti ti-pin"></i>
-                        Sub Title {workExpViewIsEditing && <span className="required-mark">*</span>}
+                        Sub Title
                       </h4>
                       {workExpViewIsEditing ? (
                         <div className="text-block-edit">
@@ -8438,7 +9201,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <div className="workinfo-text-block text-block-growth" data-field="growthPoint">
                       <h4 className="text-block-title">
                         <i className="ti ti-pin"></i>
-                        Growth Point {workExpViewIsEditing && <span className="required-mark">*</span>}
+                        Growth Point
                       </h4>
                       {workExpViewIsEditing ? (
                         <div className="text-block-edit">
@@ -8474,7 +9237,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const isRequired = imageIdx < 2;
                       return (
                         <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${!isEnabled ? " disabled" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
-                          {workExpViewIsEditing && isRequired && <span className="image-required-mark">*</span>}
                           {image ? (
                             <div className="image-preview" onClick={() => handleExpImagePreview(imageIdx)}>
                               <img src={image} alt={`이미지 ${imageIdx + 1}`} />
@@ -8597,10 +9359,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   </div>
                   <span className="line-code image-line-code">{lookupWorkExpMapping(selectedWorkExpCard.code)?.lineCode || selectedWorkExpCard.code || ""}</span>
 
-                  {/* 라인 평점 — workExp 전용 (필수, 0=미입력, 1~10) */}
+                  {/* 라인 평점 — 어드민(compliance-manage)에서 입력한 값을 읽기전용으로 표시 (0=미입력, 1~10) */}
                   {(() => {
-                    // 보기 모드: 카드 데이터(card.rating은 5점 만점) × 2로 10점 변환. 편집 모드: editingExpRating(10점).
-                    const ratingValue = workExpViewIsEditing ? editingExpRating : (selectedWorkExpCard?.rating ?? 0) * 2;
+                    const ratingValue = (selectedWorkExpCard?.rating ?? 0) * 2;
                     const halfValue = (ratingValue || 0) / 2;
                     return (
                       <div className="workexp-rating-section" data-field="rating">
@@ -8620,31 +9381,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                             );
                           })}
                         </div>
-                        {workExpViewIsEditing ? (
-                          <>
-                            <input
-                              type="number"
-                              className="rating-number-input"
-                              value={editingExpRating === 0 ? "" : editingExpRating}
-                              min={1}
-                              max={10}
-                              placeholder="-"
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                if (value === "") {
-                                  setEditingExpRating(0);
-                                  return;
-                                }
-                                const nextRating = Math.max(1, Math.min(10, Number(value)));
-                                setEditingExpRating(Number.isNaN(nextRating) ? 0 : nextRating);
-                              }}
-                            />
-                            <span className="rating-max">/ 10</span>
-                            <span className="required-mark">*</span>
-                          </>
-                        ) : (
-                          <span className="rating-display">{ratingValue > 0 ? ratingValue : "-"} / 10</span>
-                        )}
+                        <span className="rating-display">{ratingValue > 0 ? ratingValue : "-"} / 10</span>
                       </div>
                     );
                   })()}
@@ -8717,7 +9454,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     </button>
                   </div>
                 </div>
-                <div className="help-modal-body">도움말 내용은 추후 추가됩니다.</div>
+                <HelpModalBody helpKey="exp" />
               </div>
             </div>
           )}
@@ -8747,28 +9484,36 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   <div className="workinfo-personal-card">
                     <div className="personal-grid">
                       <div className="personal-photo">
-                        <img src={isDemoMode ? "/images/0/crew profile/남 1.webp" : "/images/0/crew profile/남 1.webp"} alt="profile" />
+                        <img
+                          src={
+                            isDemoMode
+                              ? "/images/0/crew profile/남 1.webp"
+                              : reviewerProfile.profilePhotoUrl || "/images/0/crew profile/남 1.webp"
+                          }
+                          alt="profile"
+                          onError={(e) => { (e.target as HTMLImageElement).src = "/images/0/crew profile/남 1.webp"; }}
+                        />
                       </div>
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{isDemoMode ? "홍길동" : "—"}</span>
+                          <span className="personal-name">{isDemoMode ? "홍길동" : (reviewerProfile.displayName || session?.user?.name || "—")}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{isDemoMode ? "남" : "—"}</span>
+                          <span className="personal-gender">{isDemoMode ? "남" : (reviewerProfile.gender || "—")}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-age">{isDemoMode ? "22" : "—"} 세</span>
+                          <span className="personal-age">{isDemoMode ? "22" : (reviewerProfile.age ?? "—")} 세</span>
                           <div className="personal-tags">
-                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : "역할", "역할")}</span>
-                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : "키워드", "키워드")}</span>
+                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : (roleLabel || "—"), "—")}</span>
+                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : (reviewerProfile.vision || "-"), "-")}</span>
                           </div>
                         </div>
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "서울대" : "—"}</span>
+                            <span className="field-value">{isDemoMode ? "서울대" : (reviewerProfile.school || "—")}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "경영" : "—"}</span>
+                            <span className="field-value">{isDemoMode ? "경영" : (reviewerProfile.major || "—")}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
@@ -8791,7 +9536,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           failed: "강화 실패",
                           not_applicable: "해당 없음",
                         };
-                        const statusKey = selectedWorkAbilityCard.enhancementStatus as string;
+                        const statusKey = selectedWorkAbilityCard.isEmpty ? "empty" : (selectedWorkAbilityCard.enhancementStatus as string);
                         const statusText = statusTextMap[statusKey] || "—";
                         return (
                           <div className="personal-line-status line-info-row">
@@ -8869,12 +9614,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         <i className="ti ti-pin"></i>
                         Main Title
                       </h4>
-                      <div className="text-block-content main-title-readonly">{selectedWorkAbilityCard.title && selectedWorkAbilityCard.title !== "-" ? selectedWorkAbilityCard.title : "준비 중입니다"}</div>
+                      <div className="text-block-content main-title-readonly">{selectedWorkAbilityCard.title && selectedWorkAbilityCard.title !== "-" ? selectedWorkAbilityCard.title : "-"}</div>
                     </div>
                     <div className="workinfo-text-block text-block-sub" data-field="subTitle">
                       <h4 className="text-block-title">
                         <i className="ti ti-pin"></i>
-                        Sub Title {workAbilityViewIsEditing && <span className="required-mark">*</span>}
+                        Sub Title
                       </h4>
                       {workAbilityViewIsEditing ? (
                         <div className="text-block-edit">
@@ -8896,7 +9641,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <div className="workinfo-text-block text-block-growth" data-field="growthPoint">
                       <h4 className="text-block-title">
                         <i className="ti ti-pin"></i>
-                        Growth Point {workAbilityViewIsEditing && <span className="required-mark">*</span>}
+                        Growth Point
                       </h4>
                       {workAbilityViewIsEditing ? (
                         <div className="text-block-edit">
@@ -8931,7 +9676,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const isRequired = imageIdx < 2;
                       return (
                         <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${!isEnabled ? " disabled" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
-                          {workAbilityViewIsEditing && isRequired && <span className="image-required-mark">*</span>}
                           {image ? (
                             <div className="image-preview" onClick={() => handleAbilityImagePreview(imageIdx)}>
                               <img src={image} alt={`이미지 ${imageIdx + 1}`} />
@@ -9108,7 +9852,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     </button>
                   </div>
                 </div>
-                <div className="help-modal-body">도움말 내용은 추후 추가됩니다.</div>
+                <HelpModalBody helpKey="ability" />
               </div>
             </div>
           )}
@@ -9147,25 +9891,25 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{isDemoMode ? "홍길동" : "—"}</span>
+                          <span className="personal-name">{isDemoMode ? "홍길동" : (reviewerProfile.displayName || session?.user?.name || "—")}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{isDemoMode ? "남" : "—"}</span>
+                          <span className="personal-gender">{isDemoMode ? "남" : (reviewerProfile.gender || "—")}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-age">{isDemoMode ? "22" : "—"} 세</span>
+                          <span className="personal-age">{isDemoMode ? "22" : (reviewerProfile.age ?? "—")} 세</span>
                           <div className="personal-tags">
-                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : "역할", "역할")}</span>
-                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : "키워드", "키워드")}</span>
+                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : (roleLabel || "—"), "—")}</span>
+                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : (reviewerProfile.vision || "-"), "-")}</span>
                           </div>
                         </div>
 
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "서울대" : "—"}</span>
+                            <span className="field-value">{isDemoMode ? "서울대" : (reviewerProfile.school || "—")}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "경영" : "—"}</span>
+                            <span className="field-value">{isDemoMode ? "경영" : (reviewerProfile.major || "—")}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
@@ -9223,6 +9967,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                               className="line-activity-icon"
                               src={selectedWorkCareerCard.icon}
                               alt={selectedWorkCareerCard.badge || "활동"}
+                              onClick={(e) => handleCompanyLogoClick(e, selectedWorkCareerCard.companyHomepageUrl)}
+                              style={{ cursor: selectedWorkCareerCard.companyHomepageUrl ? 'pointer' : undefined }}
                               onError={(e) => {
                                 (e.target as HTMLImageElement).style.display = "none";
                               }}
@@ -9281,13 +10027,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         <i className="ti ti-pin"></i>
                         Main Title
                       </h4>
-                      <div className="text-block-content main-title-readonly">{selectedWorkCareerCard.title && selectedWorkCareerCard.title !== "-" ? selectedWorkCareerCard.title : "준비 중입니다"}</div>
+                      <div className="text-block-content main-title-readonly">{selectedWorkCareerCard.title && selectedWorkCareerCard.title !== "-" ? selectedWorkCareerCard.title : "-"}</div>
                     </div>
 
                     <div className="workinfo-text-block text-block-sub" data-field="subTitle">
                       <h4 className="text-block-title">
                         <i className="ti ti-pin"></i>
-                        Sub Title {workCareerViewIsEditing && <span className="required-mark">*</span>}
+                        Sub Title
                       </h4>
                       {workCareerViewIsEditing ? (
                         <div className="text-block-edit">
@@ -9310,7 +10056,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <div className="workinfo-text-block text-block-growth" data-field="growthPoint">
                       <h4 className="text-block-title">
                         <i className="ti ti-pin"></i>
-                        Growth Point {workCareerViewIsEditing && <span className="required-mark">*</span>}
+                        Growth Point
                       </h4>
                       {workCareerViewIsEditing ? (
                         <div className="text-block-edit">
@@ -9335,7 +10081,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 {/* ──── 우측 — 이미지 3장 + 후원사 placeholder(4단계) ──── */}
                 <div className="workinfo-right">
                   <div className="workinfo-image-grid images-grid workcareer-image-grid">
-                    {Array.from({ length: WORKCAREER_IMAGE_SLOT_COUNT }).map((_, imageIdx) => {
+                    {(() => {
+                      const careerIdxForLock = (selectedWorkCareerCard?.id || 1) - 1;
+                      const adminImgCountForLock = (careerRecords[careerIdxForLock]?.output_images || []).filter((i) => i?.url?.trim()).length;
+                      return Array.from({ length: WORKCAREER_IMAGE_SLOT_COUNT }).map((_, imageIdx) => {
                       const viewImages = normalizeWorkCareerImages(selectedWorkCareerCard?.images);
                       const viewCaptions = normalizeWorkCareerCaptions(selectedWorkCareerCard?.imageCaptions);
                       const imagesForState = workCareerViewIsEditing ? editingCareerImages : viewImages;
@@ -9344,13 +10093,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const caption = captionsForState[imageIdx] || "";
                       const isEnabled = imageIdx === 0 || !!imagesForState[imageIdx - 1];
                       const isRequired = imageIdx < 2;
+                      const isAdminLocked = imageIdx < adminImgCountForLock;
+                      const showEditingActions = workCareerViewIsEditing && !isAdminLocked;
                       return (
-                        <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${!isEnabled ? " disabled" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
-                          {workCareerViewIsEditing && isRequired && <span className="image-required-mark">*</span>}
+                        <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${!isEnabled ? " disabled" : ""}${isAdminLocked ? " admin-locked" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
                           {image ? (
                             <div className="image-preview" onClick={() => handleCareerImagePreview(imageIdx)}>
                               <img src={image} alt={`이미지 ${imageIdx + 1}`} />
-                              {workCareerViewIsEditing && (
+                              {showEditingActions && (
                                 <div className="image-actions-overlay">
                                   <button
                                     type="button"
@@ -9383,10 +10133,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                             <div
                               className="image-preview"
                               onClick={async () => {
-                                if (workCareerViewIsEditing && isEnabled) triggerCareerImageUpload(imageIdx);
+                                if (showEditingActions && isEnabled) triggerCareerImageUpload(imageIdx);
                               }}
                             >
-                              {workCareerViewIsEditing && (
+                              {showEditingActions && (
                                 <div className="image-actions-overlay">
                                   <button
                                     type="button"
@@ -9431,7 +10181,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                             onChange={(e) => handleCareerImageFileChange(e, imageIdx)}
                           />
                           <div className="image-caption-overlay">
-                            {workCareerViewIsEditing && activeCareerCaptionIdx === imageIdx ? (
+                            {showEditingActions && activeCareerCaptionIdx === imageIdx ? (
                               <input
                                 type="text"
                                 className="caption-input"
@@ -9448,7 +10198,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                               <span className="caption-text">{caption}</span>
                             )}
                           </div>
-                          {workCareerViewIsEditing && (
+                          {showEditingActions && (
                             <button
                               type="button"
                               className={`image-action-btn image-caption-btn${activeCareerCaptionIdx === imageIdx ? " active" : ""}`}
@@ -9465,7 +10215,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           )}
                         </div>
                       );
-                    })}
+                      });
+                    })()}
                     {/* 4번째 슬롯 — 후원/제휴사 카드 (항상 읽기전용, 편집 모드에서도 수정 불가) */}
                     {(() => {
                       // DB 값이 우선. 없으면 데모 모드에서만 card id 기반 랜덤 폴백
@@ -9484,6 +10235,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                   <img
                                     src={companyLogo}
                                     alt="기업 로고"
+                                    onClick={(e) => handleCompanyLogoClick(e, selectedWorkCareerCard.companyHomepageUrl)}
+                                    style={{ cursor: selectedWorkCareerCard.companyHomepageUrl ? 'pointer' : undefined }}
                                     onError={(e) => {
                                       (e.target as HTMLImageElement).style.display = "none";
                                       const sibling = (e.target as HTMLImageElement).nextElementSibling as HTMLElement | null;
@@ -9625,7 +10378,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     </button>
                   </div>
                 </div>
-                <div className="help-modal-body">도움말 내용은 추후 추가됩니다.</div>
+                <HelpModalBody helpKey="career" />
               </div>
             </div>
           )}
@@ -9645,7 +10398,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 </button>
               </div>
             </div>
-            <div className="help-modal-body">도움말 내용은 추후 추가됩니다.</div>
+            <HelpModalBody helpKey={helpModalKind} />
           </div>
         </div>
       )}
@@ -9716,30 +10469,49 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   </div>
                 </div>
 
-                {/* 작업 2에서 미드 2행/3행 추가 예정 */}
-                {/* 미드 2행 — 본인 인적사항 카드 */}
+                {/* 미드 2행 — 본인 인적사항 카드 (user_profiles + user_educations 실데이터) */}
                 <div className="weekly-review-row weekly-review-row-2">
                   <div className="workinfo-personal-card">
                     <div className="personal-grid">
                       <div className="personal-photo">
-                        <img src={isDemoMode ? "/images/0/crew profile/남 1.webp" : "/images/0/crew profile/남 1.webp"} alt="프로필" />
+                        <img
+                          src={
+                            isDemoMode
+                              ? "/images/0/crew profile/남 1.webp"
+                              : reviewerProfile.profilePhotoUrl || "/images/0/crew profile/남 1.webp"
+                          }
+                          alt="프로필"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = "/images/0/crew profile/남 1.webp";
+                          }}
+                        />
                       </div>
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{isDemoMode ? "홍길동" : session?.user?.name || "—"}</span>
+                          <span className="personal-name">
+                            {isDemoMode ? "홍길동" : reviewerProfile.displayName || session?.user?.name || "—"}
+                          </span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{isDemoMode ? "남" : "—"}</span>
+                          <span className="personal-gender">
+                            {isDemoMode ? "남" : reviewerProfile.gender || "—"}
+                          </span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-age">{isDemoMode ? "22" : "—"} 세</span>
+                          <span className="personal-age">
+                            {isDemoMode ? "22" : reviewerProfile.age ?? "—"} 세
+                          </span>
                         </div>
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "서울대" : "—"}</span>
+                            <span className="field-value">
+                              {isDemoMode ? "서울대" : reviewerProfile.school || "—"}
+                            </span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "경영" : "—"}</span>
+                            <span className="field-value">
+                              {isDemoMode ? "경영" : reviewerProfile.major || "—"}
+                            </span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
@@ -9756,8 +10528,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         </div>
                       </div>
                       <div className="personal-tags">
-                        <span className="tag-badge tag-role">{isDemoMode ? "앰배서더" : "일반"}</span>
-                        <span className="tag-badge tag-keyword">{isDemoMode ? "엔비디아 구글 테슬라" : "키워드"}</span>
+                        <span className="tag-badge tag-role">
+                          {isDemoMode ? "앰배서더" : roleLabel || "일반"}
+                        </span>
+                        <span className="tag-badge tag-keyword">
+                          {isDemoMode ? "엔비디아 구글 테슬라" : reviewerProfile.vision || "-"}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -9798,7 +10574,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   </button>
                   <div className="modal-footer-right">
                     {!isWeeklyReviewEditing ? (
-                      <button type="button" className="modal-edit-btn" onClick={handleWeeklyReviewEditClick}>
+                      <button
+                        type="button"
+                        className="modal-edit-btn"
+                        onClick={handleWeeklyReviewEditClick}
+                        disabled={!isOwner}
+                        style={!isOwner ? { opacity: 0.3, cursor: "not-allowed" } : undefined}
+                        title={isOwner ? "수정" : "본인 주차 리뷰만 수정할 수 있습니다"}
+                      >
                         수정
                       </button>
                     ) : (

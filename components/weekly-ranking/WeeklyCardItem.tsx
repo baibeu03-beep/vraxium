@@ -1,0 +1,247 @@
+"use client";
+
+import Image from "next/image";
+import Tilt from "react-parallax-tilt";
+import type { WeeklyCardData } from "@/constants/dummyData/weekly-card-dummy";
+
+const stripSuffix = (value: string | null | undefined, suffix: string): string => {
+  if (!value) return '';
+  const trimmed = value.trim();
+  return trimmed.endsWith(suffix) ? trimmed.slice(0, -suffix.length).trim() : trimmed;
+};
+
+const truncateName = (value: string | null | undefined): string => {
+  if (!value) return '';
+  return value.length >= 5 ? `${value.slice(0, 3)}..` : value;
+};
+
+// max = 표시할 최대 본문 글자수 (말줄임표 제외). 본문 길이가 max+1 이상이면 first(max) + ".." 로 잘라낸다.
+// 검증 케이스: "마케팅전략"(5) → "마케팅전..", "브랜드콘텐츠"(6) → "브랜드콘..".
+const truncateLabel = (value: string, max = 4): string => {
+  if (!value) return '';
+  return value.length >= max + 1 ? `${value.slice(0, max)}..` : value;
+};
+
+const getStatusTone = (status: string): string => {
+  switch (status) {
+    case '정상 진행':
+    case '검수 완료':
+      return 'status-green';
+    case '심화 진행':
+    case '대전 집계':
+      return 'status-yellow';
+    case '공식 휴식':
+      return 'status-muted';
+    case '대전 중':
+      return 'status-blue';
+    case '공표 중':
+      return 'status-purple';
+    default:
+      return 'status-neutral';
+  }
+};
+
+const STATUS_ICON_MAP: Record<string, string> = {
+  '정상 진행': 'ti ti-circle-check',
+  '심화 진행': 'ti ti-flame',
+  '공식 휴식': 'ti ti-bed',
+  '대전 중': 'ti ti-swords',
+  '대전 집계': 'ti ti-chart-bar',
+  '공표 중': 'ti ti-speakerphone',
+  '검수 완료': 'ti ti-shield-check',
+};
+
+const RANK_IMAGE_MAP: Record<number, string> = {
+  1: '/images/0/first.png',
+  2: '/images/0/second.png',
+  3: '/images/0/third.png',
+};
+
+interface Props {
+  data: WeeklyCardData;
+}
+
+export default function WeeklyCardItem({ data }: Props) {
+  return (
+    <Tilt
+      tiltMaxAngleX={5}
+      tiltMaxAngleY={5}
+      transitionSpeed={400}
+      className="col-12 col-md-6 col-xl-4"
+    >
+      <div className="badge__single weekly-card">
+        <div className="weekly-card__header">
+          <div className="weekly-card__title">
+            {/* [상세 페이지 라우팅 자리] href/onClick 자리는 비워두고, 추후 상세 페이지 연결 시 추가. */}
+            <button
+              type="button"
+              className="weekly-card__league-link"
+              aria-label="Weekly League 상세 페이지 준비 중"
+            >
+              <span className="weekly-card__league-icon" aria-hidden="true">
+                <i className="ti ti-trophy" />
+              </span>
+              <span>Weekly League</span>
+            </button>
+            {/* 첨부 cluster-4-card 의 2026 표시 문자열을 그대로 출력.
+                연도/시즌명/주차명/기간 모두 재계산·재포맷·split 금지. */}
+            <h4 className="weekly-card__season">
+              {data.seasonName}
+            </h4>
+            <p className="weekly-card__date">
+              {data.dateRangeText}
+            </p>
+          </div>
+          <div className="weekly-card__status-panel">
+            <span className={`weekly-card__status-badge ${getStatusTone(data.leagueResultStatus)}`}>
+              <span className="icon-shift">
+                <i className={STATUS_ICON_MAP[data.leagueResultStatus]}></i>
+              </span>
+              <span>{data.leagueResultStatus}</span>
+            </span>
+            <span className={`weekly-card__status-badge ${getStatusTone(data.leagueRecordStatus)}`}>
+              <span className="icon-shift">
+                <i className={STATUS_ICON_MAP[data.leagueRecordStatus]}></i>
+              </span>
+              <span>{data.leagueRecordStatus}</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="weekly-card__thumb">
+          {data.imageUrl ? (
+            <Image
+              src={data.imageUrl}
+              alt={data.seasonName}
+              width={280}
+              height={180}
+              className="weekly-card__thumb-image"
+            />
+          ) : (
+            <div className="weekly-card__thumb-placeholder">
+              <span>주차 이미지</span>
+            </div>
+          )}
+        </div>
+
+        <div className="resume-stats weekly-card__rates">
+          <div className="stat-item">
+            <div className="stat-row">
+              <span className="stat-label"><span className="stat-dot">·</span> 성장 성공율</span>
+              <div className="weekly-card__stat-meter">
+                <div className="progress-bar">
+                  <div className="progress-fill" style={{ width: `${data.growthSuccessRate}%` }} />
+                </div>
+                <span className="stat-value">{data.growthSuccessRate}<span className="stat-unit">%</span></span>
+              </div>
+            </div>
+          </div>
+          <div className="stat-item">
+            <div className="stat-row">
+              <span className="stat-label"><span className="stat-dot">·</span> 성장 도전율</span>
+              <div className="weekly-card__stat-meter">
+                <div className="progress-bar">
+                  <div className="progress-fill" style={{ width: `${data.growthChallengeRate}%` }} />
+                </div>
+                <span className="stat-value">{data.growthChallengeRate}<span className="stat-unit">%</span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="resume-skills weekly-card__skills">
+          <div className="skill-card">
+            <Image src="/images/0/cluster4/icon/icon - cluv.png" alt="" width={34} height={34} className="skill-icon" />
+            <div className="skill-num-row">
+              <span className="skill-num">{data.totalCrews}</span>
+              <span className="skill-unit">명</span>
+            </div>
+            <span className="skill-label">전체 크루</span>
+          </div>
+
+          <div className="skill-card">
+            <Image src="/images/0/cluster4/icon/icon - 성장 (진행 중).png" alt="" width={34} height={34} className="skill-icon" />
+            <div className="skill-num-row">
+              <span className="skill-num">{data.growthChallenge}</span>
+              <span className="skill-unit">명</span>
+            </div>
+            <span className="skill-label">성장 도전</span>
+          </div>
+
+          <div className="skill-card">
+            <Image src="/images/0/cluster4/icon/icon - 성장(성공).png" alt="" width={34} height={34} className="skill-icon" />
+            <div className="skill-num-row">
+              <span className="skill-num">{data.growthSuccess}</span>
+              <span className="skill-unit">명</span>
+            </div>
+            <span className="skill-label">성장 성공</span>
+          </div>
+
+          <div className="skill-card">
+            <Image src="/images/0/cluster4/icon/icon - 성장(실패).png" alt="" width={34} height={34} className="skill-icon" />
+            <div className="skill-num-row">
+              <span className="skill-num">{data.growthFail}</span>
+              <span className="skill-unit">명</span>
+            </div>
+            <span className="skill-label">성장 실패</span>
+          </div>
+
+          <div className="skill-card">
+            <Image src="/images/0/cluster4/icon/icon - 휴식(개인).png" alt="" width={34} height={34} className="skill-icon" />
+            <div className="skill-num-row">
+              <span className="skill-num">{data.personalRest}</span>
+              <span className="skill-unit">명</span>
+            </div>
+            <span className="skill-label">개인 휴식</span>
+          </div>
+
+          <div className="weekly-card__winner">
+            <img
+              className="weekly-card__winner-trophy"
+              src="/images/0/crown.png"
+              alt=""
+              aria-hidden="true"
+            />
+            <span className="weekly-card__winner-label">우승</span>
+            {data.winningTeamImage ? (
+              <Image src={data.winningTeamImage} alt="우승 팀" width={80} height={80} className="weekly-card__winner-image" />
+            ) : (
+              <div className="weekly-card__winner-placeholder" />
+            )}
+          </div>
+        </div>
+
+        <div className="weekly-card__top3">
+          {data.top3.map((crew) => (
+            <div key={crew.rank} className={`weekly-card__crew weekly-card__rank-row weekly-card__crew--rank${crew.rank}`}>
+              <div className="weekly-card__crew-icon weekly-card__rank-badge">
+                <Image
+                  src={RANK_IMAGE_MAP[crew.rank] ?? RANK_IMAGE_MAP[1]}
+                  alt={`${crew.rank}등`}
+                  width={28}
+                  height={28}
+                  className="weekly-card__rank-image"
+                />
+              </div>
+              <span className="weekly-card__rank-name">{truncateName(crew.name)}</span>
+              <span className="weekly-card__rank-separator" aria-hidden="true">|</span>
+              <span className="weekly-card__rank-team">
+                <span className="weekly-card__rank-team-text">
+                  {truncateLabel(stripSuffix(crew.team, '팀'))}
+                </span>
+                <span className="weekly-card__rank-team-suffix">팀</span>
+              </span>
+              <span className="weekly-card__rank-separator" aria-hidden="true">|</span>
+              <span className="weekly-card__rank-part">
+                <span className="weekly-card__rank-part-text">
+                  {truncateLabel(stripSuffix(crew.part, '파트'))}
+                </span>
+                <span className="weekly-card__rank-part-suffix">파트</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Tilt>
+  );
+}

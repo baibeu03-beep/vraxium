@@ -18,6 +18,7 @@ export interface WeeklyActivity {
   title: string | null;
   is_active: boolean;
   opened_at: string | null;
+  deadline?: string | null;
   output_links: OutputLink[] | null;
 }
 

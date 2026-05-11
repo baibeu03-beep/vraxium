@@ -132,7 +132,6 @@ export async function GET(request: NextRequest) {
         is_qualified,
         rating,
         review,
-        review_link,
         seasons (
           id,
           year,
@@ -248,14 +247,12 @@ export async function GET(request: NextRequest) {
       unapprovedWeeksCount++;
     });
 
-    const gsApprovedWeeks = growthStats?.approved_weeks ?? approvedWeeksCount;
-    const gsRestWeeks = growthStats?.rest_weeks ?? restWeeksCount;
-    const gsPassedWeeks = growthStats?.passed_weeks ?? (approvedWeeksCount + unapprovedWeeksCount + restWeeksCount + clubBreakWeeksCount);
-    const gsClubBreakWeeks = growthStats?.club_break_weeks ?? clubBreakWeeksCount;
-    const reliabilityDenominator = gsPassedWeeks - gsClubBreakWeeks;
+    // 일정 신뢰도: 실시간 계산값 사용 (user_growth_stats 캐시는 며칠 단위 stale).
+    const passedWeeksTotal = approvedWeeksCount + unapprovedWeeksCount + restWeeksCount + clubBreakWeeksCount;
+    const reliabilityDenominator = passedWeeksTotal - clubBreakWeeksCount;
     let calculatedReliabilityRate = 0;
     if (reliabilityDenominator > 0) {
-      calculatedReliabilityRate = Math.ceil(((gsApprovedWeeks + gsRestWeeks) / reliabilityDenominator) * 100);
+      calculatedReliabilityRate = Math.min(100, Math.ceil(((approvedWeeksCount + restWeeksCount) / reliabilityDenominator) * 100));
     }
 
     // completionRate 계산 (breakSeasonIds는 위에서 이미 생성됨)
@@ -358,7 +355,7 @@ export async function GET(request: NextRequest) {
       badges: {
         stars: cumulativePoints?.total_stars || 0,
         lightnings: cumulativePoints?.total_lightnings || 0,
-        shields: cumulativePoints?.total_shields || 0,
+        shields: (cumulativePoints?.total_shields || 0) - (cumulativePoints?.total_lightnings || 0),
       },
       seasonHistories: finalSeasonHistories,
     });

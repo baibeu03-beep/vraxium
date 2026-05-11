@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useMemo, useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
+import { dedupedJson } from "@/lib/fetch-dedupe";
 import { Autoplay } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { usePopup } from "@/components/ui/popup";
@@ -66,12 +67,13 @@ const Sidebar = () => {
   const crewsHref = currentOrg ? `/crews?org=${currentOrg}` : "/crews";
 
   // 로그인 시 user_profiles ID를 미리 가져옴
+  // 어드민(마더 계정)은 user_profiles에 없어 404 — skip
   useEffect(() => {
     if (!session?.user) return;
-    fetch('/api/profile/')
-      .then(res => res.json())
+    if (session.user.isAdmin) return;
+    dedupedJson<any>('/api/profile/')
       .then(result => {
-        if (result.success && result.data?.id) {
+        if (result?.success && result.data?.id) {
           setMyProfileId(result.data.id);
         }
       })
@@ -81,6 +83,11 @@ const Sidebar = () => {
   const handleCareerResumeClick = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (session?.user) {
+      // 어드민(마더 계정)은 본인 프로필이 없어 /cluster-4 가 무의미 — 바로 크루 목록으로
+      if (session.user.isAdmin) {
+        router.push("/crews");
+        return;
+      }
       if (myProfileId) {
         router.push(`/cluster-4/?userId=${myProfileId}`);
       } else {

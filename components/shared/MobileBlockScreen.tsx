@@ -9,17 +9,23 @@ type NavigatorWithUserAgentData = Navigator & {
   };
 };
 
+const isDesktopViewOverride = () => {
+  if (process.env.NODE_ENV !== "development") return false;
+
+  const params = new URLSearchParams(window.location.search);
+  return params.get("view") === "desktop";
+};
+
 const isMobileDevice = () => {
+  if (isDesktopViewOverride()) return false;
+
   const nav = navigator as NavigatorWithUserAgentData;
   const uaMobile = nav.userAgentData?.mobile === true;
   const userAgent = navigator.userAgent || "";
   const mobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
-  const coarsePointer = window.matchMedia?.("(pointer: coarse)").matches ?? false;
-  const noHover = window.matchMedia?.("(hover: none)").matches ?? false;
-  const touchCapable = navigator.maxTouchPoints > 0 || "ontouchstart" in window;
-  const smallDeviceScreen = Math.min(screen.width, screen.height) < 1280;
+  const isMobileViewport = window.innerWidth < 768;
 
-  return uaMobile || mobileUserAgent || (touchCapable && coarsePointer && noHover && smallDeviceScreen);
+  return isMobileViewport && (uaMobile || mobileUserAgent);
 };
 
 const MobileBlockScreen = () => {
@@ -34,9 +40,11 @@ const MobileBlockScreen = () => {
     };
 
     checkDeviceType();
+    window.addEventListener("resize", checkDeviceType);
     window.addEventListener("orientationchange", handleOrientationChange);
 
     return () => {
+      window.removeEventListener("resize", checkDeviceType);
       window.removeEventListener("orientationchange", handleOrientationChange);
     };
   }, []);
