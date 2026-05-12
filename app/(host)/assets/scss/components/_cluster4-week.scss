@@ -3998,11 +3998,12 @@
 
             .lock-overlay-label {
               font-size: 32px;     // [확대] 16 → 32 (≈2x)
-              font-weight: 700;
               color: rgba(255, 255, 255, 0.9);
-              font-family: "Pretendard", sans-serif;
+              // notice-text-top (PX 팔랑크스) 와 동일 폰트 패밀리 적용
+              // — _resume-card.scss `.resume-card.px-theme .resume-notices .notice-box.yellow .notice-text.notice-text-top`
+              // notice-text-top 은 font-weight / letter-spacing 미지정(normal) → 동일하게 미지정 유지
+              font-family: "Jeongmeokbawi", sans-serif;
               line-height: 1.2;    // 32 × 1.2 ≈ 38px — 비례 line-height, overlay 내부 안전
-              letter-spacing: 0.08em; // [강화] 0.04 → 0.08 — "잠 금 중" 자간 강조
               // [강화] 어둠 + 옅은 골드 글로우 추가 (premium / cinematic 톤)
               text-shadow:
                 0 3px 10px rgba(0, 0, 0, 0.7),
