@@ -350,10 +350,15 @@
     &__quote {
       display: flex;
       align-items: center;
+      justify-content: center;  // [정렬] 이미지+텍스트 묶음을 flex축 중앙으로
       gap: 24px;                // [v6] 28 → 24 원복
-      margin-top: auto;         // [v7] 16px → auto (격언만 Hero 하단으로 밀착)
-      transform: translateY(-76px);  // [v12] 사용자 요청 — 현재보다 2cm(약 76px @ 96DPI) 위로
-      padding-left: 80px;
+      // [중앙정렬] width: fit-content + 좌우 margin auto 로 block 자체를 hero 중앙에 위치.
+      // margin-top: auto 는 hero 하단으로 push 하는 v7 의도를 그대로 유지.
+      width: fit-content;
+      max-width: 100%;
+      margin: auto auto 0;
+      transform: translateY(-76px);  // [v12] 사용자 요청 — 현재보다 2cm(약 76px @ 96DPI) 위로 (수직 보정, 수평 영향 없음)
+      // [정렬] 좌측 편향의 원인이던 padding-left: 80px 제거
       // [시네마틱] 진입 0.6s → 1.5s, fade-in → fade + 미세 scale 1.05→1.0
       // 전용 키프레임이 translateY(-76px)를 from/to 양쪽에 명시 → 위치 보존
       animation: weekly-hero-quote-fade-scale 0.8s ease-out 1.5s both;
@@ -590,14 +595,14 @@
     .weekly-filter-label {
       color: #999;
       font-weight: 500;
-      margin-right: 4px;
+      margin-right: 8px;       // [미세조정] 라벨↔숫자 사이 한 칸 정도 더 띄움 (4 → 8)
     }
     .weekly-filter-value {
       color: var(--quaternary-color);
       font-weight: 700;
       font-variant-numeric: tabular-nums;
-      font-size: 16px;
-      line-height: 1;
+      font-size: 18px;          // [미세조정] +2 (16 → 18) — 숫자 강조
+      line-height: 1;           // 행 높이 영향 없도록 기존 유지
     }
   }
 

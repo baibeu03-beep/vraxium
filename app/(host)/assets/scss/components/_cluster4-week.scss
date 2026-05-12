@@ -3935,6 +3935,8 @@
     .work-exp-cards {
       display: grid;
       grid-template-columns: repeat(2, 545px);
+      grid-template-rows: repeat(3, auto);
+      grid-auto-flow: row;
       gap: 16px;
       margin-top: 0px;
 
@@ -3952,6 +3954,80 @@
 
         &.empty {
           opacity: 1;
+        }
+
+        // 5번째 슬롯 잠금 상태: 기존 empty 카드 마크업/스타일은 그대로 유지하고,
+        // 카드 위에 .lock-overlay 만 덮어 dark + lock icon + "잠금 중" 텍스트를 표현한다.
+        // 클릭은 TSX에서 onClick 미부착으로 차단(여기서는 cursor만 not-allowed).
+        // hover glow를 살리기 위해 pointer-events 는 유지.
+        &.locked {
+          cursor: not-allowed;
+          overflow: hidden; // overlay 가 카드 radius 밖으로 새지 않도록
+          transition: box-shadow 0.3s ease;
+
+          .lock-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;            // [확대] 12 → 20 (icon/label 모두 ~2x 커진 만큼 비례 spacing)
+            background: rgba(10, 10, 10, 0.55);
+            backdrop-filter: blur(2px);
+            -webkit-backdrop-filter: blur(2px);
+            border-radius: 20px;
+            z-index: 20; // status-badge(z-index:10) 보다 위
+            pointer-events: none; // hover/클릭 계산은 카드 본체에서 처리
+            transition: background 0.3s ease;
+
+            .lock-overlay-icon {
+              width: 176px;       // [확대] 88 → 176 (≈2x) — 카드 중앙 dominant visual
+              height: 176px;
+              max-width: 60%;     // 좁은 카드 폭 대비 안전망 (카드 545px → 60% = 327px, 평시 비활성)
+              max-height: 70%;    // 카드 높이 262px → 70% = 183px (icon 176과 거의 동일, 넘침 방지)
+              object-fit: contain;
+              opacity: 0.92;
+              // [강화] drop-shadow 비례 확대 — 어둠 1단 + 골드 글로우 1단
+              filter:
+                drop-shadow(0 10px 22px rgba(0, 0, 0, 0.6))
+                drop-shadow(0 0 32px rgba(250, 171, 7, 0.22));
+              transition: filter 0.3s ease, opacity 0.3s ease;
+              user-select: none;
+            }
+
+            .lock-overlay-label {
+              font-size: 32px;     // [확대] 16 → 32 (≈2x)
+              font-weight: 700;
+              color: rgba(255, 255, 255, 0.9);
+              font-family: "Pretendard", sans-serif;
+              line-height: 1.2;    // 32 × 1.2 ≈ 38px — 비례 line-height, overlay 내부 안전
+              letter-spacing: 0.08em; // [강화] 0.04 → 0.08 — "잠 금 중" 자간 강조
+              // [강화] 어둠 + 옅은 골드 글로우 추가 (premium / cinematic 톤)
+              text-shadow:
+                0 3px 10px rgba(0, 0, 0, 0.7),
+                0 0 20px rgba(250, 171, 7, 0.18);
+              transform: translateY(-57px); // [위치] 사용자 요청 — 2cm 위(-76px) 에서 0.5cm(≈19px) 아래로 조정 (-76 + 19 = -57px)
+            }
+          }
+
+          &:hover {
+            box-shadow:
+              0 0 24px rgba(250, 171, 7, 0.08),
+              inset 0 0 32px rgba(250, 171, 7, 0.04);
+
+            .lock-overlay {
+              background: rgba(10, 10, 10, 0.5);
+
+              .lock-overlay-icon {
+                opacity: 1;
+                // hover 시 골드 글로우 한층 더 강화 (focal point 강조)
+                filter:
+                  drop-shadow(0 10px 22px rgba(0, 0, 0, 0.6))
+                  drop-shadow(0 0 40px rgba(250, 171, 7, 0.45));
+              }
+            }
+          }
         }
 
         .card-top-row {

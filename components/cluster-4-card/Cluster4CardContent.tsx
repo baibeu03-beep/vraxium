@@ -6667,18 +6667,31 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             </div>
           </div>
           <div className="work-exp-cards">
-            {effectiveWorkExpCards.slice(0, 4).map((card, cardIndex) => {
-              const isEmpty = card.isEmpty;
+            {Array.from({ length: 5 }, (_, cardIndex) => {
+              // 슬롯 기반 렌더링: 실제 데이터 개수와 무관하게 항상 5개 슬롯을 만든다.
+              //  - cardIndex 0~3 : 실제 카드 데이터 → 없으면 buildVoidWorkExpCard 로 폴백(empty)
+              //  - cardIndex 4   : 데이터 유무와 무관하게 '잠금 상태' empty 카드 (lock-overlay 부착)
+              //  - cardIndex 5+  : 만들지 않음 (3행 2열 grid 우측 하단 셀은 비워둠)
+              const isLocked = cardIndex === 4;
+              const card = isLocked
+                ? buildVoidWorkExpCard(cardIndex)
+                : effectiveWorkExpCards[cardIndex] ?? buildVoidWorkExpCard(cardIndex);
+              const isEmpty = isLocked ? true : card.isEmpty;
               const expActivityType = workExpActivityTypes[cardIndex];
               return (
                 <div
-                  key={card.id}
-                  className={`work-exp-card ${isEmpty ? "empty" : ""}`}
-                  onClick={async () => {
-                    setSelectedWorkExpCard(card);
-                    setWorkExpViewModalOpen(true);
-                  }}
-                  style={{ cursor: "pointer" }}
+                  key={`work-exp-slot-${cardIndex}`}
+                  className={`work-exp-card ${isEmpty ? "empty" : ""}${isLocked ? " locked" : ""}`}
+                  onClick={
+                    isLocked
+                      ? undefined
+                      : async () => {
+                          setSelectedWorkExpCard(card);
+                          setWorkExpViewModalOpen(true);
+                        }
+                  }
+                  style={{ cursor: isLocked ? "not-allowed" : "pointer" }}
+                  aria-disabled={isLocked ? true : undefined}
                 >
                   <div className="card-top-row">
                     <div className={`card-icon-area ${!isEmpty && card.enhancementStatus === "failed" ? "failed" : ""}`}>
@@ -6749,6 +6762,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         };
                         return <img src={statusImages[card.enhancementStatus] || statusImages["not_applicable"]} alt="강화 상태" />;
                       })()}
+                    </div>
+                  )}
+                  {isLocked && (
+                    <div className="lock-overlay" aria-hidden="true">
+                      <img
+                        src="/images/0/cluster4/icon/lock.png"
+                        alt=""
+                        className="lock-overlay-icon"
+                      />
+                      <span className="lock-overlay-label">잠금 중</span>
                     </div>
                   )}
                 </div>
