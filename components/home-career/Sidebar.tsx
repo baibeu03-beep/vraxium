@@ -382,14 +382,15 @@ const Sidebar = () => {
     const profile = cachedProfile.data;
     setHasData(true);
 
-    // 슬로건 우선순위: pending(네트워크로 먼저 도착) → sessionStorage 캐시 → bio 폴백
+    // 슬로건 우선순위: pending(네트워크로 먼저 도착) → sessionStorage 캐시 → 빈 값
+    // (source of truth = user_introductions.slogan_1. bio는 다른 도메인이므로 fallback 으로 쓰지 않는다.)
     let cachedSlogan: string | null = null;
     try {
       if (typeof window !== "undefined") {
         cachedSlogan = sessionStorage.getItem(`sidebar:slogan1:${targetUserId || "self"}`);
       }
     } catch {}
-    const initialQuote = pendingSloganRef.current || cachedSlogan || profile.bio || "";
+    const initialQuote = pendingSloganRef.current ?? cachedSlogan ?? "";
 
     const addressParts = (profile.address || "").split(" ");
     setUserProfile({
@@ -900,14 +901,15 @@ const Sidebar = () => {
         }
         const addressParts = (profile.address || "").split(" ");
 
-        // 슬로건 우선순위: 병렬 fetch로 먼저 도착한 pending → sessionStorage 캐시 → bio 폴백
+        // 슬로건 우선순위: 병렬 fetch 로 먼저 도착한 pending → sessionStorage 캐시 → 빈 값
+        // (source of truth = user_introductions.slogan_1. bio 는 다른 도메인이므로 fallback 으로 쓰지 않는다.)
         let cachedSlogan: string | null = null;
         try {
           if (typeof window !== "undefined") {
             cachedSlogan = sessionStorage.getItem(`sidebar:slogan1:${targetUserId || "self"}`);
           }
         } catch {}
-        const initialQuote = pendingSloganRef.current || cachedSlogan || profile.bio || "";
+        const initialQuote = pendingSloganRef.current ?? cachedSlogan ?? "";
 
         setUserProfile({
           name: profile.display_name || "",
@@ -1056,31 +1058,42 @@ const Sidebar = () => {
     }
   };
 
-  // 슬로건 데이터 가져오기 (user_introductions에서)
-  // 프로필 fetch와 병렬로 실행 → 프로필보다 먼저 도착하면 pendingSloganRef에 보관
+  // 슬로건 데이터 가져오기 (user_introductions.slogan_1 — canonical source)
+  // 프로필 fetch와 병렬로 실행 → 프로필보다 먼저 도착하면 pendingSloganRef에 보관.
+  // 응답이 빈 값이어도 quote 를 명시적으로 빈 값으로 갱신 → admin 이 slogan 을 비웠을 때
+  // 사용자 페이지가 stale 한 옛 값(pending/cached)을 그대로 표시하지 않도록 한다.
+  // (currentProfile 단계에서 빈 값 → SECTION2_SLOGAN_DEFAULTS 로 fallback 처리됨.)
   const fetchSlogan = async () => {
     try {
       const apiUrl = targetUserId ? `/api/slogans?userId=${targetUserId}` : "/api/slogans";
       const result: any = await dedupedJson(apiUrl);
 
-      if (result?.success && result.data?.slogan1?.content) {
-        const content = result.data.slogan1.content as string;
-        // sessionStorage 캐싱 → 다음 방문 시 즉시 표시
-        try {
-          if (typeof window !== "undefined") {
-            sessionStorage.setItem(`sidebar:slogan1:${targetUserId || "self"}`, content);
-          }
-        } catch {}
-        setUserProfile((prev) => {
-          if (!prev) {
-            // 프로필이 아직 도착 안 함 → pending에 보관, 프로필 setUserProfile 시 사용됨
-            pendingSloganRef.current = content;
-            return prev;
-          }
-          pendingSloganRef.current = null;
-          return { ...prev, quote: content };
-        });
+      if (!result?.success) {
+        return;
       }
+
+      const content = (result.data?.slogan1?.content as string | null | undefined) ?? "";
+      // sessionStorage 캐싱: 값이 있으면 set, 빈 값이면 명시적으로 remove (stale 방지)
+      try {
+        if (typeof window !== "undefined") {
+          const key = `sidebar:slogan1:${targetUserId || "self"}`;
+          if (content) {
+            sessionStorage.setItem(key, content);
+          } else {
+            sessionStorage.removeItem(key);
+          }
+        }
+      } catch {}
+
+      setUserProfile((prev) => {
+        if (!prev) {
+          // 프로필이 아직 도착 안 함 → pending 에 보관, 프로필 setUserProfile 시 사용됨
+          pendingSloganRef.current = content;
+          return prev;
+        }
+        pendingSloganRef.current = null;
+        return { ...prev, quote: content };
+      });
     } catch (error) {
       console.error("슬로건 로드 오류:", error);
     }

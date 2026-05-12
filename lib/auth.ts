@@ -6,12 +6,19 @@ import KakaoProvider from "next-auth/providers/kakao";
 import { supabaseAdmin } from "./supabase";
 import { resolveUserProfileAccess } from "./user-profile-access";
 
+const isProd = process.env.NODE_ENV === "production";
+
+const kakaoProviderConfig: Parameters<typeof KakaoProvider>[0] = {
+  clientId: process.env.KAKAO_CLIENT_ID ?? "",
+};
+
+if (process.env.KAKAO_CLIENT_SECRET) {
+  kakaoProviderConfig.clientSecret = process.env.KAKAO_CLIENT_SECRET;
+}
+
 export const authOptions: AuthOptions = {
   providers: [
-    KakaoProvider({
-      clientId: process.env.KAKAO_CLIENT_ID || "",
-      clientSecret: process.env.KAKAO_CLIENT_SECRET || "",
-    }),
+    KakaoProvider(kakaoProviderConfig),
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
@@ -138,4 +145,6 @@ export const authOptions: AuthOptions = {
     strategy: "jwt",
   },
   secret: process.env.NEXTAUTH_SECRET,
+  useSecureCookies: isProd,
+  debug: !isProd,
 };

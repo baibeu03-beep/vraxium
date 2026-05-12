@@ -6,134 +6,184 @@ import { extractTargetUserId } from "@/lib/admin";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// GET: 영상 URL 조회 (userId 파라미터로 다른 유저 조회 가능)
+// Cluster2 영상 매핑 (canonical, 2026-05-12):
+//   user_cluster2.video_url_1 ~ video_url_3
+// user_introductions.video_url_* 는 더 이상 사용하지 않는다.
+
+const TAG = "[api/videos]";
+
+function sanitizePersistedUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (
+    trimmed.startsWith("blob:") ||
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("file:")
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
+function errorPayload(step: string, message: string, details?: unknown) {
+  return {
+    step,
+    error: message,
+    ...(details !== undefined ? { details } : {}),
+  };
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const targetUserId = searchParams.get("userId");
 
     if (!supabaseAdmin) {
-      return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
+      console.error(TAG, "supabaseAdmin missing — SUPABASE_SERVICE_ROLE_KEY 누락");
+      return NextResponse.json(
+        errorPayload("init", "서버 설정 오류 (SUPABASE_SERVICE_ROLE_KEY 누락)"),
+        { status: 500 },
+      );
     }
 
-    let profile;
+    let userId: string | null = null;
 
     if (targetUserId) {
-      // 특정 유저의 영상 조회 (공개 접근 가능)
       const { data, error } = await supabaseAdmin
         .from("user_profiles")
         .select("user_id")
         .eq("user_id", targetUserId)
         .maybeSingle();
 
-      if (error || !data) {
+      if (error) {
+        console.error(TAG, "GET user_profiles lookup failed", error);
         return NextResponse.json(
-          { error: "프로필을 찾을 수 없습니다." },
-          { status: 404 }
+          errorPayload("profile_lookup", error.message, error),
+          { status: 500 },
         );
       }
-      profile = data;
-    } else {
-      const { profile: userProfile, error } = await getUserProfile<{ user_id: string }>("user_id");
-
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: error.status });
+      if (!data?.user_id) {
+        return NextResponse.json(
+          errorPayload("profile_missing", "프로필을 찾을 수 없습니다."),
+          { status: 404 },
+        );
       }
-
-      profile = userProfile;
+      userId = data.user_id as string;
+    } else {
+      const { profile, error } = await getUserProfile<{ user_id: string }>("user_id");
+      if (error) {
+        return NextResponse.json(
+          errorPayload("session_profile", error.message),
+          { status: error.status },
+        );
+      }
+      userId = profile.user_id;
     }
 
-    // user_introductions에서 영상 URL 조회
-    const { data: introduction } = await supabaseAdmin
-      .from("user_introductions")
+    const { data: cluster, error: clusterError } = await supabaseAdmin
+      .from("user_cluster2")
       .select("video_url_1, video_url_2, video_url_3")
-      .eq("user_id", profile.user_id)
+      .eq("user_id", userId)
       .maybeSingle();
 
-    // engName 마스킹: user_profiles에 eng_name 컬럼이 없어 항상 null로 응답.
-    const engNameDisplay: string | null = null;
+    if (clusterError) {
+      console.error(TAG, "GET user_cluster2 failed", clusterError);
+      return NextResponse.json(
+        errorPayload("cluster2_select", clusterError.message, clusterError),
+        { status: 500 },
+      );
+    }
 
     return NextResponse.json({
       success: true,
       data: {
-        videoUrl1: introduction?.video_url_1 || null,
-        videoUrl2: introduction?.video_url_2 || null,
-        videoUrl3: introduction?.video_url_3 || null,
-        engName: engNameDisplay,
+        videoUrl1: cluster?.video_url_1 ?? null,
+        videoUrl2: cluster?.video_url_2 ?? null,
+        videoUrl3: cluster?.video_url_3 ?? null,
+        engName: null,
       },
     });
   } catch (error) {
-    console.error("영상 조회 API 오류:", error);
+    console.error(TAG, "GET unexpected error", error);
     return NextResponse.json(
-      { error: "서버 오류가 발생했습니다." },
-      { status: 500 }
+      errorPayload(
+        "unexpected",
+        error instanceof Error ? error.message : "서버 오류",
+        error instanceof Error ? { stack: error.stack } : undefined,
+      ),
+      { status: 500 },
     );
   }
 }
 
-// PUT: 영상 URL 저장
 export async function PUT(request: Request) {
   try {
     const targetUserId = extractTargetUserId(request);
-    const { profile, error } = await getUserProfile<{ user_id: string }>("user_id", targetUserId);
+    const { profile, error } = await getUserProfile<{ user_id: string }>(
+      "user_id",
+      targetUserId,
+    );
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+      return NextResponse.json(
+        errorPayload("session_profile", error.message),
+        { status: error.status },
+      );
     }
 
     if (!supabaseAdmin) {
-      return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
+      console.error(TAG, "supabaseAdmin missing — SUPABASE_SERVICE_ROLE_KEY 누락");
+      return NextResponse.json(
+        errorPayload("init", "서버 설정 오류 (SUPABASE_SERVICE_ROLE_KEY 누락)"),
+        { status: 500 },
+      );
     }
 
-    const body = await request.json();
-    const { videoUrl1, videoUrl2, videoUrl3 } = body;
+    const body = await request.json().catch((parseError) => {
+      console.error(TAG, "PUT body parse failed", parseError);
+      return null;
+    });
 
-    // 기존 레코드 확인
-    const { data: existingIntro } = await supabaseAdmin
-      .from("user_introductions")
-      .select("id")
-      .eq("user_id", profile.user_id)
-      .maybeSingle();
+    if (!body || typeof body !== "object") {
+      return NextResponse.json(
+        errorPayload("body_parse", "요청 본문이 올바르지 않습니다."),
+        { status: 400 },
+      );
+    }
 
-    const videoData = {
-      video_url_1: videoUrl1 || null,
-      video_url_2: videoUrl2 || null,
-      video_url_3: videoUrl3 || null,
-      updated_at: new Date().toISOString(),
+    const { videoUrl1, videoUrl2, videoUrl3 } = body as {
+      videoUrl1?: string | null;
+      videoUrl2?: string | null;
+      videoUrl3?: string | null;
     };
 
-    if (existingIntro) {
-      // 업데이트
-      const { error: updateError } = await supabaseAdmin
-        .from("user_introductions")
-        .update(videoData)
-        .eq("user_id", profile.user_id);
+    const userId = profile.user_id;
+    const nowIso = new Date().toISOString();
 
-      if (updateError) {
-        console.error("영상 URL 업데이트 오류:", updateError);
-        return NextResponse.json(
-          { error: "영상 URL 저장에 실패했습니다." },
-          { status: 500 }
-        );
-      }
-    } else {
-      // 새로 생성
-      const { error: insertError } = await supabaseAdmin
-        .from("user_introductions")
-        .insert({
-          id: crypto.randomUUID(),
-          user_id: profile.user_id,
-          ...videoData,
-          created_at: new Date().toISOString(),
-        });
+    const { error: upsertError } = await supabaseAdmin
+      .from("user_cluster2")
+      .upsert(
+        {
+          user_id: userId,
+          video_url_1: sanitizePersistedUrl(videoUrl1),
+          video_url_2: sanitizePersistedUrl(videoUrl2),
+          video_url_3: sanitizePersistedUrl(videoUrl3),
+          updated_at: nowIso,
+        },
+        { onConflict: "user_id" },
+      );
 
-      if (insertError) {
-        console.error("영상 URL 생성 오류:", insertError);
-        return NextResponse.json(
-          { error: "영상 URL 저장에 실패했습니다." },
-          { status: 500 }
-        );
-      }
+    if (upsertError) {
+      console.error(TAG, "PUT user_cluster2 upsert failed", upsertError);
+      return NextResponse.json(
+        errorPayload(
+          "cluster2_upsert",
+          `영상 URL 저장에 실패했습니다: ${upsertError.message}`,
+          upsertError,
+        ),
+        { status: 500 },
+      );
     }
 
     return NextResponse.json({
@@ -141,10 +191,14 @@ export async function PUT(request: Request) {
       message: "영상 URL이 성공적으로 저장되었습니다.",
     });
   } catch (error) {
-    console.error("영상 저장 API 오류:", error);
+    console.error(TAG, "PUT unexpected error", error);
     return NextResponse.json(
-      { error: "서버 오류가 발생했습니다." },
-      { status: 500 }
+      errorPayload(
+        "unexpected",
+        error instanceof Error ? error.message : "서버 오류",
+        error instanceof Error ? { stack: error.stack } : undefined,
+      ),
+      { status: 500 },
     );
   }
 }
