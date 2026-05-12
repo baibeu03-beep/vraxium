@@ -164,26 +164,20 @@
     }
 
     // ─────────────────────────────────────────────
-    // 8) Section1 하단 gold divider line
-    //    원본: _cluster4-season.scss line 195-205
-    //          .cluster4-section1::after { background:#ecbb02; ... 1px line }
-    //    이건 단색 1px line 이므로 background 직접 override 가 최단경로.
-    // ─────────────────────────────────────────────
-    .cluster4-section1::after {
-      background: var(--px-accent) !important;
-    }
-
-    // ─────────────────────────────────────────────
-    // 8-bis) 그 외 horizontal divider/separator gold/yellow → PX green sweep.
-    //   사용자 보고 (/cluster-4-px 잔존 yellow divider) 기준:
+    // 8) Section1 / Section3 / Weekly-list horizontal pseudo-element divider lines.
+    //    원본 :
+    //      _cluster4-season.scss L195-205 .cluster4-section1::after  (#ecbb02 80% 1px)
+    //      _cluster4-season.scss L2119    .cluster4-section3::before (#ecbb02 80% 1px)
+    //      _cluster4-season.scss L4292    .cluster4-weekly-list::before (#ecbb02 80% 1px)
+    //    background 만 PX accent 로 치환 → layout/positioning 영향 없음.
     //
-    //   대상 ::before / ::after 가로선 :
-    //     - .cluster4-section3::before   (_cluster4-season.scss L2119)  #ecbb02 80% 1px
-    //     - .cluster4-weekly-list::before (_cluster4-season.scss L4292) #ecbb02 80% 1px
-    //
-    //   .cluster4-section1::after 와 동일 패턴 (단색 1px line).
-    //   background 만 PX accent 로 치환 → layout/spacing/animation 영향 없음.
+    //    참고: section3 상단의 visible 가로 yellow 라인은 사실 위 pseudo-element 가
+    //    아니라 Cluster4Content.tsx L2874 의 inline-styled <div> (1023px / #faab07).
+    //    그 라인은 JSX 에서 `isPX` 조건으로 분기 처리 (SCSS 미터치).
+    //    본 pseudo-element 룰은 그 외 layout/responsive 경로에서 가로선이 노출될 때
+    //    안전망으로 동작 — 일관된 PX accent 유지.
     // ─────────────────────────────────────────────
+    .cluster4-section1::after,
     .cluster4-section3::before,
     .cluster4-weekly-list::before {
       background: var(--px-accent) !important;
@@ -604,6 +598,277 @@
     [style*="#fef9c3"],
     [style*="#FEF9C3"] {
       color: var(--px-accent-soft);
+    }
+  }
+
+  // =============================================================
+  // 13) /cluster-4-1-px (= /cluster-4-px, 동일 Cluster4Content) —
+  //   section1/3 의 잔여 yellow/gold accent 를 PX Green 으로 sweep.
+  //
+  //   적용 사유 : 사용자 보고 (/cluster-4-1-px 화면에서)
+  //     - 우측 상단 floating edit/search 동그라미 버튼이 노랑
+  //     - "2025 SPRING" 등 시즌 타이틀 강조 텍스트 노랑
+  //     - Qualified 트로피 라벨 노랑 + 노란 underline
+  //     - 평점/리뷰 라벨 badge 노랑 + edit-icon 노란 border
+  //     - 원형 차트 옆 highlight 카운트 노랑
+  //     - PROGRESS 4종 (.fill.yellow) 게이지 노랑 / 라벨 노랑 강조
+  //     - 시즌 상태 badge 카드 노란 border 라인 + 아바타 노란 ring
+  //     - 평판 카드 아바타 노란 ring + count-num 노랑
+  //     - section3 pagination active page 라인+텍스트 #ddf247 라임
+  //
+  //   적용 범위 : .cluster-px-theme .cluster4-content { ... }
+  //     원본 _cluster4-season.scss 의 selector chain 을 그대로 매칭하여
+  //     specificity 0,5~7,0 이상을 확보 + 일부는 !important 로 cascade 보강.
+  //     /cluster-4 원본은 .cluster-px-theme 미부착 → 매칭 0건.
+  //
+  //   KEEP (semantic / palette — 의도적 미변경) :
+  //     - .star / .star-icon / .star-half / .star-full-fill — 별점 gold 유지
+  //     - .stars / .stars-row — 별점 컨테이너
+  //     - .area-1-title .date-status .status-badge — 시즌 상태 (active/pause/end)
+  //     - .status-badges .badge-status.yellow / .orange — 상태 의미색
+  //     - .tag-yellow (#ebf748) / .tag-pink / .tag-keyword / .tag-role — palette
+  //     - .circle.pink / .yellow / .green .fill — 차트 색 코드
+  //     - .profile-card ::before / ::after / .corner — teal 데코 (#00ffbe)
+  //     - .area-2-qualified .tooltip — 흑백 툴팁
+  //     - .qualified-icon / .qualified-tags img — 메달/트로피 아이콘
+  // =============================================================
+  .cluster4-content {
+    // ─────────────────────────────────────────────
+    // 13-0) 시즌 로딩/empty 문구 — neutral text 복원.
+    //   원본 _cluster4-season.scss L663 : color:#fff, Khula, 1.125rem.
+    //   PX 라우트에서 inline span (#FF9C9C) 외에 외부 cascade 로 인해
+    //   가끔 accent/glow 가 새는 케이스가 있어 defensive reset.
+    // ─────────────────────────────────────────────
+    .collection-text {
+      color: rgba(255, 255, 255, 0.72) !important;
+      text-shadow: none !important;
+      background: none !important;
+      -webkit-text-fill-color: currentColor !important;
+    }
+
+    // ─────────────────────────────────────────────
+    // 13-1) section1 / section3-banner / section9 reputation-header 의
+    //       우측 상단 floating edit/search 동그라미 버튼.
+    //   원본 _cluster4-season.scss L96-111, L2153-2168, L2233-2248, L3798-3815
+    //     background:#faab07, hover background:#ffc919.
+    //   글리프(연필 i) 색 #1a1a1a 는 보존 — bg 만 PX green 으로.
+    // ─────────────────────────────────────────────
+    > section > .floating-icons .edit-icon,
+    .cluster4-section3 .section3-banner .floating-icons .edit-icon,
+    .area-9-season-reputation .season-reputation-header .edit-icon {
+      background: var(--px-accent) !important;
+
+      &:hover {
+        background: var(--px-accent-soft) !important;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 13-2) section3 시즌 타이틀 강조 텍스트
+    //   원본 L2649 / L2658 : .year-orange, .season-highlight color:#faab07.
+    //   "2025년_여름 시즌" 의 연도/시즌명 강조 (브랜드 accent — semantic 아님).
+    // ─────────────────────────────────────────────
+    .cluster4-section3 .season-main-title {
+      .year-orange,
+      .season-highlight {
+        color: var(--px-accent) !important;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 13-3) section3 date-range 우측 2px 데코 도트
+    //   원본 L2683 : .date-range::after { background:#faab07 }
+    //   2x2 분리 도트 — 순수 장식.
+    // ─────────────────────────────────────────────
+    .cluster4-section3 .date-status .date-range::after {
+      background: var(--px-accent) !important;
+    }
+
+    // ─────────────────────────────────────────────
+    // 13-4) section3 Qualified items — 라벨 텍스트 + 하단 underline
+    //   원본 L2798-2799 : .item color:#faab07, border-bottom 1px rgba(250,171,7,0.5).
+    //   트로피 라벨 (e.g. "AA / 9 / 4") — 의미색 아닌 브랜드 accent.
+    // ─────────────────────────────────────────────
+    .cluster4-section3 .area-2-qualified .qualified-items .item-group .item {
+      color: var(--px-accent-soft) !important;
+      border-bottom-color: rgba(30, 149, 3, 0.5) !important;
+    }
+
+    // ─────────────────────────────────────────────
+    // 13-5) section3 area-4 stats 좌측 2px 도트
+    //   원본 L3069 : .area-4-stats .stat::before { background:#faab07 }
+    //   라벨 앞 머리표시 — 장식.
+    // ─────────────────────────────────────────────
+    .cluster4-section3 .area-4-stats .stat::before {
+      background: var(--px-accent) !important;
+    }
+
+    // ─────────────────────────────────────────────
+    // 13-6) section3 area-5 rating 영역 — 리뷰 라벨 + edit 동그라미
+    //   원본 L3177 .review-label { background:#faab07; color:#161616 }
+    //         L3192-3199 .edit-icon { background:rgba(255,165,0,0.2); border:1px solid #faab07 }
+    //   라벨 텍스트 색 #161616 (검정) 유지 → soft accent 배경 위 검정 가독 OK.
+    // ─────────────────────────────────────────────
+    .cluster4-section3 .area-5-rating .review-label-group {
+      .review-label {
+        background: var(--px-accent-soft) !important;
+      }
+
+      .edit-icon {
+        background: rgba(30, 149, 3, 0.2) !important;
+        border-color: var(--px-accent) !important;
+
+        &:hover {
+          background: rgba(30, 149, 3, 0.4) !important;
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 13-7) section3 area-6 원형 차트 — 우상단 highlight 카운트.
+    //   원본 L3261 : .label-sub .highlight color:#faab07.
+    //   .circle.pink/.yellow/.green .fill 색은 KEEP (차트 의미색).
+    // ─────────────────────────────────────────────
+    .cluster4-section3 .area-6-circles .circle-item .label-sub .highlight {
+      color: var(--px-accent) !important;
+    }
+
+    // ─────────────────────────────────────────────
+    // 13-8) section3 area-7 progress 4종
+    //   원본 L3395 .rate-number color:#faab07
+    //         L3434 .highlight color:#faab07
+    //         L3457 .fill.yellow background:#faab07
+    //   PROGRESS 게이지 + 라벨 강조 모두 PX green 으로.
+    //   bar wrapper (border + #333532 배경) 은 KEEP (gauge well).
+    // ─────────────────────────────────────────────
+    .cluster4-section3 .area-7-progress .progress-item {
+      .progress-header {
+        .name .rate-number {
+          color: var(--px-accent) !important;
+        }
+        .value .highlight {
+          color: var(--px-accent) !important;
+        }
+      }
+
+      .bar .fill.yellow {
+        background: var(--px-accent) !important;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 13-9) section3 area-8 시즌 상태 badge 카드
+    //   원본 L3625 .badge-item { border:0.5px solid #ffe3aa }   (카드 외곽 yellow 라인)
+    //         L3640 .badge-icon { border:1px solid #faab07 }    (아바타 노란 ring)
+    //   .badge-status.yellow / .orange 는 상태 의미색이므로 KEEP.
+    // ─────────────────────────────────────────────
+    .cluster4-section3 .area-8-season-status .status-badges .badge-item {
+      border-color: var(--px-accent-soft) !important;
+
+      .badge-icon {
+        border-color: var(--px-accent) !important;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 13-10) section3 area-9 평판 카드
+    //   원본 L3751 .count-num color:#faab07   (header "X명" 카운트)
+    //         L4042 .avatar { border:1px solid #faab07 }   (평판자 아바타 ring)
+    //   .profile-card teal 데코 (#00ffbe) / tag-yellow (#ebf748 palette) 는 KEEP.
+    // ─────────────────────────────────────────────
+    .cluster4-section3 .area-9-season-reputation {
+      .season-reputation-header .section-count .count-num {
+        color: var(--px-accent) !important;
+      }
+
+      .profile-cards .card-top .avatar {
+        border-color: var(--px-accent) !important;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 13-11) section3 pagination current indicator
+    //   원본 L2378-2410 : .page-num hover/.active color:#ddf247
+    //                     + ::after / .last.active ::before background:#ddf247
+    //   lime yellow 강조선 → PX soft green.
+    // ─────────────────────────────────────────────
+    .cluster4-section3 .section3-pagination .page-num {
+      &:hover,
+      &.active {
+        color: var(--px-accent-soft) !important;
+      }
+
+      &.active::after,
+      &.last.active::before {
+        background: var(--px-accent-soft) !important;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 13-12) section3 "시즌 진행 중" status pill (.status-badge)
+    //   원본 _cluster4-season.scss L2692-2718 : background:#faab07, color:#fff,
+    //     border:none, 35×87 둥근 pill, text-shadow 4방향 검정 outline.
+    //   JSX (Cluster4Content L2890) : <button class="status-badge {statusClass}">.
+    //     statusClass 분기(in-progress/completed/resting/suspended)는 background
+    //     override 없이 base #faab07 만 사용 — 다중 상태 palette 아님 → PX green OK.
+    //   text-shadow outline / 글자색 #fff 보존, bg 만 치환.
+    // ─────────────────────────────────────────────
+    .cluster4-section3 .area-1-title .date-status .status-badge {
+      background: var(--px-accent) !important;
+    }
+
+    // ─────────────────────────────────────────────
+    // 13-13) section3 영역 1 우측 "bullet-dot" — JSX 인라인 background:#FAAB07
+    //   _cluster4-season.scss L2887 (Cluster4Content) 인라인 스타일 분리 도트.
+    //   .cluster-px-theme 스코프 + !important 로 인라인 위 cascade 승.
+    // ─────────────────────────────────────────────
+    .cluster4-section3 .area-1-title .bullet-dot {
+      background: var(--px-accent) !important;
+    }
+
+    // ─────────────────────────────────────────────
+    // 13-14) section3 area-3 image-card gold frame gradient
+    //   원본 _cluster4-season.scss
+    //     L2900 .card-frame                       linear-gradient(135deg,#faab07,#ffe3aa)
+    //     L2924 .card-back .card-frame            동일
+    //     L2941 .card-middle .card-frame          동일
+    //     L3004 .season-image-single .card-frame  동일
+    //   카드 폴리곤 cut-path (`clip-path: polygon(...)`) 및 padding/img clip-path
+    //   는 KEEP — 외곽 gold gradient 만 PX 두-톤 그라데이션으로.
+    // ─────────────────────────────────────────────
+    .cluster4-section3 .area-3-image {
+      .season-image-stack .image-card .card-frame,
+      .season-image-stack .image-card.card-back .card-frame,
+      .season-image-stack .image-card.card-middle .card-frame,
+      .season-image-single .image-card .card-frame {
+        background: linear-gradient(135deg, var(--px-accent) 0%, var(--px-accent-soft) 100%) !important;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 13-15) area-9 평판 헤더 FM 옆 wifi/RSS 아이콘 (orange PNG → green tint)
+    //   원본 _cluster4-season.scss L3533-3538, L3565-3574, L3769-3774, L3869-3878 —
+    //     모두 동일 wifi-icon (object-fit, size only — PNG 본체가 yellow/orange tone).
+    //   PNG asset 미수정 — hue-rotate 80deg 로 색만 회전 (saturation 1.4 로 톤 보강).
+    //   안전성: wifi-icon 은 area-8 section-title / area-9 reputation-header /
+    //   profile-card stats / weekly-card-extra-stats 4 위치에 동일 PNG. 모두 일관 적용.
+    // ─────────────────────────────────────────────
+    .cluster4-section3 .wifi-icon,
+    .cluster4-section3 .area-9-season-reputation .wifi-icon,
+    .cluster4-section3 .profile-cards .wifi-icon {
+      filter: hue-rotate(80deg) saturate(1.4);
+    }
+
+    // ─────────────────────────────────────────────
+    // 13-16) section3 area-8 우측 리스트 role badge (.badge-status.yellow)
+    //   JSX (Cluster4Content L3206, L3231) : 모든 badge 가 `yellow` 클래스 고정 —
+    //   상태에 따라 색이 바뀌는 multi-state semantic palette 아닌 default 브랜드 accent.
+    //   원본 _cluster4-season.scss L3694-3697 : background:#faab07, color:#111111.
+    //   .badge-status.orange (#ff8c00) 는 의도적으로 KEEP — 별도 강조 상태.
+    //   글자색 #111111 (검정) 보존 — soft 배경 위 가독 OK.
+    // ─────────────────────────────────────────────
+    .cluster4-section3 .area-8-season-status .status-badges .badge-item .badge-status.yellow {
+      background: var(--px-accent-soft) !important;
     }
   }
 }

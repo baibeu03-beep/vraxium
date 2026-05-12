@@ -2871,7 +2871,19 @@ const Cluster4Content = () => {
             <p>*모든 시즌들이 누적된 결과는 위 탭 [Club Final Index]에서 확인하실 수 있습니다. 😊</p>
           </div>
         </div>
-        <div style={{ width: "1023px", height: "1px", background: "rgba(250, 171, 7, 1)", margin: "0 auto" }} />
+        <div
+          style={{
+            width: "1023px",
+            height: "1px",
+            // PX 라우트에서만 PX Green 톤(양 끝 fade + 중앙 진한 그라데이션) + soft glow.
+            // /cluster-4-1(non-PX)·/cluster-4 원본은 isPX=false 로 기존 #faab07 단색 유지.
+            background: isPX
+              ? "linear-gradient(90deg, rgba(30, 149, 3, 0.08), #1E9503, rgba(178, 255, 143, 0.55))"
+              : "rgba(250, 171, 7, 1)",
+            boxShadow: isPX ? "0 0 8px rgba(30, 149, 3, 0.22)" : undefined,
+            margin: "0 auto",
+          }}
+        />
         <div className="season-detail-container" style={{ backgroundImage: `url('${currentSeason.image}')`, marginTop: 0, paddingTop: "30px" }}>
           {/* 상단 헤더 영역 (영역 1 + 영역 2) */}
           <div className="top-header-row">
