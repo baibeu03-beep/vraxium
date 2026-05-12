@@ -36,6 +36,36 @@ interface EduData {
   isFinal?: boolean;
 }
 
+// 학교 검색 응답 item 타입 — /api/schools/search 가 반환하는 정규화된 shape.
+// fallback 경로(NEIS/정적 JSON)에서도 동일 shape 으로 통일됨.
+// 단 외부 cache / 기존 캐싱 데이터로 인해 일시적으로 string 이 섞일 가능성을 대비해
+// 렌더 단에서 getSchoolDisplayName() 으로 normalize 함.
+interface SchoolSearchItem {
+  id: string;
+  name: string;
+  school_name: string;
+  schoolType: string;
+  school_type: string;
+  region: string | null;
+}
+
+// 응답 item / 잔존 string 양쪽에서 표시명을 안전 추출.
+// 우선순위: school_name → name → 문자열 그대로.
+function getSchoolDisplayName(item: SchoolSearchItem | string | null | undefined): string {
+  if (!item) return "";
+  if (typeof item === "string") return item;
+  return item.school_name ?? item.name ?? "";
+}
+
+// 한글 학력 라벨 ↔ DB school_type 영문 매핑 (단일 소스).
+// API 측과 동일 — 양방향 검증/표시에 사용.
+const SCHOOL_TYPE_BY_EDU_LEVEL: { [key: string]: string } = {
+  초등학교: "elementary",
+  중학교: "middle",
+  고등학교: "high",
+  대학교: "university",
+};
+
 // 학력 데이터 (기본값 - DB에서 로드되면 덮어씀)
 const initialEducationData: EduData[] = [
   {
@@ -1516,8 +1546,10 @@ const Cluster2Content = () => {
   const [eduDropdowns, setEduDropdowns] = useState<{ [key: string]: boolean }>({});
   // 학교 검색어 상태
   const [schoolSearchQuery, setSchoolSearchQuery] = useState<{ [key: string]: string }>({});
-  // 학교 검색 결과 상태
-  const [schoolSearchResults, setSchoolSearchResults] = useState<{ [key: string]: string[] }>({});
+  // 학교 검색 결과 상태 — /api/schools/search 응답 shape.
+  //   { id, name, school_name, schoolType, school_type, region } object 배열.
+  //   NEIS / 정적 JSON fallback 경로도 동일 shape 으로 통일됨 (route.ts toItem).
+  const [schoolSearchResults, setSchoolSearchResults] = useState<{ [key: string]: SchoolSearchItem[] }>({});
   // 학교 검색 로딩 상태
   const [schoolSearchLoading, setSchoolSearchLoading] = useState<{ [key: string]: boolean }>({});
   // 학교 직접 입력 모드
@@ -1596,9 +1628,46 @@ const Cluster2Content = () => {
       try {
         const res = await fetch(`/api/schools/search?query=${encodeURIComponent(query)}&eduLevel=${encodeURIComponent(eduLevel)}`);
         const data = await res.json();
-        if (data.success) {
-          setSchoolSearchResults((prev) => ({ ...prev, [key]: data.schools }));
+        if (!data.success) {
+          setSchoolSearchResults((prev) => ({ ...prev, [key]: [] }));
+          return;
         }
+
+        // API 는 object 배열을 반환하지만 (route.ts toItem),
+        // 캐시/구버전 경로로 string 이 섞여 올 가능성 대비 normalize.
+        const raw: unknown[] = Array.isArray(data.schools) ? data.schools : [];
+        const items: SchoolSearchItem[] = raw.map((entry, idx) => {
+          if (typeof entry === "string") {
+            const fallbackType = SCHOOL_TYPE_BY_EDU_LEVEL[eduLevel] ?? eduLevel;
+            return {
+              id: `legacy:${fallbackType}:${entry}:${idx}`,
+              name: entry,
+              school_name: entry,
+              schoolType: fallbackType,
+              school_type: fallbackType,
+              region: null,
+            };
+          }
+          const e = entry as Partial<SchoolSearchItem> & Record<string, unknown>;
+          const display = (typeof e.school_name === "string" ? e.school_name : undefined) ?? (typeof e.name === "string" ? e.name : undefined) ?? "";
+          const t = (typeof e.school_type === "string" ? e.school_type : undefined) ?? (typeof e.schoolType === "string" ? e.schoolType : undefined) ?? "";
+          return {
+            id: typeof e.id === "string" ? e.id : `${t || "unknown"}:${display}:${idx}`,
+            name: display,
+            school_name: display,
+            schoolType: t,
+            school_type: t,
+            region: typeof e.region === "string" ? e.region : null,
+          };
+        }).filter((it) => it.school_name.length > 0);
+
+        if (process.env.NODE_ENV !== "production") {
+          // 임시 진단 로그: 응답 vs 정규화 결과 비교. 운영 빌드에서는 제거됨.
+          console.log("[SchoolAutocomplete] raw schools", data.schools);
+          console.log("[SchoolAutocomplete] normalized items", items);
+        }
+
+        setSchoolSearchResults((prev) => ({ ...prev, [key]: items }));
       } catch (error) {
         console.error("학교 검색 오류:", error);
         setSchoolSearchResults((prev) => ({ ...prev, [key]: [] }));
@@ -3852,22 +3921,26 @@ const Cluster2Content = () => {
                                     <div className="school-result-message">검색 결과가 없습니다</div>
                                   ) : (
                                     <div className="school-results-list">
-                                      {(schoolSearchResults[`${index}_school`] || []).map((school) => (
-                                        <div
-                                          key={school}
-                                          className={`school-result-item ${edu.school === school ? "selected" : ""}`}
-                                          onClick={() => {
-                                            const newData = [...editingEduData];
-                                            newData[index].school = school;
-                                            setEditingEduData(newData);
-                                            setEduDropdowns((prev) => ({ ...prev, [`${index}_school`]: false }));
-                                            setSchoolSearchQuery((prev) => ({ ...prev, [`${index}_school`]: "" }));
-                                            setSchoolSearchResults((prev) => ({ ...prev, [`${index}_school`]: [] }));
-                                          }}
-                                        >
-                                          {school}
-                                        </div>
-                                      ))}
+                                      {(schoolSearchResults[`${index}_school`] || []).map((school, schoolIdx) => {
+                                        const displayName = getSchoolDisplayName(school);
+                                        const key = school.id || `${displayName}-${schoolIdx}`;
+                                        return (
+                                          <div
+                                            key={key}
+                                            className={`school-result-item ${edu.school === displayName ? "selected" : ""}`}
+                                            onClick={() => {
+                                              const newData = [...editingEduData];
+                                              newData[index].school = displayName;
+                                              setEditingEduData(newData);
+                                              setEduDropdowns((prev) => ({ ...prev, [`${index}_school`]: false }));
+                                              setSchoolSearchQuery((prev) => ({ ...prev, [`${index}_school`]: "" }));
+                                              setSchoolSearchResults((prev) => ({ ...prev, [`${index}_school`]: [] }));
+                                            }}
+                                          >
+                                            {displayName}
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   )}
                                   {/* 기타 (직접 입력) - 하단 고정 */}
