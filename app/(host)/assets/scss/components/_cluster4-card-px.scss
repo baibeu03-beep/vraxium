@@ -103,25 +103,29 @@
 
     // ─────────────────────────────────────────────
     // 5) weekly-review-box — 우측 하단 floating 리뷰 박스
-    //    _cluster4-week.scss:13085~13280
-    //    border / 헤더·푸터 배경 / divider / fill star color 모두 yellow tint.
-    //    텍스트 색(#fff, rgba(255,255,255,0.85)) / book 아이콘 PNG 미변경.
+    //    _cluster4-week.scss:13171~13366
+    //    border / 헤더·푸터 배경 / divider 모두 yellow tint.
+    //    텍스트(#fff, rgba(255,255,255,0.85)) / book 아이콘 PNG 미변경.
+    //
+    //    [중요] .review-stars / .review-stars__base / .review-stars__fill i 는
+    //    의도적으로 미터치 (별점 gold 유지) — 별도 17b/22 블록에서 명시적 KEEP.
     // ─────────────────────────────────────────────
     .weekly-review-box {
-      border-color: rgba(30, 149, 3, 0.25) !important;
+      // 사용자 권장 패턴: 0.75 alpha border + soft glow + inset highlight.
+      border-color: rgba(30, 149, 3, 0.75) !important;
+      box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.5),
+        0 0 10px rgba(30, 149, 3, 0.22),
+        inset 0 0 0 1px rgba(178, 255, 143, 0.08) !important;
 
       .weekly-review-header {
         background: linear-gradient(180deg, rgba(30, 149, 3, 0.05) 0%, rgba(30, 149, 3, 0.01) 100%) !important;
-        border-bottom-color: rgba(30, 149, 3, 0.25) !important;
+        border-bottom-color: rgba(30, 149, 3, 0.45) !important;
       }
 
       .weekly-review-footer {
         background: linear-gradient(0deg, rgba(30, 149, 3, 0.05) 0%, rgba(30, 149, 3, 0.01) 100%) !important;
-        border-top-color: rgba(30, 149, 3, 0.25) !important;
-
-        .review-stars__fill i {
-          color: var(--px-accent);
-        }
+        border-top-color: rgba(30, 149, 3, 0.45) !important;
       }
     }
 
@@ -594,6 +598,108 @@
     [style*="#fef9c3"],
     [style*="#FEF9C3"] {
       color: var(--px-accent-soft);
+    }
+
+    // =============================================================
+    // 22) 별점(rating star) palette 명시적 KEEP — defensive.
+    //
+    //   사용자 보고 : weekly-review-box 푸터 별점이 PX green 으로 잘못 변환됨.
+    //   원본 _cluster4-week.scss L13352  .review-stars__fill i { color:#faab07 }
+    //   → 별점은 의미상 gold 가 맞음. PX 라우트에서도 동일 gold 유지.
+    //
+    //   위 (5) 블록에서 잘못된 .review-stars__fill i { color: var(--px-accent) }
+    //   룰을 제거했고, 본 블록은 외부 cascade (예: section 17a/17b 의 filter 등)
+    //   가 별점에 영향을 주지 않도록 명시적 defensive override.
+    //
+    //   대상 :
+    //     .review-stars __base / __fill / 내부 <i.ti-star{-filled}>
+    //     .reputation-card / .colleague-card / .work-exp-card / .work-career-card
+    //       .card-rating .stars .star.filled / .star-half-filled
+    //     .section-modal .modal-star (모달 별점)
+    //   color: inherit + fill: currentColor 로 원본 cascade 유지.
+    // =============================================================
+    .review-stars,
+    .review-stars__base,
+    .review-stars__fill,
+    .review-stars .ti-star,
+    .review-stars .ti-star-filled,
+    .review-stars__fill i {
+      color: inherit;
+      fill: currentColor;
+    }
+    // 별점 fill 본체는 원본 #faab07 그대로 cascade — !important 미부착 (원본 우선).
+    .review-stars__fill i {
+      color: #faab07;
+    }
+
+    // =============================================================
+    // 23) .detail-log-btn / .week-confirm-btn — 주차 상세 헤더 액션 버튼.
+    //
+    //   원본 _cluster4-week.scss L1372-1456 :
+    //     base : background rgba(0,0,0,0.45), border 1px rgba(255,200,80,0.4),
+    //            color #ffd87a
+    //     hover: bg rgba(255,200,80,0.18), border rgba(255,200,80,0.7),
+    //            color #ffe6a8
+    //   사용자 권장 패턴 (hollow PX action): rgba(30,149,3,0.16) bg + 진한 border +
+    //     soft green text + 0.24 alpha glow.
+    //
+    //   .week-confirm-btn.status-confirmed / .is-confirmed (rgba(120,200,120,*))
+    //   는 "성장 성공" semantic 이라 KEEP — 본 룰이 base 만 매칭하여 영향 0.
+    //   .status-confirming 펄스 애니메이션도 별도 keyframe → 영향 0.
+    // =============================================================
+    .detail-log-btn,
+    .week-confirm-btn {
+      background: rgba(30, 149, 3, 0.16) !important;
+      border-color: var(--px-accent) !important;
+      color: var(--px-accent-soft) !important;
+      box-shadow: 0 0 10px rgba(30, 149, 3, 0.24) !important;
+
+      &:hover:not(:disabled) {
+        background: rgba(30, 149, 3, 0.28) !important;
+        border-color: var(--px-accent-soft) !important;
+        color: var(--px-accent-soft) !important;
+      }
+    }
+
+    // .week-confirm-btn 의 성공/완료 상태는 success semantic green 유지 — 명시적 재선언.
+    .week-confirm-btn.status-confirmed,
+    .week-confirm-btn.is-confirmed {
+      background: rgba(120, 200, 120, 0.18) !important;
+      border-color: rgba(120, 200, 120, 0.55) !important;
+      color: #a8e6a8 !important;
+    }
+
+    // =============================================================
+    // 24) .floating-icons .edit-icon i.ti-pencil — 펜 아이콘 색.
+    //
+    //   JSX 인라인 style={{ color: "#1a1a1a" }} (Cluster4CardContent.tsx 6곳).
+    //   현재 PX 배경은 var(--px-accent) (#1E9503) 솔리드 → 검정 펜 대비 OK 였지만
+    //   사용자 요청: 펜 아이콘도 PX 톤(soft green) 으로 통일.
+    //   solid green BG + soft green icon → 미묘하지만 의도적 brand 일관성.
+    //   !important 로 인라인 style 위 cascade 승.
+    // =============================================================
+    .floating-icons .edit-icon i.ti-pencil {
+      color: var(--px-accent-soft) !important;
+    }
+
+    // =============================================================
+    // 25) .review-view-btn — weekly-review-box 헤더 더보기 버튼.
+    //
+    //   원본 _cluster4-week.scss L13241-13263 : background transparent, border none,
+    //     .view-icon (눈 모양 PNG) 22×22.
+    //   현재 visible border 없음 — PX 톤 강조 위해 soft green 외곽 + 미세 glow 추가.
+    //   .view-icon PNG 자체는 미수정 (다른 색조라 filter 시 어색 가능 → conservative).
+    // =============================================================
+    .weekly-review-box .weekly-review-header .review-view-btn {
+      border: 1px solid rgba(30, 149, 3, 0.55) !important;
+      background: rgba(30, 149, 3, 0.1) !important;
+      border-radius: 6px !important;
+      box-shadow: 0 0 6px rgba(30, 149, 3, 0.22) !important;
+
+      &:hover {
+        background: rgba(30, 149, 3, 0.22) !important;
+        border-color: var(--px-accent-soft) !important;
+      }
     }
   }
 }

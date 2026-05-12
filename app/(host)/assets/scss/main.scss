@@ -144,6 +144,7 @@
 @import "./components/cluster4-season"; // 시즌 카드용
 @import "./components/cluster4-week";   // 주차 카드용
 @import "./components/cluster4-px";
+@import "./components/cluster4-card-px"; // /cluster-4-card-px 전용 — 반드시 cluster4-week 뒤
 @import "./components/crews-phalanx";
 @import "./components/weekly-ranking";  // Weekly League 페이지 전용
 @import "./components/weekly-card";     // Weekly League 주차 카드
