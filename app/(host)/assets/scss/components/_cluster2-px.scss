@@ -87,6 +87,7 @@
 
     // ---------------------------------------------------
     // 3) cluster2-top-frame
+    //    - 메인 프레임 PNG (section 01.png) 노란 톤 → PX green 리컬러
     //    - hex-label hover color (line 387)
     //    - hex-more bg (line 455), avatar-count color (line 469)
     //    - progress-value (line 725)
@@ -94,6 +95,34 @@
     //      배경 fallback 색만 토큰으로 교체. PNG 자체는 이미지 파일 수정 금지 정책상 그대로.
     // ---------------------------------------------------
     .cluster2-top-frame {
+      // 본 element 의 background-image (section 01.png — 노란 프레임 PNG) 를
+      // 분리된 pseudo-element 로 옮긴 뒤 filter: hue-rotate 로 PX green 으로 recolor.
+      // 자식 노드(텍스트/사진/육각형)는 filter 의 영향을 받지 않도록 isolation 으로
+      // 별도 stacking context 안에 격리 + z-index:-1 로 ::before 만 뒤로 보낸다.
+      // 본 element 의 background-image 는 비워서 yellow 원본이 비치지 않도록 함.
+      isolation: isolate;
+      background-image: none;
+
+      &::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        background-image: url("/images/0/cluster 2/section 01.png");
+        background-size: calc(100% + 12px) calc(100% + 12px);
+        background-repeat: no-repeat;
+        background-position: center;
+        // #FAAB07 (hue ~40°) → #1E9503 (hue ~110°) 약 +72deg.
+        // saturate 살짝 낮춰 PX soft green 톤과 톤매칭. brightness 미세 보정.
+        filter: hue-rotate(72deg) saturate(0.95) brightness(0.92);
+      }
+
+      // 프레임 외곽 PX green glow — 기존 노란 yellow accent edge 의 대체.
+      box-shadow:
+        0 0 18px rgba(30, 149, 3, 0.18),
+        0 0 36px rgba(178, 255, 143, 0.10);
+
       .frame-left .hexagon-large-row .hexagon-large-item:hover .hex-label {
         color: var(--px-accent);
       }
@@ -109,14 +138,32 @@
     }
 
     // ---------------------------------------------------
-    // 3-bis) speech-bubble (cluster2-top-frame .frame-right .mascot-icon)
-    //    line 658~700: border + ::before 꼬리 테두리 #f5a623
+    // 3-bis) mascot-icon (cluster2-top-frame .frame-right .mascot-icon)
+    //    - ::before (line 644~655) : 마스코트 이미지 뒤 rounded rectangle bg #f5a623
+    //    - speech-bubble border (line 669) + ::before 꼬리 테두리 (line 698) #f5a623
     // ---------------------------------------------------
-    .cluster2-top-frame .frame-right .mascot-icon .speech-bubble {
-      border-color: var(--px-accent);
+    .cluster2-top-frame .frame-right .mascot-icon {
       &::before {
-        border-left-color: var(--px-accent);
+        background: var(--px-accent);
       }
+
+      .speech-bubble {
+        border-color: var(--px-accent);
+        &::before {
+          border-left-color: var(--px-accent);
+        }
+      }
+    }
+
+    // ---------------------------------------------------
+    // 3-ter) with-us-btn (cluster2-top-frame .frame-right .with-us-btn)
+    //    line 728~766: 버튼 자체는 transparent 지만 자식 <img src="button box.png"/>
+    //    가 노란 PNG 라서 PX 톤에서 강한 yellow 가 그대로 노출됨.
+    //    원본 PNG 수정 금지 정책 유지: filter hue-rotate 로 recolor.
+    //    (#FAAB07 hue ~40° → #1E9503 hue ~110°, +72deg)
+    // ---------------------------------------------------
+    .cluster2-top-frame .frame-right .with-us-btn img {
+      filter: hue-rotate(72deg) saturate(0.95) brightness(0.92);
     }
 
     // ---------------------------------------------------
