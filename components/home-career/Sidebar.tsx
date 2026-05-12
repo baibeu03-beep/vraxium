@@ -16,6 +16,7 @@ import { useModalScroll } from "@/utils/useModalScroll";
 import { usePopup } from "@/components/ui/popup";
 import { logEvent } from "@/utils/blackScreenDiagnostics";
 import koreaRegionsData from "@/data/korea-regions.json";
+import { isPxRoute, withPxRoute } from "@/lib/cluster-route";
 
 const koreaRegions: { [key: string]: string[] } = koreaRegionsData;
 const DEFAULT_PHONE_COMMENT = "평일 오전 10시 ~ 오후 20시 사이에 언제든지 연락가능합니다. 주말은 문자나 텍스트로만 부탁드려요! 😊";
@@ -26,6 +27,103 @@ const IDENTITY_TAB_IMAGES = [
   { src: "/images/0/cluster 1/identity-tab-bg-3.png", overlay: 0.65 },
   { src: "/images/0/cluster 1/identity-tab-bg-4.png", overlay: 0.45 },
 ];
+
+// =============================================================
+// /api/profile 응답 → sidebar resume-card 의 userProfile state shape.
+//
+// resume-card 의 detail-row(성별/생년/주소/전화/이메일/학교/학과/팀/파트/멤버십)
+// 데이터 매핑은 이전까지 두 경로(cache-init useLayoutEffect + fetchUserProfile)에
+// 각각 inline 으로 작성되어 있었다. 두 mapping 이 서로 달라
+//   - cache-init: team/part/membershipLevel **누락**
+//   - fetchUserProfile: 전 필드 채움
+// 인 상태였고, 둘 다 fire 되는 케이스(/crews → /cluster-4-px 진입)에서
+// 늦게 도착한 cache-init 이 fetchUserProfile 결과를 incomplete 로 덮어써
+// "최초 진입 시 학교/학과 아래 detail-row 가 빈 상태로 보이고,
+//  cluster tab 한 번 이동 후 돌아오면 그제서야 채워지는" 버그가 발생했다.
+//
+// 본 helper 로 단일 mapping 을 강제 → 두 경로 모두 동일한 full set 을 produce.
+// =============================================================
+type SidebarUserProfile = {
+  name: string;
+  nameEng: string;
+  gender: string;
+  birthDate: string;
+  city: string;
+  district: string;
+  address?: string;
+  phone: string;
+  email: string;
+  school: string;
+  major: string;
+  major2: string;
+  major3: string;
+  enrollPeriod: string;
+  graduationStatus: string;
+  gpa: string;
+  gpaMax: string;
+  quote: string;
+  photo: string;
+  team: string;
+  part: string;
+  membershipLevel: string;
+};
+
+const buildSidebarUserProfile = (
+  // /api/profile 응답의 data (snake_case + enriched team_name/part_name/membership_level)
+  profile: Record<string, unknown>,
+  initialQuote: string,
+): SidebarUserProfile => {
+  // 진단 로그 — 최초 진입 vs tab 전환 시 raw field 존재 여부 비교용.
+  // detail-row 가 빈 채로 렌더되는 회귀가 의심되면 본 로그로 우선 확인.
+  // eslint-disable-next-line no-console
+  console.log("[buildSidebarUserProfile] raw fields", {
+    has_display_name: !!profile.display_name,
+    has_school_name: !!profile.school_name,
+    has_major_name_1: !!profile.major_name_1,
+    has_team_name: !!profile.team_name,
+    has_part_name: !!profile.part_name,
+    has_membership_level: !!profile.membership_level,
+  });
+  const address = (profile.address as string | null) ?? "";
+  const addressParts = address.split(" ");
+  const rawPhone = (profile.phone as string | null) ?? "";
+  const rawBirth = (profile.birth_date as string | null) ?? "";
+  return {
+    name: (profile.display_name as string | null) ?? "",
+    nameEng: (profile.eng_name as string | null) ?? "",
+    gender: (profile.gender as string | null) ?? "",
+    birthDate: rawBirth ? rawBirth.replace(/-/g, ".") : "",
+    city: addressParts[0] || "",
+    district: addressParts.slice(1).join(" ") || "",
+    address,
+    phone: rawPhone
+      ? rawPhone
+          .replace(/-/g, "")
+          .replace(/(\d{3})(\d{1})\d{3}(\d{4})/, "$1-$2***-****")
+      : "",
+    email: (profile.email as string | null) ?? "",
+    // school/major 는 1차로 /api/profile enrichment 값을 채우고,
+    // fetchEducations() 가 이후 더 풍부한 데이터(period/gpa 포함)로 refine.
+    school: (profile.school_name as string | null) ?? "",
+    major:
+      (profile.major_name_1 as string | null) ??
+      (profile.department_name as string | null) ??
+      "",
+    major2: "",
+    major3: "",
+    enrollPeriod: "",
+    graduationStatus: "",
+    gpa: "",
+    gpaMax: "",
+    quote: initialQuote,
+    photo: (profile.profile_photo_url as string | null) ?? "",
+    // user_memberships enrichment — 누락되면 학교/학과 아래 detail-row 가
+    // 빈 채로 렌더되는 버그가 재발하므로 반드시 helper 안에서 채운다.
+    team: (profile.team_name as string | null) ?? "",
+    part: (profile.part_name as string | null) ?? "",
+    membershipLevel: (profile.membership_level as string | null) ?? "",
+  };
+};
 
 const Sidebar = () => {
   const { alert: showAlert, confirm: popupConfirm } = usePopup();
@@ -41,10 +139,9 @@ const Sidebar = () => {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   // PX 라우트 컨텍스트 — pathname segment 중 하나라도 -px 로 끝나면 PX 색 사용.
-  // segment 기준이라 trailing slash, dynamic subpath 모두 매칭.
-  // ("/cluster-3-px", "/cluster-3-px/", "/cluster-4-card-px/dw-01", "/cluster-4-card-px/dw-01/")
-  // non-PX 라우트(/cluster-2, /cluster-3, /cluster-4 등)는 false → 기존 색 그대로.
-  const isPX = !!pathname && pathname.split("/").some((seg) => seg.endsWith("-px"));
+  // 동적 subpath 포함 매칭. non-PX 라우트는 false → 기존 색 그대로.
+  // 판정 로직은 lib/cluster-route 로 일원화.
+  const isPX = isPxRoute(pathname);
   const router = useRouter();
   const targetUserId = searchParams.get("userId") || searchParams.get("userID");
   const sessionUserId = session?.user?.id ?? null;
@@ -392,28 +489,9 @@ const Sidebar = () => {
     } catch {}
     const initialQuote = pendingSloganRef.current ?? cachedSlogan ?? "";
 
-    const addressParts = (profile.address || "").split(" ");
-    setUserProfile({
-      name: profile.display_name || "",
-      nameEng: profile.eng_name || "",
-      gender: profile.gender || "",
-      birthDate: profile.birth_date ? profile.birth_date.replace(/-/g, ".") : "",
-      city: addressParts[0] || "",
-      district: addressParts.slice(1).join(" ") || "",
-      address: profile.address || "",
-      phone: profile.phone ? profile.phone.replace(/-/g, "").replace(/(\d{3})(\d{1})\d{3}(\d{4})/, "$1-$2***-****") : "",
-      email: profile.email || "",
-      school: "",
-      major: "",
-      major2: "",
-      major3: "",
-      enrollPeriod: "",
-      graduationStatus: "",
-      gpa: "",
-      gpaMax: "",
-      quote: initialQuote,
-      photo: profile.profile_photo_url || "",
-    });
+    // mapping 은 buildSidebarUserProfile 로 일원화 — fetchUserProfile 과
+    // 동일한 full set(team/part/membershipLevel 포함) 을 produce 한다.
+    setUserProfile(buildSidebarUserProfile(profile, initialQuote));
 
     const statusMap: Record<string, "Running" | "Complete" | "On Rest" | "Recharging" | "Next Challenge"> = {
       active: "Running",
@@ -899,7 +977,6 @@ const Sidebar = () => {
           console.log("[isOwner] 결과:", ownerCheck, "| !targetUserId:", !targetUserId, "| url일치:", targetUserId === currentUserId, "| profile일치:", fetchedProfileId === currentUserId);
           setIsOwner(ownerCheck);
         }
-        const addressParts = (profile.address || "").split(" ");
 
         // 슬로건 우선순위: 병렬 fetch 로 먼저 도착한 pending → sessionStorage 캐시 → 빈 값
         // (source of truth = user_introductions.slogan_1. bio 는 다른 도메인이므로 fallback 으로 쓰지 않는다.)
@@ -911,34 +988,9 @@ const Sidebar = () => {
         } catch {}
         const initialQuote = pendingSloganRef.current ?? cachedSlogan ?? "";
 
-        setUserProfile({
-          name: profile.display_name || "",
-          nameEng: profile.eng_name || "",
-          gender: profile.gender || "",
-          birthDate: profile.birth_date ? profile.birth_date.replace(/-/g, ".") : "",
-          city: addressParts[0] || "",
-          district: addressParts.slice(1).join(" ") || "",
-          address: profile.address || "",
-          phone: profile.phone ? profile.phone.replace(/-/g, "").replace(/(\d{3})(\d{1})\d{3}(\d{4})/, "$1-$2***-****") : "",
-          email: profile.email || "",
-          // school/major: /api/profile enrichment (user_educations 최종학력) 우선 사용.
-          // fetchEducations() 가 이후 더 풍부한 데이터(period/gpa 포함)로 덮어쓰지만,
-          // 그 호출이 늦거나 실패해도 sidebar 가 빈 값으로 시작하지 않도록 초기값 채움.
-          school: profile.school_name || "",
-          major: profile.major_name_1 || profile.department_name || "",
-          major2: "",
-          major3: "",
-          enrollPeriod: "",
-          graduationStatus: "",
-          gpa: "",
-          gpaMax: "",
-          quote: initialQuote,
-          photo: profile.profile_photo_url || "",
-          // user_memberships 에서 enrich된 값 — 기존 sub-text 두 줄(enrollPeriod / gpa 자리)에 사용.
-          team: profile.team_name || "",
-          part: profile.part_name || "",
-          membershipLevel: profile.membership_level || "",
-        });
+        // mapping 은 buildSidebarUserProfile 로 일원화 — cache-init useLayoutEffect 와
+        // 동일한 full set 을 produce. team/part/membershipLevel 누락 재발 방지.
+        setUserProfile(buildSidebarUserProfile(profile, initialQuote));
 
         // 학력은 프로필 응답 후 로드 (슬로건은 별도 useEffect에서 이미 병렬 실행)
         fetchEducations();
@@ -2074,7 +2126,8 @@ const Sidebar = () => {
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  const targetPath = '/cluster-3';
+                  // PX 컨텍스트면 /cluster-3-px 로 이동해 .cluster-px-theme wrapper 유지.
+                  const targetPath = withPxRoute('/cluster-3', pathname);
                   const targetSection = 'cluster3-section3';
                   // 이미 해당 페이지에 있고 section이 DOM에 있으면 바로 스크롤
                   const section = document.querySelector('.' + targetSection);
@@ -2083,9 +2136,9 @@ const Sidebar = () => {
                     window.scrollTo({ top: section.getBoundingClientRect().top + window.scrollY - offset, behavior: 'smooth' });
                     return;
                   }
-                  // 다른 페이지에 있으면 /cluster-3으로 이동 후 스크롤
+                  // 다른 페이지에 있으면 도착지로 이동 후 스크롤.
                   // SPA navigation 유지 — window.location.href(hard reload)는 RSC 캐시/React state를
-                  // 끊어 뒤로가기 복귀 시 빈 화면 유발. 도착지(/cluster-3)는 scrollTo query를 처리함.
+                  // 끊어 뒤로가기 복귀 시 빈 화면 유발. 도착지는 scrollTo query를 처리함.
                   router.push(targetPath + '?scrollTo=' + targetSection);
                 }}
                 style={{
@@ -2245,8 +2298,8 @@ const Sidebar = () => {
                           setTooltipPosition({ x: e.clientX + 12, y: e.clientY - 8 });
                         }}
                       >
-                        <span style={{ color: currentProfile.lightColor }}>·</span> {mask.major(currentProfile.major)}
-                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0, marginLeft: "5px" }}>
+                        <span style={{ color: currentProfile.lightColor }}>·</span>{mask.major(currentProfile.major)}
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                           <path d="M8.33 6.67L11.67 10L8.33 13.33" stroke="#FFEC8F" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       </span>

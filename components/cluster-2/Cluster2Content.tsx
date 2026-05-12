@@ -9,6 +9,7 @@ import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { isAdminEmail } from "@/lib/admin";
+import { isPxRoute } from "@/lib/cluster-route";
 import { usePopup } from "@/components/ui/popup";
 import { logEvent } from "@/utils/blackScreenDiagnostics";
 import { CLUSTER2_DUMMY_PHOTOS, CLUSTER2_DUMMY_SLOGANS, CLUSTER2_DUMMY_VIDEOS, CLUSTER2_DUMMY_EDUCATIONS, CLUSTER2_DUMMY_REVIEWS, CLUSTER2_DUMMY_INTRO, CLUSTER2_DUMMY_BY_USER, DEFAULT_DEMO_USER } from "@/constants/dummyData";
@@ -84,10 +85,9 @@ const Cluster2Content = () => {
   const { data: session } = useSession();
   const { mask } = useDataMasking();
   const searchParams = useSearchParams();
-  // PX(Phalanx) 라우트 감지 — segment 형태 ".../foo-px" 또는 ".../foo-px/..." 만 매칭.
-  // pathname.endsWith("-px") 으로는 동적 하위 라우트가 빠지므로 정규식 사용.
+  // PX(Phalanx) 라우트 감지 — 동적 하위 라우트 포함. 판정 로직은 lib/cluster-route.
   const pathname = usePathname();
-  const isPX = /(^|\/)[^/]+-px(\/|$)/.test(pathname ?? "");
+  const isPX = isPxRoute(pathname);
   // PX 라우트의 인라인 강조색 — non-PX 는 기존 #FAAB07 유지.
   const accentInline = isPX ? "#1E9503" : "#FAAB07";
   const { alert: showAlert, confirm: popupConfirm } = usePopup();
@@ -1858,7 +1858,10 @@ const Cluster2Content = () => {
         {/* 오른쪽 카드 */}
         <div className="frame-right">
           <div className="mascot-icon">
-            <img src="/images/0/cluster 2/ok 01.png" alt="" />
+            <img
+              src={isPX ? "/images/0/cluster 2/px 01.png" : "/images/0/cluster 2/ok 01.png"}
+              alt=""
+            />
             <div className="speech-bubble">안녕 !</div>
           </div>
           <span className="progress-label">OH, MY DREAM</span>

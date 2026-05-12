@@ -174,6 +174,60 @@
     }
 
     // ─────────────────────────────────────────────
+    // 8-bis) 그 외 horizontal divider/separator gold/yellow → PX green sweep.
+    //   사용자 보고 (/cluster-4-px 잔존 yellow divider) 기준:
+    //
+    //   대상 ::before / ::after 가로선 :
+    //     - .cluster4-section3::before   (_cluster4-season.scss L2119)  #ecbb02 80% 1px
+    //     - .cluster4-weekly-list::before (_cluster4-season.scss L4292) #ecbb02 80% 1px
+    //
+    //   .cluster4-section1::after 와 동일 패턴 (단색 1px line).
+    //   background 만 PX accent 로 치환 → layout/spacing/animation 영향 없음.
+    // ─────────────────────────────────────────────
+    .cluster4-section3::before,
+    .cluster4-weekly-list::before {
+      background: var(--px-accent) !important;
+    }
+
+    // ─────────────────────────────────────────────
+    // 8-ter) reputation/section bottom divider element 들의 yellow tint →
+    //        PX green tint (alpha 동일 유지).
+    //
+    //   대상:
+    //     - .season-reputation-bottom-divider     (_cluster4-season.scss L7428)
+    //         background: rgba(255, 165, 0, 0.2)
+    //     - .reputation-bottom-divider            (_cluster4-week.scss L8095)
+    //         background: rgba(255, 165, 0, 0.2)
+    //     - .reputation-bottom-section            (_cluster4-week.scss L8618)
+    //         border-top: 1px solid rgba(255, 165, 0, 0.2)
+    //
+    //   원본 alpha (0.2) 를 그대로 보존하고 RGB 만 PX green RGB (30,149,3) 으로 치환.
+    //   .cluster-px-theme 스코프이므로 /cluster-4 원본 무영향.
+    // ─────────────────────────────────────────────
+    .season-reputation-bottom-divider,
+    .reputation-bottom-divider {
+      background: rgba(30, 149, 3, 0.2) !important;
+    }
+    .reputation-bottom-section {
+      border-top-color: rgba(30, 149, 3, 0.2) !important;
+    }
+
+    // ─────────────────────────────────────────────
+    // 8-quater) /cluster-4-card-px work section 하단 1023px gold horizontal line.
+    //   원본: _cluster4-week.scss L3928-3933
+    //     .work-exp-section .section-bottom-divider,
+    //     .work-career-section .section-bottom-divider {
+    //       width: 1023px; height: 1px; background: #ffa500;
+    //     }
+    //   메인 콘텐츠 중간의 horizontal yellow line / pagination 위쪽 divider 후보.
+    //   background 만 치환.
+    // ─────────────────────────────────────────────
+    .work-exp-section .section-bottom-divider,
+    .work-career-section .section-bottom-divider {
+      background: var(--px-accent) !important;
+    }
+
+    // ─────────────────────────────────────────────
     // 9) WEEKLY GROWTH 타이틀 shadow text-stroke gold
     //    원본: _cluster4-season.scss line 531-540
     //          .season-title-shadow { -webkit-text-stroke: 1px #faab07 }

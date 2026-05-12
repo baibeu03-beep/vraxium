@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import ClusterTabs from "@/components/home-career/ClusterTabs";
 import Sidebar from "@/components/home-career/Sidebar";
 import Animations from "@/components/shared/Animations";
+import { isPxRoute } from "@/lib/cluster-route";
 
 export default function ClusterLayout({
   children,
@@ -13,11 +14,9 @@ export default function ClusterLayout({
 }) {
   const mainRef = useRef<HTMLElement>(null);
   // pathname segment 중 하나라도 -px 로 끝나면 phalanx 전용 theme wrapper 부여.
-  // 정규식은 "/.../foo-px" 또는 "/.../foo-px/..." 형태(맨 앞·맨 뒤 슬래시 모두) 를 매칭.
-  // pathname.endsWith("-px") 만 쓰면 동적 하위 경로(/cluster-4-card-px/dw-01) 가 누락된다.
-  // 매칭 케이스: "/cluster-3-px", "/cluster-3-px/", "/cluster-4-card-px/dw-01", "/cluster-4-card-px/dw-01/"
+  // 동적 하위 경로(/cluster-4-card-px/dw-01) 매칭 포함. 판정 로직은 lib/cluster-route.
   const pathname = usePathname();
-  const isPxRoute = /(^|\/)[^/]+-px(\/|$)/.test(pathname ?? "");
+  const isPx = isPxRoute(pathname);
   const clusterRouteFallback = (
     <div
       className="cluster-route-fallback"
@@ -43,8 +42,8 @@ export default function ClusterLayout({
   return (
     <main
       ref={mainRef}
-      className={`nftg-content nftg-content-home${isPxRoute ? " cluster-px-theme" : ""}`}
-      data-cluster-theme={isPxRoute ? "phalanx" : "default"}
+      className={`nftg-content nftg-content-home${isPx ? " cluster-px-theme" : ""}`}
+      data-cluster-theme={isPx ? "phalanx" : "default"}
     >
       <Animations />
 

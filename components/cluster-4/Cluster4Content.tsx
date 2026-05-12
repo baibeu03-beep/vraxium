@@ -12,8 +12,10 @@ import { usePopup } from "@/components/ui/popup";
 import { supabase } from "@/lib/supabase";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
+import { getPxAlias } from "@/utils/pxLabelAlias";
 import { DUMMY_SEASON_DATA, DUMMY_SEASON_HISTORIES, REVIEW_COMMENT_DEFAULT } from "@/constants/dummyData";
 import { dedupedJson } from "@/lib/fetch-dedupe";
+import { isPxRoute, withPxRoute } from "@/lib/cluster-route";
 import HelpModalBody from "@/components/shared/HelpModalBody";
 
 // 글자수 초과 시 '..' 표시 (CSS ellipsis '…' 대신 JS 처리)
@@ -434,9 +436,9 @@ const Cluster4Content = () => {
   const router = useRouter();
   // PX 컨텍스트면 내부 cross-link 도 px 변형으로 라우팅 → phalanx 사용자가
   // weekly/season 탭을 눌러도 PX 라우트 안에 머무른다.
-  // segment 기준 매칭으로 trailing slash 도 정상 처리.
+  // 모든 cluster navigation 은 withPxRoute(path, pathname) 으로 일관 적용.
   const pathname = usePathname();
-  const pxSuffix = pathname && pathname.split("/").some((seg) => seg.endsWith("-px")) ? "-px" : "";
+  const isPX = isPxRoute(pathname);
   const headerRef = useRef<HTMLElement>(null);
   const [section3Page, setSection3Page] = useState(0);
   const [isFlipping, setIsFlipping] = useState(false);
@@ -2671,10 +2673,16 @@ const Cluster4Content = () => {
           <div
             className="tab"
             style={{ width: "44px", height: "44px", background: "#161816" }}
-            onClick={() => router.push(`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}`)}
+            onClick={() => router.push(withPxRoute(`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname))}
           >
             <img src="/images/0/cluster4/icon/icon%20-%20%EC%A0%84%EA%B5%AC.png" alt="전구" className="tab-icon" />
-            <div className="tab-badge" onClick={() => router.push(`/cluster-4${pxSuffix}${urlUserId ? `?userId=${urlUserId}` : ""}`)}>
+            <div
+              className="tab-badge"
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(withPxRoute(`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname));
+              }}
+            >
               <span className="badge-text">Weekly Growth</span>
               <img src="/images/0/cluster4/icon/icon%20-%20wallet.png" alt="wallet" className="badge-icon" />
             </div>
@@ -2682,10 +2690,16 @@ const Cluster4Content = () => {
           <div
             className="tab"
             style={{ width: "44px", height: "44px", background: "#FAAB07" }}
-            onClick={() => router.push(`/cluster-4-1${urlUserId ? `?userId=${urlUserId}` : ""}`)}
+            onClick={() => router.push(withPxRoute(`/cluster-4-1${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname))}
           >
             <img src="/images/0/cluster4/icon/icon%20-%20book.png" alt="book" className="tab-icon" />
-            <div className="tab-badge" onClick={() => router.push(`/cluster-4-1${pxSuffix}${urlUserId ? `?userId=${urlUserId}` : ""}`)}>
+            <div
+              className="tab-badge"
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(withPxRoute(`/cluster-4-1${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname));
+              }}
+            >
               <span className="badge-text">Season Growth</span>
               <img src="/images/0/cluster4/icon/icon%20-%20wallet.png" alt="wallet" className="badge-icon" />
             </div>
@@ -2735,7 +2749,10 @@ const Cluster4Content = () => {
             {/* Add new collection 카드 */}
             <div className="collection-card">
               <div className="collection-icon">
-                <img src="/images/0/cluster4/아호%20캐릭터.png" alt="아호 캐릭터" />
+                <img
+                  src={isPX ? "/images/0/cluster4/아호 캐릭터-px.png" : "/images/0/cluster4/아호 캐릭터.png"}
+                  alt="아호 캐릭터"
+                />
               </div>
               <div className="collection-content">
                 <div className="collection-header">
@@ -2927,20 +2944,35 @@ const Cluster4Content = () => {
 
             {/* 중앙 열 (영역 4, 5, 6, 7) */}
             <div className={`center-column ${isTextFading ? "fading" : ""}`}>
-              {/* 영역 4: 통계 바 */}
+              {/* 영역 4: 통계 바 — PX 분기에서만 라벨/아이콘을 PX alias (투구/방패/화살)로 치환.
+                  원본 데이터(currentSeason.stats.*) 미터치. */}
               <div className="area-4-stats" style={{ transform: "translateX(44px)" }}>
-                <span className="stat">
-                  단감 <img src="/images/0/cluster4/icon/icon - 단감.png" alt="단감" className="stat-icon" /> <strong className="number">{Math.abs(currentSeason.stats.dangam)}</strong>
-                  <span className="unit">개</span>
-                </span>
-                <span className="stat">
-                  인절미 <img src="/images/0/cluster4/icon/icon - 인절미.png" alt="인절미" className="stat-icon" /> <strong className="number">{Math.abs(currentSeason.stats.injeolmi)}</strong>
-                  <span className="unit">개</span>
-                </span>
-                <span className="stat">
-                  어흥 <img src="/images/0/cluster4/icon/icon - 어흥.png" alt="어흥" className="stat-icon" /> <strong className="number">{Math.abs(currentSeason.stats.eoheung)}</strong>
-                  <span className="unit">개</span>
-                </span>
+                {(["단감", "인절미", "어흥"] as const).map((name) => {
+                  const valueMap = {
+                    단감: currentSeason.stats.dangam,
+                    인절미: currentSeason.stats.injeolmi,
+                    어흥: currentSeason.stats.eoheung,
+                  };
+                  const defaultSrcMap = {
+                    단감: "/images/0/cluster4/icon/icon - 단감.png",
+                    인절미: "/images/0/cluster4/icon/icon - 인절미.png",
+                    어흥: "/images/0/cluster4/icon/icon - 어흥.png",
+                  };
+                  const mapped = getPxAlias(isPX, name);
+                  const label = mapped?.label ?? name;
+                  return (
+                    <span className="stat" key={name}>
+                      {label}{" "}
+                      {mapped ? (
+                        <span className={`stat-icon badge-icon ${mapped.iconClass}`} aria-hidden="true" />
+                      ) : (
+                        <img src={defaultSrcMap[name]} alt={name} className="stat-icon" />
+                      )}{" "}
+                      <strong className="number">{Math.abs(valueMap[name])}</strong>
+                      <span className="unit">개</span>
+                    </span>
+                  );
+                })}
               </div>
 
               {/* 영역 5: 평점 및 리뷰 */}

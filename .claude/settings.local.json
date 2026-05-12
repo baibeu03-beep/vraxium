@@ -124,7 +124,13 @@
       "Bash(wc -c \"C:\\\\\\\\Users\\\\\\\\ynlee\\\\\\\\AppData\\\\\\\\Local\\\\\\\\Temp\\\\\\\\claude\\\\\\\\C--Users-ynlee-OneDrive-------vraxium-Career-Resume\\\\\\\\86a943c5-0441-4d50-83e5-417ebccc4f82\\\\\\\\tasks\\\\\\\\b0q0gx9dr.output\")",
       "mcp__playwright__browser_console_messages",
       "Bash(head -50 \"C:\\\\\\\\Users\\\\\\\\ynlee\\\\\\\\AppData\\\\\\\\Local\\\\\\\\Temp\\\\\\\\claude\\\\\\\\C--Users-ynlee-OneDrive-------vraxium-Career-Resume\\\\\\\\86a943c5-0441-4d50-83e5-417ebccc4f82\\\\\\\\tasks\\\\\\\\bl49v1biu.output\")",
-      "Bash(tee /tmp/next-dev.log)"
+      "Bash(tee /tmp/next-dev.log)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\ynlee\\\\OneDrive\\\\바탕 화면\\\\vraxium\\\\Career-Resume\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(sed 's/.*\\\\.from\\(//')",
+      "Bash(sed 's/[\"\\\\x27].*//')",
+      "Bash(rm \"C:/Users/ynlee/OneDrive/바탕 화면/vraxium/Career-Resume/app/\\(host\\)/api/auth/[...nextauth]/route.ts\")",
+      "Bash(rmdir \"C:/Users/ynlee/OneDrive/바탕 화면/vraxium/Career-Resume/app/\\(host\\)/api/auth/[...nextauth]\")"
     ],
     "deny": [],
     "ask": []

@@ -6,9 +6,11 @@ import { useSession } from "next-auth/react";
 import { useSearchParams, usePathname } from "next/navigation";
 import { getDocumentZoom, getFixedDropdownPosition } from "@/utils/documentZoom";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
+import { getPxAlias } from "@/utils/pxLabelAlias";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { useProfile } from "@/contexts/ProfileContext";
 import { isAdminEmail } from "@/lib/admin";
+import { isPxRoute } from "@/lib/cluster-route";
 import { usePopup } from "@/components/ui/popup";
 import {
   CLUSTER3_DUMMY_PROFILE,
@@ -205,8 +207,8 @@ const Cluster3Content = () => {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   // PX 라우트 진입 시 inline style 들이 PX 톤으로 전환된다.
-  // segment 기준 매칭 — trailing slash 와 dynamic subpath 모두 OK.
-  const isPX = !!pathname && pathname.split("/").some((seg) => seg.endsWith("-px"));
+  // 판정 로직은 lib/cluster-route 로 일원화.
+  const isPX = isPxRoute(pathname);
   const popup = usePopup();
   const urlUserId = searchParams.get("userId") || searchParams.get("userID");
   const demoNameParam = searchParams.get("demoName");
@@ -2379,34 +2381,41 @@ const Cluster3Content = () => {
               </div>
               <h3 className="card-title">성장 점수 기록(Point)</h3>
             </div>
+            {/* PX 분기에서만 단감/인절미/어흥 → 투구/방패/화살 텍스트 + badge-icon class 로 교체.
+                pointsData 원본은 미터치. "(총합)" 접미사와 .orange semantic class 는 보존. */}
             <div className="card-body">
-              <div className="info-row">
-                <span className="info-label">
-                  <span className="dot">·</span> 단감(총합) <img src="/images/0/cluster 3/icon/Ok01.png" alt="단감" className="label-icon orange" />
-                </span>
-                <span className="info-value number">
-                  {pointsData.dangam.toLocaleString()}
-                  <span className="unit">개</span>
-                </span>
-              </div>
-              <div className="info-row">
-                <span className="info-label">
-                  <span className="dot">·</span> 인절미(총합) <img src="/images/0/cluster 3/icon/OK02.png" alt="인절미" className="label-icon" />
-                </span>
-                <span className="info-value number">
-                  {pointsData.injeolmi.toLocaleString()}
-                  <span className="unit">개</span>
-                </span>
-              </div>
-              <div className="info-row">
-                <span className="info-label">
-                  <span className="dot">·</span> 어흥(총합) <img src="/images/0/cluster 3/icon/Ok03.png" alt="어흥" className="label-icon" />
-                </span>
-                <span className="info-value number">
-                  {Math.abs(pointsData.eoheung).toLocaleString()}
-                  <span className="unit">개</span>
-                </span>
-              </div>
+              {(() => {
+                const rows: Array<{
+                  name: "단감" | "인절미" | "어흥";
+                  value: number;
+                  defaultSrc: string;
+                  defaultIconClass: string;
+                }> = [
+                  { name: "단감", value: pointsData.dangam, defaultSrc: "/images/0/cluster 3/icon/Ok01.png", defaultIconClass: "label-icon orange" },
+                  { name: "인절미", value: pointsData.injeolmi, defaultSrc: "/images/0/cluster 3/icon/OK02.png", defaultIconClass: "label-icon" },
+                  { name: "어흥", value: Math.abs(pointsData.eoheung), defaultSrc: "/images/0/cluster 3/icon/Ok03.png", defaultIconClass: "label-icon" },
+                ];
+                return rows.map((row) => {
+                  const mapped = getPxAlias(isPX, row.name);
+                  const label = mapped?.label ?? row.name;
+                  return (
+                    <div className="info-row" key={row.name}>
+                      <span className="info-label">
+                        <span className="dot">·</span> {label}(총합){" "}
+                        {mapped ? (
+                          <span className={`${row.defaultIconClass} badge-icon ${mapped.iconClass}`} aria-hidden="true" />
+                        ) : (
+                          <img src={row.defaultSrc} alt={row.name} className={row.defaultIconClass} />
+                        )}
+                      </span>
+                      <span className="info-value number">
+                        {row.value.toLocaleString()}
+                        <span className="unit">개</span>
+                      </span>
+                    </div>
+                  );
+                });
+              })()}
             </div>
             <div className="card-footer">
               <span className="watch-pricing">
@@ -2458,6 +2467,20 @@ const Cluster3Content = () => {
           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((rank) => {
             // 라벨 표시: 1->정승, 2->정1품, 3->정2품 ... 10->정9품
             const displayRank = rank === 1 ? "정승" : rank - 1;
+            // rank index → 이미지 파일 명시적 매핑 (label off-by-one 과 무관하게 rank 1~10 → 정 1~10 품.png 고정)
+            const rankImageFile = [
+              "정 1 품.png",
+              "정 2 품.png",
+              "정 3 품.png",
+              "정 4 품.png",
+              "정 5 품.png",
+              "정 6 품.png",
+              "정 7 품.png",
+              "정 8 품.png",
+              "정 9 품.png",
+              "정 10 품.png",
+            ][rank - 1];
+            const rankImageBasePath = isPX ? "/images/0/cluster 3/image/px" : "/images/0/cluster 3/image";
             return (
               <div
                 key={rank}
@@ -2473,7 +2496,7 @@ const Cluster3Content = () => {
                   <img src={`/images/0/cluster 3/icon/medal ${rank}.png`} alt={`Medal ${rank}`} />
                 </div>
                 <div className="rank-card-image">
-                  <img src={`/images/0/cluster 3/image/정 ${rank} 품.png`} alt={`Rank ${rank}`} />
+                  <img src={`${rankImageBasePath}/${rankImageFile}`} alt={`Rank ${rank}`} />
                 </div>
                 <div className="rank-label">
                   {displayRank === "정승" ? (
@@ -2559,7 +2582,7 @@ const Cluster3Content = () => {
                 }}
               >
                 <div className="card-image">
-                  <img src={`/images/0/cluster 3/image/1-${((card.id - 1) % 8) + 1}.png`} alt="Channel" />
+                  <img src={`/images/0/cluster 3/image/${isPX ? "px/" : ""}1-${((card.id - 1) % 8) + 1}.png`} alt="Channel" />
                   <div className="card-tag">{card.startYear && card.startMonth && card.startDay ? `${card.startYear}년 ${String(card.startMonth).padStart(2, "0")}월 ${String(card.startDay).padStart(2, "0")}일` : card.tag}</div>
                   <div className="card-like">
                     <svg viewBox="0 0 24 24" fill={card.status === "운영 중" ? "#ff4444" : card.status === "운영 중단" ? "#4488ff" : card.status === "운영 보류" ? "#44bb44" : "none"} stroke={card.status ? "none" : "currentColor"} strokeWidth="2">

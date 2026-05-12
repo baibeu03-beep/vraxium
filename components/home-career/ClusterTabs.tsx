@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { withPxRoute } from "@/lib/cluster-route";
 
 const ClusterTabs = () => {
   const pathname = usePathname();
@@ -8,18 +9,17 @@ const ClusterTabs = () => {
   const userId = searchParams.get("userId") || searchParams.get("userID");
   const demoName = searchParams.get("demoName");
 
-  // PX 라우트 컨텍스트 — pathname segment 중 하나라도 -px 로 끝나면 모든 탭 path 에
-  // -px suffix 부여. segment 기준이라 trailing slash 도 정상 매칭.
-  // 결과: phalanx 사용자가 cluster-3-px → 상단 cluster-2 탭 클릭 시 cluster-2-px 로 이동.
-  const isPxContext = !!pathname && pathname.split("/").some((seg) => seg.endsWith("-px"));
-  const pxSuffix = isPxContext ? "-px" : "";
-  // -px 변형이 존재하는 cluster 만 suffix 부여 (현재 2/3/4/4-1/4-card 만 구현).
+  // PX 라우트 컨텍스트 — pathname segment 중 하나라도 -px 로 끝나면 PX 변형이 존재하는
+  // cluster 만 withPxRoute 로 라우팅 (현재 2/3/4 만 구현). 5~10 은 PX 변형이 없으므로
+  // 항상 원본 path 그대로 사용.
   const PX_AVAILABLE = new Set([2, 3, 4]);
+  const pxAwarePath = (cluster: number, originalPath: string) =>
+    PX_AVAILABLE.has(cluster) ? withPxRoute(originalPath, pathname) : originalPath;
 
   const tabs = [
-    { name: "PERSONAL PROFILE", path: PX_AVAILABLE.has(2) ? `/cluster-2${pxSuffix}` : "/cluster-2", cluster: 2 },
-    { name: "CLUB FINAL INDEX", path: PX_AVAILABLE.has(3) ? `/cluster-3${pxSuffix}` : "/cluster-3", cluster: 3 },
-    { name: "CLUB CHALLENGE GROWTH", path: PX_AVAILABLE.has(4) ? `/cluster-4${pxSuffix}` : "/cluster-4", cluster: 4 },
+    { name: "PERSONAL PROFILE", path: pxAwarePath(2, "/cluster-2"), cluster: 2 },
+    { name: "CLUB FINAL INDEX", path: pxAwarePath(3, "/cluster-3"), cluster: 3 },
+    { name: "CLUB CHALLENGE GROWTH", path: pxAwarePath(4, "/cluster-4"), cluster: 4 },
     { name: "SOCIETAL REPUTATION", path: "/cluster-5", cluster: 5 },
     { name: "WORKING LEVEL - EXPERIENCE", path: "/cluster-6", cluster: 6 },
     { name: "WORKING LEVEL - ABILITY", path: "/cluster-7", cluster: 7 },

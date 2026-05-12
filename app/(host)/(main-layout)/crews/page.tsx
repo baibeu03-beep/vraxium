@@ -608,7 +608,7 @@ function CrewsContent() {
                     minHeight: 'calc(100vh - 200px)',
                   }}>
                     <img
-                      src="/images/0/금장_OK.png"
+                      src={org === "phalanx" ? "/images/0/금장_PX.png" : "/images/0/금장_OK.png"}
                       alt="로딩 중"
                       style={{
                         width: '120px',
@@ -712,6 +712,29 @@ function CrewsContent() {
                       .crews-grid .price-inner .cmn-shape { display: none !important; }
                       /* 학교/학과: flex 부모의 wrap 해제 (SCSS .info p { flex-wrap: wrap } 오버라이드) */
                       .crews-grid .info p { flex-wrap: nowrap !important; }
+                      /* 카드 푸터: 좌측 .price-inner (totalStars + 보기) 와 우측 .review (calendar + N주)
+                         를 한 행에 유지. 베이스 SCSS (_all-sections.scss) 의 .price-footer { flex-wrap: wrap }
+                         때문에 폭이 부족하면 .review 가 아래 줄로 떨어지던 현상 해결.
+                         /crews 전용 (.crews-grid 한정) — px/non-px 공통 적용, semantic/color 미터치. */
+                      .crews-grid .price-footer {
+                        flex-wrap: nowrap !important;
+                        gap: 8px !important;
+                        width: 100% !important;
+                      }
+                      .crews-grid .price-footer .review {
+                        flex-shrink: 0;
+                        margin-left: auto;
+                      }
+                      /* 활동 주차 표시 (<i class="ti-calendar-check"></i> + "N주") 자체도 한 줄 유지. */
+                      .crews-grid .review .text-sm.fw-6 {
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 4px;
+                        white-space: nowrap;
+                        flex-wrap: nowrap;
+                        min-width: max-content;
+                      }
+                      .crews-grid .review .text-sm.fw-6 i { flex-shrink: 0; }
                     `}</style>
                     {paginatedCrews.map((crew) => (
                       <div key={crew.id} className="trending__single" style={{ height: "100%" }}>

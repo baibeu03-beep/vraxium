@@ -7,7 +7,9 @@ import { getFixedDropdownPosition } from "@/utils/documentZoom";
 import { supabase } from "@/lib/supabase";
 import { dedupedJson } from "@/lib/fetch-dedupe";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
+import { getPxAlias } from "@/utils/pxLabelAlias";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA } from "@/constants/dummyData";
+import { isPxRoute, withPxRoute } from "@/lib/cluster-route";
 
 // 글자수 기반 말줄임 (info-badge role 8자 초과 시 "..")
 const truncate = (text: string | null | undefined, maxLen: number = 5): string => {
@@ -119,12 +121,10 @@ const Cluster41Content = () => {
 
   const router = useRouter();
   // PX 컨텍스트 감지 — 내부 cross-link 와 cluster-4-card 진입 시 px 라우트 유지.
-  // segment 기준 매칭으로 trailing slash 도 정상 처리.
-  const pathname = usePathname();
-  const pxSuffix = pathname && pathname.split("/").some((seg) => seg.endsWith("-px")) ? "-px" : "";
-  // PX 라우트 여부 — 필터 드롭다운 인라인 #FFA500 brand accent 분기에 사용.
+  // 모든 cluster navigation 은 withPxRoute(path, pathname) 으로 PX 여부를 일관 적용.
   // /cluster-4 는 isPX=false 이므로 기존 #FFA500 그대로 유지.
-  const isPX = pxSuffix === "-px";
+  const pathname = usePathname();
+  const isPX = isPxRoute(pathname);
   const filterAccent = isPX ? "#1E9503" : "#FFA500";
   const filterAccentBg = isPX ? "rgba(30, 149, 3, 0.1)" : "rgba(255, 165, 0, 0.1)";
   const filterAccentBgSelected = isPX ? "rgba(30, 149, 3, 0.2)" : "rgba(255, 165, 0, 0.2)";
@@ -1471,14 +1471,14 @@ const Cluster41Content = () => {
         <div className="top-tabs">
           <div className="tab" style={{ width: '44px', height: '44px', background: '#FAAB07' }}>
             <img src="/images/0/cluster4/icon/icon%20-%20%EC%A0%84%EA%B5%AC.png" alt="전구" className="tab-icon" />
-            <div className="tab-badge" onClick={() => router.push(`/cluster-4${pxSuffix}${targetUserId ? `?userId=${targetUserId}` : ''}`)}>
+            <div className="tab-badge" onClick={() => router.push(withPxRoute(`/cluster-4${targetUserId ? `?userId=${targetUserId}` : ''}`, pathname))}>
               <span className="badge-text">Weekly Growth</span>
               <img src="/images/0/cluster4/icon/icon%20-%20wallet.png" alt="wallet" className="badge-icon" />
             </div>
           </div>
           <div className="tab" style={{ width: '44px', height: '44px', background: '#161816' }}>
             <img src="/images/0/cluster4/icon/icon%20-%20book.png" alt="book" className="tab-icon" />
-            <div className="tab-badge" onClick={() => router.push(`/cluster-4-1${pxSuffix}${targetUserId ? `?userId=${targetUserId}` : ''}`)}>
+            <div className="tab-badge" onClick={() => router.push(withPxRoute(`/cluster-4-1${targetUserId ? `?userId=${targetUserId}` : ''}`, pathname))}>
               <span className="badge-text">Season Growth</span>
               <img src="/images/0/cluster4/icon/icon%20-%20wallet.png" alt="wallet" className="badge-icon" />
             </div>
@@ -1535,7 +1535,10 @@ const Cluster41Content = () => {
             {/* Add new collection 카드 */}
             <div className="collection-card">
               <div className="collection-icon">
-                <img src="/images/0/cluster4/아호%20캐릭터.png" alt="아호 캐릭터" />
+                <img
+                  src={isPX ? "/images/0/cluster4/아호 캐릭터-px.png" : "/images/0/cluster4/아호 캐릭터.png"}
+                  alt="아호 캐릭터"
+                />
               </div>
               <div className="collection-content">
                 <div className="collection-header">
@@ -1979,7 +1982,7 @@ const Cluster41Content = () => {
             <div style={{ padding: '20px', textAlign: 'center', color: '#888' }}>현재 해당하는 주차가 없습니다.</div>
           ) : (
             (isMobile ? filteredDbData.slice(0, mobileVisibleCount) : paginatedDbData).map((week) => {
-              const weekHref = `/cluster-4-card${pxSuffix}/${week.id}${targetUserId ? `?userId=${targetUserId}` : ''}`;
+              const weekHref = withPxRoute(`/cluster-4-card/${week.id}${targetUserId ? `?userId=${targetUserId}` : ''}`, pathname);
               const isExpanded = expandedWeekId === week.id;
               const isRest = week.growthStatus.includes('휴식');
               // 개인 휴식 → 항상 '-'. 공식 휴식 → 이 크루에게 활동 기록 있을 때만 정상 계산 (예외 케이스).
@@ -2089,9 +2092,10 @@ const Cluster41Content = () => {
                               </div>
 
                               <div className="weekly-card-details-bottom">
-                                <div className="metric">단감 <strong>{weekPoints.star}</strong></div>
-                                <div className="metric">인절미 <strong>{injeolmi}</strong></div>
-                                <div className="metric">어흥 <strong>{Math.abs(weekPoints.lightning)}</strong></div>
+                                {/* PX 분기에서만 라벨을 투구/방패/화살로 치환 — 본 metric 블록은 아이콘이 없으므로 텍스트만 alias. */}
+                                <div className="metric">{getPxAlias(isPX, "단감")?.label ?? "단감"} <strong>{weekPoints.star}</strong></div>
+                                <div className="metric">{getPxAlias(isPX, "인절미")?.label ?? "인절미"} <strong>{injeolmi}</strong></div>
+                                <div className="metric">{getPxAlias(isPX, "어흥")?.label ?? "어흥"} <strong>{Math.abs(weekPoints.lightning)}</strong></div>
                                 <div className="metric">주차 평판 <strong>{weeklyReputationCounts[week.id] || 0}</strong><span className="sub">/4</span></div>
                               </div>
                             </>
@@ -2180,33 +2184,35 @@ const Cluster41Content = () => {
                           </>
                         );
                       })()}
-                      {/* 그룹 3: 아이템들 */}
+                      {/* 그룹 3: 아이템들 — PX 분기일 때만 라벨/아이콘을 PX alias (투구/방패/화살) 로 치환.
+                          원본 데이터(weekPoints.star 등)는 미터치. */}
                       {(() => {
                         const weekPoints = getPointsForWeek(week.id);
                         const injeolmi = getCumulativeInjeolmi(week.id);
+                        const renderItem = (name: "단감" | "인절미" | "어흥", value: number, defaultSrc: string) => {
+                          const mapped = getPxAlias(isPX, name);
+                          const label = mapped?.label ?? name;
+                          return (
+                            <span className="info-item with-icon" key={name}>
+                              {label}
+                              {mapped ? (
+                                <span className={`item-icon badge-icon ${mapped.iconClass}`} aria-hidden="true" />
+                              ) : (
+                                <img src={defaultSrc} alt={name} className="item-icon" />
+                              )}
+                              <strong className="number-value num-3">{value}</strong>
+                              개
+                            </span>
+                          );
+                        };
                         return (
                           <div className="info-group items">
                             <span className="info-divider">·</span>
-                            <span className="info-item with-icon">
-                              단감
-                              <img src="/images/0/cluster4/icon/icon - 단감.png" alt="단감" className="item-icon" />
-                              <strong className="number-value num-3">{weekPoints.star}</strong>
-                              개
-                            </span>
+                            {renderItem("단감", weekPoints.star, "/images/0/cluster4/icon/icon - 단감.png")}
                             <span className="info-divider">·</span>
-                            <span className="info-item with-icon">
-                              인절미
-                              <img src="/images/0/cluster4/icon/icon - 인절미.png" alt="인절미" className="item-icon" />
-                              <strong className="number-value num-3">{injeolmi}</strong>
-                              개
-                            </span>
+                            {renderItem("인절미", injeolmi, "/images/0/cluster4/icon/icon - 인절미.png")}
                             <span className="info-divider">·</span>
-                            <span className="info-item with-icon">
-                              어흥
-                              <img src="/images/0/cluster4/icon/icon - 어흥.png" alt="어흥" className="item-icon" />
-                              <strong className="number-value num-3">{Math.abs(weekPoints.lightning)}</strong>
-                              개
-                            </span>
+                            {renderItem("어흥", Math.abs(weekPoints.lightning), "/images/0/cluster4/icon/icon - 어흥.png")}
                           </div>
                         );
                       })()}

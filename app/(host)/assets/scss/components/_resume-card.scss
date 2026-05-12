@@ -608,13 +608,22 @@
             font-weight: 400;
             line-height: 24px;
             cursor: pointer;
-            display: flex !important;
-            align-items: center !important;
-            gap: 5px !important;
+            display: inline-flex;
+            align-items: center;
+            gap: 0;
             overflow: hidden;
-            text-overflow: ellipsis;
             white-space: nowrap;
             max-width: 180px;
+
+            > span:first-child {
+              margin-right: 4px;
+              flex-shrink: 0;
+            }
+
+            > svg {
+              margin-left: 5px;
+              flex-shrink: 0;
+            }
           }
 
           .detail-icon {

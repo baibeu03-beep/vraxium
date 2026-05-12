@@ -12,7 +12,9 @@ import { usePopup } from "@/components/ui/popup";
 import { supabase } from "@/lib/supabase";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
+import { getPxAlias } from "@/utils/pxLabelAlias";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
+import { isPxRoute, withPxRoute } from "@/lib/cluster-route";
 import DetailLogModal from "./DetailLogModal";
 import confetti from "canvas-confetti";
 import HelpModalBody from "@/components/shared/HelpModalBody";
@@ -242,8 +244,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   // PX 컨텍스트면 prev/next/filter/weekly 링크가 모두 px 라우트로 이동.
-  // segment 기준 매칭으로 trailing slash 도 정상 처리.
-  const pxSuffix = pathname && pathname.split("/").some((seg) => seg.endsWith("-px")) ? "-px" : "";
+  // 모든 cluster navigation 은 withPxRoute(path, pathname) 으로 일관 적용.
+  const isPX = isPxRoute(pathname);
   const popup = usePopup();
   const urlUserId = searchParams.get("userId") || searchParams.get("userID");
   // SSR/client hydration 일관성을 위해 stateful — 첫 렌더 SSR=client=false, 마운트 후 localStorage 값 반영
@@ -5741,12 +5743,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             style={{ cursor: "pointer", width: "44px", height: "44px" }}
           >
             <img src="/images/0/cluster4/icon/icon%20-%20%EC%A0%84%EA%B5%AC.png" alt="전구" className="tab-icon" />
-            <Link href={`/cluster-4${pxSuffix}${urlUserId ? `?userId=${urlUserId}` : ""}`} className="tab-badge" onClick={(e) => e.stopPropagation()}>
+            <Link href={withPxRoute(`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname)} className="tab-badge" onClick={(e) => e.stopPropagation()}>
               <span className="badge-text">Weekly Growth</span>
               <img src="/images/0/cluster4/icon/icon%20-%20wallet.png" alt="wallet" className="badge-icon" />
             </Link>
           </div>
-          <Link href={`/cluster-4-1${pxSuffix}${urlUserId ? `?userId=${urlUserId}` : ""}`} className="tab" style={{ width: "44px", height: "44px" }}>
+          <Link href={withPxRoute(`/cluster-4-1${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname)} className="tab" style={{ width: "44px", height: "44px" }}>
             <img src="/images/0/cluster4/icon/icon%20-%20book.png" alt="book" className="tab-icon" />
             <div className="tab-badge">
               <span className="badge-text">Season Growth</span>
@@ -5760,7 +5762,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         </div>
         <div className="nav-buttons">
           {prevWeekId ? (
-            <Link href={`/cluster-4-card${pxSuffix}/${prevWeekId}${urlUserId ? `?userId=${urlUserId}` : ""}`} className="nav-btn-prev">
+            <Link href={withPxRoute(`/cluster-4-card/${prevWeekId}${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname)} className="nav-btn-prev">
               <span>이전 주</span>
               <img src="/images/0/cluster4/icon/icon%20-%20arrow%20left.png" alt="left" className="arrow-icon" />
             </Link>
@@ -5771,7 +5773,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             </button>
           )}
           {nextWeekId ? (
-            <Link href={`/cluster-4-card${pxSuffix}/${nextWeekId}${urlUserId ? `?userId=${urlUserId}` : ""}`} className="nav-btn-next">
+            <Link href={withPxRoute(`/cluster-4-card/${nextWeekId}${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname)} className="nav-btn-next">
               <span>다음 주</span>
               <img src="/images/0/cluster4/icon/icon%20-%20arrow%20right.png" alt="right" className="arrow-icon" />
             </Link>
@@ -5781,7 +5783,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <img src="/images/0/cluster4/icon/icon%20-%20arrow%20right.png" alt="right" className="arrow-icon" />
             </button>
           )}
-          <Link href={`/cluster-4${pxSuffix}${urlUserId ? `?userId=${urlUserId}` : ""}#weekly-filter-bar`} className="nav-btn-filled">
+          <Link href={withPxRoute(`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}#weekly-filter-bar`, pathname)} className="nav-btn-filled">
             <img src="/images/0/cluster4/icon/icon%20-%201.png" alt="list" className="list-icon" />
             <span>전체 목록으로 돌아가기</span>
           </Link>
@@ -6040,34 +6042,37 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   </span>
                 </span>
               </div>
+              {/* PX 분기에서만 단감/인절미/어흥 라벨/아이콘을 PX alias 로 치환.
+                  weekPoints 원본은 미터치 — 표시 layer 만 alias. */}
               <div className="info-group right" style={{ gap: "8px", fontSize: "16px", fontFamily: "'Pretendard', sans-serif", marginLeft: "0px" }}>
-                <span className="info-divider">·</span>
-                <span className="info-item with-icon">
-                  단감
-                  <img src="/images/0/cluster4/icon/icon - 단감.png" alt="단감" className="item-icon" />
-                  <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                    {weekPoints.star}
-                  </strong>
-                  <span className="unit-text">개</span>
-                </span>
-                <span className="info-divider">·</span>
-                <span className="info-item with-icon">
-                  인절미
-                  <img src="/images/0/cluster4/icon/icon - 인절미.png" alt="인절미" className="item-icon" />
-                  <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                    {Math.abs(weekPoints.shield - weekPoints.lightning)}
-                  </strong>
-                  <span className="unit-text">개</span>
-                </span>
-                <span className="info-divider">·</span>
-                <span className="info-item with-icon">
-                  어흥
-                  <img src="/images/0/cluster4/icon/icon - 어흥.png" alt="어흥" className="item-icon" />
-                  <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                    {Math.abs(weekPoints.lightning)}
-                  </strong>
-                  <span className="unit-text">개</span>
-                </span>
+                {(() => {
+                  const items: Array<{ name: "단감" | "인절미" | "어흥"; value: number; defaultSrc: string }> = [
+                    { name: "단감", value: weekPoints.star, defaultSrc: "/images/0/cluster4/icon/icon - 단감.png" },
+                    { name: "인절미", value: Math.abs(weekPoints.shield - weekPoints.lightning), defaultSrc: "/images/0/cluster4/icon/icon - 인절미.png" },
+                    { name: "어흥", value: Math.abs(weekPoints.lightning), defaultSrc: "/images/0/cluster4/icon/icon - 어흥.png" },
+                  ];
+                  return items.map((item, idx) => {
+                    const mapped = getPxAlias(isPX, item.name);
+                    const label = mapped?.label ?? item.name;
+                    return (
+                      <React.Fragment key={item.name}>
+                        {idx === 0 ? <span className="info-divider">·</span> : <span className="info-divider">·</span>}
+                        <span className="info-item with-icon">
+                          {label}
+                          {mapped ? (
+                            <span className={`item-icon badge-icon ${mapped.iconClass}`} aria-hidden="true" />
+                          ) : (
+                            <img src={item.defaultSrc} alt={item.name} className="item-icon" />
+                          )}
+                          <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
+                            {item.value}
+                          </strong>
+                          <span className="unit-text">개</span>
+                        </span>
+                      </React.Fragment>
+                    );
+                  });
+                })()}
               </div>
             </div>
           </div>

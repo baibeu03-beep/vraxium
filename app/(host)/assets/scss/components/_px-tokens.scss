@@ -27,3 +27,85 @@
   --px-accent-soft-glow: rgba(178, 255, 143, 0.35);
   --px-gradient: linear-gradient(145deg, #1E9503, #B2FF8F);
 }
+
+// =============================================================
+// PX 라벨 alias 아이콘 (cluster-X-px 라우트 내 cluster info 행).
+//
+// pxLabelAlias.ts 의 pxLabelMap (단감→투구/icon-graphic10,
+// 인절미→방패/icon-shield, 어흥→화살→icon-graphic13) 과 짝.
+// 호출 측은 PX 분기일 때 <img> 대신
+//   <span class="(item-icon|stat-icon|label-icon) badge-icon icon-graphicXX">
+// 를 그리고, 본 규칙이 background-image 를 부여한다.
+//
+// .cluster-px-theme 스코프로만 한정 — non-px 라우트의 .resume-badges
+// (이미 _resume-card.scss 에서 같은 클래스를 정의) 와 충돌하지 않는다.
+// background-size/repeat/position 은 부모 컨테이너 (.item-icon 등) 의
+// 기존 size 토큰을 그대로 따르도록 inline span 에 fill 만 부여한다.
+// =============================================================
+.cluster-px-theme {
+  .badge-icon {
+    display: inline-block;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+
+    &.icon-graphic10 {
+      // 단감 → 투구
+      background-image: url("/images/0/cluster 1/PX01.png");
+    }
+
+    &.icon-shield {
+      // 인절미 → 방패
+      background-image: url("/images/0/cluster 1/pX02.png");
+    }
+
+    &.icon-graphic13 {
+      // 어흥 → 화살
+      background-image: url("/images/0/cluster 1/PX03.png");
+    }
+  }
+}
+
+// =============================================================
+// PX scope scroll-to-top (.progress-wrap) tone override.
+//
+// <Progress> 는 app/(host)/layout.tsx 의 root 에 마운트되어 있어
+// .cluster-px-theme (<main>) 의 sibling 이다 — descendant 가 아님!
+// 그래서 .cluster-px-theme 위에 정의된 --px-accent / --px-accent-soft
+// 등 custom property 는 .progress-wrap 으로 inherit 되지 않는다.
+// (CSS 변수는 selector match 가 아닌 DOM ancestor chain 으로 cascade)
+// 1차 시도에서 var(--px-accent) 를 그대로 썼다가 값이 invalid → 초기값
+// (transparent) 으로 fallback 되어 outer ring 이 사라지는 버그 발생.
+// 따라서 hex 값을 직접 박는다. PX 라우트 진입 여부는 body:has() 로
+// scope — non-px 라우트는 본 블록이 매칭되지 않아 base/_global.scss
+// (line 494~591) 의 yellow 톤 (var(--primary-color) /
+// var(--secondary-color)) 그대로 유지.
+//
+// 원본 구조 (base/_global.scss):
+//   background-color: var(--primary-color);            ← yellow fill
+//   box-shadow: inset 0 0 0 8px var(--primary-color);  ← inset 8px ring
+//   span { background: var(--white); }                 ← 34×34 inner circle
+//   span::before/::after { color: var(--black); }      ← arrow icon
+//   .progress-circle path { stroke: var(--secondary-color); }
+//
+// 변경: fill · inset ring · stroke 만 색 치환. 외곽에 부드러운 glow 추가.
+// 보존: span(흰색 inner circle) · arrow(검정) · position · scroll·hover
+//       animation · SVG 구조 · 8px ring 두께.
+// =============================================================
+body:has(.cluster-px-theme) {
+  .progress-wrap {
+    background: #1E9503 !important;
+    box-shadow:
+      inset 0 0 0 8px #1E9503,
+      0 0 12px rgba(30, 149, 3, 0.35),
+      0 0 20px rgba(178, 255, 143, 0.18) !important;
+  }
+
+  .progress-wrap span {
+    background: #fff !important;
+  }
+
+  .progress-wrap .progress-circle path {
+    stroke: #B2FF8F !important;
+  }
+}

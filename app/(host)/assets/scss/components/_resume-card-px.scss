@@ -36,10 +36,7 @@
 // ─────────────────────────────────────────────
 .cluster-px-theme .resume-card,
 .resume-card.px-theme {
-  // _resume-card.scss line 605
-  .major-text {
-    color: var(--px-accent-soft, #B2FF8F);
-  }
+  // .major-text 의 색 처리는 아래 3b) 블록에서 처리(본문 #fff + 화살표만 PX green).
 
   // _resume-card.scss line 761 (작은 dot)
   .stat-row .stat-dot {
@@ -147,5 +144,39 @@
   }
   &::-webkit-scrollbar-thumb:hover {
     background: var(--px-accent, #1E9503) !important;
+  }
+}
+
+// =============================================================
+// 5) resume-details 잔여 yellow/gold 강제 override
+// =============================================================
+// _resume-card.scss 의 base 규칙
+//   - .detail-icon { filter: brightness(0) invert(0.77) sepia(1) saturate(1.79); } (yellow tint)
+//   - .major-text  { color: #ffec8f; }
+//   - .text .sub-text { color: #999; }
+// 이 PX scope 에서 다시 노란/회색 톤으로 끌어내려 학과명·아이콘이 보정되지 않음.
+// 이미 PNG 가 `*-px.png` (green-tinted) 로 교체되어 있으므로 filter 자체가
+// 불필요 → none 강제. 텍스트/화살표 stroke 도 동일 강도(!important)로 PX green 고정.
+// 본 블록은 의도적으로 파일 최하단에 위치 (cascade 우선순위 확보).
+.cluster-px-theme {
+  .resume-card {
+    .resume-details {
+
+      .detail-icon {
+        filter: none !important;
+      }
+
+      .major-text {
+        color: #B2FF8F !important;
+      }
+
+      .major-text svg path {
+        stroke: #B2FF8F !important;
+      }
+
+      .sub-text {
+        color: #B2FF8F !important;
+      }
+    }
   }
 }
