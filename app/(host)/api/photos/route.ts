@@ -6,187 +6,236 @@ import { extractTargetUserId } from "@/lib/admin";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// 6장 매핑:
-//   사진[1] sidebarPhoto → user_profiles.profile_photo_url
-//   사진[2] mainPhoto    → user_introductions.sub_photo_5
-//   사진[3~6] subPhotos  → user_introductions.sub_photo_1~4
+// 사진 매핑 (실제 supabase schema 기준, 2026-05-12):
+//   사이드바       → user_profiles.profile_photo_url           (canonical profile photo)
+//   메인 (cluster) → user_cluster2.main_photo_url
+//   서브 4 (육각형) → user_cluster2.sub_photo_1_url ~ sub_photo_4_url
+// 정책:
+//   user_cluster2 row 가 없으면 첫 PUT 에서 upsert by user_id.
+//   user_introductions 는 더 이상 사진을 보관하지 않는다 (schema 에 컬럼 없음).
 
-// GET: 사용자 프로필 사진 조회 (userId 쿼리 파라미터로 다른 유저 조회 가능)
+const TAG = "[api/photos]";
+
+// blob:/data:/file: 같은 local preview URL 은 storage 에 보존되지 않으므로
+// DB 에 저장하지 않는다 (client 측 sanitize 의 백업망).
+function sanitizePersistedUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (
+    trimmed.startsWith("blob:") ||
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("file:")
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
+function isLocalPreviewUrl(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    (value.startsWith("blob:") ||
+      value.startsWith("data:") ||
+      value.startsWith("file:"))
+  );
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const targetUserId = searchParams.get('userId');
+    const targetUserId = searchParams.get("userId");
 
     if (!supabaseAdmin) {
+      console.error(TAG, "supabaseAdmin missing — SUPABASE_SERVICE_ROLE_KEY 누락");
       return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
     }
 
-    let profileId: string;
-    let sidebarPhotoUrl: string | null = null;
+    let userId: string | null = null;
 
     if (targetUserId) {
-      // 특정 유저 조회: 프로필 + 서브사진 병렬 조회
-      const [profileResult, introResult] = await Promise.all([
-        supabaseAdmin
-          .from("user_profiles")
-          .select("user_id, profile_photo_url")
-          .eq("user_id", targetUserId)
-          .maybeSingle(),
-        supabaseAdmin
-          .from("user_introductions")
-          .select("sub_photo_1, sub_photo_2, sub_photo_3, sub_photo_4, sub_photo_5")
-          .eq("user_id", targetUserId)
-          .maybeSingle(),
-      ]);
-
-      if (profileResult.error || !profileResult.data) {
+      const { data, error } = await supabaseAdmin
+        .from("user_profiles")
+        .select("user_id")
+        .eq("user_id", targetUserId)
+        .maybeSingle();
+      if (error) {
+        console.error(TAG, "GET user_profiles lookup failed", error);
         return NextResponse.json(
-          { error: "프로필을 찾을 수 없습니다." },
-          { status: 404 }
+          { error: error.message },
+          { status: 500 },
         );
       }
-
-      const sidebar = profileResult.data.profile_photo_url;
-      const introduction = introResult.data;
-      return NextResponse.json({
-        success: true,
-        data: {
-          sidebarPhoto: sidebar,
-          mainPhoto: introduction?.sub_photo_5 ?? null,
-          subPhotos: introduction
-            ? [introduction.sub_photo_1, introduction.sub_photo_2, introduction.sub_photo_3, introduction.sub_photo_4]
-            : [null, null, null, null],
-        },
-      });
+      if (!data?.user_id) {
+        return NextResponse.json(
+          { error: "프로필을 찾을 수 없습니다." },
+          { status: 404 },
+        );
+      }
+      userId = data.user_id as string;
     } else {
-      const { profile, error } = await getUserProfile<{ user_id: string; profile_photo_url: string | null }>("user_id, profile_photo_url");
+      const { profile, error } = await getUserProfile<{
+        user_id: string;
+        profile_photo_url: string | null;
+      }>("user_id, profile_photo_url");
 
       if (error) {
         return NextResponse.json({ error: error.message }, { status: error.status });
       }
-
-      profileId = profile.user_id;
-      sidebarPhotoUrl = profile.profile_photo_url;
+      userId = profile.user_id;
     }
 
-    // user_introductions에서 서브 사진 조회 (본인)
-    const { data: introduction } = await supabaseAdmin
-      .from("user_introductions")
-      .select("sub_photo_1, sub_photo_2, sub_photo_3, sub_photo_4, sub_photo_5")
-      .eq("user_id", profileId)
-      .maybeSingle();
+    // sidebar = user_profiles.profile_photo_url
+    // main/sub = user_cluster2
+    const [profileRes, clusterRes] = await Promise.all([
+      supabaseAdmin
+        .from("user_profiles")
+        .select("profile_photo_url")
+        .eq("user_id", userId)
+        .maybeSingle(),
+      supabaseAdmin
+        .from("user_cluster2")
+        .select(
+          "main_photo_url, sub_photo_1_url, sub_photo_2_url, sub_photo_3_url, sub_photo_4_url",
+        )
+        .eq("user_id", userId)
+        .maybeSingle(),
+    ]);
+
+    if (profileRes.error) {
+      console.error(TAG, "GET user_profiles failed", profileRes.error);
+      return NextResponse.json(
+        { error: profileRes.error.message },
+        { status: 500 },
+      );
+    }
+    if (clusterRes.error) {
+      console.error(TAG, "GET user_cluster2 failed", clusterRes.error);
+      return NextResponse.json(
+        { error: clusterRes.error.message },
+        { status: 500 },
+      );
+    }
+
+    const sidebarPhoto = profileRes.data?.profile_photo_url ?? null;
+    const cluster = clusterRes.data ?? null;
 
     return NextResponse.json({
       success: true,
       data: {
-        sidebarPhoto: sidebarPhotoUrl,
-        mainPhoto: introduction?.sub_photo_5 ?? sidebarPhotoUrl,
-        subPhotos: introduction
-          ? [
-              introduction.sub_photo_1,
-              introduction.sub_photo_2,
-              introduction.sub_photo_3,
-              introduction.sub_photo_4,
-            ]
-          : [null, null, null, null],
+        sidebarPhoto,
+        mainPhoto: cluster?.main_photo_url ?? null,
+        subPhotos: [
+          cluster?.sub_photo_1_url ?? null,
+          cluster?.sub_photo_2_url ?? null,
+          cluster?.sub_photo_3_url ?? null,
+          cluster?.sub_photo_4_url ?? null,
+        ],
       },
     });
   } catch (error) {
-    console.error("사진 조회 API 오류:", error);
+    console.error(TAG, "GET unexpected error", error);
     return NextResponse.json(
-      { error: "서버 오류가 발생했습니다." },
-      { status: 500 }
+      { error: error instanceof Error ? error.message : "서버 오류" },
+      { status: 500 },
     );
   }
 }
 
-// PUT: 사용자 프로필 사진 저장 (6장)
 export async function PUT(request: Request) {
   try {
     const targetUserId = extractTargetUserId(request);
-    const { profile, error } = await getUserProfile<{ user_id: string }>("user_id", targetUserId);
+    const { profile, error } = await getUserProfile<{ user_id: string }>(
+      "user_id",
+      targetUserId,
+    );
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
 
     if (!supabaseAdmin) {
+      console.error(TAG, "supabaseAdmin missing — SUPABASE_SERVICE_ROLE_KEY 누락");
       return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
     }
 
     const body = await request.json();
-    const { sidebarPhoto, mainPhoto, subPhotos } = body;
+    const { sidebarPhoto, mainPhoto, subPhotos } = body as {
+      sidebarPhoto?: string | null;
+      mainPhoto?: string | null;
+      subPhotos?: (string | null)[];
+    };
 
-    // Sidebar 사진 업데이트 (user_profiles.profile_photo_url)
+    // local preview URL 카운트 (진단용 로그)
+    let strippedCount = 0;
+    if (isLocalPreviewUrl(sidebarPhoto)) strippedCount += 1;
+    if (isLocalPreviewUrl(mainPhoto)) strippedCount += 1;
+    if (Array.isArray(subPhotos)) {
+      for (const s of subPhotos) if (isLocalPreviewUrl(s)) strippedCount += 1;
+    }
+    if (strippedCount > 0) {
+      console.warn(TAG, "stripped local preview URLs", {
+        userId: profile.user_id,
+        count: strippedCount,
+      });
+    }
+
+    const userId = profile.user_id;
+    const nowIso = new Date().toISOString();
+
+    // 1) Sidebar → user_profiles.profile_photo_url (blob/data/file → null)
     if (sidebarPhoto !== undefined) {
       const { error: sidebarError } = await supabaseAdmin
         .from("user_profiles")
         .update({
-          profile_photo_url: sidebarPhoto,
-          updated_at: new Date().toISOString(),
+          profile_photo_url: sanitizePersistedUrl(sidebarPhoto),
+          updated_at: nowIso,
         })
-        .eq("user_id", profile.user_id);
+        .eq("user_id", userId);
 
       if (sidebarError) {
-        console.error("Sidebar 사진 업데이트 오류:", sidebarError);
+        console.error(TAG, "PUT user_profiles.profile_photo_url failed", sidebarError);
         return NextResponse.json(
-          { error: "Sidebar 사진 저장에 실패했습니다." },
-          { status: 500 }
+          {
+            error: `Sidebar 사진 저장 실패: ${sidebarError.message}`,
+          },
+          { status: 500 },
         );
       }
     }
 
-    // 메인 사진(cluster-2 center) + 서브 사진(4 hexagons) 업데이트 (user_introductions)
+    // 2) Main + sub 4 → user_cluster2 (upsert by user_id, blob/data/file → null)
     if (mainPhoto !== undefined || (subPhotos && Array.isArray(subPhotos))) {
-      const { data: existingIntro } = await supabaseAdmin
-        .from("user_introductions")
-        .select("id")
-        .eq("user_id", profile.user_id)
-        .maybeSingle();
-
-      const introData: Record<string, string | null> = {
-        updated_at: new Date().toISOString(),
-      };
-      if (subPhotos && Array.isArray(subPhotos)) {
-        introData.sub_photo_1 = subPhotos[0] || null;
-        introData.sub_photo_2 = subPhotos[1] || null;
-        introData.sub_photo_3 = subPhotos[2] || null;
-        introData.sub_photo_4 = subPhotos[3] || null;
-      }
+      const cluster2Patch: Record<string, string | null> = {};
       if (mainPhoto !== undefined) {
-        introData.sub_photo_5 = mainPhoto || null;
+        cluster2Patch.main_photo_url = sanitizePersistedUrl(mainPhoto);
+      }
+      if (subPhotos && Array.isArray(subPhotos)) {
+        cluster2Patch.sub_photo_1_url = sanitizePersistedUrl(subPhotos[0]);
+        cluster2Patch.sub_photo_2_url = sanitizePersistedUrl(subPhotos[1]);
+        cluster2Patch.sub_photo_3_url = sanitizePersistedUrl(subPhotos[2]);
+        cluster2Patch.sub_photo_4_url = sanitizePersistedUrl(subPhotos[3]);
       }
 
-      if (existingIntro) {
-        const { error: subError } = await supabaseAdmin
-          .from("user_introductions")
-          .update(introData)
-          .eq("user_id", profile.user_id);
+      const { error: clusterError } = await supabaseAdmin
+        .from("user_cluster2")
+        .upsert(
+          {
+            user_id: userId,
+            ...cluster2Patch,
+            updated_at: nowIso,
+          },
+          { onConflict: "user_id" },
+        );
 
-        if (subError) {
-          console.error("서브 사진 업데이트 오류:", subError);
-          return NextResponse.json(
-            { error: "서브 사진 저장에 실패했습니다." },
-            { status: 500 }
-          );
-        }
-      } else {
-        const { error: insertError } = await supabaseAdmin
-          .from("user_introductions")
-          .insert({
-            id: crypto.randomUUID(),
-            user_id: profile.user_id,
-            ...introData,
-            created_at: new Date().toISOString(),
-          });
-
-        if (insertError) {
-          console.error("서브 사진 생성 오류:", insertError);
-          return NextResponse.json(
-            { error: "서브 사진 저장에 실패했습니다." },
-            { status: 500 }
-          );
-        }
+      if (clusterError) {
+        console.error(TAG, "PUT user_cluster2 upsert failed", clusterError);
+        return NextResponse.json(
+          {
+            error: `Cluster2 사진 저장 실패: ${clusterError.message}`,
+          },
+          { status: 500 },
+        );
       }
     }
 
@@ -195,10 +244,10 @@ export async function PUT(request: Request) {
       message: "사진이 성공적으로 저장되었습니다.",
     });
   } catch (error) {
-    console.error("사진 저장 API 오류:", error);
+    console.error(TAG, "PUT unexpected error", error);
     return NextResponse.json(
-      { error: "서버 오류가 발생했습니다." },
-      { status: 500 }
+      { error: error instanceof Error ? error.message : "서버 오류" },
+      { status: 500 },
     );
   }
 }

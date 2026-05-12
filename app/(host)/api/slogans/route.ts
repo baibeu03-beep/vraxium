@@ -1,271 +1,230 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
-import { extractTargetUserId, isAdminEmail } from "@/lib/admin";
+import { getUserProfile } from "@/lib/get-user-profile";
+import { extractTargetUserId } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// GET: 슬로건 조회 (userId 파라미터로 다른 유저 조회 가능)
+// Cluster2 슬로건 매핑 (canonical, 2026-05-12):
+//   user_introductions.slogan_1 / slogan_2 / slogan_3
+//
+// schema 에 slogan_{1,2,3}_tag / slogan_{1,2,3}_rating 컬럼은 존재하지 않으므로
+// API 는 content (text) 만 다룬다. UI 의 tag / rating 은 자동 무시.
+
+const TAG = "[api/slogans]";
+
+const MAX_SLOGAN_LENGTH = 86;
+
+function errorPayload(step: string, message: string, details?: unknown) {
+  return {
+    step,
+    error: message,
+    ...(details !== undefined ? { details } : {}),
+  };
+}
+
+function readSloganContent(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+  if (typeof value === "object") {
+    const content = (value as { content?: unknown }).content;
+    if (typeof content === "string") {
+      const trimmed = content.trim();
+      return trimmed || null;
+    }
+  }
+  return null;
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const targetUserId = searchParams.get("userId");
 
     if (!supabaseAdmin) {
-      return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
+      console.error(TAG, "supabaseAdmin missing — SUPABASE_SERVICE_ROLE_KEY 누락");
+      return NextResponse.json(
+        errorPayload("init", "서버 설정 오류 (SUPABASE_SERVICE_ROLE_KEY 누락)"),
+        { status: 500 },
+      );
     }
 
-    let profile;
+    let userId: string | null = null;
 
     if (targetUserId) {
-      // 특정 유저의 슬로건 조회 (공개 접근 가능)
       const { data, error } = await supabaseAdmin
         .from("user_profiles")
         .select("user_id")
         .eq("user_id", targetUserId)
         .maybeSingle();
-
-      if (error || !data) {
+      if (error) {
+        console.error(TAG, "GET user_profiles lookup failed", error);
         return NextResponse.json(
-          { error: "프로필을 찾을 수 없습니다." },
-          { status: 404 }
+          errorPayload("profile_lookup", error.message, error),
+          { status: 500 },
         );
       }
-      profile = data;
+      if (!data?.user_id) {
+        return NextResponse.json(
+          errorPayload("profile_missing", "프로필을 찾을 수 없습니다."),
+          { status: 404 },
+        );
+      }
+      userId = data.user_id as string;
     } else {
-      // 현재 로그인 유저의 슬로건 조회 (로그인 필요)
-      const session = await getServerSession(authOptions);
-
-      if (!session?.user?.email) {
+      const { profile, error } = await getUserProfile<{ user_id: string }>(
+        "user_id",
+      );
+      if (error) {
         return NextResponse.json(
-          { error: "로그인이 필요합니다." },
-          { status: 401 }
+          errorPayload("session_profile", error.message),
+          { status: error.status },
         );
       }
-
-      // 1차: auth_email (user_profiles에 email 컬럼 없음 — OAuth 이메일은 auth_email에 저장)
-      const { data: profileByAuth } = await supabaseAdmin
-        .from("user_profiles")
-        .select("user_id")
-        .eq("auth_email", session.user.email)
-        .maybeSingle();
-
-      if (profileByAuth) {
-        profile = profileByAuth;
-      }
-
-      // 2차: session UUID
-      if (!profile && session.user?.id) {
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (uuidRegex.test(session.user.id)) {
-          const { data: profileById } = await supabaseAdmin
-            .from("user_profiles")
-            .select("user_id")
-            .eq("user_id", session.user.id)
-            .maybeSingle();
-
-          if (profileById) {
-            profile = profileById;
-          }
-        }
-      }
-
-      if (!profile) {
-        return NextResponse.json(
-          { error: "프로필을 찾을 수 없습니다." },
-          { status: 404 }
-        );
-      }
+      userId = profile.user_id;
     }
 
-    // user_introductions에서 슬로건 조회
-    const { data: introduction } = await supabaseAdmin
+    const { data: intro, error: introError } = await supabaseAdmin
       .from("user_introductions")
-      .select("slogan_1, slogan_2, slogan_3, slogan_1_tag, slogan_2_tag, slogan_3_tag, slogan_1_rating, slogan_2_rating, slogan_3_rating")
-      .eq("user_id", profile.user_id)
+      .select("slogan_1, slogan_2, slogan_3")
+      .eq("user_id", userId)
       .maybeSingle();
 
-    // engName 마스킹: user_profiles에 eng_name 컬럼이 없어 항상 null로 응답.
-    // (필드 자체는 기존 client 호환을 위해 유지)
-    const engNameDisplay: string | null = null;
+    if (introError) {
+      console.error(TAG, "GET user_introductions failed", introError);
+      return NextResponse.json(
+        errorPayload("introductions_select", introError.message, introError),
+        { status: 500 },
+      );
+    }
 
     return NextResponse.json({
       success: true,
       data: {
+        // UI 호환을 위해 {content,option,rating} shape 유지. option/rating 은
+        // DB 컬럼이 없으므로 항상 빈 값/0 으로 응답한다.
         slogan1: {
-          content: introduction?.slogan_1 || null,
-          option: introduction?.slogan_1_tag || null,
-          rating: introduction?.slogan_1_rating ?? 0,
+          content: intro?.slogan_1 ?? null,
+          option: null,
+          rating: 0,
         },
         slogan2: {
-          content: introduction?.slogan_2 || null,
-          option: introduction?.slogan_2_tag || null,
-          rating: introduction?.slogan_2_rating ?? 0,
+          content: intro?.slogan_2 ?? null,
+          option: null,
+          rating: 0,
         },
         slogan3: {
-          content: introduction?.slogan_3 || null,
-          option: introduction?.slogan_3_tag || null,
-          rating: introduction?.slogan_3_rating ?? 0,
+          content: intro?.slogan_3 ?? null,
+          option: null,
+          rating: 0,
         },
-        engName: engNameDisplay,
+        engName: null,
       },
     });
   } catch (error) {
-    console.error("슬로건 조회 API 오류:", error);
+    console.error(TAG, "GET unexpected error", error);
     return NextResponse.json(
-      { error: "서버 오류가 발생했습니다." },
-      { status: 500 }
+      errorPayload(
+        "unexpected",
+        error instanceof Error ? error.message : "서버 오류",
+        error instanceof Error ? { stack: error.stack } : undefined,
+      ),
+      { status: 500 },
     );
   }
 }
 
-// PUT: 슬로건 저장
 export async function PUT(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const targetUserId = extractTargetUserId(request);
+    const { profile, error } = await getUserProfile<{ user_id: string }>(
+      "user_id",
+      targetUserId,
+    );
 
-    if (!session?.user?.email) {
+    if (error) {
       return NextResponse.json(
-        { error: "로그인이 필요합니다." },
-        { status: 401 }
+        errorPayload("session_profile", error.message),
+        { status: error.status },
       );
     }
 
     if (!supabaseAdmin) {
-      return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
-    }
-
-    const body = await request.json();
-    const { slogan1, slogan2, slogan3 } = body;
-
-    // 글자수 검증 (최대 86자)
-    const MAX_SLOGAN_LENGTH = 86;
-    if (slogan1?.content && slogan1.content.length > MAX_SLOGAN_LENGTH) {
+      console.error(TAG, "supabaseAdmin missing — SUPABASE_SERVICE_ROLE_KEY 누락");
       return NextResponse.json(
-        { error: `슬로건 1이 ${MAX_SLOGAN_LENGTH}자를 초과했습니다. (현재 ${slogan1.content.length}자)` },
-        { status: 400 }
-      );
-    }
-    if (slogan2?.content && slogan2.content.length > MAX_SLOGAN_LENGTH) {
-      return NextResponse.json(
-        { error: `슬로건 2가 ${MAX_SLOGAN_LENGTH}자를 초과했습니다. (현재 ${slogan2.content.length}자)` },
-        { status: 400 }
-      );
-    }
-    if (slogan3?.content && slogan3.content.length > MAX_SLOGAN_LENGTH) {
-      return NextResponse.json(
-        { error: `슬로건 3이 ${MAX_SLOGAN_LENGTH}자를 초과했습니다. (현재 ${slogan3.content.length}자)` },
-        { status: 400 }
+        errorPayload("init", "서버 설정 오류 (SUPABASE_SERVICE_ROLE_KEY 누락)"),
+        { status: 500 },
       );
     }
 
-    // 어드민이 다른 유저를 대상으로 편집하는 경우
-    const targetUserId = extractTargetUserId(request);
-    let profile: { user_id: string } | null = null;
+    const body = await request.json().catch((parseError) => {
+      console.error(TAG, "PUT body parse failed", parseError);
+      return null;
+    });
+    if (!body || typeof body !== "object") {
+      return NextResponse.json(
+        errorPayload("body_parse", "요청 본문이 올바르지 않습니다."),
+        { status: 400 },
+      );
+    }
 
-    if (targetUserId && isAdminEmail(session.user.email)) {
-      const { data: targetProfile } = await supabaseAdmin
-        .from("user_profiles")
-        .select("user_id")
-        .eq("user_id", targetUserId)
-        .maybeSingle();
-      profile = targetProfile;
-    } else {
-      // user_profiles에서 사용자 ID 조회 (1차: auth_email, 2차: session UUID)
-      // (user_profiles에 email 컬럼 없음)
-      const { data: profileByAuth } = await supabaseAdmin
-        .from("user_profiles")
-        .select("user_id")
-        .eq("auth_email", session.user.email)
-        .maybeSingle();
+    const { slogan1, slogan2, slogan3 } = body as {
+      slogan1?: unknown;
+      slogan2?: unknown;
+      slogan3?: unknown;
+    };
 
-      if (profileByAuth) {
-        profile = profileByAuth;
-      }
+    const slogan_1 = readSloganContent(slogan1);
+    const slogan_2 = readSloganContent(slogan2);
+    const slogan_3 = readSloganContent(slogan3);
 
-      if (!profile && session.user?.id) {
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (uuidRegex.test(session.user.id)) {
-          const { data: profileById } = await supabaseAdmin
-            .from("user_profiles")
-            .select("user_id")
-            .eq("user_id", session.user.id)
-            .maybeSingle();
-
-          if (profileById) {
-            profile = profileById;
-          }
-        }
+    for (const [name, content] of [
+      ["slogan_1", slogan_1],
+      ["slogan_2", slogan_2],
+      ["slogan_3", slogan_3],
+    ] as const) {
+      if (content && content.length > MAX_SLOGAN_LENGTH) {
+        return NextResponse.json(
+          errorPayload(
+            "validation",
+            `${name} 이 ${MAX_SLOGAN_LENGTH}자를 초과했습니다.`,
+            { name, length: content.length, max: MAX_SLOGAN_LENGTH },
+          ),
+          { status: 400 },
+        );
       }
     }
 
-    if (!profile) {
-      return NextResponse.json(
-        { error: "프로필을 찾을 수 없습니다." },
-        { status: 404 }
-      );
-    }
+    const userId = profile.user_id;
+    const nowIso = new Date().toISOString();
 
-    // 기존 레코드 확인
-    const { data: existingIntro } = await supabaseAdmin
+    const { error: upsertError } = await supabaseAdmin
       .from("user_introductions")
-      .select("id")
-      .eq("user_id", profile.user_id)
-      .maybeSingle();
+      .upsert(
+        {
+          user_id: userId,
+          slogan_1,
+          slogan_2,
+          slogan_3,
+          updated_at: nowIso,
+        },
+        { onConflict: "user_id" },
+      );
 
-    // rating 범위 검증 (0~10 자연수)
-    const clampRating = (val: unknown): number => {
-      const n = typeof val === 'number' ? val : 0;
-      return Math.max(0, Math.min(10, Math.round(n)));
-    };
-
-    const sloganData = {
-      slogan_1: slogan1?.content || null,
-      slogan_1_tag: slogan1?.option || null,
-      slogan_1_rating: clampRating(slogan1?.rating),
-      slogan_2: slogan2?.content || null,
-      slogan_2_tag: slogan2?.option || null,
-      slogan_2_rating: clampRating(slogan2?.rating),
-      slogan_3: slogan3?.content || null,
-      slogan_3_tag: slogan3?.option || null,
-      slogan_3_rating: clampRating(slogan3?.rating),
-      updated_at: new Date().toISOString(),
-    };
-
-    if (existingIntro) {
-      // 업데이트
-      const { error: updateError } = await supabaseAdmin
-        .from("user_introductions")
-        .update(sloganData)
-        .eq("user_id", profile.user_id);
-
-      if (updateError) {
-        console.error("슬로건 업데이트 오류:", updateError);
-        return NextResponse.json(
-          { error: "슬로건 저장에 실패했습니다." },
-          { status: 500 }
-        );
-      }
-    } else {
-      // 새로 생성
-      const { error: insertError } = await supabaseAdmin
-        .from("user_introductions")
-        .insert({
-          id: crypto.randomUUID(),
-          user_id: profile.user_id,
-          ...sloganData,
-          created_at: new Date().toISOString(),
-        });
-
-      if (insertError) {
-        console.error("슬로건 생성 오류:", insertError);
-        return NextResponse.json(
-          { error: "슬로건 저장에 실패했습니다." },
-          { status: 500 }
-        );
-      }
+    if (upsertError) {
+      console.error(TAG, "PUT user_introductions upsert failed", upsertError);
+      return NextResponse.json(
+        errorPayload(
+          "introductions_upsert",
+          `슬로건 저장에 실패했습니다: ${upsertError.message}`,
+          upsertError,
+        ),
+        { status: 500 },
+      );
     }
 
     return NextResponse.json({
@@ -273,10 +232,14 @@ export async function PUT(request: Request) {
       message: "슬로건이 성공적으로 저장되었습니다.",
     });
   } catch (error) {
-    console.error("슬로건 저장 API 오류:", error);
+    console.error(TAG, "PUT unexpected error", error);
     return NextResponse.json(
-      { error: "서버 오류가 발생했습니다." },
-      { status: 500 }
+      errorPayload(
+        "unexpected",
+        error instanceof Error ? error.message : "서버 오류",
+        error instanceof Error ? { stack: error.stack } : undefined,
+      ),
+      { status: 500 },
     );
   }
 }

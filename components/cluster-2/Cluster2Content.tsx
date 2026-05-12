@@ -204,17 +204,45 @@ const Cluster2Content = () => {
   };
 
   // 파일 선택 완료
-  const handlePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
+  //   - 즉시 blob URL 로 임시 preview (UX 매끄러움용)
+  //   - 동시에 /api/photos/upload 로 올려 storage public URL 을 받아 교체
+  //   - upload 실패 시 슬롯 비우고 alert
+  // ※ DB 저장 payload 에는 blob URL 을 절대 보내지 않는다 (handleSavePhotos sanitize).
+  const handlePhotoFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    index: number,
+  ) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const previewUrl = URL.createObjectURL(file);
-      setPhotos((prev) => {
-        const newPhotos = [...prev];
-        newPhotos[index] = previewUrl;
-        return newPhotos;
-      });
-    }
     e.target.value = "";
+    if (!file) return;
+
+    const previewUrl = URL.createObjectURL(file);
+    setPhotos((prev) => {
+      const newPhotos = [...prev];
+      newPhotos[index] = previewUrl;
+      return newPhotos;
+    });
+
+    if (isDemoMode) {
+      // demo 모드는 DB 저장이 없으므로 blob 그대로 둠
+      return;
+    }
+
+    setPhotoLoading(true);
+    const uploadedUrl = await uploadPhoto(file, `slot${index}`);
+    setPhotoLoading(false);
+
+    // blob 해제 (성공/실패 관계 없이)
+    URL.revokeObjectURL(previewUrl);
+
+    setPhotos((prev) => {
+      const newPhotos = [...prev];
+      // 사용자가 그 사이에 같은 슬롯을 다시 바꾸지 않았을 때만 교체
+      if (newPhotos[index] === previewUrl) {
+        newPhotos[index] = uploadedUrl ?? null;
+      }
+      return newPhotos;
+    });
   };
 
   // 사진 삭제
@@ -390,15 +418,42 @@ const Cluster2Content = () => {
       setSection1ModalOpen(false);
       return;
     }
+    // blob:/data:/file: 같은 local preview URL 은 DB 에 저장하지 않는다.
+    // (upload 실패한 슬롯, 또는 새로고침 전 임시 state 가 남은 경우)
+    const isLocalPreviewUrl = (value?: string | null) =>
+      !!value &&
+      (value.startsWith("blob:") ||
+        value.startsWith("data:") ||
+        value.startsWith("file:"));
+    const sanitizePersistedUrl = (value?: string | null) => {
+      if (!value) return null;
+      if (isLocalPreviewUrl(value)) return null;
+      return value;
+    };
+
+    const persistedSidebar = sanitizePersistedUrl(nextSidebar);
+    const persistedMain = sanitizePersistedUrl(nextMain);
+    const persistedSubs = nextSubs.map(sanitizePersistedUrl);
+
+    const localOnlyCount =
+      (isLocalPreviewUrl(nextSidebar) ? 1 : 0) +
+      (isLocalPreviewUrl(nextMain) ? 1 : 0) +
+      nextSubs.filter(isLocalPreviewUrl).length;
+    if (localOnlyCount > 0) {
+      showAlert(
+        `${localOnlyCount}개 슬롯의 업로드가 완료되지 않아 해당 슬롯은 저장에서 제외됩니다.`,
+      );
+    }
+
     setPhotoSaving(true);
     try {
       const response = await fetch(apiUrl("/api/photos"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sidebarPhoto: nextSidebar,
-          mainPhoto: nextMain,
-          subPhotos: nextSubs,
+          sidebarPhoto: persistedSidebar,
+          mainPhoto: persistedMain,
+          subPhotos: persistedSubs,
         }),
       });
 

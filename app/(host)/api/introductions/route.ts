@@ -6,126 +6,200 @@ import { extractTargetUserId } from "@/lib/admin";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// GET: 자기소개서 조회 (userId 파라미터로 다른 유저 조회 가능)
+// Cluster2 자기소개서 매핑 (canonical, 2026-05-12):
+//   user_cluster2.growth_story / social_experience / career_direction /
+//                 work_style / personal_story
+// (이전에는 user_introductions 였으나 실제 schema 에 해당 컬럼 없음 — 변경됨)
+
+const TAG = "[api/introductions]";
+
+const ALLOWED_FIELDS = [
+  "growth_story",
+  "social_experience",
+  "career_direction",
+  "work_style",
+  "personal_story",
+] as const;
+type IntroField = (typeof ALLOWED_FIELDS)[number];
+
+function isAllowedField(value: unknown): value is IntroField {
+  return (
+    typeof value === "string" &&
+    (ALLOWED_FIELDS as readonly string[]).includes(value)
+  );
+}
+
+function errorPayload(step: string, message: string, details?: unknown) {
+  return {
+    step,
+    error: message,
+    ...(details !== undefined ? { details } : {}),
+  };
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const targetUserId = searchParams.get("userId");
 
     if (!supabaseAdmin) {
-      return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
+      console.error(TAG, "supabaseAdmin missing — SUPABASE_SERVICE_ROLE_KEY 누락");
+      return NextResponse.json(
+        errorPayload("init", "서버 설정 오류 (SUPABASE_SERVICE_ROLE_KEY 누락)"),
+        { status: 500 },
+      );
     }
 
-    let userId: string;
+    let userId: string | null = null;
 
     if (targetUserId) {
-      userId = targetUserId;
-    } else {
-      const { profile, error } = await getUserProfile();
-
+      const { data, error } = await supabaseAdmin
+        .from("user_profiles")
+        .select("user_id")
+        .eq("user_id", targetUserId)
+        .maybeSingle();
       if (error) {
-        return NextResponse.json({ error: error.message }, { status: error.status });
+        console.error(TAG, "GET user_profiles lookup failed", error);
+        return NextResponse.json(
+          errorPayload("profile_lookup", error.message, error),
+          { status: 500 },
+        );
       }
-
-      userId = profile.id;
+      if (!data?.user_id) {
+        return NextResponse.json(
+          errorPayload("profile_missing", "프로필을 찾을 수 없습니다."),
+          { status: 404 },
+        );
+      }
+      userId = data.user_id as string;
+    } else {
+      const { profile, error } = await getUserProfile<{ user_id: string }>(
+        "user_id",
+      );
+      if (error) {
+        return NextResponse.json(
+          errorPayload("session_profile", error.message),
+          { status: error.status },
+        );
+      }
+      userId = profile.user_id;
     }
 
-    // user_introductions에서 자기소개서 조회
-    const { data: introduction } = await supabaseAdmin
-      .from("user_introductions")
-      .select("growth_story, social_experience, career_direction, work_style, personal_story")
+    const { data: cluster, error: clusterError } = await supabaseAdmin
+      .from("user_cluster2")
+      .select(ALLOWED_FIELDS.join(","))
       .eq("user_id", userId)
       .maybeSingle();
+
+    if (clusterError) {
+      console.error(TAG, "GET user_cluster2 failed", clusterError);
+      return NextResponse.json(
+        errorPayload("cluster2_select", clusterError.message, clusterError),
+        { status: 500 },
+      );
+    }
+
+    const data = cluster as Partial<Record<IntroField, string | null>> | null;
 
     return NextResponse.json({
       success: true,
       data: {
-        growthStory: introduction?.growth_story || null,
-        socialExperience: introduction?.social_experience || null,
-        careerDirection: introduction?.career_direction || null,
-        workStyle: introduction?.work_style || null,
-        personalStory: introduction?.personal_story || null,
+        growthStory: data?.growth_story ?? null,
+        socialExperience: data?.social_experience ?? null,
+        careerDirection: data?.career_direction ?? null,
+        workStyle: data?.work_style ?? null,
+        personalStory: data?.personal_story ?? null,
       },
     });
   } catch (error) {
-    console.error("자기소개서 조회 API 오류:", error);
+    console.error(TAG, "GET unexpected error", error);
     return NextResponse.json(
-      { error: "서버 오류가 발생했습니다." },
-      { status: 500 }
+      errorPayload(
+        "unexpected",
+        error instanceof Error ? error.message : "서버 오류",
+        error instanceof Error ? { stack: error.stack } : undefined,
+      ),
+      { status: 500 },
     );
   }
 }
 
-// PUT: 자기소개서 저장
 export async function PUT(request: Request) {
   try {
     const targetUserId = extractTargetUserId(request);
-    const { profile, error } = await getUserProfile("id", targetUserId);
+    const { profile, error } = await getUserProfile<{ user_id: string }>(
+      "user_id",
+      targetUserId,
+    );
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
-    const body = await request.json();
-    const { field, content } = body;
-
-    // 허용된 필드인지 확인
-    const allowedFields = ["growth_story", "social_experience", "career_direction", "work_style", "personal_story"];
-    if (!allowedFields.includes(field)) {
       return NextResponse.json(
-        { error: "잘못된 필드입니다." },
-        { status: 400 }
+        errorPayload("session_profile", error.message),
+        { status: error.status },
       );
     }
 
     if (!supabaseAdmin) {
-      return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
+      console.error(TAG, "supabaseAdmin missing — SUPABASE_SERVICE_ROLE_KEY 누락");
+      return NextResponse.json(
+        errorPayload("init", "서버 설정 오류 (SUPABASE_SERVICE_ROLE_KEY 누락)"),
+        { status: 500 },
+      );
     }
 
-    // 기존 레코드 확인
-    const { data: existingIntro } = await supabaseAdmin
-      .from("user_introductions")
-      .select("id")
-      .eq("user_id", profile.id)
-      .maybeSingle();
+    const body = await request.json().catch((parseError) => {
+      console.error(TAG, "PUT body parse failed", parseError);
+      return null;
+    });
+    if (!body || typeof body !== "object") {
+      return NextResponse.json(
+        errorPayload("body_parse", "요청 본문이 올바르지 않습니다."),
+        { status: 400 },
+      );
+    }
 
-    const introData = {
-      [field]: content || null,
-      updated_at: new Date().toISOString(),
+    const { field, content } = body as {
+      field?: unknown;
+      content?: unknown;
     };
 
-    if (existingIntro) {
-      // 업데이트
-      const { error: updateError } = await supabaseAdmin
-        .from("user_introductions")
-        .update(introData)
-        .eq("user_id", profile.id);
+    if (!isAllowedField(field)) {
+      return NextResponse.json(
+        errorPayload("validation", "잘못된 필드입니다.", {
+          received: field,
+          allowed: ALLOWED_FIELDS,
+        }),
+        { status: 400 },
+      );
+    }
 
-      if (updateError) {
-        console.error("자기소개서 업데이트 오류:", updateError);
-        return NextResponse.json(
-          { error: "자기소개서 저장에 실패했습니다." },
-          { status: 500 }
-        );
-      }
-    } else {
-      // 새로 생성
-      const { error: insertError } = await supabaseAdmin
-        .from("user_introductions")
-        .insert({
-          id: crypto.randomUUID(),
-          user_id: profile.id,
-          ...introData,
-          created_at: new Date().toISOString(),
-        });
+    const normalizedContent =
+      typeof content === "string" ? content : content == null ? null : null;
 
-      if (insertError) {
-        console.error("자기소개서 생성 오류:", insertError);
-        return NextResponse.json(
-          { error: "자기소개서 저장에 실패했습니다." },
-          { status: 500 }
-        );
-      }
+    const userId = profile.user_id;
+    const nowIso = new Date().toISOString();
+
+    const { error: upsertError } = await supabaseAdmin
+      .from("user_cluster2")
+      .upsert(
+        {
+          user_id: userId,
+          [field]: normalizedContent,
+          updated_at: nowIso,
+        },
+        { onConflict: "user_id" },
+      );
+
+    if (upsertError) {
+      console.error(TAG, "PUT user_cluster2 upsert failed", upsertError);
+      return NextResponse.json(
+        errorPayload(
+          "cluster2_upsert",
+          `자기소개서 저장에 실패했습니다: ${upsertError.message}`,
+          upsertError,
+        ),
+        { status: 500 },
+      );
     }
 
     return NextResponse.json({
@@ -133,10 +207,14 @@ export async function PUT(request: Request) {
       message: "자기소개서가 성공적으로 저장되었습니다.",
     });
   } catch (error) {
-    console.error("자기소개서 저장 API 오류:", error);
+    console.error(TAG, "PUT unexpected error", error);
     return NextResponse.json(
-      { error: "서버 오류가 발생했습니다." },
-      { status: 500 }
+      errorPayload(
+        "unexpected",
+        error instanceof Error ? error.message : "서버 오류",
+        error instanceof Error ? { stack: error.stack } : undefined,
+      ),
+      { status: 500 },
     );
   }
 }

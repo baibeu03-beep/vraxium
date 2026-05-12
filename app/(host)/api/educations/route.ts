@@ -7,95 +7,120 @@ import { normalizeSchool, normalizeMajor } from "@/lib/schoolNormalize";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// 한글 → 영문 변환 매핑
-const eduLevelToDb: { [key: string]: string } = {
-  '대학원': 'graduate',
-  '대학교': 'university',
-  '전문대학': 'college',
-  '고등학교': 'high',
-  '중학교': 'middle',
-  '초등학교': 'elementary',
-  '기타': 'other',
+// Cluster2 학력 매핑 (canonical, 2026-05-12):
+//   user_educations
+//     id uuid (PK)
+//     user_id uuid
+//     school_name text
+//     major_name_1 text
+//     sort_order integer  — 0 = 대표학력
+//     is_primary boolean  — true = 대표학력 (sort_order=0 과 동기화)
+//     created_at timestamptz
+//     updated_at timestamptz
+//
+// schema 에 없는 컬럼 (status, education_level, major_category, grade_*,
+// admission_year, graduation_year, note, major_name_2, major_name_3) 은
+// API 저장 대상에서 제외한다. 기존 client UI 호환을 위해 GET 응답에서는
+// 동일 키를 null / "" 로 채워 noop fallback 으로 내려준다.
+
+const TAG = "[api/educations]";
+
+type EducationInputUI = {
+  // client 가 보내는 16 필드 — schema 일치 4 개 외 나머지는 무시.
+  eduLevel?: string;
+  school?: string;
+  status?: string;
+  category?: string;
+  major1?: string;
+  major2?: string;
+  major3?: string;
+  startYear?: string;
+  startMonth?: string;
+  endYear?: string;
+  endMonth?: string;
+  gradeMax?: string;
+  gradeValue?: string;
+  description?: string;
+  isFinal?: boolean;
+  // 새 client 가 직접 4컬럼 명으로 보낼 때 (admin editor 등) 대응
+  school_name?: string;
+  major_name_1?: string;
+  sort_order?: number;
+  is_primary?: boolean;
 };
 
-const statusToDb: { [key: string]: string } = {
-  '재학': 'enrolled',
-  '졸업': 'graduated',
-  '졸예': 'expected',
-  '졸업예정': 'expected',
-  '휴학': 'on_leave',
-  '중퇴': 'dropped',
-  '자퇴': 'dropped',
-};
+function errorPayload(step: string, message: string, details?: unknown) {
+  return {
+    step,
+    error: message,
+    ...(details !== undefined ? { details } : {}),
+  };
+}
 
-const categoryToDb: { [key: string]: string } = {
-  '인문': 'humanities',
-  '어문': 'linguistics',
-  '사회': 'social_science',
-  '자연': 'natural_science',
-  '공학': 'engineering',
-  '경영': 'business',
-  '상경': 'business',
-  '예체능': 'arts_physical',
-  '기타': 'other',
-};
+function toUiDto(row: {
+  id: string | number;
+  school_name: string | null;
+  major_name_1: string | null;
+  sort_order: number | null;
+  is_primary: boolean | null;
+}) {
+  const sortOrder =
+    typeof row.sort_order === "number"
+      ? row.sort_order
+      : Number(row.sort_order ?? 0);
+  const isPrimary = Boolean(row.is_primary) || sortOrder === 0;
 
-const gradeMaxToDb: { [key: string]: string } = {
-  '4.5': '4.5',
-  '4.3': '4.3',
-  '100%': '100%',
-  '9등급': '9grade',
-  '기타': 'other',
-};
+  return {
+    id: row.id,
+    // canonical 4 컬럼 (정식 응답 키 — 새 client 가 사용)
+    schoolName: row.school_name ?? null,
+    majorName1: row.major_name_1 ?? null,
+    sortOrder,
+    isPrimary,
+    // 기존 UI 호환용 키
+    eduLevel: "",
+    school: row.school_name ?? "",
+    status: "",
+    category: "-",
+    major1: row.major_name_1 ?? "-",
+    major2: "-",
+    major3: "-",
+    period: "",
+    startYear: "",
+    startMonth: "",
+    endYear: "",
+    endMonth: "",
+    gradeMax: "-",
+    gradeValue: "-",
+    description: "",
+    // schema 에는 없지만 UI 가 의존하는 derived/extra
+    educationLevel: null,
+    majorCategory: null,
+    majorName2: null,
+    majorName3: null,
+    admissionYear: null,
+    graduationYear: null,
+    gradeMaxType: null,
+    note: null,
+    isFinal: isPrimary,
+  };
+}
 
-// 영문 → 한글 변환 매핑
-const eduLevelFromDb: { [key: string]: string } = {
-  'graduate': '대학원',
-  'university': '대학교',
-  'college': '전문대학',
-  'high': '고등학교',
-  'middle': '중학교',
-  'elementary': '초등학교',
-  'other': '기타',
-};
-
-const statusFromDb: { [key: string]: string } = {
-  'enrolled': '재학',
-  'graduated': '졸업',
-  'expected': '졸예',
-  'on_leave': '휴학',
-  'dropped': '중퇴',
-};
-
-const categoryFromDb: { [key: string]: string } = {
-  'humanities': '인문',
-  'linguistics': '어문',
-  'social_science': '사회',
-  'natural_science': '자연',
-  'engineering': '공학',
-  'business': '상경',
-  'arts_physical': '예체능',
-  'other': '기타',
-};
-
-const gradeMaxFromDb: { [key: string]: string } = {
-  '4.5': '4.5',
-  '4.3': '4.3',
-  '100%': '100%',
-  '9grade': '9등급',
-  'other': '기타',
-};
-
-// GET: 학력 조회
+// ─────────────────────────────────────────────────────────────────────
+// GET — user_educations 의 4 컬럼만 select.
+//   target user_educations 가 비어 있고 targetUserId 가 주어진 경우에 한해
+//   legacy crew_list_view 에서 1행 합성 (legacy data 호환, 이번 turn 유지).
+// ─────────────────────────────────────────────────────────────────────
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const targetUserId = searchParams.get('userId');
+    const targetUserId = searchParams.get("userId");
 
     if (!supabaseAdmin) {
+      console.error(TAG, "supabaseAdmin missing — SUPABASE_SERVICE_ROLE_KEY 누락");
       return NextResponse.json(
-        { error: "서버 설정 오류" },
-        { status: 500 }
+        errorPayload("init", "서버 설정 오류 (SUPABASE_SERVICE_ROLE_KEY 누락)"),
+        { status: 500 },
       );
     }
 
@@ -104,249 +129,224 @@ export async function GET(request: Request) {
     if (targetUserId) {
       userId = targetUserId;
     } else {
-      const { profile, error } = await getUserProfile();
-
+      const { profile, error } = await getUserProfile<{ user_id: string }>(
+        "user_id",
+      );
       if (error) {
-        return NextResponse.json({ error: error.message }, { status: error.status });
+        return NextResponse.json(
+          errorPayload("session_profile", error.message),
+          { status: error.status },
+        );
       }
-
-      userId = profile.id;
+      userId = profile.user_id;
     }
 
-    // user_educations에서 학력 조회 (sort_order 기준 정렬)
     const { data: educations, error: eduError } = await supabaseAdmin
       .from("user_educations")
-      .select("*")
+      .select("id, school_name, major_name_1, sort_order, is_primary")
       .eq("user_id", userId)
       .order("sort_order", { ascending: true });
 
     if (eduError) {
-      console.error("학력 조회 오류:", eduError);
+      console.error(TAG, "GET user_educations failed", eduError);
       return NextResponse.json(
-        { error: "학력 정보를 불러오는데 실패했습니다." },
-        { status: 500 }
+        errorPayload("educations_select", eduError.message, eduError),
+        { status: 500 },
       );
     }
 
-    // Legacy 폴백: user_educations 비어있으면 crew_list_view에서 1행 합성
     if ((!educations || educations.length === 0) && targetUserId) {
-      const { data: legacy } = await supabaseAdmin
+      // legacy fallback — crew_list_view 에 행이 있으면 1개 합성
+      const { data: legacy, error: legacyError } = await supabaseAdmin
         .from("crew_list_view")
         .select("school_name, university, major_name_1, major")
         .eq("id", targetUserId)
         .maybeSingle();
+      if (legacyError) {
+        console.warn(TAG, "GET crew_list_view fallback failed", legacyError);
+      }
 
-      const schoolName = legacy?.school_name ?? legacy?.university ?? "";
-      const majorName = legacy?.major_name_1 ?? legacy?.major ?? "";
+      const schoolName = legacy?.school_name ?? legacy?.university ?? null;
+      const majorName = legacy?.major_name_1 ?? legacy?.major ?? null;
 
       if (schoolName || majorName) {
         return NextResponse.json({
           success: true,
-          data: [{
-            id: `legacy-${targetUserId}`,
-            eduLevel: "",
-            school: schoolName,
-            status: "",
-            category: "-",
-            major1: majorName || "-",
-            major2: "-",
-            major3: "-",
-            period: "",
-            startYear: "",
-            startMonth: "",
-            endYear: "",
-            endMonth: "",
-            gradeMax: "-",
-            gradeValue: "-",
-            description: "",
-            isFinal: true,
-          }],
+          data: [
+            toUiDto({
+              id: `legacy-${targetUserId}`,
+              school_name: schoolName,
+              major_name_1: majorName,
+              sort_order: 0,
+              is_primary: true,
+            }),
+          ],
           _legacy: true,
         });
       }
     }
 
-    // DB 데이터를 프론트엔드 형식으로 변환 (영문 → 한글)
-    const formattedEducations = (educations || []).map((edu) => {
-      // admission_year, graduation_year에서 년/월 추출
-      const admissionParts = edu.admission_year?.split(".") || [];
-      const graduationParts = edu.graduation_year?.split(".") || [];
-
-      // period 문자열 생성 (상태에 따라 다르게)
-      // - 재학/졸예/휴학: 종료시기는 ~ing (종료시기 기재 안됨)
-      // - 졸업/중퇴: 종료시기는 반드시 년/월 기재
-      const startStr = edu.admission_year || "";
-      const endStr = edu.graduation_year || "";
-      const isOngoing = ['enrolled', 'expected', 'on_leave'].includes(edu.status);
-
-      let period = "";
-      if (startStr) {
-        if (isOngoing) {
-          period = `${startStr} - ~ing`;
-        } else if (endStr) {
-          period = `${startStr} ~ ${endStr}`;
-        } else {
-          period = `${startStr}`;
-        }
-      }
-
-      return {
-        id: edu.id,
-        eduLevel: eduLevelFromDb[edu.education_level] || edu.education_level || "",
-        school: edu.school_name || "",
-        status: statusFromDb[edu.status] || edu.status || "",
-        category: edu.major_category ? (categoryFromDb[edu.major_category] || edu.major_category) : "-",
-        major1: edu.major_name_1 || "-",
-        major2: edu.major_name_2 || "-",
-        major3: edu.major_name_3 || "-",
-        period: period,
-        startYear: admissionParts[0] || "",
-        startMonth: admissionParts[1] || "",
-        endYear: graduationParts[0] || "",
-        endMonth: graduationParts[1] || "",
-        gradeMax: edu.grade_max_type ? (gradeMaxFromDb[edu.grade_max_type] || edu.grade_max_type) : "-",
-        gradeValue: edu.grade_value || "-",
-        description: edu.note || "",
-        isFinal: edu.sort_order === 0,
-      };
-    });
-
     return NextResponse.json({
       success: true,
-      data: formattedEducations,
+      data: (educations ?? []).map((row) =>
+        toUiDto(
+          row as {
+            id: string | number;
+            school_name: string | null;
+            major_name_1: string | null;
+            sort_order: number | null;
+            is_primary: boolean | null;
+          },
+        ),
+      ),
     });
   } catch (error) {
-    console.error("학력 조회 API 오류:", error);
+    console.error(TAG, "GET unexpected error", error);
     return NextResponse.json(
-      { error: "서버 오류가 발생했습니다." },
-      { status: 500 }
+      errorPayload(
+        "unexpected",
+        error instanceof Error ? error.message : "서버 오류",
+        error instanceof Error ? { stack: error.stack } : undefined,
+      ),
+      { status: 500 },
     );
   }
 }
 
-// PUT: 학력 저장
+// ─────────────────────────────────────────────────────────────────────
+// PUT — user_educations 전체 delete + insert (실제 schema 4컬럼만).
+//   body.educations 미포함이면 변경 없음. 빈 배열이면 user 의 학력 전체 삭제.
+//   대표학력 동기화: 첫 row 가 sort_order=0 + is_primary=true,
+//                   나머지는 sort_order=1..N + is_primary=false.
+// ─────────────────────────────────────────────────────────────────────
 export async function PUT(request: Request) {
   try {
     const targetUserId = extractTargetUserId(request);
-    const { profile, error } = await getUserProfile("id", targetUserId);
+    const { profile, error } = await getUserProfile<{ user_id: string }>(
+      "user_id",
+      targetUserId,
+    );
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
-    }
-
-    const body = await request.json();
-    const { educations } = body;
-
-    if (!Array.isArray(educations)) {
       return NextResponse.json(
-        { error: "학력 데이터가 올바르지 않습니다." },
-        { status: 400 }
+        errorPayload("session_profile", error.message),
+        { status: error.status },
       );
-    }
-
-    // 졸업 상태일 때 졸업년도 필수 검증
-    for (let i = 0; i < educations.length; i++) {
-      const edu = educations[i];
-      const status = edu.status;
-      if ((status === '졸업' || status === '중퇴' || status === '자퇴') && !edu.endYear) {
-        return NextResponse.json(
-          { error: `${i + 1}번째 학력: '${status}' 상태에서는 종료년도를 입력해야 합니다.` },
-          { status: 400 }
-        );
-      }
     }
 
     if (!supabaseAdmin) {
+      console.error(TAG, "supabaseAdmin missing — SUPABASE_SERVICE_ROLE_KEY 누락");
       return NextResponse.json(
-        { error: "서버 설정 오류" },
-        { status: 500 }
+        errorPayload("init", "서버 설정 오류 (SUPABASE_SERVICE_ROLE_KEY 누락)"),
+        { status: 500 },
       );
     }
 
-    // 기존 학력 데이터 삭제
+    const body = await request.json().catch((parseError) => {
+      console.error(TAG, "PUT body parse failed", parseError);
+      return null;
+    });
+    if (!body || typeof body !== "object") {
+      return NextResponse.json(
+        errorPayload("body_parse", "요청 본문이 올바르지 않습니다."),
+        { status: 400 },
+      );
+    }
+
+    const { educations } = body as { educations?: EducationInputUI[] };
+    if (!Array.isArray(educations)) {
+      return NextResponse.json(
+        errorPayload("validation", "educations 가 배열이 아닙니다."),
+        { status: 400 },
+      );
+    }
+
+    const userId = profile.user_id;
+    const nowIso = new Date().toISOString();
+
+    // 1) user 의 모든 user_educations row 삭제
     const { error: deleteError } = await supabaseAdmin
       .from("user_educations")
       .delete()
-      .eq("user_id", profile.id);
+      .eq("user_id", userId);
 
     if (deleteError) {
-      console.error("기존 학력 삭제 오류:", deleteError);
+      console.error(TAG, "PUT user_educations delete failed", deleteError);
       return NextResponse.json(
-        { error: `학력 저장에 실패했습니다: ${deleteError.message}` },
-        { status: 500 }
+        errorPayload(
+          "educations_delete",
+          `학력 저장에 실패했습니다 (delete): ${deleteError.message}`,
+          deleteError,
+        ),
+        { status: 500 },
       );
     }
 
-    // 새 학력 데이터 삽입
-    if (educations.length > 0) {
-      const eduRecords = educations.map((edu: {
-        eduLevel?: string;
-        school?: string;
-        status?: string;
-        category?: string;
-        major1?: string;
-        major2?: string;
-        major3?: string;
-        startYear?: string;
-        startMonth?: string;
-        endYear?: string;
-        endMonth?: string;
-        gradeMax?: string;
-        gradeValue?: string;
-        description?: string;
-        isFinal?: boolean;
-      }, index: number) => {
-        // admission_year, graduation_year 형식: "2020.03"
-        const admissionYear = edu.startYear && edu.startMonth
-          ? `${edu.startYear}.${edu.startMonth}`
-          : edu.startYear || null;
-        const graduationYear = edu.endYear && edu.endMonth
-          ? `${edu.endYear}.${edu.endMonth}`
-          : edu.endYear || null;
-
-        // 한글 → 영문 변환 ('-' 값은 null 처리)
-        const rawEduLevel = edu.eduLevel === '-' ? '' : edu.eduLevel || '';
-        const rawStatus = edu.status === '-' ? '' : edu.status || '';
-        const rawCategory = edu.category === '-' ? '' : edu.category || '';
-        const educationLevel = eduLevelToDb[rawEduLevel] || rawEduLevel || null;
-        const status = statusToDb[rawStatus] || rawStatus || null;
-        const majorCategory = categoryToDb[rawCategory] || rawCategory || null;
-
-        // 표시 통일을 위해 저장 직전에 정규화 (약칭 '대' → '대학교', major suffix '학과' 자동 부착)
-        const schoolNormalized = edu.school ? normalizeSchool(edu.school) : null;
-        const major1Normalized = edu.major1 ? normalizeMajor(edu.major1) : null;
-        const major2Normalized = edu.major2 ? normalizeMajor(edu.major2) : null;
-        const major3Normalized = edu.major3 ? normalizeMajor(edu.major3) : null;
-
-        return {
-          user_id: profile.id,
-          education_level: educationLevel,
-          school_name: schoolNormalized,
-          status: status,
-          major_category: majorCategory,
-          major_name_1: major1Normalized,
-          major_name_2: major2Normalized,
-          major_name_3: major3Normalized,
-          admission_year: admissionYear,
-          graduation_year: graduationYear,
-          grade_max_type: edu.gradeMax === '-' ? null : (gradeMaxToDb[edu.gradeMax || ''] || edu.gradeMax || null),
-          grade_value: edu.gradeValue === '-' ? null : (edu.gradeValue || null),
-          note: edu.description || null,
-          sort_order: edu.isFinal ? 0 : index + 1,
-        };
+    if (educations.length === 0) {
+      return NextResponse.json({
+        success: true,
+        message: "학력이 비워졌습니다.",
       });
+    }
 
-      const { error: insertError } = await supabaseAdmin
-        .from("user_educations")
-        .insert(eduRecords);
+    // 2) 대표학력 동기화
+    //    client 가 isFinal/sort_order/is_primary 중 어느 하나로 표시했는지 모르므로
+    //    다음 우선순위로 1개 row 만 대표로 결정한다.
+    const primaryIndex = (() => {
+      const byIsPrimary = educations.findIndex((e) => e.is_primary === true);
+      if (byIsPrimary >= 0) return byIsPrimary;
+      const byIsFinal = educations.findIndex((e) => e.isFinal === true);
+      if (byIsFinal >= 0) return byIsFinal;
+      const bySortZero = educations.findIndex(
+        (e) => Number(e.sort_order) === 0,
+      );
+      if (bySortZero >= 0) return bySortZero;
+      return 0;
+    })();
 
-      if (insertError) {
-        console.error("학력 저장 오류:", insertError);
-        return NextResponse.json(
-          { error: `학력 저장에 실패했습니다: ${insertError.message}` },
-          { status: 500 }
-        );
-      }
+    // 3) 4 컬럼만 추출해 insert payload 구성
+    let nonPrimaryCounter = 1;
+    const records = educations.map((edu, index) => {
+      const isPrimary = index === primaryIndex;
+      const sortOrder = isPrimary ? 0 : nonPrimaryCounter++;
+
+      const rawSchool = edu.school_name ?? edu.school;
+      const rawMajor = edu.major_name_1 ?? edu.major1;
+
+      const schoolName =
+        rawSchool && rawSchool !== "-" && rawSchool.trim() !== ""
+          ? normalizeSchool(rawSchool)
+          : null;
+      const majorName =
+        rawMajor && rawMajor !== "-" && rawMajor.trim() !== ""
+          ? normalizeMajor(rawMajor)
+          : null;
+
+      return {
+        id: crypto.randomUUID(),
+        user_id: userId,
+        school_name: schoolName,
+        major_name_1: majorName,
+        sort_order: sortOrder,
+        is_primary: isPrimary,
+        updated_at: nowIso,
+      };
+    });
+
+    const { error: insertError } = await supabaseAdmin
+      .from("user_educations")
+      .insert(records);
+
+    if (insertError) {
+      console.error(TAG, "PUT user_educations insert failed", insertError);
+      return NextResponse.json(
+        errorPayload(
+          "educations_insert",
+          `학력 저장에 실패했습니다 (insert): ${insertError.message}`,
+          insertError,
+        ),
+        { status: 500 },
+      );
     }
 
     return NextResponse.json({
@@ -354,10 +354,14 @@ export async function PUT(request: Request) {
       message: "학력이 성공적으로 저장되었습니다.",
     });
   } catch (error) {
-    console.error("학력 저장 API 오류:", error);
+    console.error(TAG, "PUT unexpected error", error);
     return NextResponse.json(
-      { error: "서버 오류가 발생했습니다." },
-      { status: 500 }
+      errorPayload(
+        "unexpected",
+        error instanceof Error ? error.message : "서버 오류",
+        error instanceof Error ? { stack: error.stack } : undefined,
+      ),
+      { status: 500 },
     );
   }
 }
