@@ -10,7 +10,7 @@ export const revalidate = 0;
 
 // Cluster2 클럽 리뷰 링크 매핑 (canonical, 2026-05-13):
 //   user_review_links             — 슬롯별 링크 (user_id, week_index, url, label, is_visible)
-//   user_review_link_permissions  — 편집 윈도우 (user_id, opened_at, expires_at)
+//   user_edit_windows             — 편집 윈도우 (user_id, resource_key, opened_at, expires_at)
 //
 // UI slot 순서:
 //   index 0 → week_index 30 (Total Complete)
@@ -29,13 +29,14 @@ export const revalidate = 0;
 //
 // 편집 권한:
 //   - admin email → 항상 허용 (reason: "admin")
-//   - owner 본인 → user_review_link_permissions row 가 있고
+//   - owner 본인 → user_edit_windows row 가 있고
 //                   now ∈ [opened_at, expires_at] 이면 허용 (reason: "open_window")
 //                   기간 밖이면 거부 (reason: "closed")
 //                   row 자체 없음이면 거부 (reason: "no_permission")
 //   - 그 외 viewer (admin 아님 + owner 아님) → 거부 (reason: "no_permission")
 
 const TAG = "[api/review-link]";
+const REVIEW_LINK_RESOURCE_KEY = "cluster2.review_links";
 
 const SLOT_WEEK_INDICES = [30, 3, 6, 9, 12, 15, 18, 21, 24, 27] as const;
 const SLOT_LABELS: Record<number, string> = {
@@ -262,13 +263,14 @@ export async function GET(request: Request) {
 
     // 3) permission row 조회
     const { data: permRow, error: permError } = await supabaseAdmin
-      .from("user_review_link_permissions")
+      .from("user_edit_windows")
       .select("opened_at, expires_at")
       .eq("user_id", targetUserId)
+      .eq("resource_key", REVIEW_LINK_RESOURCE_KEY)
       .maybeSingle();
 
     if (permError) {
-      console.warn(TAG, "GET user_review_link_permissions failed", permError);
+      console.warn(TAG, "GET user_edit_windows failed", permError);
     }
 
     const permission = permissionDto(
@@ -346,9 +348,10 @@ export async function PUT(request: Request) {
     // 권한 검사 (admin 우회)
     if (!isAdmin) {
       const { data: permRow, error: permError } = await supabaseAdmin
-        .from("user_review_link_permissions")
+        .from("user_edit_windows")
         .select("opened_at, expires_at")
         .eq("user_id", userId)
+        .eq("resource_key", REVIEW_LINK_RESOURCE_KEY)
         .maybeSingle();
 
       if (permError) {

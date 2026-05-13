@@ -113,7 +113,7 @@ const truncateByBytes = (text: string, maxBytes: number): string => {
 
 const Cluster2Content = () => {
   // 세션 및 본인 프로필 여부 확인
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const { mask } = useDataMasking();
   const searchParams = useSearchParams();
   // PX(Phalanx) / EC(Encre) 라우트 감지 — 동적 하위 라우트 포함. 판정 로직은 lib/cluster-route.
@@ -1102,18 +1102,18 @@ const Cluster2Content = () => {
   const [reviewSnapshot, setReviewSnapshot] = useState<string[]>(["", "", "", "", "", "", "", "", "", ""]);
   const isSection4Dirty = () => isDirtyBySnapshot(editingReviewLinks, reviewSnapshot);
 
-  // 수정_허가 데이터 (데모용 하드코딩, 추후 DB 연동)
+  // 리뷰 링크 슬롯. 작성 가능 여부는 /api/edit-windows/permission 결과만 사용한다.
   const reviewPermissions = [
     { label: "Total Complete", isOpen: true },
     { label: "3 weeks", isOpen: true },
     { label: "6 weeks", isOpen: true },
-    { label: "9 weeks", isOpen: false },
-    { label: "12 weeks", isOpen: false },
-    { label: "15 weeks", isOpen: false },
-    { label: "18 weeks", isOpen: false },
-    { label: "21 weeks", isOpen: false },
-    { label: "24 weeks", isOpen: false },
-    { label: "27 weeks", isOpen: false },
+    { label: "9 weeks", isOpen: true },
+    { label: "12 weeks", isOpen: true },
+    { label: "15 weeks", isOpen: true },
+    { label: "18 weeks", isOpen: true },
+    { label: "21 weeks", isOpen: true },
+    { label: "24 weeks", isOpen: true },
+    { label: "27 weeks", isOpen: true },
   ];
 
   // 섹션 5 - 자기소개서 카드 데이터
@@ -1331,18 +1331,80 @@ const Cluster2Content = () => {
   const [editingReviewLinks, setEditingReviewLinks] = useState<string[]>(["", "", "", "", "", "", "", "", "", ""]);
   const [reviewLinkSaving, setReviewLinkSaving] = useState(false);
   const [canEditClubReview, setCanEditClubReview] = useState<boolean>(false);
+  const [reviewPermissionLoading, setReviewPermissionLoading] = useState<boolean>(true);
+  const [clubReviewPermissionReason, setClubReviewPermissionReason] = useState<"open" | "not_granted" | "not_started" | "expired" | "admin">("not_granted");
+  const [clubReviewPermissionExpiresAt, setClubReviewPermissionExpiresAt] = useState<string | null>(null);
 
   // 어드민(마더) 계정은 대표학력 변경 / Club Review 편집 권한 baseline 으로 부여.
-  // 비-어드민의 canEditClubReview 는 /api/review-link GET 응답의 permission.canEdit 으로 갱신
-  // (owner+open_window 시 true, 기간 밖이면 false). admin 은 demo mode 등 fetch 우회 경로에서도
-  // baseline true 가 유지된다.
+  // 비-어드민의 canEditClubReview 는 /api/edit-windows/permission 응답으로만 갱신한다.
   useEffect(() => {
     const isAdmin = session?.user?.isAdmin || isAdminEmail(session?.user?.email);
     if (isAdmin) {
       setCanChangePrimary(true);
       setCanEditClubReview(true);
+      setReviewPermissionLoading(false);
+      setClubReviewPermissionReason("admin");
     }
   }, [session?.user?.isAdmin, session?.user?.email]);
+
+  const fetchClubReviewPermission = useCallback(async () => {
+    const isAdmin = session?.user?.isAdmin || isAdminEmail(session?.user?.email);
+
+    if (isAdmin) {
+      setCanEditClubReview(true);
+      setReviewPermissionLoading(false);
+      setClubReviewPermissionReason("admin");
+      setClubReviewPermissionExpiresAt(null);
+      return;
+    }
+
+    if (isDemoMode) {
+      setCanEditClubReview(true);
+      setReviewPermissionLoading(false);
+      setClubReviewPermissionReason("open");
+      setClubReviewPermissionExpiresAt(null);
+      return;
+    }
+
+    if (!session?.user) {
+      setCanEditClubReview(false);
+      setReviewPermissionLoading(false);
+      setClubReviewPermissionReason("not_granted");
+      setClubReviewPermissionExpiresAt(null);
+      return;
+    }
+
+    setReviewPermissionLoading(true);
+    try {
+      const response = await fetch("/api/edit-windows/permission?resource_key=cluster2.review_links", {
+        cache: "no-store",
+      });
+      const result = await response.json();
+      const permission = result?.data;
+
+      if (result?.success && permission && typeof permission.canEdit === "boolean") {
+        setCanEditClubReview(permission.canEdit);
+        setClubReviewPermissionReason(permission.reason ?? "not_granted");
+        setClubReviewPermissionExpiresAt(permission.expiresAt ?? null);
+      } else {
+        setCanEditClubReview(false);
+        setClubReviewPermissionReason("not_granted");
+        setClubReviewPermissionExpiresAt(null);
+      }
+    } catch (error) {
+      console.error("리뷰 링크 작성 권한 확인 오류:", error);
+      setCanEditClubReview(false);
+      setClubReviewPermissionReason("not_granted");
+      setClubReviewPermissionExpiresAt(null);
+    } finally {
+      setReviewPermissionLoading(false);
+    }
+  }, [isDemoMode, session?.user?.email, session?.user?.isAdmin]);
+
+  useEffect(() => {
+    if (sessionStatus === "loading") return;
+    fetchClubReviewPermission();
+  }, [fetchClubReviewPermission, sessionStatus]);
 
   // dirty 추적: 편집 데이터 변경 감지 (초기 설정 시 skip)
   const introMountRef = useRef(false);
@@ -1412,12 +1474,6 @@ const Cluster2Content = () => {
         });
       }
 
-      // permission.canEdit 으로 편집권한 갱신 — admin/owner+open_window 시 true.
-      // admin baseline (위 useEffect) 은 demo 등 fetch 우회 시 유지를 위함이며,
-      // 정상 fetch 가 도착하면 서버 판정으로 덮어쓴다.
-      if (result.permission && typeof result.permission.canEdit === "boolean") {
-        setCanEditClubReview(result.permission.canEdit);
-      }
     } catch (error) {
       console.error("리뷰 링크 로드 오류:", error);
     }
@@ -1534,10 +1590,37 @@ const Cluster2Content = () => {
     }
   };
 
+  const formatReviewPermissionDate = (value: string | null) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const hour = String(date.getHours()).padStart(2, "0");
+    const minute = String(date.getMinutes()).padStart(2, "0");
+    return `${year}.${month}.${day} ${hour}:${minute}`;
+  };
+
+  const getReviewPermissionMessage = () => {
+    if (reviewPermissionLoading) return "권한 확인 중...";
+    if (canEditClubReview) {
+      const expiresAt = formatReviewPermissionDate(clubReviewPermissionExpiresAt);
+      return expiresAt ? `${expiresAt}까지 작성 가능` : "작성 가능";
+    }
+    if (clubReviewPermissionReason === "not_started") return "아직 작성 기간이 아닙니다";
+    if (clubReviewPermissionReason === "expired") return "작성 기간이 종료되었습니다";
+    return "관리자 승인 필요";
+  };
+
   // 리뷰 링크 저장
   const handleSaveReviewLinks = async () => {
+    if (reviewPermissionLoading) {
+      showAlert("권한 확인 중입니다. 잠시 후 다시 시도해주세요.");
+      return;
+    }
     if (!canEditClubReview) {
-      showAlert("작성할 수 있는 기간이 아닙니다. 😊");
+      showAlert(getReviewPermissionMessage());
       return;
     }
     if (isDemoMode) {
@@ -3658,12 +3741,12 @@ const Cluster2Content = () => {
               </p>
             </div>
             <div
-              className={`section4-modal-body${!canEditClubReview ? " locked" : ""}`}
+              className={`section4-modal-body${reviewPermissionLoading || !canEditClubReview ? " locked" : ""}`}
               onClick={(e) => {
-                if (!canEditClubReview) {
+                if (reviewPermissionLoading || !canEditClubReview) {
                   const target = e.target as HTMLElement;
                   if (target.closest("button")) return;
-                  showAlert("작성할 수 있는 기간이 아닙니다. 😊");
+                  showAlert(getReviewPermissionMessage());
                 }
               }}
             >
@@ -3678,11 +3761,11 @@ const Cluster2Content = () => {
                     </div>
                     <input
                       type="url"
-                      placeholder={perm.isOpen ? "링크를 입력하세요 (https://...)" : "비활성화"}
+                      placeholder={perm.isOpen && canEditClubReview ? "링크를 입력하세요 (https://...)" : getReviewPermissionMessage()}
                       value={editingReviewLinks[index]}
-                      disabled={!perm.isOpen}
+                      disabled={!perm.isOpen || reviewPermissionLoading || !canEditClubReview}
                       onChange={(e) => {
-                        if (perm.isOpen) {
+                        if (perm.isOpen && canEditClubReview) {
                           const newLinks = [...editingReviewLinks];
                           newLinks[index] = e.target.value;
                           setEditingReviewLinks(newLinks);
@@ -3731,16 +3814,16 @@ const Cluster2Content = () => {
                         handleSaveReviewLinks();
                       });
                     }}
-                    disabled={reviewLinkSaving || !canEditClubReview}
-                    style={!canEditClubReview ? { opacity: 0.3, cursor: "not-allowed" } : {}}
-                    title={canEditClubReview ? "저장" : "관리자 승인 필요"}
+                    disabled={reviewLinkSaving || reviewPermissionLoading || !canEditClubReview}
+                    style={reviewPermissionLoading || !canEditClubReview ? { opacity: 0.3, cursor: "not-allowed" } : {}}
+                    title={canEditClubReview ? "저장" : getReviewPermissionMessage()}
                   >
                     {reviewLinkSaving ? "저장 중..." : "저장"}
                   </button>
                 </div>
               </div>
               <div className="modal-footer-bottom">
-                <p className="modal-footer-notice">내용을 모두 잘 확인하신 후 저장을 눌러주세요. 😊</p>
+                <p className="modal-footer-notice">{getReviewPermissionMessage()}</p>
               </div>
             </div>
           </div>
