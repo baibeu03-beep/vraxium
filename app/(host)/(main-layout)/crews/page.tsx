@@ -8,6 +8,7 @@ import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { DEMO_CREW_MEMBERS } from "@/constants/dummyData";
 import { getOrgClusterRouteBase } from "@/lib/cluster-route";
+import { getOrgAlias } from "@/utils/orgLabelAlias";
 
 interface Crew {
   id: string;
@@ -60,7 +61,12 @@ function CrewsContent() {
   const searchParams = useSearchParams();
   const orgParam = searchParams?.get("org") ?? null;
   const org: OrgSlug | null = isOrgSlug(orgParam) ? orgParam : null;
-  const totalStarsLabel = org === "phalanx" ? "투구" : "단감";
+  // 조직별 alias mapping (단감 = helmet 슬롯) — single source of truth 는
+  // utils/orgLabelAlias.ts 의 ORG_LABEL_ALIAS. /crews 는 segment-suffix
+  // 라우트가 아니므로 path-based 감지가 안 통해 명시적 slug-based 헬퍼
+  // getOrgAlias(org, key) 사용. 매핑:
+  //   phalanx → "투구", encre → "별", oranke/null → "단감"(fallback).
+  const totalStarsLabel = getOrgAlias(org, "단감")?.label ?? "단감";
 
   const filterAccentColor = "var(--crews-filter-accent, #FFA500)";
   const filterAccentBackground = "var(--crews-filter-accent-bg, rgba(255, 165, 0, 0.1))";

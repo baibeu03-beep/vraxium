@@ -6,15 +6,20 @@ import { extractTargetUserId } from "@/lib/admin";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// Cluster2 슬로건 매핑 (canonical, 2026-05-12):
-//   user_introductions.slogan_1 / slogan_2 / slogan_3
+// Cluster2 슬로건 매핑 (canonical, 2026-05-13):
+//   user_introductions
+//     slogan_1 / slogan_2 / slogan_3                — text 본문
+//     slogan_1_tag / slogan_2_tag / slogan_3_tag    — UI dropdown option (Dreamer/Commander/…)
+//     slogan_1_rating / slogan_2_rating / slogan_3_rating — 셀프 이행 평가 정수 0..10
 //
-// schema 에 slogan_{1,2,3}_tag / slogan_{1,2,3}_rating 컬럼은 존재하지 않으므로
-// API 는 content (text) 만 다룬다. UI 의 tag / rating 은 자동 무시.
+// rating UI: 5스타 × 2점 (half=1, full=2) → 0..10 정수. UI 초기값 0 = unset.
+// 저장 시 0 / 비숫자 → null. 읽기 시 null → 0 (UI 초기값과 동일).
 
 const TAG = "[api/slogans]";
 
 const MAX_SLOGAN_LENGTH = 86;
+const RATING_MIN = 0;
+const RATING_MAX = 10;
 
 function errorPayload(step: string, message: string, details?: unknown) {
   return {
@@ -38,6 +43,31 @@ function readSloganContent(value: unknown): string | null {
     }
   }
   return null;
+}
+
+function readSloganTag(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "object") {
+    const opt = (value as { option?: unknown; tag?: unknown }).option ?? (value as { tag?: unknown }).tag;
+    if (typeof opt === "string") {
+      const trimmed = opt.trim();
+      return trimmed || null;
+    }
+  }
+  return null;
+}
+
+function readSloganRating(value: unknown): number | null {
+  if (value == null || typeof value !== "object") return null;
+  const raw = (value as { rating?: unknown }).rating;
+  if (raw == null || raw === "") return null;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(n)) return null;
+  // 정수만 허용 (UI 가 half=1/full=2 step 으로 정수 값을 보냄). 범위 밖은 clamp.
+  const int = Math.round(n);
+  if (int <= RATING_MIN) return null;       // 0 = unset → null
+  if (int >= RATING_MAX) return RATING_MAX; // 상한 clamp
+  return int;
 }
 
 export async function GET(request: Request) {
@@ -90,7 +120,9 @@ export async function GET(request: Request) {
 
     const { data: intro, error: introError } = await supabaseAdmin
       .from("user_introductions")
-      .select("slogan_1, slogan_2, slogan_3")
+      .select(
+        "slogan_1, slogan_1_tag, slogan_1_rating, slogan_2, slogan_2_tag, slogan_2_rating, slogan_3, slogan_3_tag, slogan_3_rating",
+      )
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -102,25 +134,41 @@ export async function GET(request: Request) {
       );
     }
 
+    const row = (intro ?? {}) as {
+      slogan_1?: string | null;
+      slogan_1_tag?: string | null;
+      slogan_1_rating?: number | string | null;
+      slogan_2?: string | null;
+      slogan_2_tag?: string | null;
+      slogan_2_rating?: number | string | null;
+      slogan_3?: string | null;
+      slogan_3_tag?: string | null;
+      slogan_3_rating?: number | string | null;
+    };
+
+    const ratingFromDb = (v: number | string | null | undefined): number => {
+      if (v == null || v === "") return 0;
+      const n = typeof v === "number" ? v : Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+
     return NextResponse.json({
       success: true,
       data: {
-        // UI 호환을 위해 {content,option,rating} shape 유지. option/rating 은
-        // DB 컬럼이 없으므로 항상 빈 값/0 으로 응답한다.
         slogan1: {
-          content: intro?.slogan_1 ?? null,
-          option: null,
-          rating: 0,
+          content: row.slogan_1 ?? null,
+          option: row.slogan_1_tag ?? null,
+          rating: ratingFromDb(row.slogan_1_rating),
         },
         slogan2: {
-          content: intro?.slogan_2 ?? null,
-          option: null,
-          rating: 0,
+          content: row.slogan_2 ?? null,
+          option: row.slogan_2_tag ?? null,
+          rating: ratingFromDb(row.slogan_2_rating),
         },
         slogan3: {
-          content: intro?.slogan_3 ?? null,
-          option: null,
-          rating: 0,
+          content: row.slogan_3 ?? null,
+          option: row.slogan_3_tag ?? null,
+          rating: ratingFromDb(row.slogan_3_rating),
         },
         engName: null,
       },
@@ -182,6 +230,14 @@ export async function PUT(request: Request) {
     const slogan_2 = readSloganContent(slogan2);
     const slogan_3 = readSloganContent(slogan3);
 
+    const slogan_1_tag = readSloganTag(slogan1);
+    const slogan_2_tag = readSloganTag(slogan2);
+    const slogan_3_tag = readSloganTag(slogan3);
+
+    const slogan_1_rating = readSloganRating(slogan1);
+    const slogan_2_rating = readSloganRating(slogan2);
+    const slogan_3_rating = readSloganRating(slogan3);
+
     for (const [name, content] of [
       ["slogan_1", slogan_1],
       ["slogan_2", slogan_2],
@@ -208,8 +264,14 @@ export async function PUT(request: Request) {
         {
           user_id: userId,
           slogan_1,
+          slogan_1_tag,
+          slogan_1_rating,
           slogan_2,
+          slogan_2_tag,
+          slogan_2_rating,
           slogan_3,
+          slogan_3_tag,
+          slogan_3_rating,
           updated_at: nowIso,
         },
         { onConflict: "user_id" },

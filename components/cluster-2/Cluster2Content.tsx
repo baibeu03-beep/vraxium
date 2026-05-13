@@ -15,6 +15,8 @@ import { logEvent } from "@/utils/blackScreenDiagnostics";
 import { CLUSTER2_DUMMY_PHOTOS, CLUSTER2_DUMMY_SLOGANS, CLUSTER2_DUMMY_VIDEOS, CLUSTER2_DUMMY_EDUCATIONS, CLUSTER2_DUMMY_REVIEWS, CLUSTER2_DUMMY_INTRO, CLUSTER2_DUMMY_BY_USER, DEFAULT_DEMO_USER } from "@/constants/dummyData";
 import { SECTION1_PHOTO_DEFAULTS } from "@/constants/dummyData/cluster2-section1-default";
 import { SECTION2_SLOGAN_DEFAULTS } from "@/constants/dummyData/cluster2-section2-default";
+// admin 레포 (vraxium-admin) 의 lib/cluster2SloganOptions.ts 와 mirror.
+import { CLUSTER2_SLOGAN_OPTIONS as sloganOptions } from "@/lib/cluster2SloganOptions";
 
 // 학력 데이터 타입
 interface EduData {
@@ -95,8 +97,7 @@ interface Ripple {
   y: number;
 }
 
-// Slogan 옵션 8개
-const sloganOptions = ["Dreamer", "Commander", "Nomad", "Scholar", "Warrior", "Agent", "Pioneer", "Architect"];
+// Slogan 옵션은 @/lib/cluster2SloganOptions 에서 import (admin 레포와 mirror).
 
 // 바이트 기반 텍스트 truncate (한글=2, 영문/기호=1, maxBytes 기준)
 const truncateByBytes = (text: string, maxBytes: number): string => {
@@ -1331,8 +1332,10 @@ const Cluster2Content = () => {
   const [reviewLinkSaving, setReviewLinkSaving] = useState(false);
   const [canEditClubReview, setCanEditClubReview] = useState<boolean>(false);
 
-  // 어드민(마더) 계정은 대표학력 변경 / Club Review 편집 권한 자동 부여
-  // session.user.isAdmin 플래그가 JWT 쿠키에 아직 반영 안 됐을 수 있어 email로도 직접 판정
+  // 어드민(마더) 계정은 대표학력 변경 / Club Review 편집 권한 baseline 으로 부여.
+  // 비-어드민의 canEditClubReview 는 /api/review-link GET 응답의 permission.canEdit 으로 갱신
+  // (owner+open_window 시 true, 기간 밖이면 false). admin 은 demo mode 등 fetch 우회 경로에서도
+  // baseline true 가 유지된다.
   useEffect(() => {
     const isAdmin = session?.user?.isAdmin || isAdminEmail(session?.user?.email);
     if (isAdmin) {
@@ -1362,6 +1365,10 @@ const Cluster2Content = () => {
     setIntroDirty(true);
   }, [editingIntroData]);
 
+  // UI slot index ↔ user_review_links.week_index 매핑 (canonical, route.ts 와 동기화).
+  //   index 0 → 30 (Total Complete), 1 → 3, 2 → 6, ..., 9 → 27.
+  const REVIEW_LINK_WEEK_INDICES: ReadonlyArray<number> = [30, 3, 6, 9, 12, 15, 18, 21, 24, 27];
+
   // DB에서 리뷰 링크 로드
   const fetchReviewLink = async () => {
     if (isDemoMode) {
@@ -1382,14 +1389,34 @@ const Cluster2Content = () => {
       const response = await fetch(url);
       const result = await response.json();
 
-      if (result.success && result.data) {
-        if (result.data.cluvingReviewLink) {
-          setReviewLinks((prev) => {
-            const newLinks = [...prev];
-            newLinks[0] = result.data.cluvingReviewLink;
-            return newLinks;
-          });
+      if (!result?.success) return;
+
+      // 신 shape — links[] 우선
+      if (Array.isArray(result.links)) {
+        const byWeek = new Map<number, string>();
+        for (const slot of result.links as Array<{ weekIndex?: number; url?: string | null }>) {
+          const week = Number(slot?.weekIndex);
+          if (Number.isFinite(week)) {
+            byWeek.set(week, typeof slot?.url === "string" ? slot.url : "");
+          }
         }
+        const next = REVIEW_LINK_WEEK_INDICES.map((week) => byWeek.get(week) ?? "");
+        setReviewLinks(next);
+        setEditingReviewLinks(next);
+      } else if (result.data?.cluvingReviewLink) {
+        // legacy shape — Total Complete 만.
+        setReviewLinks((prev) => {
+          const newLinks = [...prev];
+          newLinks[0] = result.data.cluvingReviewLink;
+          return newLinks;
+        });
+      }
+
+      // permission.canEdit 으로 편집권한 갱신 — admin/owner+open_window 시 true.
+      // admin baseline (위 useEffect) 은 demo 등 fetch 우회 시 유지를 위함이며,
+      // 정상 fetch 가 도착하면 서버 판정으로 덮어쓴다.
+      if (result.permission && typeof result.permission.canEdit === "boolean") {
+        setCanEditClubReview(result.permission.canEdit);
       }
     } catch (error) {
       console.error("리뷰 링크 로드 오류:", error);
@@ -1521,12 +1548,16 @@ const Cluster2Content = () => {
     }
     setReviewLinkSaving(true);
     try {
+      // 10개 슬롯 전체를 weekIndex 와 함께 전송 — index 0→30, 1→3, 2→6, …, 9→27.
+      const payloadLinks = REVIEW_LINK_WEEK_INDICES.map((weekIndex, index) => ({
+        weekIndex,
+        url: editingReviewLinks[index] ?? "",
+      }));
+
       const response = await fetch(apiUrl("/api/review-link"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cluvingReviewLink: editingReviewLinks[0] || null,
-        }),
+        body: JSON.stringify({ links: payloadLinks }),
       });
 
       const result = await response.json();

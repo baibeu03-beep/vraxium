@@ -2517,8 +2517,14 @@ const Sidebar = () => {
                       top: `${scrollThumbTop}px`,
                       width: "100%",
                       height: 44,
-                      // PX 라우트만 strict mapping (#FFC300 → #1E9503). 그 외는 원본 OK 색.
-                      background: isPX ? "#1E9503" : "#FFC300",
+                      // PX 라우트 strict mapping (#FFC300 → #1E9503).
+                      // EC 라우트(pathname 에 -ec segment) strict mapping (#FFC300 → #FF4B70).
+                      //   debugPanelType 은 useEffect (L724-729) 에서 -px / -ec segment 로 자동 전환,
+                      //   따라서 /cluster-*-ec?userId=… 진입 시 "EC" 가 확정 → Encre pink.
+                      //   /crews?org=encre 의 page 자체는 -ec segment 가 없어 OK fallback 이지만
+                      //   "보기" 버튼이 /cluster-4-ec?userId=… 로 보내므로 resume-card 가 그려지는
+                      //   시점에는 EC 가 활성. 그 외(OK)는 원본 노란색 유지.
+                      background: isPX ? "#1E9503" : debugPanelType === "EC" ? "#FF4B70" : "#FFC300",
                       borderRadius: "2px",
                       cursor: "pointer",
                     }}
