@@ -135,17 +135,25 @@
 // phalanx 전용 토큰 정의 (--px-accent / --px-accent-soft / --px-gradient 등).
 // 모든 _*-px.scss 파일이 본 토큰만 참조하므로 가장 먼저 로드.
 @import "./components/px-tokens";
+// Encre (EC) 전용 토큰 — _px-tokens.scss 와 동등한 구조, 본 파일에 격리.
+// `.encre-theme` 와 `.resume-card.ec-theme` 양쪽 selector 모두 활성.
+@import "./components/theme-tokens";
 // phalanx 전용 override 묶음 — 반드시 base 파일들 뒤에 와야 cascade 로 이긴다.
 // .cluster-px-theme 하위에서만 매칭되므로 non-px 라우트엔 영향 0.
 @import "./components/cluster2-px";
 @import "./components/cluster3-px";
 @import "./components/cluster-tabs-px";
 @import "./components/resume-card-px";
+// Encre 전용 resume-card override — base ec-theme 블록(_resume-card.scss
+// L1408-1553) 이 누락한 영역만 보충. .resume-card.ec-theme +
+// .encre-theme .resume-card 양쪽 selector.
+@import "./components/resume-card-encre";
 @import "./components/cluster4-season"; // 시즌 카드용
 @import "./components/cluster4-week";   // 주차 카드용
 @import "./components/cluster4-px";
 @import "./components/cluster4-card-px"; // /cluster-4-card-px 전용 — 반드시 cluster4-week 뒤
 @import "./components/crews-phalanx";
+@import "./components/crews-encre";
 @import "./components/weekly-ranking";  // Weekly League 페이지 전용
 @import "./components/weekly-card";     // Weekly League 주차 카드
 

@@ -7,6 +7,7 @@ import Breadcrumb from "@/components/shared/Breadcrumb";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { DEMO_CREW_MEMBERS } from "@/constants/dummyData";
+import { getOrgClusterRouteBase } from "@/lib/cluster-route";
 
 interface Crew {
   id: string;
@@ -71,9 +72,12 @@ function CrewsContent() {
   const [demoMode, setDemoMode] = useState(false);
   useEffect(() => { setDemoMode(checkDemoMode()); }, []);
   const resolveHref = (crew: Crew) => {
-    // phalanx 명단에서만 cluster-4-px 변형으로 진입. encre/oranke 는 기존
-    // /cluster-4 흐름 유지 — userId / demoName 쿼리는 그대로.
-    const base = org === "phalanx" ? "/cluster-4-px" : "/cluster-4";
+    // 조직별 cluster route suffix 분기 — phalanx → /cluster-4-px,
+    // encre → /cluster-4-ec, 그 외(예: oranke) 는 default /cluster-4.
+    // 매핑 source : lib/cluster-route 의 SUFFIX_TO_ORG (단일 정의소).
+    // 카드 이미지 / crew-club-badge / author-meta / "보기" 버튼 4 군데가
+    // 모두 본 함수를 사용하므로 분기 일관성 보장.
+    const base = getOrgClusterRouteBase(org);
     if (demoMode && (DEMO_CREW_MEMBERS as readonly string[]).includes(crew.name)) {
       return `${base}?userId=${crew.id}&demoName=${encodeURIComponent(crew.name)}`;
     }
@@ -282,7 +286,12 @@ function CrewsContent() {
 
   // 2) ?org= 가 있을 때: 해당 조직 명단(필터 UI + 그리드 또는 빈 상태).
   return (
-    <main className={`nftg-content nftg-content-home${org === "phalanx" ? " phalanx-theme" : ""}`} style={{ padding: 0 }}>
+    <main
+      className={`nftg-content nftg-content-home${
+        org === "phalanx" ? " phalanx-theme" : org === "encre" ? " encre-theme" : ""
+      }`}
+      style={{ padding: 0 }}
+    >
       <Animations />
       <Breadcrumb title={`크루 명단 · ${ORG_LABEL[org]}`} />
       <section className="pb-120 trending trending-nft" style={{ paddingLeft: 0, paddingRight: 0, paddingTop: 30 }}>
@@ -608,7 +617,13 @@ function CrewsContent() {
                     minHeight: 'calc(100vh - 200px)',
                   }}>
                     <img
-                      src={org === "phalanx" ? "/images/0/금장_PX.png" : "/images/0/금장_OK.png"}
+                      src={
+                        org === "phalanx"
+                          ? "/images/0/금장_PX.png"
+                          : org === "encre"
+                          ? "/images/0/금장_EC.png"
+                          : "/images/0/금장_OK.png"
+                      }
                       alt="로딩 중"
                       style={{
                         width: '120px',

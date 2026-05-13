@@ -12,7 +12,7 @@ import { usePopup } from "@/components/ui/popup";
 import { supabase } from "@/lib/supabase";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
-import { getPxAlias } from "@/utils/pxLabelAlias";
+import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { DUMMY_SEASON_DATA, DUMMY_SEASON_HISTORIES, REVIEW_COMMENT_DEFAULT } from "@/constants/dummyData";
 import { dedupedJson } from "@/lib/fetch-dedupe";
 import { isPxRoute, withPxRoute } from "@/lib/cluster-route";
@@ -2970,7 +2970,9 @@ const Cluster4Content = () => {
                     인절미: "/images/0/cluster4/icon/icon - 인절미.png",
                     어흥: "/images/0/cluster4/icon/icon - 어흥.png",
                   };
-                  const mapped = getPxAlias(isPX, name);
+                  // org-aware alias — PX → 투구/방패/화살, EC → 별/방패/번개,
+                  // 그 외(default 라우트) → null → 원본 단감/인절미/어흥 유지.
+                  const mapped = getOrgAliasFromPathname(pathname, name);
                   const label = mapped?.label ?? name;
                   return (
                     <span className="stat" key={name}>

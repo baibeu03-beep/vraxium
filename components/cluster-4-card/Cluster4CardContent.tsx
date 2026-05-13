@@ -12,7 +12,7 @@ import { usePopup } from "@/components/ui/popup";
 import { supabase } from "@/lib/supabase";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
-import { getPxAlias } from "@/utils/pxLabelAlias";
+import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
 import { isPxRoute, withPxRoute } from "@/lib/cluster-route";
 import DetailLogModal from "./DetailLogModal";
@@ -6052,7 +6052,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     { name: "어흥", value: Math.abs(weekPoints.lightning), defaultSrc: "/images/0/cluster4/icon/icon - 어흥.png" },
                   ];
                   return items.map((item, idx) => {
-                    const mapped = getPxAlias(isPX, item.name);
+                    // org-aware alias (PX → 투구/방패/화살, EC → 별/방패/번개).
+                    const mapped = getOrgAliasFromPathname(pathname, item.name);
                     const label = mapped?.label ?? item.name;
                     return (
                       <React.Fragment key={item.name}>

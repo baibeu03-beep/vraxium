@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import { useSearchParams, usePathname } from "next/navigation";
 import { getDocumentZoom, getFixedDropdownPosition } from "@/utils/documentZoom";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
-import { getPxAlias } from "@/utils/pxLabelAlias";
+import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { useProfile } from "@/contexts/ProfileContext";
 import { isAdminEmail } from "@/lib/admin";
@@ -2396,7 +2396,8 @@ const Cluster3Content = () => {
                   { name: "어흥", value: Math.abs(pointsData.eoheung), defaultSrc: "/images/0/cluster 3/icon/Ok03.png", defaultIconClass: "label-icon" },
                 ];
                 return rows.map((row) => {
-                  const mapped = getPxAlias(isPX, row.name);
+                  // org-aware alias (PX → 투구/방패/화살, EC → 별/방패/번개).
+                  const mapped = getOrgAliasFromPathname(pathname, row.name);
                   const label = mapped?.label ?? row.name;
                   return (
                     <div className="info-row" key={row.name}>

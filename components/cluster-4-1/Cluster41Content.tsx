@@ -7,7 +7,7 @@ import { getFixedDropdownPosition } from "@/utils/documentZoom";
 import { supabase } from "@/lib/supabase";
 import { dedupedJson } from "@/lib/fetch-dedupe";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
-import { getPxAlias } from "@/utils/pxLabelAlias";
+import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA } from "@/constants/dummyData";
 import { isPxRoute, withPxRoute } from "@/lib/cluster-route";
 
@@ -2092,10 +2092,11 @@ const Cluster41Content = () => {
                               </div>
 
                               <div className="weekly-card-details-bottom">
-                                {/* PX 분기에서만 라벨을 투구/방패/화살로 치환 — 본 metric 블록은 아이콘이 없으므로 텍스트만 alias. */}
-                                <div className="metric">{getPxAlias(isPX, "단감")?.label ?? "단감"} <strong>{weekPoints.star}</strong></div>
-                                <div className="metric">{getPxAlias(isPX, "인절미")?.label ?? "인절미"} <strong>{injeolmi}</strong></div>
-                                <div className="metric">{getPxAlias(isPX, "어흥")?.label ?? "어흥"} <strong>{Math.abs(weekPoints.lightning)}</strong></div>
+                                {/* org-aware label 치환 (PX → 투구/방패/화살, EC → 별/방패/번개).
+                                    아이콘 없는 metric 블록이므로 텍스트만 alias. */}
+                                <div className="metric">{getOrgAliasFromPathname(pathname, "단감")?.label ?? "단감"} <strong>{weekPoints.star}</strong></div>
+                                <div className="metric">{getOrgAliasFromPathname(pathname, "인절미")?.label ?? "인절미"} <strong>{injeolmi}</strong></div>
+                                <div className="metric">{getOrgAliasFromPathname(pathname, "어흥")?.label ?? "어흥"} <strong>{Math.abs(weekPoints.lightning)}</strong></div>
                                 <div className="metric">주차 평판 <strong>{weeklyReputationCounts[week.id] || 0}</strong><span className="sub">/4</span></div>
                               </div>
                             </>
@@ -2190,7 +2191,8 @@ const Cluster41Content = () => {
                         const weekPoints = getPointsForWeek(week.id);
                         const injeolmi = getCumulativeInjeolmi(week.id);
                         const renderItem = (name: "단감" | "인절미" | "어흥", value: number, defaultSrc: string) => {
-                          const mapped = getPxAlias(isPX, name);
+                          // org-aware alias (PX → 투구/방패/화살, EC → 별/방패/번개).
+                          const mapped = getOrgAliasFromPathname(pathname, name);
                           const label = mapped?.label ?? name;
                           return (
                             <span className="info-item with-icon" key={name}>

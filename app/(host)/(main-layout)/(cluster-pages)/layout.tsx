@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import ClusterTabs from "@/components/home-career/ClusterTabs";
 import Sidebar from "@/components/home-career/Sidebar";
 import Animations from "@/components/shared/Animations";
-import { isPxRoute } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute } from "@/lib/cluster-route";
 
 export default function ClusterLayout({
   children,
@@ -13,10 +13,13 @@ export default function ClusterLayout({
   children: React.ReactNode;
 }) {
   const mainRef = useRef<HTMLElement>(null);
-  // pathname segment 중 하나라도 -px 로 끝나면 phalanx 전용 theme wrapper 부여.
-  // 동적 하위 경로(/cluster-4-card-px/dw-01) 매칭 포함. 판정 로직은 lib/cluster-route.
+  // pathname segment 중 하나라도 -px / -ec 로 끝나면 해당 org theme wrapper 부여.
+  // 동적 하위 경로(/cluster-4-card-px/dw-01, /cluster-4-card-ec/dw-01) 매칭 포함.
+  // 판정 로직은 lib/cluster-route. 두 org 가 동시에 매칭되는 경우는 라우트 정책
+  // 상 발생하지 않지만 우선순위는 PX → EC.
   const pathname = usePathname();
   const isPx = isPxRoute(pathname);
+  const isEc = !isPx && isEcRoute(pathname);
   const clusterRouteFallback = (
     <div
       className="cluster-route-fallback"
@@ -42,8 +45,10 @@ export default function ClusterLayout({
   return (
     <main
       ref={mainRef}
-      className={`nftg-content nftg-content-home${isPx ? " cluster-px-theme" : ""}`}
-      data-cluster-theme={isPx ? "phalanx" : "default"}
+      className={`nftg-content nftg-content-home${
+        isPx ? " cluster-px-theme" : isEc ? " encre-theme" : ""
+      }`}
+      data-cluster-theme={isPx ? "phalanx" : isEc ? "encre" : "default"}
     >
       <Animations />
 
