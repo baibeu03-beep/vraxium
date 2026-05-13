@@ -15,7 +15,7 @@ import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { DUMMY_SEASON_DATA, DUMMY_SEASON_HISTORIES, REVIEW_COMMENT_DEFAULT } from "@/constants/dummyData";
 import { dedupedJson } from "@/lib/fetch-dedupe";
-import { isPxRoute, withPxRoute } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, withPxRoute } from "@/lib/cluster-route";
 import HelpModalBody from "@/components/shared/HelpModalBody";
 
 // 글자수 초과 시 '..' 표시 (CSS ellipsis '…' 대신 JS 처리)
@@ -439,6 +439,7 @@ const Cluster4Content = () => {
   // 모든 cluster navigation 은 withPxRoute(path, pathname) 으로 일관 적용.
   const pathname = usePathname();
   const isPX = isPxRoute(pathname);
+  const isEC = isEcRoute(pathname);
   const headerRef = useRef<HTMLElement>(null);
   const [section3Page, setSection3Page] = useState(0);
   const [isFlipping, setIsFlipping] = useState(false);
@@ -2689,7 +2690,14 @@ const Cluster4Content = () => {
           </div>
           <div
             className="tab"
-            style={{ width: "44px", height: "44px", background: "#FAAB07" }}
+            style={{
+              width: "44px",
+              height: "44px",
+              // /cluster-4-1 (season detail) 에서 "book" 탭이 활성 (yellow).
+              // org-suffix 라우트별 active accent 톤. base SCSS 의
+              // `.top-tabs .tab:first-child` 룰은 첫 탭만 잡으므로 여기서 분기.
+              background: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07",
+            }}
             onClick={() => router.push(withPxRoute(`/cluster-4-1${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname))}
           >
             <img src="/images/0/cluster4/icon/icon%20-%20book.png" alt="book" className="tab-icon" />
@@ -2750,7 +2758,7 @@ const Cluster4Content = () => {
             <div className="collection-card">
               <div className="collection-icon">
                 <img
-                  src={isPX ? "/images/0/cluster4/아호 캐릭터-px.png" : "/images/0/cluster4/아호 캐릭터.png"}
+                  src={isPX ? "/images/0/cluster4/아호 캐릭터-px.png" : isEC ? "/images/0/cluster4/아호 캐릭터-ec.png" : "/images/0/cluster4/아호 캐릭터.png"}
                   alt="아호 캐릭터"
                 />
               </div>
@@ -2875,12 +2883,20 @@ const Cluster4Content = () => {
           style={{
             width: "1023px",
             height: "1px",
-            // PX 라우트에서만 PX Green 톤(양 끝 fade + 중앙 진한 그라데이션) + soft glow.
-            // /cluster-4-1(non-PX)·/cluster-4 원본은 isPX=false 로 기존 #faab07 단색 유지.
+            // 라우트별 1023px section3 상단 divider:
+            //   PX → green 두-톤 그라데이션 + soft green glow
+            //   EC → Encre pink 두-톤 그라데이션 + soft pink glow (dark/cinematic)
+            //   default → 기존 #faab07 단색 (변경 없음)
             background: isPX
               ? "linear-gradient(90deg, rgba(30, 149, 3, 0.08), #1E9503, rgba(178, 255, 143, 0.55))"
+              : isEC
+              ? "linear-gradient(90deg, rgba(255, 75, 112, 0.08), #FF4B70, rgba(255, 152, 166, 0.55))"
               : "rgba(250, 171, 7, 1)",
-            boxShadow: isPX ? "0 0 8px rgba(30, 149, 3, 0.22)" : undefined,
+            boxShadow: isPX
+              ? "0 0 8px rgba(30, 149, 3, 0.22)"
+              : isEC
+              ? "0 0 8px rgba(255, 75, 112, 0.22)"
+              : undefined,
             margin: "0 auto",
           }}
         />
@@ -3406,7 +3422,7 @@ const Cluster4Content = () => {
                                   height: "15px",
                                   padding: "5px",
                                   flexShrink: 0,
-                                  background: "#FAAB07",
+                                  background: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07",
                                   borderRadius: "5px",
                                   display: "flex",
                                   alignItems: "center",
@@ -3720,7 +3736,15 @@ const Cluster4Content = () => {
                         setReputationDetailModalOpen(false);
                         setSeasonReputationModalOpen(true);
                       }}
-                      style={{ padding: '8px 16px', background: 'rgba(250, 171, 7, 0.2)', border: '1px solid #FAAB07', borderRadius: '6px', color: '#FAAB07', fontSize: '13px', cursor: 'pointer' }}
+                      style={{
+                        padding: '8px 16px',
+                        background: isPX ? 'rgba(30, 149, 3, 0.2)' : isEC ? 'rgba(255, 75, 112, 0.2)' : 'rgba(250, 171, 7, 0.2)',
+                        border: `1px solid ${isPX ? '#1E9503' : isEC ? '#FF4B70' : '#FAAB07'}`,
+                        borderRadius: '6px',
+                        color: isPX ? '#1E9503' : isEC ? '#FF4B70' : '#FAAB07',
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                      }}
                     >수정</button>
                     <button
                       onClick={async () => {
@@ -4129,7 +4153,7 @@ const Cluster4Content = () => {
           <div className="edit-modal-content season-review-modal">
             {/* Header */}
             <div className="edit-modal-header">
-              <h3 style={{ margin: 0, fontSize: "22px", fontWeight: 700, color: "#FAAB07" }}>✦ 시즌 리뷰</h3>
+              <h3 style={{ margin: 0, fontSize: "22px", fontWeight: 700, color: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07" }}>✦ 시즌 리뷰</h3>
               <span className="modal-subtitle" style={{ color: "#999", fontSize: "14px" }}>
                 이번 시즌에 대한 나의 평가를 남겨주세요
               </span>
@@ -4139,7 +4163,7 @@ const Cluster4Content = () => {
             <div className="edit-modal-body">
               {/* 평점 선택 */}
               <div className="slogan-rating-row" style={{ marginBottom: "20px" }}>
-                <label className="slogan-rating-label" style={{ color: "#FAAB07", fontSize: "14px", fontWeight: 600 }}>
+                <label className="slogan-rating-label" style={{ color: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07", fontSize: "14px", fontWeight: 600 }}>
                   평점
                 </label>
                 <div className="slogan-star-rating">
@@ -4180,7 +4204,7 @@ const Cluster4Content = () => {
 
               {/* 리뷰 입력 */}
               <div>
-                <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: "#FAAB07", marginBottom: "10px" }}>
+                <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07", marginBottom: "10px" }}>
                   한줄평 <span style={{ fontWeight: 400, color: "rgba(255,255,255,0.4)", fontSize: "12px" }}>(최대 300자)</span>
                 </label>
                 <div style={{ position: "relative" }}>
@@ -4240,7 +4264,13 @@ const Cluster4Content = () => {
                 style={{
                   padding: "10px 24px",
                   border: "none",
-                  background: seasonReviewSaving || seasonReviewSuccess || !seasonReviewEditData.review.trim() ? "#444" : "linear-gradient(135deg, #FAAB07 0%, #E09A06 100%)",
+                  background: seasonReviewSaving || seasonReviewSuccess || !seasonReviewEditData.review.trim()
+                    ? "#444"
+                    : isPX
+                    ? "linear-gradient(135deg, #1E9503 0%, #167702 100%)"
+                    : isEC
+                    ? "linear-gradient(135deg, #FF4B70 0%, #D63556 100%)"
+                    : "linear-gradient(135deg, #FAAB07 0%, #E09A06 100%)",
                   color: "#fff",
                   fontSize: "14px",
                   fontWeight: 600,

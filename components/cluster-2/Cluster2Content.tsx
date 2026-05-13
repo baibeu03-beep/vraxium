@@ -9,7 +9,7 @@ import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { isAdminEmail } from "@/lib/admin";
-import { isPxRoute } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute } from "@/lib/cluster-route";
 import { usePopup } from "@/components/ui/popup";
 import { logEvent } from "@/utils/blackScreenDiagnostics";
 import { CLUSTER2_DUMMY_PHOTOS, CLUSTER2_DUMMY_SLOGANS, CLUSTER2_DUMMY_VIDEOS, CLUSTER2_DUMMY_EDUCATIONS, CLUSTER2_DUMMY_REVIEWS, CLUSTER2_DUMMY_INTRO, CLUSTER2_DUMMY_BY_USER, DEFAULT_DEMO_USER } from "@/constants/dummyData";
@@ -115,11 +115,13 @@ const Cluster2Content = () => {
   const { data: session } = useSession();
   const { mask } = useDataMasking();
   const searchParams = useSearchParams();
-  // PX(Phalanx) 라우트 감지 — 동적 하위 라우트 포함. 판정 로직은 lib/cluster-route.
+  // PX(Phalanx) / EC(Encre) 라우트 감지 — 동적 하위 라우트 포함. 판정 로직은 lib/cluster-route.
   const pathname = usePathname();
   const isPX = isPxRoute(pathname);
-  // PX 라우트의 인라인 강조색 — non-PX 는 기존 #FAAB07 유지.
-  const accentInline = isPX ? "#1E9503" : "#FAAB07";
+  const isEC = isEcRoute(pathname);
+  // 라우트별 인라인 강조색 — non-themed 는 기존 #FAAB07 (gold) 유지.
+  // PX → PX green #1E9503, EC → Encre strong pink #FF4B70.
+  const accentInline = isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07";
   const { alert: showAlert, confirm: popupConfirm } = usePopup();
   const showConfirm = useCallback(
     async (message: string, onConfirm: () => void | Promise<void>) => {
@@ -1928,7 +1930,13 @@ const Cluster2Content = () => {
         <div className="frame-right">
           <div className="mascot-icon">
             <img
-              src={isPX ? "/images/0/cluster 2/px 01.png" : "/images/0/cluster 2/ok 01.png"}
+              src={
+                isPX
+                  ? "/images/0/cluster 2/px 01.png"
+                  : isEC
+                  ? "/images/0/cluster 2/ec 01.png"
+                  : "/images/0/cluster 2/ok 01.png"
+              }
               alt=""
             />
             <div className="speech-bubble">안녕 !</div>

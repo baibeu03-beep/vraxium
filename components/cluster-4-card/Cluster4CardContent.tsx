@@ -14,7 +14,7 @@ import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
-import { isPxRoute, withPxRoute } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, withPxRoute } from "@/lib/cluster-route";
 import DetailLogModal from "./DetailLogModal";
 import confetti from "canvas-confetti";
 import HelpModalBody from "@/components/shared/HelpModalBody";
@@ -243,9 +243,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const { mask } = useDataMasking();
   const searchParams = useSearchParams();
   const pathname = usePathname();
-  // PX 컨텍스트면 prev/next/filter/weekly 링크가 모두 px 라우트로 이동.
-  // 모든 cluster navigation 은 withPxRoute(path, pathname) 으로 일관 적용.
+  // PX / EC 컨텍스트면 prev/next/filter/weekly 링크가 모두 해당 org 라우트로 이동.
+  // 모든 cluster navigation 은 withPxRoute(path, pathname) 으로 일반화된 suffix 적용.
   const isPX = isPxRoute(pathname);
+  const isEC = isEcRoute(pathname);
   const popup = usePopup();
   const urlUserId = searchParams.get("userId") || searchParams.get("userID");
   // SSR/client hydration 일관성을 위해 stateful — 첫 렌더 SSR=client=false, 마운트 후 localStorage 값 반영
@@ -6224,13 +6225,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                         className="badge-status yellow"
                                         style={{
                                           padding: "4px 7.2px",
-                                          background: "rgba(250, 171, 7, 0.1)",
+                                          background: isPX ? "rgba(30, 149, 3, 0.1)" : isEC ? "rgba(255, 75, 112, 0.1)" : "rgba(250, 171, 7, 0.1)",
                                           borderRadius: 4,
                                           fontSize: 15,
                                           fontFamily: "'Pretendard', sans-serif",
                                           fontWeight: 600,
                                           lineHeight: "15px",
-                                          color: "#faab07",
+                                          color: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#faab07",
                                           whiteSpace: "nowrap",
                                           flexShrink: 0,
                                         }}
@@ -6358,13 +6359,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                 className="badge-status yellow"
                                 style={{
                                   padding: "4px 7.2px",
-                                  background: "rgba(250, 171, 7, 0.1)",
+                                  background: isPX ? "rgba(30, 149, 3, 0.1)" : isEC ? "rgba(255, 75, 112, 0.1)" : "rgba(250, 171, 7, 0.1)",
                                   borderRadius: 4,
                                   fontSize: 15,
                                   fontFamily: "'Pretendard', sans-serif",
                                   fontWeight: 600,
                                   lineHeight: "15px",
-                                  color: "#faab07",
+                                  color: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#faab07",
                                   whiteSpace: "nowrap",
                                   flexShrink: 0,
                                   marginRight: "8px",
@@ -8454,7 +8455,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       setHeaderModalOpen(true);
                       fetchKeywordsIfNeeded();
                     }}
-                    style={{ padding: "8px 16px", background: "rgba(250, 171, 7, 0.2)", border: "1px solid #FAAB07", borderRadius: "6px", color: "#FAAB07", fontSize: "13px", cursor: "pointer" }}
+                    style={{
+                      padding: "8px 16px",
+                      background: isPX ? "rgba(30, 149, 3, 0.2)" : isEC ? "rgba(255, 75, 112, 0.2)" : "rgba(250, 171, 7, 0.2)",
+                      border: `1px solid ${isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07"}`,
+                      borderRadius: "6px",
+                      color: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07",
+                      fontSize: "13px",
+                      cursor: "pointer",
+                    }}
                   >
                     수정
                   </button>
@@ -8731,7 +8740,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       <div className="workinfo-output-links">
                         {[0, 1, 2, 3, 4].map((i) => {
                           // cluster3 dot 색상(3개) → 5개 확장
-                          const dotColor = ["#FF6B6B", "#4ECDC4", "#FAAB07", "#6BCB77", "#A084DC"][i];
+                          // chart legend palette — 가운데 yellow brand accent 만 3-way 분기.
+                          // 좌우 2색 (#FF6B6B/#4ECDC4) 및 끝 2색 (#6BCB77/#A084DC) 은 semantic palette.
+                          const dotColor = ["#FF6B6B", "#4ECDC4", isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07", "#6BCB77", "#A084DC"][i];
                           const adminCount = selectedWorkInfoCard?.activityType ? getAdminOutputLinksCount(selectedWorkInfoCard.activityType) : 0;
                           const isAdminLink = i < adminCount;
                           // 보기 모드는 카드 데이터, 편집 모드는 editingOutputLinks
@@ -9161,7 +9172,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <div className="workinfo-mid-col2">
                       <div className="workinfo-output-links">
                         {[0, 1, 2, 3, 4].map((i) => {
-                          const dotColor = ["#FF6B6B", "#4ECDC4", "#FAAB07", "#6BCB77", "#A084DC"][i];
+                          // chart legend palette — 가운데 yellow brand accent 만 3-way 분기.
+                          // 좌우 2색 (#FF6B6B/#4ECDC4) 및 끝 2색 (#6BCB77/#A084DC) 은 semantic palette.
+                          const dotColor = ["#FF6B6B", "#4ECDC4", isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07", "#6BCB77", "#A084DC"][i];
                           const adminCount = selectedWorkExpCard?.activityTypeId ? getAdminOutputLinksCount(selectedWorkExpCard.activityTypeId) : 0;
                           const isAdminLink = i < adminCount;
                           const link = workExpViewIsEditing ? editingExpOutputLinks[i] || { desc: "", url: "" } : selectedWorkExpCard.outputLinks?.[i] || { desc: "", url: "" };
@@ -9604,7 +9617,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <div className="workinfo-mid-col2">
                       <div className="workinfo-output-links">
                         {[0, 1, 2, 3, 4].map((i) => {
-                          const dotColor = ["#FF6B6B", "#4ECDC4", "#FAAB07", "#6BCB77", "#A084DC"][i];
+                          // chart legend palette — 가운데 yellow brand accent 만 3-way 분기.
+                          // 좌우 2색 (#FF6B6B/#4ECDC4) 및 끝 2색 (#6BCB77/#A084DC) 은 semantic palette.
+                          const dotColor = ["#FF6B6B", "#4ECDC4", isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07", "#6BCB77", "#A084DC"][i];
                           const adminCount = selectedWorkAbilityCard?.activityTypeId ? getAdminOutputLinksCount(selectedWorkAbilityCard.activityTypeId) : 0;
                           const isAdminLink = i < adminCount;
                           const link = workAbilityViewIsEditing ? editingAbilityOutputLinks[i] || { desc: "", url: "" } : selectedWorkAbilityCard.outputLinks?.[i] || { desc: "", url: "" };
@@ -10015,7 +10030,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <div className="workinfo-mid-col2">
                       <div className="workinfo-output-links">
                         {[0, 1, 2, 3, 4].map((i) => {
-                          const dotColor = ["#FF6B6B", "#4ECDC4", "#FAAB07", "#6BCB77", "#A084DC"][i];
+                          // chart legend palette — 가운데 yellow brand accent 만 3-way 분기.
+                          // 좌우 2색 (#FF6B6B/#4ECDC4) 및 끝 2색 (#6BCB77/#A084DC) 은 semantic palette.
+                          const dotColor = ["#FF6B6B", "#4ECDC4", isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07", "#6BCB77", "#A084DC"][i];
                           const activityType = workCareerActivityTypes[(selectedWorkCareerCard?.id || 1) - 1];
                           const adminCount = activityType ? getAdminOutputLinksCount(activityType) : 0;
                           const isAdminLink = i < adminCount;

@@ -1,0 +1,517 @@
+// =============================================================
+// Encre (EC) cluster-3 본문 override.
+//
+// 적용 조건:
+//   <main class="encre-theme"> 가 부착된 라우트(/cluster-3-ec) 에서만 활성화.
+//   /cluster-3 본체 및 /cluster-3-px 는 무영향.
+//   wrapper 부착은 (cluster-pages)/layout.tsx 에서 자동 처리.
+//
+// 원칙 (cluster-2-encre 와 동일):
+//   - 절대 _cluster3.scss 본 파일을 건드리지 않는다.
+//   - 모든 selector 는 .encre-theme 하위에서만 매칭.
+//   - 큰 wrapper / hero / section / overlay 의 배경 이미지는 절대 건드리지 않는다.
+//     (텍스트·border·icon·badge·button·gauge·glow·작은 highlight 만 EC 톤으로 교체)
+//   - _cluster3.scss 에 실제로 존재하는 selector 만 mirror 해서 override.
+//   - 톤: dark / premium / cinematic pink — neon pink 아님.
+//
+// 색상 source : _theme-tokens.scss 의
+//   --ec-accent           = #ff4b70   (strong)
+//   --ec-accent-soft      = #ff98a6   (soft)
+//   --ec-accent-glow      = rgba(255, 75, 112, 0.32)
+//   --ec-accent-soft-glow = rgba(255, 152, 166, 0.22)
+//   --ec-gradient         = linear-gradient(135deg, #ff98a6 0%, #ff4b70 100%)
+//
+// 색상 매핑:
+//   strong yellow/orange (#FAAB07 / #FFC919 / #FFA500 / #FFC300 / #FAC600 / #ECBB02)
+//     → var(--ec-accent) = #ff4b70
+//   light yellow/gold (#FED402 / #FFEC8F / #FFD700 / #FFEA48 / #FFE89C / #FFF1AA)
+//     → var(--ec-accent-soft) = #ff98a6
+//   rgba(250,171,7,a) / (255,165,0,a) / (250,198,0,a) / (236,187,2,a)
+//     → rgba(255, 75, 112, a) (= --ec-accent 의 alpha 형)
+//   rgba(254,212,2,a) / (255,236,143,a) / (255,215,0,a)
+//     → rgba(255, 152, 166, a) (= --ec-accent-soft 의 alpha 형)
+//
+// 구조: _cluster3-px.scss 와 1:1 mirror — 같은 selector / 같은 의도, 토큰만 다름.
+// =============================================================
+
+.encre-theme {
+  // =================================================================
+  // SECTION 1 — CLUB FINAL INDEX hero
+  // =================================================================
+
+  // 1.1 floating-icons .edit-icon
+  .floating-icons .edit-icon {
+    background: var(--ec-accent);
+    &:hover {
+      background: var(--ec-accent-soft);
+    }
+  }
+
+  // 1.2 quote-highlight 그라데이션
+  .cluster3-section1 .section1-description .quote-highlight {
+    background: var(--ec-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+
+  // 1.3 progress 반원 게이지 — drop-shadow / progress-bg stroke.
+  //    SVG <stop> 은 컴포넌트에서 isEC 분기로 처리됨 (Cluster3Content.tsx).
+  .cluster3-section1 .progress-area .progress-semi-circle {
+    svg {
+      filter: drop-shadow(0 0 40px rgba(255, 75, 112, 0.5));
+
+      .progress-bg {
+        stroke: rgba(255, 75, 112, 0.5);
+      }
+    }
+
+    .progress-text {
+      .progress-percent,
+      .progress-label {
+        color: var(--ec-accent-soft);
+      }
+    }
+  }
+
+  // 1.4 stats-cards .stat-card 하단 노란 박스 → 핑크 글로우 박스
+  .cluster3-section1 .stats-cards .stat-card::before {
+    background: linear-gradient(
+      to bottom,
+      rgba(255, 75, 112, 0),
+      rgba(255, 75, 112, 1)
+    );
+  }
+
+  // 1.5 stat-card info-row
+  .cluster3-section1 .stats-cards .stat-card .card-body .info-row {
+    &.separator {
+      border-top-color: var(--ec-accent-soft);
+    }
+
+    &.club-break-row .club-break-tooltip {
+      border-color: rgba(255, 152, 166, 0.3);
+    }
+
+    .info-label {
+      .dot {
+        color: var(--ec-accent-soft);
+      }
+      .hl.official {
+        background: var(--ec-accent-soft);
+      }
+    }
+
+    .info-value {
+      color: var(--ec-accent-soft);
+
+      &.highlight,
+      &.number,
+      &.negative,
+      &.week,
+      &.season {
+        color: var(--ec-accent-soft);
+      }
+
+      .highlight-orange {
+        color: var(--ec-accent);
+      }
+    }
+  }
+
+  // 1.6 watch-pricing hover
+  .cluster3-section1 .stats-cards .stat-card .card-footer .watch-pricing:hover {
+    color: var(--ec-accent-soft);
+  }
+
+  // 1.7 progress-bar-small
+  .cluster3-section1 .stats-cards .stat-card .card-footer .progress-bar-small::after {
+    background: var(--ec-gradient);
+  }
+
+  // =================================================================
+  // SECTION 2 — 강화 품계 (rank cards)
+  // =================================================================
+
+  // 2.1 section2 위/아래 1px 라인
+  .cluster3-section2 {
+    &::before,
+    &::after {
+      background: var(--ec-accent);
+    }
+  }
+
+  // 2.2 section2-progress 텍스트 + 바
+  //    progress-percent / progress-unit (% 기호) 모두 soft accent 통일.
+  .cluster3-section2 .section2-progress {
+    .progress-info {
+      .progress-percent,
+      .progress-unit {
+        color: var(--ec-accent-soft);
+      }
+    }
+
+    .progress-bar-container .progress-bar-fill {
+      background: var(--ec-gradient);
+    }
+  }
+
+  // 2.3 rank-card 글로우/하이라이트/액티브
+  //    semantic medal 이미지는 미터치 (rank.rank-medal img 유지).
+  .cluster3-section2 .section2-cards .rank-card {
+    &.highlighting {
+      box-shadow: 0 8px 25px rgba(255, 75, 112, 0.5);
+    }
+
+    &.active {
+      box-shadow:
+        0 0 15px 5px rgba(255, 152, 166, 0.6),
+        0 0 30px 10px rgba(255, 152, 166, 0.3);
+    }
+
+    &:hover {
+      box-shadow: 0 5px 15px rgba(255, 75, 112, 0.4);
+    }
+  }
+
+  // =================================================================
+  // SECTION 3 — 채널 그리드 (Channels)
+  // =================================================================
+
+  // 3.1 section3 헤더 view-all + arrow + triangle + count-badge
+  .cluster3-section3 .section3-header {
+    .triangle {
+      color: var(--ec-accent-soft);
+    }
+
+    .header-sub {
+      .view-all {
+        color: var(--ec-accent-soft);
+
+        .arrow-icon {
+          &::before {
+            background: var(--ec-accent-soft);
+          }
+          &::after {
+            border-right-color: var(--ec-accent-soft);
+            border-bottom-color: var(--ec-accent-soft);
+          }
+        }
+      }
+
+      .count-badge {
+        background: var(--ec-accent-soft);
+      }
+    }
+  }
+
+  // 3.2 channel-card .management-tag.tag--yellow
+  .cluster3-section3 .channel-cards .channel-card .management-tag.tag--yellow {
+    background: rgba(255, 75, 112, 0.2);
+    color: var(--ec-accent);
+  }
+
+  // =================================================================
+  // SECTION 4 — Top Works Slider
+  // =================================================================
+
+  // 4.1 section4 상단 헤더 view-all + arrow
+  .cluster3-section4 .section4-top-header .header-sub .view-all {
+    color: var(--ec-accent-soft);
+
+    .arrow-icon {
+      &::before {
+        background: var(--ec-accent-soft);
+      }
+      &::after {
+        border-right-color: var(--ec-accent-soft);
+        border-bottom-color: var(--ec-accent-soft);
+      }
+    }
+  }
+
+  // 4.2 탭 버튼 border / hover. creative/practical 변형은 자체 색상 유지.
+  .cluster3-section4 .section4-tabs .tab-btn {
+    &:not(.creative):not(.practical) {
+      border-color: var(--ec-accent-soft);
+
+      &:hover {
+        background: rgba(255, 152, 166, 0.1);
+      }
+    }
+  }
+
+  // 4.3 slider-item 호버
+  .cluster3-section4 .top-works-slider .slider-item:hover {
+    border: 1px solid var(--ec-accent-soft);
+    box-shadow: 0 20px 40px rgba(255, 152, 166, 0.3);
+  }
+
+  // =================================================================
+  // SECTION 5 — Detail 10
+  // =================================================================
+
+  // 5.1 section5 헤더 view-all + arrow + count-badge
+  .cluster3-section5 .section5-header {
+    .header-sub .view-all {
+      color: var(--ec-accent-soft);
+
+      .arrow-icon {
+        &::before {
+          background: var(--ec-accent-soft);
+        }
+        &::after {
+          border-right-color: var(--ec-accent-soft);
+          border-bottom-color: var(--ec-accent-soft);
+        }
+      }
+    }
+
+    .header-right .count-badge {
+      background: var(--ec-accent-soft);
+    }
+  }
+
+  // =================================================================
+  // SECTION 모달 (section-modal / output-modal)
+  //   클릭 트리거 시에만 표시 — createPortal 미사용 → .encre-theme 하위에
+  //   그대로 렌더됨.
+  // =================================================================
+
+  // 6.1 section-modal 외곽
+  .cluster3-content .section-modal {
+    border: 1px solid var(--ec-accent) !important;
+    box-shadow: 0px 0px 60px 0px rgba(255, 75, 112, 0.15);
+
+    &::before,
+    &::after {
+      border-color: var(--ec-accent);
+    }
+  }
+
+  // 6.2 section-modal 내부 채널 정보
+  .cluster3-content .section-modal .channel-info-section {
+    .channel-info-title {
+      color: var(--ec-accent);
+    }
+
+    .channel-info-field {
+      label::before {
+        color: var(--ec-accent);
+      }
+
+      input,
+      select,
+      .channel-date-input {
+        border-color: rgba(255, 75, 112, 0.3);
+      }
+
+      .channel-date-input:focus {
+        border-color: var(--ec-accent);
+      }
+
+      .custom-dropdown {
+        .dropdown-selected {
+          border-color: rgba(255, 75, 112, 0.3);
+
+          &:hover {
+            border-color: var(--ec-accent);
+          }
+        }
+
+        .dropdown-options {
+          border-color: var(--ec-accent);
+
+          &::-webkit-scrollbar-thumb {
+            background: rgba(255, 75, 112, 0.3);
+          }
+
+          .dropdown-option {
+            &:hover {
+              background: rgba(255, 75, 112, 0.15);
+            }
+            &.selected {
+              background: rgba(255, 75, 112, 0.25);
+              color: var(--ec-accent);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 6.3 dropdown-options-fixed 포털형 드롭다운
+  .cluster3-content .dropdown-options-fixed {
+    border: 1px solid var(--ec-accent);
+
+    &::-webkit-scrollbar-thumb {
+      background: rgba(255, 75, 112, 0.3);
+    }
+
+    .dropdown-option {
+      &:hover {
+        background: rgba(255, 75, 112, 0.15);
+      }
+      &.selected {
+        background: rgba(255, 75, 112, 0.25);
+        color: var(--ec-accent);
+      }
+    }
+  }
+
+  // 6.4 section-modal-footer 버튼/라인
+  .cluster3-content .section-modal .section-modal-footer {
+    .modal-help-icon {
+      color: var(--ec-accent);
+    }
+
+    .modal-cancel-btn,
+    .modal-reset-btn {
+      border-color: var(--ec-accent);
+      color: var(--ec-accent);
+
+      &:hover {
+        background: rgba(255, 75, 112, 0.1);
+      }
+    }
+
+    .modal-save-btn {
+      background: var(--ec-accent);
+
+      &:hover {
+        background: var(--ec-accent-soft);
+      }
+    }
+
+    .modal-edit-btn {
+      background: var(--ec-accent);
+      box-shadow: 0 0 20px rgba(255, 75, 112, 0.4);
+
+      &:hover {
+        background: var(--ec-accent-soft);
+      }
+    }
+  }
+
+  // 6.5 link-edit-item dropdown SVG arrow (data-URL fill='%23FFA500')
+  //    attribute selector 로 못 잡으므로 EC 톤 SVG data-url 로 다시 그려서 덮는다.
+  .cluster3-content .section-modal .link-edit-item .dropdown-selected,
+  .cluster3-content .section-modal .link-edit-item select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23FF4B70' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  }
+
+  // 6.6 output-modal 외곽
+  .cluster3-content .output-modal {
+    border: 1px solid var(--ec-accent) !important;
+    box-shadow: 0px 0px 60px 0px rgba(255, 75, 112, 0.15);
+
+    &::before,
+    &::after {
+      border-color: var(--ec-accent);
+    }
+  }
+
+  // 6.7 output-modal-body 빈번한 강조 (required-mark)
+  .cluster3-content .output-modal .output-modal-body {
+    .required-mark {
+      color: var(--ec-accent);
+    }
+  }
+
+  // 6.8 output-modal-footer 버튼
+  .cluster3-content .output-modal .output-modal-footer {
+    .modal-help-icon {
+      color: var(--ec-accent);
+    }
+
+    .modal-cancel-btn,
+    .modal-reset-btn {
+      border-color: var(--ec-accent);
+      color: var(--ec-accent);
+
+      &:hover {
+        background: rgba(255, 75, 112, 0.1);
+      }
+    }
+
+    .modal-save-btn {
+      background: var(--ec-accent);
+
+      &:hover {
+        background: var(--ec-accent-soft);
+      }
+    }
+
+    .modal-edit-btn {
+      background: var(--ec-accent);
+      box-shadow: 0 0 20px rgba(255, 75, 112, 0.4);
+
+      &:hover {
+        background: var(--ec-accent-soft);
+      }
+    }
+  }
+
+  // 6.10 help-modal (PeriodRangePicker 는 portal 직속이라 별도 처리 필요 — PX 와 동일하게 후속 polish)
+  .cluster3-content .help-modal {
+    border: 1px solid var(--ec-accent);
+    box-shadow: 0 0 60px rgba(255, 75, 112, 0.15);
+
+    &::before,
+    &::after {
+      border-color: var(--ec-accent);
+    }
+  }
+
+  .cluster3-content .help-modal-header {
+    border-bottom-color: rgba(255, 75, 112, 0.2);
+
+    .modal-header-top .modal-close-btn {
+      color: var(--ec-accent);
+    }
+  }
+
+  // =================================================================
+  // SVG 인라인 stop-color 안전망
+  //   _cluster3.scss 외 컴포넌트가 정적으로 stop-color 를 뱉는 경우 대비.
+  //   isEC 분기로 이미 처리되는 progress-gradient 도 fallback.
+  // =================================================================
+  stop[stop-color="#FAAB07" i] {
+    stop-color: var(--ec-accent);
+  }
+  stop[stop-color="#FFC919" i],
+  stop[stop-color="#FED402" i],
+  stop[stop-color="#FFD700" i] {
+    stop-color: var(--ec-accent-soft);
+  }
+
+  // =================================================================
+  // "View All Bids" 텍스트 specificity 보정
+  //   원본 cascade 가 6 classes 라 기존 5-class override 가 동률에서 짐.
+  //   .cluster3-content + .header-left 를 경로에 명시해 7 classes 확보.
+  //   PX 와 동일 패턴.
+  // =================================================================
+  .cluster3-content {
+    .cluster3-section3 .section3-header .header-left .header-sub .view-all,
+    .cluster3-section4 .section4-top-header .header-left .header-sub .view-all,
+    .cluster3-section5 .section5-header .header-left .header-sub .view-all {
+      color: var(--ec-accent-soft);
+    }
+  }
+
+  // =================================================================
+  // PNG 아이콘 recolor (raster — CSS filter 로 hue/saturation 변환).
+  //
+  //   사용자 정책 "PNG 전체 hue-rotate 금지" — 본 블록은 src path 가
+  //   정확히 매칭되는 **단색 yellow 아이콘 3개** 에만 한정 (남발 아님).
+  //   배경 이미지 bg1~bg4.png, 캐릭터 char-*, medal*, image/정 N 품.png,
+  //   image/[ec|px]/*.png 등 semantic image 는 selector 매칭 0.
+  //
+  //   대안 옵션 (EC 전용 PNG swap) 은 자산이 없어 후속 polish — 현재는
+  //   PX 와 동일 strategy 로 hue-rotate(-51deg) 적용.
+  // =================================================================
+  img[src$="/cluster 3/polygon.png"],
+  img[src$="/cluster 3/arrow.png"],
+  img[src$="/cluster 3/icon/_.png"] {
+    filter: hue-rotate(-51deg) saturate(0.92) brightness(0.95);
+  }
+}

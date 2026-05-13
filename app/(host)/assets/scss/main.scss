@@ -141,8 +141,17 @@
 // phalanx 전용 override 묶음 — 반드시 base 파일들 뒤에 와야 cascade 로 이긴다.
 // .cluster-px-theme 하위에서만 매칭되므로 non-px 라우트엔 영향 0.
 @import "./components/cluster2-px";
+// Encre 전용 cluster-2 override — _cluster2-px.scss 와 1:1 mirror,
+// .encre-theme 하위에서만 활성. /cluster-2 본체 및 /cluster-2-px 영향 0.
+@import "./components/cluster2-encre";
 @import "./components/cluster3-px";
+// Encre 전용 cluster-3 override — _cluster3-px.scss 와 1:1 mirror.
+// .encre-theme 하위에서만 활성. /cluster-3 본체 및 /cluster-3-px 영향 0.
+@import "./components/cluster3-encre";
 @import "./components/cluster-tabs-px";
+// Encre 전용 cluster-tabs override — _cluster-tabs-px.scss 와 1:1 mirror.
+// .encre-theme 하위에서만 활성. -ec 라우트 외에는 영향 0.
+@import "./components/cluster-tabs-encre";
 @import "./components/resume-card-px";
 // Encre 전용 resume-card override — base ec-theme 블록(_resume-card.scss
 // L1408-1553) 이 누락한 영역만 보충. .resume-card.ec-theme +
@@ -151,7 +160,14 @@
 @import "./components/cluster4-season"; // 시즌 카드용
 @import "./components/cluster4-week";   // 주차 카드용
 @import "./components/cluster4-px";
+// Encre 전용 cluster-4 override — _cluster4-px.scss 와 1:1 mirror.
+// .encre-theme 하위에서만 활성. /cluster-4 본체 및 /cluster-4-px 영향 0.
+@import "./components/cluster4-encre";
 @import "./components/cluster4-card-px"; // /cluster-4-card-px 전용 — 반드시 cluster4-week 뒤
+// Encre 전용 /cluster-4-card override — _cluster4-card-px.scss 와 1:1 mirror.
+// .encre-theme 하위에서만 활성. /cluster-4-card 본체 및 /cluster-4-card-px 영향 0.
+// more-icon/card-arrow PNG 의 white glyph 보존을 위해 단일 hue-rotate 만 사용.
+@import "./components/cluster4-card-encre";
 @import "./components/crews-phalanx";
 @import "./components/crews-encre";
 @import "./components/weekly-ranking";  // Weekly League 페이지 전용

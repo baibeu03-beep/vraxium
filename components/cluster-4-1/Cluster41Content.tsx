@@ -9,7 +9,7 @@ import { dedupedJson } from "@/lib/fetch-dedupe";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA } from "@/constants/dummyData";
-import { isPxRoute, withPxRoute } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, withPxRoute } from "@/lib/cluster-route";
 
 // 글자수 기반 말줄임 (info-badge role 8자 초과 시 "..")
 const truncate = (text: string | null | undefined, maxLen: number = 5): string => {
@@ -120,14 +120,23 @@ const Cluster41Content = () => {
   } as Record<string, React.ReactNode>)[demoUserName] || null : null;
 
   const router = useRouter();
-  // PX 컨텍스트 감지 — 내부 cross-link 와 cluster-4-card 진입 시 px 라우트 유지.
-  // 모든 cluster navigation 은 withPxRoute(path, pathname) 으로 PX 여부를 일관 적용.
-  // /cluster-4 는 isPX=false 이므로 기존 #FFA500 그대로 유지.
+  // org 컨텍스트 감지 — 내부 cross-link 와 cluster-4-card 진입 시 -px/-ec suffix 유지.
+  // 모든 cluster navigation 은 withPxRoute(path, pathname) 으로 일반화된 suffix 적용.
+  // /cluster-4 (default) 는 isPX=false && isEC=false 이므로 기존 #FFA500 그대로 유지.
   const pathname = usePathname();
   const isPX = isPxRoute(pathname);
-  const filterAccent = isPX ? "#1E9503" : "#FFA500";
-  const filterAccentBg = isPX ? "rgba(30, 149, 3, 0.1)" : "rgba(255, 165, 0, 0.1)";
-  const filterAccentBgSelected = isPX ? "rgba(30, 149, 3, 0.2)" : "rgba(255, 165, 0, 0.2)";
+  const isEC = isEcRoute(pathname);
+  const filterAccent = isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FFA500";
+  const filterAccentBg = isPX
+    ? "rgba(30, 149, 3, 0.1)"
+    : isEC
+    ? "rgba(255, 75, 112, 0.1)"
+    : "rgba(255, 165, 0, 0.1)";
+  const filterAccentBgSelected = isPX
+    ? "rgba(30, 149, 3, 0.2)"
+    : isEC
+    ? "rgba(255, 75, 112, 0.2)"
+    : "rgba(255, 165, 0, 0.2)";
 
   const headerRef = useRef<HTMLElement>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -1536,7 +1545,13 @@ const Cluster41Content = () => {
             <div className="collection-card">
               <div className="collection-icon">
                 <img
-                  src={isPX ? "/images/0/cluster4/아호 캐릭터-px.png" : "/images/0/cluster4/아호 캐릭터.png"}
+                  src={
+                    isPX
+                      ? "/images/0/cluster4/아호 캐릭터-px.png"
+                      : isEC
+                      ? "/images/0/cluster4/아호 캐릭터-ec.png"
+                      : "/images/0/cluster4/아호 캐릭터.png"
+                  }
                   alt="아호 캐릭터"
                 />
               </div>
