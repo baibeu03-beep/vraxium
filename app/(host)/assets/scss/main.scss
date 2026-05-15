@@ -173,6 +173,13 @@
 @import "./components/weekly-ranking";  // Weekly League 페이지 전용
 @import "./components/weekly-card";     // Weekly League 주차 카드
 
+// Phase B — Portal modal/popup theme override (CustomPopup, DetailLogModal).
+// 결합 selector(.section-modal-overlay.cluster-px-theme 등)로 portal root 에
+// 직접 매칭. 반드시 _global.scss 의 generic [class*="modal-close"]:hover
+// (위쪽 이미 import) 뒤에 와야 cascade 로 이긴다 — 본 파일은 base 블록
+// 모두 import 된 후이므로 순서 OK.
+@import "./components/popup-portal-theme";
+
 // layout styles
 @import "./layout/header";
 @import "./layout/sidebar";

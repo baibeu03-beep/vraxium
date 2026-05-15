@@ -10,6 +10,8 @@ import React, {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { usePathname } from 'next/navigation';
+import { getThemeClass, getThemeKey } from '@/lib/cluster-route';
 import Popup from './Popup';
 
 /* ----------------------- Types ----------------------- */
@@ -49,6 +51,16 @@ export const PopupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [queue, setQueue] = useState<PopupQueueItem[]>([]);
   const [mounted, setMounted] = useState(false);
   const idRef = useRef(0);
+
+  // Phase A/B — portal popup 의 theme scope.
+  // Provider 는 layout 트리(=route subtree) 안에 있어 usePathname 으로 현재
+  // 라우트의 theme 을 추론할 수 있다. 그 결과를 Popup 의 portal root 에 직접
+  // 부착(themeClassName)해 createPortal body-direct 한계를 SCSS 측에서 우회
+  // (`.cluster-px-theme.custom-popup-backdrop` 결합 selector). themeKey 는
+  // body 아이콘 PNG 자산 swap (popup-N-px.png / -ec.png) 용도.
+  const pathname = usePathname();
+  const themeClassName = getThemeClass(pathname);
+  const themeKey = getThemeKey(pathname);
 
   // Portal은 클라이언트에서만 마운트 (Next.js SSR 호환)
   useEffect(() => {
@@ -109,6 +121,8 @@ export const PopupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             cancelText={current.cancelText}
             onConfirm={() => handleClose(true)}
             onCancel={() => handleClose(false)}
+            themeClassName={themeClassName}
+            themeKey={themeKey}
           />,
           document.body
         )}

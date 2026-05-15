@@ -21,11 +21,23 @@
 
 .encre-theme,
 .resume-card.ec-theme {
-  --ec-accent: #ff4b70;
-  --ec-accent-soft: #ff98a6;
-  --ec-accent-glow: rgba(255, 75, 112, 0.32);
-  --ec-accent-soft-glow: rgba(255, 152, 166, 0.22);
-  --ec-gradient: linear-gradient(135deg, #ff98a6 0%, #ff4b70 100%);
+  // Theme-agnostic canonical (Phase A 추가) — 신규 popup/modal/공통 override
+  // 는 본 --org-* 변수만 참조한다. PX wrapper(_px-tokens.scss) 와 동일
+  // 이름·역할로 노출되므로 var(--org-accent) 한 줄이 PX/EC 양쪽에서 자동
+  // 매칭된다.
+  --org-accent: #ff4b70;
+  --org-accent-soft: #ff98a6;
+  --org-accent-glow: rgba(255, 75, 112, 0.32);
+  --org-accent-soft-glow: rgba(255, 152, 166, 0.22);
+  --org-gradient: linear-gradient(135deg, #ff98a6 0%, #ff4b70 100%);
+
+  // Back-compat alias — 기존 --ec-* 참조 코드는 그대로 동작.
+  // 값은 위 --org-* 를 가리키므로 computed value 가 종전과 동일 (regression 0).
+  --ec-accent: var(--org-accent);
+  --ec-accent-soft: var(--org-accent-soft);
+  --ec-accent-glow: var(--org-accent-glow);
+  --ec-accent-soft-glow: var(--org-accent-soft-glow);
+  --ec-gradient: var(--org-gradient);
 }
 
 // =============================================================

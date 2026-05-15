@@ -13,19 +13,71 @@ $popup-text-color: #ffffff;
 $popup-btn-bg: #2a323d;
 $popup-btn-text: #ffffff;
 $popup-btn-border: transparent;
-$popup-btn-hover-bg: #faab07;
 $popup-btn-hover-text: #000000;
-$popup-btn-confirm-bg: #faab07;
 $popup-btn-confirm-text: #000000;
 
 $popup-z-backdrop: 9999998;
 $popup-z-content: 9999999;
 
+// Phase B — popup accent 토큰화. backdrop 자체에 default 노란 톤을 부여하고
+// `.cluster-px-theme` / `.encre-theme` modifier 가 부착된 backdrop 에서만
+// org accent 로 override. createPortal 이 document.body 직속으로 렌더되어
+// `.cluster-px-theme .custom-popup-backdrop` descendant selector 가 매칭
+// 되지 않는 문제를 PopupProvider 의 themeClassName 주입(Phase A) + 본 결합
+// selector(`.cluster-px-theme.custom-popup-backdrop`)로 해결한다.
+//
+// 토큰 의미:
+//   --popup-accent-bg       : confirm/hover 버튼 배경
+//   --popup-accent-bg-hover : confirm 버튼 hover 배경 (살짝 밝은 톤)
+//   --popup-accent-outline  : focus-visible outline
+//   변경 가능한 표면만 토큰화. backdrop · body · cancel 컬러 등 무관 영역은 유지.
 .custom-popup-backdrop {
   position: fixed;
   inset: 0;
   background-color: rgba(0, 0, 0, 0.55);
   z-index: $popup-z-backdrop;
+
+  --popup-accent-bg: #faab07;
+  --popup-accent-bg-hover: #fbc228; // lighten(#faab07, 5%) 동치
+  --popup-accent-outline: var(--popup-accent-bg);
+
+  // Phase B' — popup 상단 decorative gradient strip 토큰화.
+  // default 는 기존 blue/cyan glass 그대로 (`var(--popup-header-overlay, 0.65)`
+  // 는 Popup.tsx 에서 inline 으로 .custom-popup 에 주입되며 본 변수의 사용
+  // 시점에 cascade 로 해석됨). theme modifier 가 부착된 backdrop 에서만
+  // PX/Encre 전용 3-stop 90deg gradient 로 교체.
+  // 주의: header background 의 두 번째 layer(`var(--popup-header-bg)` =
+  // popup/{1..4}.png) 는 변경하지 않는다. gradient 의 alpha 가 그대로
+  // semi-transparent glass 느낌을 보존.
+  --popup-header-gradient: linear-gradient(
+    to right,
+    rgba(33, 150, 243, var(--popup-header-overlay, 0.65)),
+    rgba(0, 77, 95, 0.85)
+  );
+
+  &.cluster-px-theme {
+    --popup-accent-bg: #1E9503;
+    --popup-accent-bg-hover: #2BAA0A;   // strong PX 톤 살짝 밝게
+    --popup-accent-outline: var(--popup-accent-bg);
+    --popup-header-gradient: linear-gradient(
+      90deg,
+      rgba(30, 149, 3, 0.10),
+      rgba(30, 149, 3, 0.85),
+      rgba(178, 255, 143, 0.55)
+    );
+  }
+
+  &.encre-theme {
+    --popup-accent-bg: #FF4B70;
+    --popup-accent-bg-hover: #FF6383;   // strong EC 톤 살짝 밝게
+    --popup-accent-outline: var(--popup-accent-bg);
+    --popup-header-gradient: linear-gradient(
+      90deg,
+      rgba(255, 75, 112, 0.10),
+      rgba(255, 75, 112, 0.85),
+      rgba(255, 152, 166, 0.55)
+    );
+  }
 }
 
 .custom-popup {
@@ -50,8 +102,12 @@ $popup-z-content: 9999999;
     width: 100%;
     height: $popup-header-height;
     position: relative;
+    // 두 layer 합성:
+    //   1) --popup-header-gradient (theme-aware decorative tint, semi-transparent)
+    //   2) --popup-header-bg       (Popup.tsx 가 inline 으로 주입한 random PNG)
+    // sizing/blur/animation/border-radius 모두 무수정 — 색상 layer 만 토큰화.
     background:
-      linear-gradient(to right, rgba(33, 150, 243, var(--popup-header-overlay, 0.65)), rgba(0, 77, 95, 0.85)),
+      var(--popup-header-gradient),
       var(--popup-header-bg) center 42% / cover no-repeat;
   }
 
@@ -136,7 +192,7 @@ $popup-z-content: 9999999;
       color 0.15s ease;
 
     &:hover {
-      background-color: $popup-btn-hover-bg;
+      background-color: var(--popup-accent-bg);
       color: $popup-btn-hover-text;
     }
 
@@ -145,16 +201,16 @@ $popup-z-content: 9999999;
     }
 
     &:focus-visible {
-      outline: 2px solid $popup-btn-hover-bg;
+      outline: 2px solid var(--popup-accent-outline);
       outline-offset: 2px;
     }
 
     &--confirm {
-      background-color: $popup-btn-confirm-bg;
+      background-color: var(--popup-accent-bg);
       color: $popup-btn-confirm-text;
 
       &:hover {
-        background-color: lighten(#faab07, 5%);
+        background-color: var(--popup-accent-bg-hover);
         color: $popup-btn-confirm-text;
       }
     }

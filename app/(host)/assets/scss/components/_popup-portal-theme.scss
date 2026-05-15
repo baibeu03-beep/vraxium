@@ -1,0 +1,126 @@
+// =============================================================
+// Phase B — Portal modal theme override (CustomPopup, DetailLogModal).
+//
+// 본 파일은 createPortal 로 document.body 직속 렌더되는 modal/popup 의
+// theme 적용을 담당한다. theme class 는 portal root element 에 직접 부착
+// (Phase A 의 PopupProvider/DetailLogModal wiring) 되므로 결합 selector
+// (`.section-modal-overlay.cluster-px-theme`) 로만 매칭.
+//
+// 색상 source: _px-tokens.scss / _theme-tokens.scss 의 `--org-accent` 토큰.
+// 기존 yellow 톤(`#FAAB07`, `#ffa500` 등)은 원본 라우트(theme class 없음)
+// 에서 그대로 유지된다 — 본 selector 가 매칭되지 않기 때문.
+//
+// 적용 범위:
+//   1) DetailLogModal close button hover  → org accent
+//   2) DetailLogModal body scrollbar      → org accent (forward-compat)
+//   3) DetailLogModal header divider · h3 → org accent (real content 추가 시 활성)
+//
+// CustomPopup 색상은 components/ui/popup/Popup.scss 안에 backdrop-scoped
+// CSS variable 로 처리되므로 본 파일에서 별도 selector 가 필요 없다.
+// =============================================================
+
+// --- DetailLogModal: PX theme ---------------------------------
+.section-modal-overlay.cluster-px-theme {
+  // _global.scss 의 [class*="modal-close"]:hover 가 #ffa500 !important 라
+  // 오버라이드도 !important 필요. specificity 도 한 단계 더 높다.
+  .modal-close-btn:hover {
+    color: var(--org-accent) !important;
+    border-color: var(--org-accent) !important;
+  }
+
+  // detail-log-modal-body 는 _global.scss 의 .modal-body / .section-modal-body
+  // selector 와 클래스명이 달라 default scrollbar 규칙이 매칭되지 않는다.
+  // forward-compat 으로 본 scope 에서 명시적으로 themed scrollbar 부여.
+  .detail-log-modal-body {
+    scrollbar-width: thin;
+    scrollbar-color: var(--org-accent) #252836;
+
+    &::-webkit-scrollbar {
+      width: 3px;
+    }
+    &::-webkit-scrollbar-track {
+      background: #252836;
+      border-radius: 2px;
+    }
+    &::-webkit-scrollbar-thumb {
+      background: var(--org-accent);
+      border-radius: 2px;
+    }
+  }
+
+  // DetailLogModal 에 향후 [class*="modal-header"] 콘텐츠가 추가될 때를 위한
+  // forward-compat. 현재 placeholder 만 있어 매칭되지 않으나 selector 로 사전
+  // 등록해 둔다 (dead 가 아니라 contract).
+  .section-modal-detail-log {
+    [class*="modal-header"] {
+      border-bottom-color: color-mix(in srgb, var(--org-accent) 20%, transparent) !important;
+
+      h3 {
+        color: var(--org-accent) !important;
+      }
+    }
+
+    [class*="modal-footer"] {
+      border-top-color: color-mix(in srgb, var(--org-accent) 20%, transparent) !important;
+    }
+  }
+}
+
+// --- Tier 2 — Header / NFTG nice-select dropdown ---------------
+//
+// 헤더 dropdown(notification/message/profile/settings submenu) 자체는 audit
+// 결과 yellow 톤을 사용하지 않는다 — `--quaternary-color`(green) 와
+// `--secondary-color`(dark)만 참조하므로 본 파일에서 별도 override 불필요.
+//
+// NFTG nice-select 의 `option.selected.focus` 만 `var(--primary-color)`
+// (yellow) 를 직접 참조 — _all-sections.scss line 1852. cluster-pages 내
+// 의 nice-select 인스턴스(WeeklyFilterBar 외)는 `.cluster-px-theme` /
+// `.encre-theme` wrapper 의 descendant 이므로 정상 매칭된다.
+//
+// `/weekly-ranking` 는 cluster-pages layout 밖이라 theme wrapper 가 없으므로
+// 본 selector 가 매칭되지 않는다 — Phase C 에서 별도 wrapper 정책 결정 필요.
+.cluster-px-theme .nice-select .option.selected.focus {
+  color: var(--org-accent);
+}
+.encre-theme .nice-select .option.selected.focus {
+  color: var(--org-accent);
+}
+
+// --- DetailLogModal: Encre theme ------------------------------
+.section-modal-overlay.encre-theme {
+  .modal-close-btn:hover {
+    color: var(--org-accent) !important;
+    border-color: var(--org-accent) !important;
+  }
+
+  .detail-log-modal-body {
+    scrollbar-width: thin;
+    scrollbar-color: var(--org-accent) #252836;
+
+    &::-webkit-scrollbar {
+      width: 3px;
+    }
+    &::-webkit-scrollbar-track {
+      background: #252836;
+      border-radius: 2px;
+    }
+    &::-webkit-scrollbar-thumb {
+      background: var(--org-accent);
+      border-radius: 2px;
+    }
+  }
+
+  .section-modal-detail-log {
+    [class*="modal-header"] {
+      border-bottom-color: color-mix(in srgb, var(--org-accent) 20%, transparent) !important;
+
+      h3 {
+        color: var(--org-accent) !important;
+      }
+    }
+
+    [class*="modal-footer"] {
+      border-top-color: color-mix(in srgb, var(--org-accent) 20%, transparent) !important;
+    }
+  }
+}

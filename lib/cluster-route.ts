@@ -182,3 +182,119 @@ export function getOrgClusterRouteBase(
   }
   return defaultBase;
 }
+
+// =============================================================
+// Theme helper — Phase A 일반화 alias.
+//
+// 본 블록은 위 OrgSuffix / SUFFIX_TO_ORG 위에 얇은 별칭 레이어를 얹어
+// 호출부에서 "theme" 어휘로 일관되게 쓸 수 있도록 한다.
+//
+// 동작 의미는 기존 isPxRoute / isEcRoute / getRouteOrgSuffix /
+// withOrgRoute 와 100% 동일 — 새 함수는 모두 위임만 한다.
+// 기존 PX 호출부는 그대로 유지된다 (regression 0).
+//
+// 신규 코드는 가능하면 본 theme helper 를 사용 권장.
+// =============================================================
+
+export type ThemeKey = "px" | "ec";
+
+/**
+ * 각 ThemeKey 의 표준 메타데이터 single source of truth.
+ *
+ * - suffix    : route segment 끝에 붙는 부호 ("px" → "-px")
+ * - className : <main> wrapper 에 부착되는 theme scope class
+ * - accent    : 진한 강조 hex (CSS var 와 1:1 매칭)
+ * - accentSoft: 라이트 강조 hex
+ * - glow      : 강조 그림자/글로우 alpha
+ *
+ * SCSS 토큰(_px-tokens.scss / _theme-tokens.scss) 과 키-값이 일치해야
+ * 한다. 톤을 변경할 때는 양쪽을 함께 갱신.
+ */
+export const THEME_CONFIG = {
+  px: {
+    suffix: "px",
+    className: "cluster-px-theme",
+    accent: "#1E9503",
+    accentSoft: "#B2FF8F",
+    glow: "rgba(30, 149, 3, 0.35)",
+  },
+  ec: {
+    suffix: "ec",
+    className: "encre-theme",
+    accent: "#FF4B70",
+    accentSoft: "#FF98A6",
+    glow: "rgba(255, 75, 112, 0.32)",
+  },
+} as const satisfies Record<
+  ThemeKey,
+  {
+    suffix: string;
+    className: string;
+    accent: string;
+    accentSoft: string;
+    glow: string;
+  }
+>;
+
+/**
+ * pathname 의 첫 매칭 segment suffix 로부터 ThemeKey 를 추출.
+ * 매칭 없으면 null. /crews 류 비-cluster 라우트는 null.
+ */
+export function getThemeKey(
+  pathname: string | null | undefined,
+): ThemeKey | null {
+  const suffix = getRouteOrgSuffix(pathname);
+  if (suffix === "-px") return "px";
+  if (suffix === "-ec") return "ec";
+  return null;
+}
+
+/**
+ * pathname 에서 추론한 theme suffix ("-px" | "-ec" | "").
+ * `getRouteOrgSuffix` 와 동일 — alias 로 노출.
+ */
+export function getThemeSuffix(
+  pathname: string | null | undefined,
+): "-px" | "-ec" | "" {
+  return getRouteOrgSuffix(pathname);
+}
+
+/**
+ * pathname 에 해당하는 theme wrapper className.
+ * 매칭 없으면 빈 문자열 — JSX className 결합 시 안전.
+ *
+ * 예:
+ *   getThemeClass("/cluster-2-px")        // → "cluster-px-theme"
+ *   getThemeClass("/cluster-2-ec")        // → "encre-theme"
+ *   getThemeClass("/cluster-2")           // → ""
+ */
+export function getThemeClass(
+  pathname: string | null | undefined,
+): "cluster-px-theme" | "encre-theme" | "" {
+  const key = getThemeKey(pathname);
+  return key ? THEME_CONFIG[key].className : "";
+}
+
+/**
+ * theme suffix 를 가진 라우트면 true. `isPxRoute || isEcRoute` 합집합.
+ */
+export function isThemeRoute(pathname: string | null | undefined): boolean {
+  return getThemeKey(pathname) !== null;
+}
+
+/**
+ * `withOrgRoute` 의 theme-어휘 alias. 의미·구현 동일.
+ * navigation path 에 현재 theme suffix 를 보존해 반환.
+ *
+ * 예:
+ *   withThemeRoute("/cluster-4", "/cluster-2-ec") // → "/cluster-4-ec"
+ *   withThemeRoute("/cluster-4", "/cluster-2-px") // → "/cluster-4-px"
+ *   withThemeRoute("/cluster-4", "/cluster-2")    // → "/cluster-4"
+ *   withThemeRoute("/x?u=1#h", "/cluster-2-ec")   // → "/x-ec?u=1#h"
+ */
+export function withThemeRoute(
+  path: string,
+  pathname: string | null | undefined,
+): string {
+  return withOrgRoute(path, pathname);
+}

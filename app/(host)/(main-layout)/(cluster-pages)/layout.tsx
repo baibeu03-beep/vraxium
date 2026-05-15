@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import ClusterTabs from "@/components/home-career/ClusterTabs";
 import Sidebar from "@/components/home-career/Sidebar";
 import Animations from "@/components/shared/Animations";
-import { isPxRoute, isEcRoute } from "@/lib/cluster-route";
+import { getThemeClass, getRouteOrg } from "@/lib/cluster-route";
 
 export default function ClusterLayout({
   children,
@@ -18,8 +18,11 @@ export default function ClusterLayout({
   // 판정 로직은 lib/cluster-route. 두 org 가 동시에 매칭되는 경우는 라우트 정책
   // 상 발생하지 않지만 우선순위는 PX → EC.
   const pathname = usePathname();
-  const isPx = isPxRoute(pathname);
-  const isEc = !isPx && isEcRoute(pathname);
+  // Phase A — single source of truth (THEME_CONFIG) 경유.
+  // getThemeClass: -px → "cluster-px-theme", -ec → "encre-theme", 그 외 "".
+  // getRouteOrg : -px → "phalanx", -ec → "encre", 그 외 null → "default".
+  const themeClass = getThemeClass(pathname);
+  const themeOrg = getRouteOrg(pathname) ?? "default";
   const clusterRouteFallback = (
     <div
       className="cluster-route-fallback"
@@ -45,10 +48,8 @@ export default function ClusterLayout({
   return (
     <main
       ref={mainRef}
-      className={`nftg-content nftg-content-home${
-        isPx ? " cluster-px-theme" : isEc ? " encre-theme" : ""
-      }`}
-      data-cluster-theme={isPx ? "phalanx" : isEc ? "encre" : "default"}
+      className={`nftg-content nftg-content-home${themeClass ? " " + themeClass : ""}`}
+      data-cluster-theme={themeOrg}
     >
       <Animations />
 
