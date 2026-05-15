@@ -66,6 +66,142 @@
   }
 }
 
+// --- PeriodRangePicker (cluster-3 output / detail edit) -------
+//
+// PeriodRangePicker 는 Cluster3Content.tsx 가 createPortal 로 document.body
+// 에 직접 렌더하는 캘린더 dropdown. ancestor chain 이 main 밖이라
+// `.cluster-px-theme .period-range-panel` descendant selector 가 닿지 못한다.
+// → 컴포넌트가 themeClassName prop 으로 root 에 직접 부착, 본 파일에서
+//    combined selector 로 매칭.
+//
+// 보존 항목 — _cluster3.scss L5567~ 의 베이스 룰 그대로 사용. 본 블록은
+// 노란 톤(`#faab07`, `rgba(250, 171, 7, ...)` 등)만 org accent 로 치환한다.
+// 보더/패딩/그리드/애니메이션 등 레이아웃은 건드리지 않음.
+//
+// today outline 은 가운데 강조이며 semantic 이 아니므로 theme 톤 치환 OK.
+// range-start / range-end / in-range / hover · helper · month-btn / 마지막
+// action 버튼만 변경 — 모두 decorative accent.
+
+.period-range-panel.cluster-px-theme {
+  border-color: var(--org-accent) !important;
+
+  .period-range-helper {
+    color: var(--org-accent);
+  }
+
+  .period-month-btn {
+    color: var(--org-accent);
+  }
+
+  .period-day-btn {
+    &.today {
+      outline-color: var(--org-accent);
+    }
+
+    &.in-range {
+      background: color-mix(in srgb, var(--org-accent) 22%, transparent);
+    }
+
+    &.range-start,
+    &.range-end {
+      background: var(--org-accent);
+      color: #111;
+    }
+
+    &:hover {
+      background: color-mix(in srgb, var(--org-accent) 35%, transparent);
+    }
+  }
+
+  .period-range-actions button:last-child {
+    background: var(--org-accent);
+    color: #111;
+  }
+}
+
+.period-range-panel.encre-theme {
+  border-color: var(--org-accent) !important;
+
+  .period-range-helper {
+    color: var(--org-accent);
+  }
+
+  .period-month-btn {
+    color: var(--org-accent);
+  }
+
+  .period-day-btn {
+    &.today {
+      outline-color: var(--org-accent);
+    }
+
+    &.in-range {
+      background: color-mix(in srgb, var(--org-accent) 22%, transparent);
+    }
+
+    &.range-start,
+    &.range-end {
+      background: var(--org-accent);
+      color: #111;
+    }
+
+    &:hover {
+      background: color-mix(in srgb, var(--org-accent) 35%, transparent);
+    }
+  }
+
+  .period-range-actions button:last-child {
+    background: var(--org-accent);
+    color: #111;
+  }
+}
+
+// --- .dropdown-options-fixed portal (cluster-4-card · cluster-4) ----
+//
+// Cluster4CardContent.tsx (ratingDropdownOpen, reviewRatingDropdownOpen)
+// 와 Cluster4Content.tsx (seasonReviewRatingDropdownOpen) 가 별점 선택
+// dropdown 을 createPortal 로 document.body 에 렌더. _cluster3.scss L2614~
+// 의 base 룰이 `#ffa500` / `rgba(250, 171, 7, X)` / `#faab07` 로 가득 →
+// portal root 에 themeClassName 부착, 본 combined selector 로 PX/EC 톤 치환.
+//
+// 보존: dark navy background, layout, scroll, gap, font.
+
+.dropdown-options-fixed.cluster-px-theme {
+  border-color: var(--org-accent);
+
+  &::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--org-accent) 30%, transparent);
+  }
+
+  .dropdown-option {
+    &:hover {
+      background: color-mix(in srgb, var(--org-accent) 15%, transparent);
+    }
+    &.selected {
+      background: color-mix(in srgb, var(--org-accent) 25%, transparent);
+      color: var(--org-accent);
+    }
+  }
+}
+
+.dropdown-options-fixed.encre-theme {
+  border-color: var(--org-accent);
+
+  &::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--org-accent) 30%, transparent);
+  }
+
+  .dropdown-option {
+    &:hover {
+      background: color-mix(in srgb, var(--org-accent) 15%, transparent);
+    }
+    &.selected {
+      background: color-mix(in srgb, var(--org-accent) 25%, transparent);
+      color: var(--org-accent);
+    }
+  }
+}
+
 // --- Tier 2 — Header / NFTG nice-select dropdown ---------------
 //
 // 헤더 dropdown(notification/message/profile/settings submenu) 자체는 audit

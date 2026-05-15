@@ -15,7 +15,7 @@ import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { DUMMY_SEASON_DATA, DUMMY_SEASON_HISTORIES, REVIEW_COMMENT_DEFAULT } from "@/constants/dummyData";
 import { dedupedJson } from "@/lib/fetch-dedupe";
-import { isPxRoute, isEcRoute, withPxRoute } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, withPxRoute, getThemeClass } from "@/lib/cluster-route";
 import HelpModalBody from "@/components/shared/HelpModalBody";
 
 // 글자수 초과 시 '..' 표시 (CSS ellipsis '…' 대신 JS 처리)
@@ -2745,10 +2745,10 @@ const Cluster4Content = () => {
               </div>
               <div className="season-badge">
                 <svg className="badge-outline" viewBox="0 0 124 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M0.84668 0.846558H122.847V26.7666L98.4467 48.8466H0.84668V0.846558Z" stroke="#FAAB07" strokeWidth="1.69311" fill="none" />
+                  <path d="M0.84668 0.846558H122.847V26.7666L98.4467 48.8466H0.84668V0.846558Z" stroke={isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07"} strokeWidth="1.69311" fill="none" />
                 </svg>
                 <svg className="badge-border" viewBox="0 0 124 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M0.84668 0.846558H122.847V26.7666L98.4467 48.8466H0.84668V0.846558Z" fill="#FAAB07" stroke="#FAAB07" strokeWidth="1.69311" />
+                  <path d="M0.84668 0.846558H122.847V26.7666L98.4467 48.8466H0.84668V0.846558Z" fill={isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07"} stroke={isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07"} strokeWidth="1.69311" />
                 </svg>
                 <span className="badge-text">{getGrowthBadgeText(userStatus, growthStatus)}</span>
               </div>
@@ -2912,7 +2912,7 @@ const Cluster4Content = () => {
                 </span>{" "}
                 시즌
               </div>
-              <span className="bullet-dot" style={{ display: "inline-block", width: "2px", height: "2px", background: "#FAAB07", borderRadius: "50%", marginLeft: "15px", transform: "translateY(0px)" }}></span>
+              <span className="bullet-dot" style={{ display: "inline-block", width: "2px", height: "2px", background: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07", borderRadius: "50%", marginLeft: "15px", transform: "translateY(0px)" }}></span>
               <div className="date-status" style={{ display: "flex", alignItems: "center", flexShrink: 0, whiteSpace: "nowrap" }}>
                 <span className="date-range">{currentSeason.dateRange}</span>
                 <button className={`status-badge ${currentSeason.statusClass}`}>{currentSeason.status}</button>
@@ -4134,7 +4134,7 @@ const Cluster4Content = () => {
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className="dropdown-options-fixed season-review-rating-dropdown-options"
+            className={`dropdown-options-fixed season-review-rating-dropdown-options ${getThemeClass(pathname)}`.trim()}
             style={{ position: "fixed", top: seasonReviewRatingDropdownPos.top, left: seasonReviewRatingDropdownPos.left, width: Math.max(seasonReviewRatingDropdownPos.width, 70), zIndex: 100010 }}
             role="listbox"
             onWheel={(e) => e.stopPropagation()}

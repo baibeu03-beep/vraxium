@@ -38,6 +38,19 @@
   --px-accent-glow: var(--org-accent-glow);
   --px-accent-soft-glow: var(--org-accent-soft-glow);
   --px-gradient: var(--org-gradient);
+
+  // Phase C — modal chrome 토큰. _global.scss 의 [class*="modal-header"] /
+  // close 버튼 hover / footer divider / scrollbar 가 본 변수를 참조한다.
+  // 본 스코프(.cluster-px-theme)에선 org accent 톤, theme wrapper 가 없는
+  // 원본 라우트에선 fallback (yellow) 유지.
+  // - --modal-title-color   : header h3 글자 (light tone — soft accent)
+  // - --modal-divider-color : header/footer 보더 (alpha)
+  // - --modal-close-hover-color : close 버튼 hover 텍스트/보더
+  // - --modal-scrollbar-thumb   : modal body scrollbar thumb
+  --modal-title-color: var(--org-accent-soft);
+  --modal-divider-color: rgba(30, 149, 3, 0.25);
+  --modal-close-hover-color: var(--org-accent);
+  --modal-scrollbar-thumb: var(--org-accent);
 }
 
 // =============================================================

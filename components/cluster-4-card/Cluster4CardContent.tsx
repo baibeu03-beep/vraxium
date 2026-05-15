@@ -14,7 +14,7 @@ import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
-import { isPxRoute, isEcRoute, withPxRoute } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, withPxRoute, getThemeClass } from "@/lib/cluster-route";
 import DetailLogModal from "./DetailLogModal";
 import confetti from "canvas-confetti";
 import HelpModalBody from "@/components/shared/HelpModalBody";
@@ -10452,7 +10452,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       {weeklyReviewModalOpen &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="section-modal-overlay">
+          // Phase C — portal root 에 theme class 직접 부착. 본 modal 은
+          // document.body 직속이라 .cluster-px-theme / .encre-theme ancestor
+          // cascade 가 닿지 못한다. _popup-portal-theme.scss 의
+          // .section-modal-overlay.cluster-px-theme / .encre-theme combined
+          // selector 와 짝.
+          <div className={`section-modal-overlay ${getThemeClass(pathname)}`.trim()}>
             <div className="section-modal section-modal-weekly-review-form">
               {/* 헤더 */}
               <div className="section-modal-header">
@@ -10661,7 +10666,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className="dropdown-options-fixed review-rating-dropdown-options"
+            className={`dropdown-options-fixed review-rating-dropdown-options ${getThemeClass(pathname)}`.trim()}
             style={{
               position: "fixed",
               top: reviewRatingDropdownPos.top,
@@ -10686,7 +10691,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className="dropdown-options-fixed"
+            className={`dropdown-options-fixed ${getThemeClass(pathname)}`.trim()}
             style={{
               position: "fixed",
               top: ratingDropdownPos.top,

@@ -1508,11 +1508,15 @@ svg {
 }
 
 // 2. Modal Header — divider + title/subtitle styles
+//    Phase C: yellow/gold legacy 톤을 CSS 변수로 토큰화. 변수 미정의 시 (=
+//    원본 라우트, theme wrapper 없음) fallback 으로 종전 yellow 가 그대로
+//    유지된다. .cluster-px-theme / .encre-theme 스코프에서 변수가 덮여쓰여
+//    각 org accent 로 분기. 변수 정의 위치: _px-tokens.scss / _theme-tokens.scss.
 [class*="modal-header"] {
-  border-bottom: 1px solid rgba(255, 165, 0, 0.2) !important;
+  border-bottom: 1px solid var(--modal-divider-color, rgba(255, 165, 0, 0.2)) !important;
 
   h3 {
-    color: #FAAB07 !important;
+    color: var(--modal-title-color, #FAAB07) !important;
     font-family: 'Pretendard', sans-serif !important;
     font-size: 21px !important;
     font-weight: 800 !important;
@@ -1546,14 +1550,14 @@ svg {
   transition: all 0.3s ease;
 
   &:hover {
-    color: #ffa500 !important;
-    border-color: #ffa500 !important;
+    color: var(--modal-close-hover-color, #ffa500) !important;
+    border-color: var(--modal-close-hover-color, #ffa500) !important;
   }
 }
 
 // 4. Modal Footer — divider + button fonts
 [class*="modal-footer"] {
-  border-top: 1px solid rgba(255, 165, 0, 0.2) !important;
+  border-top: 1px solid var(--modal-divider-color, rgba(255, 165, 0, 0.2)) !important;
 
   button,
   .cancel-btn,
@@ -1625,6 +1629,8 @@ svg {
 }
 
 // 7. 모달 본문 스크롤바 — cluster4-1 스타일 복사 + thumb 색상 교체
+//    Phase C: thumb/track scrollbar-color 도 CSS 변수로 토큰화. fallback 으로
+//    종전 yellow 유지. theme wrapper 스코프 내에선 org accent 로 분기.
 .section1-modal-body,
 .section2-modal-body,
 .section21-modal-body,
@@ -1638,7 +1644,7 @@ svg {
 .edit-modal-body,
 .modal-body {
   scrollbar-width: thin !important;
-  scrollbar-color: rgba(250, 171, 7, 1) #252836 !important;
+  scrollbar-color: var(--modal-scrollbar-thumb, rgba(250, 171, 7, 1)) #252836 !important;
 
   &::-webkit-scrollbar {
     width: 3px !important;
@@ -1648,7 +1654,7 @@ svg {
     border-radius: 2px;
   }
   &::-webkit-scrollbar-thumb {
-    background: rgba(250, 171, 7, 1) !important;
+    background: var(--modal-scrollbar-thumb, rgba(250, 171, 7, 1)) !important;
     border-radius: 2px;
   }
   &::-webkit-scrollbar-button {

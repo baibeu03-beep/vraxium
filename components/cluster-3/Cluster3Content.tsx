@@ -10,7 +10,7 @@ import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { useProfile } from "@/contexts/ProfileContext";
 import { isAdminEmail } from "@/lib/admin";
-import { isPxRoute, isEcRoute } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, getThemeClass } from "@/lib/cluster-route";
 import { usePopup } from "@/components/ui/popup";
 import {
   CLUSTER3_DUMMY_PROFILE,
@@ -118,6 +118,7 @@ const PeriodRangePicker = ({
   onToday,
   onClear,
   position,
+  themeClassName,
 }: {
   range: PeriodDateRange;
   month: Date;
@@ -126,6 +127,7 @@ const PeriodRangePicker = ({
   onToday: () => void;
   onClear: () => void;
   position: CalendarPosition;
+  themeClassName?: string;
 }) => {
   const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
   const calendarStart = new Date(monthStart);
@@ -138,8 +140,14 @@ const PeriodRangePicker = ({
   const today = toDateOnly(new Date());
   const helperText = range.startDate && !range.endDate ? "종료일을 선택해주세요" : "시작일과 종료일을 선택해주세요";
 
+  // Phase C — portal root 에 theme class 직접 부착. _popup-portal-theme.scss 의
+  // `.period-range-panel.cluster-px-theme` / `.period-range-panel.encre-theme`
+  // combined selector 와 짝. createPortal 이 document.body 직속이라
+  // descendant cascade 가 닿지 못하므로 root 주입이 유일한 정답.
+  const panelClassName = ["period-range-panel", "calendar-popup", themeClassName].filter(Boolean).join(" ");
+
   return (
-    <div className="period-range-panel calendar-popup" style={{ top: position.top, left: position.left }}>
+    <div className={panelClassName} style={{ top: position.top, left: position.left }}>
       <div className="period-range-helper">{helperText}</div>
       <div className="period-range-header">
         <button type="button" className="period-month-btn" onClick={() => onMonthChange(new Date(month.getFullYear(), month.getMonth() - 1, 1))}>
@@ -3506,6 +3514,7 @@ const Cluster3Content = () => {
               applyOutputDateRange({ startDate: today, endDate: today });
             }}
             onClear={() => applyOutputDateRange({ startDate: null, endDate: null })}
+            themeClassName={getThemeClass(pathname)}
           />,
           document.body,
         )}
@@ -3525,6 +3534,7 @@ const Cluster3Content = () => {
               applyDetailDateRange({ startDate: today, endDate: today });
             }}
             onClear={() => applyDetailDateRange({ startDate: null, endDate: null })}
+            themeClassName={getThemeClass(pathname)}
           />,
           document.body,
         )}

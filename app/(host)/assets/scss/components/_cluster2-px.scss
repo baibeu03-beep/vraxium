@@ -402,3 +402,101 @@
     }
   }
 }
+
+// =================================================================
+// Phase C — cluster-2 modal 외곽 chrome (PX).
+//
+// _cluster2.scss 가 9개 모달(edu / section1 / section2 / section21 /
+// section3 / section4 / intro / help / photo-preview) 외곽 border·glow·
+// corner 데코를 `#ffa500` / `rgba(255, 165, 0, X)` 로 하드코딩. PX 스코프
+// 에서 동일 selector set 을 mirror 해 var(--org-accent) 톤으로 치환.
+//
+// 헤더 divider / h3 글자 / close 버튼 hover / footer divider / scrollbar
+// 는 _global.scss 의 [class*="modal-header"] / [class*="modal-close"] /
+// [class*="modal-footer"] / .modal-body 글로벌 룰이 본 토큰 변수
+// (--modal-title-color / --modal-divider-color / --modal-close-hover-color /
+// --modal-scrollbar-thumb) 를 통해 자동 분기하므로 본 블록에선 중복 정의 X.
+//
+// inline 렌더링 → `.cluster-px-theme` ancestor selector 그대로 매칭됨
+// (createPortal 미사용). _cluster2.scss 의 !important 가 강해 본 블록도
+// !important 동반.
+//
+// 보존:
+//   - 모달 background-image (dark navy gradient — 구조)
+//   - 모달 layout / border-radius / animation
+//   - photo-preview-modal 내 검정 배경 (semantic 이미지 박스, 변경 X)
+//   - .required-mark / 별점 / 별 아이콘 / status flash — semantic
+// =================================================================
+
+// 9개 모달 외곽 — border / glow / corner ::before·::after 데코
+.cluster-px-theme {
+  .edu-modal,
+  .section1-modal,
+  .section2-modal,
+  .section21-modal,
+  .section3-modal,
+  .section4-modal,
+  .intro-modal,
+  .help-modal {
+    border-color: var(--org-accent) !important;
+    box-shadow: 0px 0px 60px 0px rgba(30, 149, 3, 0.15) !important;
+
+    &::before,
+    &::after {
+      border-color: var(--org-accent) !important;
+    }
+  }
+
+  // 모달 footer 버튼군 (save / edit / reset / cancel)
+  // _cluster2.scss 의 #ffa500 / #faab07 배경·보더 패턴을 PX 톤으로.
+  .edu-modal,
+  .section1-modal,
+  .section2-modal,
+  .section21-modal,
+  .section3-modal,
+  .section4-modal,
+  .intro-modal {
+    .modal-save-btn,
+    .modal-edit-btn {
+      background: var(--org-accent) !important;
+      border-color: var(--org-accent) !important;
+      box-shadow: 0 4px 15px rgba(30, 149, 3, 0.4) !important;
+
+      &:hover {
+        background: var(--org-accent-soft) !important;
+      }
+    }
+
+    .modal-cancel-btn,
+    .modal-reset-btn {
+      border-color: var(--org-accent) !important;
+      color: var(--org-accent) !important;
+
+      &:hover {
+        background: rgba(30, 149, 3, 0.1) !important;
+      }
+    }
+
+    .modal-help-icon {
+      color: var(--org-accent) !important;
+    }
+  }
+
+  // 모달 내부 입력/드롭다운 accent — _cluster2.scss 의 input border ·
+  // focus · select-active 패턴. _global.scss 의 글로벌 hover 가 yellow 라
+  // 본 블록에서 보강.
+  .edu-modal,
+  .section1-modal,
+  .section2-modal,
+  .section21-modal,
+  .section3-modal,
+  .section4-modal,
+  .intro-modal {
+    input:focus,
+    textarea:focus,
+    select:focus {
+      border-color: var(--org-accent) !important;
+    }
+  }
+}
+

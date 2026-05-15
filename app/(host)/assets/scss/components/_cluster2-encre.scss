@@ -421,3 +421,81 @@
     }
   }
 }
+
+// =================================================================
+// Phase C — cluster-2 modal 외곽 chrome (Encre).
+//
+// _cluster2-px.scss 의 modal override 와 1:1 mirror. 헤더 / close / footer /
+// scrollbar 는 _global.scss 의 [class*="modal-..."] 글로벌 룰이 본 토큰 변수
+// (--modal-title-color 등 — _theme-tokens.scss 에서 정의) 로 자동 분기.
+//
+// 보존: dark navy gradient · layout · animation · semantic (별점·required·
+// status flash · photo-preview 검정 배경).
+// =================================================================
+
+.encre-theme {
+  .edu-modal,
+  .section1-modal,
+  .section2-modal,
+  .section21-modal,
+  .section3-modal,
+  .section4-modal,
+  .intro-modal,
+  .help-modal {
+    border-color: var(--org-accent) !important;
+    box-shadow: 0px 0px 60px 0px rgba(255, 75, 112, 0.15) !important;
+
+    &::before,
+    &::after {
+      border-color: var(--org-accent) !important;
+    }
+  }
+
+  .edu-modal,
+  .section1-modal,
+  .section2-modal,
+  .section21-modal,
+  .section3-modal,
+  .section4-modal,
+  .intro-modal {
+    .modal-save-btn,
+    .modal-edit-btn {
+      background: var(--org-accent) !important;
+      border-color: var(--org-accent) !important;
+      box-shadow: 0 4px 15px rgba(255, 75, 112, 0.4) !important;
+
+      &:hover {
+        background: var(--org-accent-soft) !important;
+      }
+    }
+
+    .modal-cancel-btn,
+    .modal-reset-btn {
+      border-color: var(--org-accent) !important;
+      color: var(--org-accent) !important;
+
+      &:hover {
+        background: rgba(255, 75, 112, 0.1) !important;
+      }
+    }
+
+    .modal-help-icon {
+      color: var(--org-accent) !important;
+    }
+  }
+
+  .edu-modal,
+  .section1-modal,
+  .section2-modal,
+  .section21-modal,
+  .section3-modal,
+  .section4-modal,
+  .intro-modal {
+    input:focus,
+    textarea:focus,
+    select:focus {
+      border-color: var(--org-accent) !important;
+    }
+  }
+}
+
