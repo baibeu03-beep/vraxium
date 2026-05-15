@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { withPxRoute } from "@/lib/cluster-route";
+import { withPxRoute, isPxRoute, isEcRoute } from "@/lib/cluster-route";
 
 const ClusterTabs = () => {
   const pathname = usePathname();
@@ -11,23 +11,37 @@ const ClusterTabs = () => {
 
   // org-suffix 라우트 컨텍스트 — pathname segment 중 하나라도 -px / -ec 로
   // 끝나면 해당 org 변형이 존재하는 cluster 만 withPxRoute (현재 일반화되어
-  // -px / -ec 양쪽 자동 처리) 로 라우팅. 5~10 은 변형이 없으므로 항상
-  // 원본 path 그대로 사용 — 변형 없는 cluster 로 이동하면 자연스럽게
-  // org wrapper 가 풀리는 의도된 동작.
-  const ORG_AVAILABLE = new Set([2, 3, 4]);
-  const orgAwarePath = (cluster: number, originalPath: string) =>
-    ORG_AVAILABLE.has(cluster) ? withPxRoute(originalPath, pathname) : originalPath;
+  // -px / -ec 양쪽 자동 처리) 로 라우팅.
+  //
+  // 변형 지원:
+  //   PX (2,3,4 full design + 5~10 placeholder PX 변형): 노란 shimmer accent
+  //     만 PX Green 으로 치환 + 공사중-px.png image swap.
+  //   EC (2,3,4 full design + 5~10 placeholder EC 변형): 노란 shimmer accent
+  //     만 Encre pink soft accent 로 치환 + 공사중-ec.png image swap.
+  const PX_AVAILABLE = new Set([2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const EC_AVAILABLE = new Set([2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const pxCtx = isPxRoute(pathname);
+  const ecCtx = !pxCtx && isEcRoute(pathname);
+  const orgAwarePath = (cluster: number, originalPath: string) => {
+    if (pxCtx && PX_AVAILABLE.has(cluster)) {
+      return withPxRoute(originalPath, pathname);
+    }
+    if (ecCtx && EC_AVAILABLE.has(cluster)) {
+      return withPxRoute(originalPath, pathname);
+    }
+    return originalPath;
+  };
 
   const tabs = [
     { name: "PERSONAL PROFILE", path: orgAwarePath(2, "/cluster-2"), cluster: 2 },
     { name: "CLUB FINAL INDEX", path: orgAwarePath(3, "/cluster-3"), cluster: 3 },
     { name: "CLUB CHALLENGE GROWTH", path: orgAwarePath(4, "/cluster-4"), cluster: 4 },
-    { name: "SOCIETAL REPUTATION", path: "/cluster-5", cluster: 5 },
-    { name: "WORKING LEVEL - EXPERIENCE", path: "/cluster-6", cluster: 6 },
-    { name: "WORKING LEVEL - ABILITY", path: "/cluster-7", cluster: 7 },
-    { name: "WORKING LEVEL - CAREER", path: "/cluster-8", cluster: 8 },
-    { name: "WORKING LEVEL - INFORMATION", path: "/cluster-9", cluster: 9 },
-    { name: "WORKING LEVEL - SKILL & TOOLS", path: "/cluster-10", cluster: 10 },
+    { name: "SOCIETAL REPUTATION", path: orgAwarePath(5, "/cluster-5"), cluster: 5 },
+    { name: "WORKING LEVEL - EXPERIENCE", path: orgAwarePath(6, "/cluster-6"), cluster: 6 },
+    { name: "WORKING LEVEL - ABILITY", path: orgAwarePath(7, "/cluster-7"), cluster: 7 },
+    { name: "WORKING LEVEL - CAREER", path: orgAwarePath(8, "/cluster-8"), cluster: 8 },
+    { name: "WORKING LEVEL - INFORMATION", path: orgAwarePath(9, "/cluster-9"), cluster: 9 },
+    { name: "WORKING LEVEL - SKILL & TOOLS", path: orgAwarePath(10, "/cluster-10"), cluster: 10 },
     { name: "-", path: "", cluster: 0, isPlaceholder: true },
   ];
 
