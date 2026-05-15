@@ -33,15 +33,19 @@ export async function GET() {
     });
 
     if (access.status === "approved") {
+      // userId 는 user_profiles.user_id — /crews "보기" 버튼이 cluster-4-* 페이지로
+      // 넘기는 ?userId= 와 동일 기준. id 필드는 기존 호환 위해 유지.
       return NextResponse.json({
         success: true,
         status: "approved",
         message: "승인된 사용자입니다.",
         data: {
           id: access.profile.user_id,
+          userId: access.profile.user_id,
           displayName: access.profile.display_name,
           email: access.profile.auth_email ?? access.profile.contact_email,
           growthStatus: access.profile.growth_status ?? null,
+          organizationSlug: access.profile.organization_slug ?? null,
         },
       });
     }

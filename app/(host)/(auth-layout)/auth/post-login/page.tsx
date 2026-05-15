@@ -1,6 +1,10 @@
 "use client";
 
-import { DEFAULT_APPROVED_CALLBACK_URL, sanitizeCallbackUrl } from "@/lib/auth-redirect";
+import {
+  DEFAULT_APPROVED_CALLBACK_URL,
+  getOrgCardRedirectPath,
+  sanitizeCallbackUrl,
+} from "@/lib/auth-redirect";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
@@ -16,13 +20,17 @@ const PostLoginPage = () => {
       return;
     }
 
-    const callbackUrl = sanitizeCallbackUrl(
-      searchParams.get("callbackUrl"),
-      DEFAULT_APPROVED_CALLBACK_URL,
-    );
+    // 명시 callbackUrl 만 추출 — 없으면 null. 조직 분기 redirect 가 적용될지 여부를
+    // 결정한다 (명시 callbackUrl 은 조직 분기보다 우선).
+    const rawCallbackUrl = searchParams.get("callbackUrl");
+    const explicitCallbackUrl =
+      rawCallbackUrl && rawCallbackUrl.startsWith("/") && !rawCallbackUrl.startsWith("//")
+        ? rawCallbackUrl
+        : null;
 
     if (sessionStatus === "unauthenticated") {
-      router.replace(`/sign-in?callbackUrl=${encodeURIComponent(callbackUrl)}`);
+      const next = sanitizeCallbackUrl(explicitCallbackUrl, DEFAULT_APPROVED_CALLBACK_URL);
+      router.replace(`/sign-in?callbackUrl=${encodeURIComponent(next)}`);
       return;
     }
 
@@ -42,7 +50,20 @@ const PostLoginPage = () => {
         }
 
         if (result.status === "approved") {
-          router.replace(callbackUrl);
+          // 우선순위:
+          //   1) 명시 callbackUrl (자동 기본값 /cluster-4 는 explicit 으로 취급 X)
+          //   2) organizationSlug + userId 로 본인 카드 페이지
+          //   3) /cluster-4 fallback (slug/userId 결손 또는 알 수 없는 slug)
+          // 무한 redirect 방지: hasCheckedRef 로 1회만 실행, 모든 분기는 절대 경로.
+          if (explicitCallbackUrl) {
+            router.replace(explicitCallbackUrl);
+            return;
+          }
+          const cardPath = getOrgCardRedirectPath(
+            result.data?.organizationSlug,
+            result.data?.userId ?? result.data?.id,
+          );
+          router.replace(cardPath ?? DEFAULT_APPROVED_CALLBACK_URL);
           return;
         }
 

@@ -176,7 +176,9 @@ const menu = [
 const Header = () => {
   const { data: session, status } = useSession();
   const isLoading = status === "loading";
-  const kakaoLoginRedirectUrl = buildPostLoginRedirectUrl("/cluster-4");
+  // 헤더의 카카오 로그인 버튼은 사용자가 어떤 페이지를 명시한 게 아니므로 callbackUrl 없이
+  // post-login 으로 보내 조직 분기 redirect 가 적용되도록 한다.
+  const kakaoLoginRedirectUrl = buildPostLoginRedirectUrl();
   const [search, setSearch] = useState(false);
   const [cartIsOpen, setCartIsOpen] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);

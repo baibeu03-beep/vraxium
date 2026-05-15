@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
-import { buildPostLoginRedirectUrl, sanitizeCallbackUrl } from "@/lib/auth-redirect";
+import { buildPostLoginRedirectUrl } from "@/lib/auth-redirect";
 
 const kakaoIconStyle = {
   display: "inline-flex",
@@ -23,8 +23,9 @@ const SignUpPage = () => {
   const searchParams = useSearchParams();
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const callbackUrl = sanitizeCallbackUrl(searchParams.get("callbackUrl"));
-  const postLoginRedirectUrl = buildPostLoginRedirectUrl(callbackUrl);
+  // /sign-up?callbackUrl=... 명시 callback 만 전달하고, 없으면 post-login 에서 조직 분기 redirect 가 적용된다.
+  const rawCallbackUrl = searchParams.get("callbackUrl");
+  const postLoginRedirectUrl = buildPostLoginRedirectUrl(rawCallbackUrl);
 
   const handleKakaoLogin = async () => {
     setError("");

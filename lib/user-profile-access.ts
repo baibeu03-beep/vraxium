@@ -8,6 +8,7 @@ export type UserProfileAccessRow = {
   contact_email: string | null;
   auth_email: string | null;
   growth_status?: string | null;
+  organization_slug?: string | null;
 };
 
 export type ApplicantRow = {
@@ -30,7 +31,7 @@ type ResolveOptions = {
   ensureApplicantOnPending?: boolean;
 };
 
-const PROFILE_SELECT = "user_id, display_name, contact_email, auth_email, growth_status";
+const PROFILE_SELECT = "user_id, display_name, contact_email, auth_email, growth_status, organization_slug";
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function normalizeEmail(value: Maybe<string>) {

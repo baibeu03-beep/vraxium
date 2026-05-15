@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
-import { buildPostLoginRedirectUrl, sanitizeCallbackUrl } from "@/lib/auth-redirect";
+import { buildPostLoginRedirectUrl } from "@/lib/auth-redirect";
 
 const kakaoIconStyle = {
   display: "inline-flex",
@@ -23,8 +23,10 @@ const SignIn = () => {
   const searchParams = useSearchParams();
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const callbackUrl = sanitizeCallbackUrl(searchParams.get("callbackUrl"));
-  const postLoginRedirectUrl = buildPostLoginRedirectUrl(callbackUrl);
+  // /sign-in?callbackUrl=... 로 보호된 페이지에서 튕겨진 경우만 명시 callback 으로 전달.
+  // 명시 callback 이 없으면 post-login 에서 조직 분기 redirect 가 적용된다.
+  const rawCallbackUrl = searchParams.get("callbackUrl");
+  const postLoginRedirectUrl = buildPostLoginRedirectUrl(rawCallbackUrl);
 
   const handleKakaoLogin = async () => {
     setError("");
