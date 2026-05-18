@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
-import { extractTargetUserId } from "@/lib/admin";
+import { extractTargetUserId, isAdminEmail } from "@/lib/admin";
+import { hasOpenTopCardEditWindow } from "@/lib/topCardsEditWindow";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -140,7 +141,7 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   try {
     const targetUserId = extractTargetUserId(request);
-    const { profile, error } = await getUserProfile("id", targetUserId);
+    const { session, profile, error } = await getUserProfile("id", targetUserId);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: error.status });
@@ -155,10 +156,43 @@ export async function PUT(request: Request) {
     const cardIndex = Number(body.cardIndex);
 
     if (!isCardType(cardType)) {
-      return NextResponse.json({ error: "잘못된 카드 타입입니다." }, { status: 400 });
+      return NextResponse.json(
+        {
+          success: false,
+          error: "INVALID_CARD_TYPE",
+          message: "Invalid card type.",
+        },
+        { status: 400 },
+      );
     }
     if (!Number.isInteger(cardIndex) || cardIndex < 1 || cardIndex > MAX_INDEX[cardType]) {
       return NextResponse.json({ error: "잘못된 카드 인덱스입니다." }, { status: 400 });
+    }
+
+    // === 작성 기간 권한 체크 ===
+    // 어드민(마더)은 작성 기간과 무관하게 항상 허용.
+    // 일반 사용자는 user_edit_windows 에 cardType 별 리소스 키 row 가
+    // 현재 시각 기준 열려 있어야만 PUT 허용.
+    //   - cluster3.output_cards / cluster3.detail_cards 는 admin repo 의
+    //     작성 기간 관리에서 별개 row 로 운영되므로 cardType 별로 독립 체크.
+    //   - 프론트의 ?unlockCluster3* QA 쿼리는 UI 테스트용일 뿐이며
+    //     서버 PUT 권한에는 영향을 주지 않는다.
+    const isAdmin = !!session.user.isAdmin || isAdminEmail(session.user.email);
+    const canEdit =
+      isAdmin ||
+      (await hasOpenTopCardEditWindow({
+        userId: profile.id,
+        cardType,
+      }));
+    if (!canEdit) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "EDIT_WINDOW_CLOSED",
+          message: "관리자 허가를 받은 기간에만 작성할 수 있습니다.",
+        },
+        { status: 403 },
+      );
     }
 
     const row = {
