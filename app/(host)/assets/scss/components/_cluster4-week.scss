@@ -11067,7 +11067,7 @@
 
     .personal-grid {
       display: grid;
-      grid-template-columns: auto 1fr !important; // 2?? ?ъ쭊 | ?뺣낫 (?쒓렇??row-1 ?대?濡??대룞)
+      grid-template-columns: auto 1fr auto !important; // 3열: 사진 | 정보 | 강화상태 (line-status grid-column: 3 정식 트랙으로 정의 — implicit column 제거)
       grid-template-rows: auto;
       gap: 0 18px;
       align-items: center !important; // ?ъ쭊/?뺣낫 ?몃줈 以묒븰 洹좏삎
@@ -11226,7 +11226,7 @@
       gap: 8px;
       min-width: 180px;
       padding-left: 16px;
-      transform: none !important; // DPR/subpixel rounding에 따른 우측 밀림 방지
+      transform: translateX(-19px) !important; // 1cm 왼쪽 이동 후 0.5cm(19px) 오른쪽 미세 조정 (-38 → -19)
 
       &:has(.enhance-success) {
         --enhance-color: 255, 107, 154;
@@ -11421,7 +11421,7 @@
       display: flex;
       justify-content: flex-end;
       box-sizing: border-box;
-      margin-top: 20px !important; // 媛뺥솕 ?곹깭 ?됯낵 ?섏쭅 寃뱀묠 諛⑹?
+      margin-top: -20px !important; // output-links 블록만 위로 보정 (Main Title 영역과 겹침 해소). 원값 20px → -20px (총 40px 위로)
     }
   }
 
@@ -11591,6 +11591,7 @@
     min-width: 0;
     box-sizing: border-box;
     transform: none !important; // DPR/subpixel rounding에 따른 수직 밀림 방지
+    margin-top: -30px !important; // 1cm 위 보정 후 0.2cm(8px) 아래로 미세 조정 (-38 → -30)
 
     .output-link-row {
       display: flex;
@@ -11713,7 +11714,7 @@
   // 醫뚰븯?? Main Title / Sub Title / Growth Point
   // ?ъ슜???붿껌: Main Title 0.5cm(??-19px) ?꾨줈 ??text-section留?異붽? 蹂댁젙
   .workinfo-text-section {
-    margin-top: -73px !important;
+    margin-top: -40px !important; // 과보정값(-73px) 완화 — output-links와 시각적 겹침 해소, 1차 보정값
     display: flex;
     flex-direction: column;
     gap: 16px !important;
