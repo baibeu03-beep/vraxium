@@ -1080,15 +1080,27 @@ const Cluster3Content = () => {
   const [detailFooterNotice, setDetailFooterNotice] = useState<"default" | "error">("default");
   const [canEditDetail, setCanEditDetail] = useState<boolean>(isDemoMode);
 
-  // 어드민(마더) 계정은 Portfolio Output/Detail 편집 권한 자동 부여
-  // session.user.isAdmin 플래그가 JWT 쿠키에 아직 반영 안 됐을 수 있어 email로도 직접 판정
+  // Portfolio Output/Detail 편집 권한 baseline.
+  //   - 어드민(마더) 또는 demo 모드면 자동 허용 (cluster2 Club Review Link 와 동일 톤).
+  //   - 그 외 일반 사용자는 잠금 상태 (관리자 허가 기간에만 작성 가능).
+  //
+  // === [DEV/QA ONLY] query param override ===
+  // 실제 Supabase permission/window 시스템이 아직 cluster3.output_cards /
+  // cluster3.detail_cards 리소스 키로 도입되지 않았기 때문에, QA에서 잠금/해제
+  // UX 를 미리 검증할 수 있도록 URL 쿼리로 강제 unlock 한다.
+  //   ?unlockCluster3Output=1  → Output 카드만 잠금 해제
+  //   ?unlockCluster3Detail=1  → Detail 카드만 잠금 해제
+  //   ?unlockCluster3=1        → Output / Detail 둘 다 잠금 해제
+  // 실제 permission API 가 붙으면 이 unlock 블록은 제거 또는 isDev 가드로 한정할 것.
   useEffect(() => {
     const isAdmin = session?.user?.isAdmin || isAdminEmail(session?.user?.email);
-    if (isAdmin) {
-      setCanEditOutput(true);
-      setCanEditDetail(true);
-    }
-  }, [session?.user?.isAdmin, session?.user?.email]);
+    const unlockAll = searchParams.get("unlockCluster3") === "1";
+    const unlockOutput = searchParams.get("unlockCluster3Output") === "1";
+    const unlockDetail = searchParams.get("unlockCluster3Detail") === "1";
+
+    setCanEditOutput(isDemoMode || isAdmin || unlockAll || unlockOutput);
+    setCanEditDetail(isDemoMode || isAdmin || unlockAll || unlockDetail);
+  }, [isDemoMode, session?.user?.isAdmin, session?.user?.email, searchParams]);
 
   const [detailCaptionOpenIndex, setDetailCaptionOpenIndex] = useState<number | null>(null);
   const detailMainImageInputRef = useRef<HTMLInputElement>(null);
@@ -1411,6 +1423,19 @@ const Cluster3Content = () => {
     return { ...card, links: compactLinks, metrics: compactMetrics };
   };
 
+  // Cluster2 Club Review Link 와 동일 톤의 잠금 메시지.
+  //   - 향후 cluster3.output_cards / cluster3.detail_cards 리소스 키로 permission API
+  //     가 분기되면, 각 메시지에 만료/시작 일시 등을 추가로 담는다.
+  //   - Output / Detail 은 별도 permission key 로 갈 가능성이 있어 helper 도 분리.
+  const getOutputPermissionMessage = () => {
+    if (canEditOutput) return "작성 가능";
+    return "관리자 허가를 받은 기간에만 작성할 수 있습니다. 😊";
+  };
+  const getDetailPermissionMessage = () => {
+    if (canEditDetail) return "작성 가능";
+    return "관리자 허가를 받은 기간에만 작성할 수 있습니다. 😊";
+  };
+
   // Output Top 5 + Detail 10 통합 저장: blob URL 이미지 업로드 → 카드 PUT
   // 성공 시 업로드된 URL이 반영된 OutputCard 반환, 실패 시 null
   const saveTopCard = async (
@@ -1418,6 +1443,16 @@ const Cluster3Content = () => {
     cardIndex: number,
     card: OutputCard
   ): Promise<OutputCard | null> => {
+    // 권한 방어선: UI 가 가려도 직접 호출 경로가 생길 수 있으니 saveTopCard 자체에서도 차단.
+    //   cardType 별로 분리 체크 — Output 만 unlock / Detail 만 unlock 시나리오 대응.
+    if (cardType === "output" && !canEditOutput) {
+      alert(getOutputPermissionMessage());
+      return null;
+    }
+    if (cardType === "detail" && !canEditDetail) {
+      alert(getDetailPermissionMessage());
+      return null;
+    }
     if (isDemoMode) return card;
     setIsSavingTopCard(true);
     try {
@@ -3933,11 +3968,13 @@ const Cluster3Content = () => {
                       className="modal-edit-btn"
                       onClick={async () => {
                         if (!canEditOutput) {
-                          await popup.alert("관리자의 허가가 필요합니다.");
+                          await popup.alert(getOutputPermissionMessage());
                           return;
                         }
                         setIsOutputEditMode(true);
                       }}
+                      title={canEditOutput ? "수정" : getOutputPermissionMessage()}
+                      style={!canEditOutput ? { opacity: 0.5, cursor: "not-allowed" } : {}}
                     >
                       수정
                     </button>
@@ -3949,7 +3986,13 @@ const Cluster3Content = () => {
                       <button className="modal-reset-btn" onClick={handleResetOutput}>
                         초기화
                       </button>
-                      <button className="modal-save-btn" onClick={handleSaveOutput} disabled={isSavingTopCard}>
+                      <button
+                        className="modal-save-btn"
+                        onClick={handleSaveOutput}
+                        disabled={isSavingTopCard || !canEditOutput}
+                        style={!canEditOutput ? { opacity: 0.3, cursor: "not-allowed" } : {}}
+                        title={canEditOutput ? "저장" : getOutputPermissionMessage()}
+                      >
                         {isSavingTopCard ? "저장 중..." : "저장"}
                       </button>
                     </>
@@ -4685,11 +4728,13 @@ const Cluster3Content = () => {
                       className="modal-edit-btn"
                       onClick={async () => {
                         if (!canEditDetail) {
-                          await popup.alert("관리자의 허가가 필요합니다.");
+                          await popup.alert(getDetailPermissionMessage());
                           return;
                         }
                         setIsDetailEditMode(true);
                       }}
+                      title={canEditDetail ? "수정" : getDetailPermissionMessage()}
+                      style={!canEditDetail ? { opacity: 0.5, cursor: "not-allowed" } : {}}
                     >
                       수정
                     </button>
@@ -4701,7 +4746,13 @@ const Cluster3Content = () => {
                       <button className="modal-reset-btn" onClick={handleResetDetail}>
                         초기화
                       </button>
-                      <button className="modal-save-btn" onClick={handleSaveDetail} disabled={isSavingTopCard}>
+                      <button
+                        className="modal-save-btn"
+                        onClick={handleSaveDetail}
+                        disabled={isSavingTopCard || !canEditDetail}
+                        style={!canEditDetail ? { opacity: 0.3, cursor: "not-allowed" } : {}}
+                        title={canEditDetail ? "저장" : getDetailPermissionMessage()}
+                      >
                         {isSavingTopCard ? "저장 중..." : "저장"}
                       </button>
                     </>
