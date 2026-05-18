@@ -10,6 +10,7 @@ import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { useProfile } from "@/contexts/ProfileContext";
 import { isAdminEmail } from "@/lib/admin";
+import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { isPxRoute, isEcRoute, getThemeClass } from "@/lib/cluster-route";
 import { usePopup } from "@/components/ui/popup";
 import {
@@ -214,7 +215,7 @@ const EC_ACCENT_SOFT = "#FF98A6";
 
 const Cluster3Content = () => {
   // 세션 및 본인 프로필 여부 확인
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   // Sidebar와 동일한 ProfileContext 캐시 — display_name 등 공통 프로필 정보 빠르게 접근
   const { profileData: cachedProfile } = useProfile();
   const searchParams = useSearchParams();
@@ -1080,27 +1081,162 @@ const Cluster3Content = () => {
   const [detailFooterNotice, setDetailFooterNotice] = useState<"default" | "error">("default");
   const [canEditDetail, setCanEditDetail] = useState<boolean>(isDemoMode);
 
-  // Portfolio Output/Detail 편집 권한 baseline.
-  //   - 어드민(마더) 또는 demo 모드면 자동 허용 (cluster2 Club Review Link 와 동일 톤).
-  //   - 그 외 일반 사용자는 잠금 상태 (관리자 허가 기간에만 작성 가능).
+  // Cluster3 Output/Detail 작성 기간 권한 메타.
+  //   - admin / demo / dev-override 인 경우 fetch 자체를 생략하므로 loading=false 로 시작.
+  //   - 일반 사용자는 mount 후 /api/edit-windows/permission 두 키를 병렬 조회한 결과로 채움.
+  type TopCardPermissionReason =
+    | "open"
+    | "not_granted"
+    | "not_started"
+    | "expired"
+    | "admin";
+  const [outputPermissionLoading, setOutputPermissionLoading] = useState<boolean>(true);
+  const [outputPermissionReason, setOutputPermissionReason] = useState<TopCardPermissionReason>("not_granted");
+  const [outputPermissionExpiresAt, setOutputPermissionExpiresAt] = useState<string | null>(null);
+  const [detailPermissionLoading, setDetailPermissionLoading] = useState<boolean>(true);
+  const [detailPermissionReason, setDetailPermissionReason] = useState<TopCardPermissionReason>("not_granted");
+  const [detailPermissionExpiresAt, setDetailPermissionExpiresAt] = useState<string | null>(null);
+
+  // Portfolio Output/Detail 편집 권한 계산.
+  //   우선순위 (cluster2 Club Review Link 와 동일 톤):
+  //     1) isDemoMode  → 자동 허용 (데모 데이터 자유 편집)
+  //     2) admin       → 자동 허용 (마더 계정)
+  //     3) dev override → ?unlockCluster3* (DEV/QA 전용)
+  //     4) permission API → /api/edit-windows/permission?resource_key=cluster3.{output|detail}_cards
+  //   서버 PUT 도 동일 resource key 로 enforce 되므로, dev override 는 프론트 UI 만 풀고
+  //   서버는 여전히 작성 기간을 검사한다 (서버 우회 X).
   //
   // === [DEV/QA ONLY] query param override ===
-  // 실제 Supabase permission/window 시스템이 아직 cluster3.output_cards /
-  // cluster3.detail_cards 리소스 키로 도입되지 않았기 때문에, QA에서 잠금/해제
-  // UX 를 미리 검증할 수 있도록 URL 쿼리로 강제 unlock 한다.
-  //   ?unlockCluster3Output=1  → Output 카드만 잠금 해제
-  //   ?unlockCluster3Detail=1  → Detail 카드만 잠금 해제
-  //   ?unlockCluster3=1        → Output / Detail 둘 다 잠금 해제
-  // 실제 permission API 가 붙으면 이 unlock 블록은 제거 또는 isDev 가드로 한정할 것.
+  // 실제 permission API 가 붙은 뒤에도 잠금 UI 만 빠르게 토글해보고 싶을 때 사용.
+  //   ?unlockCluster3Output=1  → Output 카드만 잠금 해제 (프론트 UI)
+  //   ?unlockCluster3Detail=1  → Detail 카드만 잠금 해제 (프론트 UI)
+  //   ?unlockCluster3=1        → Output / Detail 둘 다 잠금 해제 (프론트 UI)
+  // 운영에서 이 override 가 활성화되더라도 서버 PUT 은 EDIT_WINDOW_CLOSED 로 반려된다.
   useEffect(() => {
-    const isAdmin = session?.user?.isAdmin || isAdminEmail(session?.user?.email);
+    if (sessionStatus === "loading") return;
+
+    const isAdmin = !!session?.user?.isAdmin || isAdminEmail(session?.user?.email);
     const unlockAll = searchParams.get("unlockCluster3") === "1";
     const unlockOutput = searchParams.get("unlockCluster3Output") === "1";
     const unlockDetail = searchParams.get("unlockCluster3Detail") === "1";
 
-    setCanEditOutput(isDemoMode || isAdmin || unlockAll || unlockOutput);
-    setCanEditDetail(isDemoMode || isAdmin || unlockAll || unlockDetail);
-  }, [isDemoMode, session?.user?.isAdmin, session?.user?.email, searchParams]);
+    // admin / demo 는 fetch 없이 즉시 허용.
+    if (isDemoMode || isAdmin) {
+      const reason: TopCardPermissionReason = isAdmin ? "admin" : "open";
+      setCanEditOutput(true);
+      setCanEditDetail(true);
+      setOutputPermissionLoading(false);
+      setDetailPermissionLoading(false);
+      setOutputPermissionReason(reason);
+      setDetailPermissionReason(reason);
+      setOutputPermissionExpiresAt(null);
+      setDetailPermissionExpiresAt(null);
+      return;
+    }
+
+    // 로그인 안 된 상태: 잠금 + fetch 생략.
+    if (!session?.user) {
+      setCanEditOutput(unlockAll || unlockOutput);
+      setCanEditDetail(unlockAll || unlockDetail);
+      setOutputPermissionLoading(false);
+      setDetailPermissionLoading(false);
+      setOutputPermissionReason("not_granted");
+      setDetailPermissionReason("not_granted");
+      setOutputPermissionExpiresAt(null);
+      setDetailPermissionExpiresAt(null);
+      return;
+    }
+
+    // dev override 기반의 sync baseline 을 먼저 깔고, 그 위에 API 결과를 OR 로 얹는다.
+    setCanEditOutput(unlockAll || unlockOutput);
+    setCanEditDetail(unlockAll || unlockDetail);
+    setOutputPermissionLoading(true);
+    setDetailPermissionLoading(true);
+
+    let cancelled = false;
+    const loadPermission = async (
+      resourceKey: string,
+    ): Promise<{ canEdit: boolean; reason: TopCardPermissionReason; expiresAt: string | null }> => {
+      try {
+        const response = await fetch(
+          `/api/edit-windows/permission?resource_key=${encodeURIComponent(resourceKey)}`,
+          { cache: "no-store" },
+        );
+        const result = await response.json();
+        const permission = result?.data;
+        if (result?.success && permission && typeof permission.canEdit === "boolean") {
+          return {
+            canEdit: Boolean(permission.canEdit),
+            reason: (permission.reason ?? "not_granted") as TopCardPermissionReason,
+            expiresAt: (permission.expiresAt ?? null) as string | null,
+          };
+        }
+      } catch (error) {
+        console.error(`[cluster3 permission] ${resourceKey} 조회 실패`, error);
+      }
+      return { canEdit: false, reason: "not_granted", expiresAt: null };
+    };
+
+    Promise.all([
+      loadPermission("cluster3.output_cards"),
+      loadPermission("cluster3.detail_cards"),
+    ]).then(([outputPerm, detailPerm]) => {
+      if (cancelled) return;
+      setCanEditOutput((unlockAll || unlockOutput) || outputPerm.canEdit);
+      setCanEditDetail((unlockAll || unlockDetail) || detailPerm.canEdit);
+      setOutputPermissionReason(outputPerm.reason);
+      setDetailPermissionReason(detailPerm.reason);
+      setOutputPermissionExpiresAt(outputPerm.expiresAt);
+      setDetailPermissionExpiresAt(detailPerm.expiresAt);
+      setOutputPermissionLoading(false);
+      setDetailPermissionLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isDemoMode, session?.user?.isAdmin, session?.user?.email, session?.user, sessionStatus, searchParams]);
+
+  // 서버 PUT 이 403 EDIT_WINDOW_CLOSED 로 떨어졌을 때 즉시 잠금 UI 로 복귀시키기 위한 재조회 트리거.
+  //   - permissionRefreshTick 을 bump 하면 위 effect 가 같은 의존성 사이클을 다시 돌면서
+  //     /api/edit-windows/permission 을 재조회하도록 별도 effect 로 분리.
+  const [permissionRefreshTick, setPermissionRefreshTick] = useState(0);
+  useEffect(() => {
+    if (permissionRefreshTick === 0) return;
+    if (sessionStatus === "loading") return;
+    const isAdmin = !!session?.user?.isAdmin || isAdminEmail(session?.user?.email);
+    if (isDemoMode || isAdmin || !session?.user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [outputRes, detailRes] = await Promise.all([
+          fetch("/api/edit-windows/permission?resource_key=cluster3.output_cards", { cache: "no-store" }).then((r) => r.json()),
+          fetch("/api/edit-windows/permission?resource_key=cluster3.detail_cards", { cache: "no-store" }).then((r) => r.json()),
+        ]);
+        if (cancelled) return;
+        const unlockAll = searchParams.get("unlockCluster3") === "1";
+        const unlockOutput = searchParams.get("unlockCluster3Output") === "1";
+        const unlockDetail = searchParams.get("unlockCluster3Detail") === "1";
+        const oPerm = outputRes?.data;
+        const dPerm = detailRes?.data;
+        if (oPerm && typeof oPerm.canEdit === "boolean") {
+          setCanEditOutput((unlockAll || unlockOutput) || Boolean(oPerm.canEdit));
+          setOutputPermissionReason((oPerm.reason ?? "not_granted") as TopCardPermissionReason);
+          setOutputPermissionExpiresAt((oPerm.expiresAt ?? null) as string | null);
+        }
+        if (dPerm && typeof dPerm.canEdit === "boolean") {
+          setCanEditDetail((unlockAll || unlockDetail) || Boolean(dPerm.canEdit));
+          setDetailPermissionReason((dPerm.reason ?? "not_granted") as TopCardPermissionReason);
+          setDetailPermissionExpiresAt((dPerm.expiresAt ?? null) as string | null);
+        }
+      } catch (error) {
+        console.error("[cluster3 permission] refresh 실패", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [permissionRefreshTick, sessionStatus, session?.user, session?.user?.email, session?.user?.isAdmin, isDemoMode, searchParams]);
 
   const [detailCaptionOpenIndex, setDetailCaptionOpenIndex] = useState<number | null>(null);
   const detailMainImageInputRef = useRef<HTMLInputElement>(null);
@@ -1423,17 +1559,35 @@ const Cluster3Content = () => {
     return { ...card, links: compactLinks, metrics: compactMetrics };
   };
 
-  // Cluster2 Club Review Link 와 동일 톤의 잠금 메시지.
-  //   - 향후 cluster3.output_cards / cluster3.detail_cards 리소스 키로 permission API
-  //     가 분기되면, 각 메시지에 만료/시작 일시 등을 추가로 담는다.
-  //   - Output / Detail 은 별도 permission key 로 갈 가능성이 있어 helper 도 분리.
+  // Cluster3 Output/Detail 잠금/허용 메시지.
+  //   - 잠금 상태(loading / not_started / expired / not_granted 등)는 사유 노출 없이
+  //     EDIT_WINDOW_LOCKED_MESSAGE 로 통일 (cluster2 Club Review Link 와 동일 톤).
+  //   - 열림 상태에서는 expiresAt 이 있으면 "...까지 작성 가능" 안내를 유지.
+  //   - Output / Detail 은 별도 resource key 라 helper 자체는 분리 유지.
+  const formatPermissionDate = (value: string | null) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const hour = String(date.getHours()).padStart(2, "0");
+    const minute = String(date.getMinutes()).padStart(2, "0");
+    return `${year}.${month}.${day} ${hour}:${minute}`;
+  };
   const getOutputPermissionMessage = () => {
-    if (canEditOutput) return "작성 가능";
-    return "관리자 허가를 받은 기간에만 작성할 수 있습니다. 😊";
+    if (canEditOutput) {
+      const expiresAt = formatPermissionDate(outputPermissionExpiresAt);
+      return expiresAt ? `${expiresAt}까지 작성 가능` : "작성 가능";
+    }
+    return EDIT_WINDOW_LOCKED_MESSAGE;
   };
   const getDetailPermissionMessage = () => {
-    if (canEditDetail) return "작성 가능";
-    return "관리자 허가를 받은 기간에만 작성할 수 있습니다. 😊";
+    if (canEditDetail) {
+      const expiresAt = formatPermissionDate(detailPermissionExpiresAt);
+      return expiresAt ? `${expiresAt}까지 작성 가능` : "작성 가능";
+    }
+    return EDIT_WINDOW_LOCKED_MESSAGE;
   };
 
   // Output Top 5 + Detail 10 통합 저장: blob URL 이미지 업로드 → 카드 PUT
@@ -1535,7 +1689,15 @@ const Cluster3Content = () => {
       const putJson = await putRes.json();
       if (!putRes.ok) {
         console.error("탑 카드 저장 실패:", putJson);
-        alert(putJson?.error || "저장에 실패했습니다.");
+        // 작성 기간이 닫혔거나 만료된 경우: 사용자 alert 는 서버 메시지가 아닌
+        // 통일 문구(EDIT_WINDOW_LOCKED_MESSAGE)로 노출하고, 즉시 권한을 재조회해
+        // UI 가 다시 잠금 상태로 돌아가도록 한다.
+        if (putRes.status === 403 && putJson?.error === "EDIT_WINDOW_CLOSED") {
+          alert(EDIT_WINDOW_LOCKED_MESSAGE);
+          setPermissionRefreshTick((tick) => tick + 1);
+          return null;
+        }
+        alert(putJson?.message || putJson?.error || "저장에 실패했습니다.");
         return null;
       }
 

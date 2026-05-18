@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isAdminEmail } from "@/lib/admin";
 import { supabaseAdmin } from "@/lib/supabase";
+import { TOP_CARD_EDIT_RESOURCE_BY_TYPE } from "@/lib/topCardsEditWindow";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -14,7 +15,17 @@ type EditWindowRow = {
   expires_at: string | null;
 };
 
-const ALLOWED_RESOURCE_KEYS = new Set(["cluster2.review_links"]);
+// 프론트에서 GET /api/edit-windows/permission?resource_key=... 으로 조회 가능한
+// 리소스 키 화이트리스트. 라우트 자체는 resource_key 만 바꾸면 재사용 가능하므로
+// 새 권한 영역이 생길 때마다 키만 추가하면 된다.
+//   - cluster2.review_links: Club Review Link (cluster2)
+//   - cluster3.output_cards / cluster3.detail_cards: Portfolio Top 5 / Detail 10
+//     (server-side gate 는 lib/topCardsEditWindow.ts 에서 동일 키로 enforce)
+const ALLOWED_RESOURCE_KEYS = new Set<string>([
+  "cluster2.review_links",
+  TOP_CARD_EDIT_RESOURCE_BY_TYPE.output,
+  TOP_CARD_EDIT_RESOURCE_BY_TYPE.detail,
+]);
 
 function buildPermission(row: EditWindowRow | null, nowMs: number) {
   const openedAt = row?.opened_at ?? null;
