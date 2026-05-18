@@ -1,3 +1,8 @@
+// DEPRECATED — legacy link-only store for cluster-3 Section 4 Output Top 5.
+// Canonical source: portfolio_top_cards (card_type='output', read via /api/portfolio-top-cards).
+// Front (Cluster3Content.tsx) no longer calls this route.
+// TODO(cluster3-legacy-drop): remove this file + user_introductions.portfolio_output_{1..5}
+// + portfolio_output_channel_{1..5} columns once migration confirmed.
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";

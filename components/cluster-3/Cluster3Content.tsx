@@ -439,48 +439,18 @@ const Cluster3Content = () => {
   // 모달 상태 관리
   const [section3ModalOpen, setSection3ModalOpen] = useState(false);
   const [section4ModalOpen, setSection4ModalOpen] = useState(false);
-  const [section5ModalOpen, setSection5ModalOpen] = useState(false);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [isEditMode, setIsEditMode] = useState(false);
   const [section3FooterNotice, setSection3FooterNotice] = useState<"default" | "error">("default");
   const MAX_CARDS = 16;
 
-  // 모달 body refs (체크3: 필수 미입력 시 스크롤 이동)
+  // 모달 body ref — section3 full-card 모달 전용 (필수 미입력 시 스크롤 이동에 사용)
   const section3ModalBodyRef = useRef<HTMLDivElement>(null);
-  const section4ModalBodyRef = useRef<HTMLDivElement>(null);
-  const section5ModalBodyRef = useRef<HTMLDivElement>(null);
 
   const [showHelpModal, setShowHelpModal] = useState(false);
 
-  // 필수 미입력 시 스크롤 이동 + 하이라이트
-  const validateAndScrollToEmpty = (bodyRef: React.RefObject<HTMLDivElement | null>, links: string[], channels: string[]): boolean => {
-    if (!bodyRef.current) return true;
-    const items = bodyRef.current.querySelectorAll(".link-edit-item:not(.disabled)");
-    let firstInvalid: Element | null = null;
-
-    items.forEach((item, idx) => {
-      const input = item.querySelector("input");
-      const linkVal = links[idx]?.trim() || "";
-      const channelVal = channels[idx] || "";
-      const isIncomplete = (linkVal && !channelVal) || (!linkVal && channelVal);
-
-      if (isIncomplete) {
-        (item as HTMLElement).style.border = "1px solid #ff4444";
-        if (!firstInvalid) firstInvalid = item;
-      } else {
-        (item as HTMLElement).style.border = "";
-      }
-    });
-
-    if (firstInvalid) {
-      (firstInvalid as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
-      return false;
-    }
-    return true;
-  };
-
   // 모달 열릴 때 배경 스크롤 잠금
-  const anyModalOpen = section3ModalOpen || section4ModalOpen || section5ModalOpen;
+  const anyModalOpen = section3ModalOpen || section4ModalOpen;
   useModalScroll(anyModalOpen);
 
   // section3 모달 열 때 보기 모드로 초기화
@@ -508,43 +478,10 @@ const Cluster3Content = () => {
     if (newPage !== section3Page) setSection3Page(newPage);
   };
 
-  // 링크 데이터 관리 (카드 데이터에서 초기화)
-  const [section3Links, setSection3Links] = useState<string[]>([]);
-  const [section4Links, setSection4Links] = useState<string[]>([]);
-  const [section5Links, setSection5Links] = useState<string[]>([]);
-
-  // 편집 중인 링크 데이터
-  const [editingSection3Links, setEditingSection3Links] = useState<string[]>([]);
-  const [editingSection4Links, setEditingSection4Links] = useState<string[]>([]);
-  const [editingSection5Links, setEditingSection5Links] = useState<string[]>([]);
-
-  // 포트폴리오 아카이빙 데이터 (DB 저장용)
-  const [portfolioArchives, setPortfolioArchives] = useState<string[]>(Array(10).fill(""));
-  const [portfolioArchiveChannels, setPortfolioArchiveChannels] = useState<string[]>(["instagram", "youtube", "blog", "tistory", "twitter", "threads", "tiktok", "behance", "etc", "etc"]);
-  const [editingArchiveChannels, setEditingArchiveChannels] = useState<string[]>([]);
-  const [isSavingArchives, setIsSavingArchives] = useState(false);
   // 채널 카드 16개 풀 데이터 저장 (cluster-3 Channel 모달)
   const [isSavingChannelCard, setIsSavingChannelCard] = useState(false);
   // Output Top 5 + Detail 10 풀 데이터 저장 (cluster-3 World Of Top Works)
   const [isSavingTopCard, setIsSavingTopCard] = useState(false);
-
-  // 포트폴리오 Output 데이터 (DB 저장용)
-  const [portfolioOutputs, setPortfolioOutputs] = useState<string[]>(Array(5).fill(""));
-  const [portfolioOutputChannels, setPortfolioOutputChannels] = useState<string[]>([
-    "threads", // index 0 → 왼쪽2
-    "youtube", // index 1 → 왼쪽1
-    "tiktok", // index 2 → 가운데
-    "youtube", // index 3 → 오른쪽1
-    "tistory", // index 4 → 오른쪽2
-  ]);
-  const [editingOutputChannels, setEditingOutputChannels] = useState<string[]>(Array(5).fill(""));
-  const [isSavingOutputs, setIsSavingOutputs] = useState(false);
-
-  // Detail 10 데이터 (DB 저장용 - portfolio_output_6~15)
-  const [portfolioDetails, setPortfolioDetails] = useState<string[]>(Array(10).fill(""));
-  const [portfolioDetailChannels, setPortfolioDetailChannels] = useState<string[]>(["youtube", "twitter", "youtube", "threads", "instagram", "instagram", "instagram", "instagram", "youtube", "threads"]);
-  const [editingDetailChannels, setEditingDetailChannels] = useState<string[]>(Array(10).fill(""));
-  const [isSavingDetails, setIsSavingDetails] = useState(false);
 
   // 채널 옵션 목록
   const channelOptions = [
@@ -560,53 +497,20 @@ const Cluster3Content = () => {
     { value: "etc", label: "기타", icon: "/images/0/cluster 3/icon/etc 2.png" },
   ];
 
-  // 포트폴리오 아카이빙 데이터 가져오기
-  // 다른 크루 페이지를 보는 경우 레거시 GET은 자기 프로필을 찾으므로 404 → skip.
-  // 신규 /api/portfolio-channel-cards가 userId로 같은 데이터 다 채워줌.
+  // 데모 모드에서 채널 카드 1~10 링크를 dummy 데이터로 시드.
+  // 일반 모드의 link 값은 아래 portfolio_channel_cards canonical fetch가 채운다.
   useEffect(() => {
-    const fetchPortfolioArchives = async () => {
-      if (urlUserId && urlUserId !== session?.user?.id) return;
-      if (isDemoMode) {
-        const demoUser = demoLookupName || DEFAULT_DEMO_USER;
-        const userData = CLUSTER3_DUMMY_BY_USER[demoUser] || CLUSTER3_DUMMY_BY_USER[DEFAULT_DEMO_USER];
-        setPortfolioArchives(userData.archives);
-        setPortfolioArchiveChannels(userData.archiveChannels);
-        const updatedCards = channelCards.map((card, index) => {
-          if (index < 10 && userData.archives[index]) {
-            return { ...card, link: userData.archives[index] };
-          }
-          return card;
-        });
-        setChannelCards(updatedCards);
-        return;
-      }
-      if (!session?.user?.email) return;
-
-      try {
-        const response = await fetch("/api/portfolio-archives");
-        const result = await response.json();
-
-        if (response.ok && result.data) {
-          setPortfolioArchives(result.data);
-          if (result.channels) {
-            setPortfolioArchiveChannels(result.channels);
-          }
-          // channelCards의 처음 10개 링크도 업데이트
-          const updatedCards = channelCards.map((card, index) => {
-            if (index < 10 && result.data[index]) {
-              return { ...card, link: result.data[index] };
-            }
-            return card;
-          });
-          setChannelCards(updatedCards);
-        }
-      } catch (error) {
-        console.error("포트폴리오 아카이빙 데이터 로드 오류:", error);
-      }
-    };
-
-    fetchPortfolioArchives();
-  }, [session?.user?.email]);
+    if (!isDemoMode) return;
+    const demoUser = demoLookupName || DEFAULT_DEMO_USER;
+    const userData = CLUSTER3_DUMMY_BY_USER[demoUser] || CLUSTER3_DUMMY_BY_USER[DEFAULT_DEMO_USER];
+    setChannelCards((prev) =>
+      prev.map((card, index) =>
+        index < 10 && userData.archives[index]
+          ? { ...card, link: userData.archives[index] }
+          : card,
+      ),
+    );
+  }, [isDemoMode, demoLookupName]);
 
   // 채널 카드 16개 풀 데이터 로드 (portfolio_channel_cards 테이블)
   // 저장된 카드만 응답에 포함되며, 미저장 카드는 default(1번=샘플, 2~16=빈) 그대로 유지
@@ -744,252 +648,23 @@ const Cluster3Content = () => {
     }
   };
 
-  // 포트폴리오 아카이빙 저장 함수
-  const savePortfolioArchives = async (links: string[], channels: string[]) => {
-    if (isDemoMode) {
-      setPortfolioArchives(links);
-      setPortfolioArchiveChannels(channels);
-      // channelCards의 처음 10개 링크도 업데이트 (UI 즉시 반영)
-      const updatedCards = channelCards.map((card, index) => {
-        if (index < 10) {
-          return { ...card, link: links[index] || "" };
-        }
-        return card;
-      });
-      setChannelCards(updatedCards);
-      await popup.alert("저장되었습니다.");
-      setSection3ModalOpen(false);
-      return;
-    }
-    setIsSavingArchives(true);
-    try {
-      const response = await fetch(apiUrl("/api/portfolio-archives"), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ portfolioArchives: links, portfolioArchiveChannels: channels }),
-      });
-
-      const result = await response.json();
-      if (response.ok) {
-        setPortfolioArchives(links);
-        setPortfolioArchiveChannels(channels);
-        // channelCards의 처음 10개 링크도 업데이트
-        const updatedCards = channelCards.map((card, index) => {
-          if (index < 10) {
-            return { ...card, link: links[index] || "" };
-          }
-          return card;
-        });
-        setChannelCards(updatedCards);
-        await popup.alert("저장되었습니다.");
-        return true;
-      } else {
-        console.error("저장 실패:", result.error);
-        await popup.alert(result.error || "저장에 실패했습니다.");
-        return false;
-      }
-    } catch (error) {
-      console.error("포트폴리오 아카이빙 저장 오류:", error);
-      await popup.alert("저장 중 오류가 발생했습니다.");
-      return false;
-    } finally {
-      setIsSavingArchives(false);
-    }
-  };
-
-  // 포트폴리오 Output 데이터 가져오기
-  // 다른 크루 페이지에선 skip (신규 /api/portfolio-top-cards가 채워줌)
+  // 데모 모드에서 Section4·5 썸네일 link 를 dummy 로 시드.
+  // 일반 모드의 link 값은 portfolio_top_cards canonical fetch가 outputCards/detailCards 에 직접 채운다.
   useEffect(() => {
-    const fetchPortfolioOutputs = async () => {
-      if (urlUserId && urlUserId !== session?.user?.id) return;
-      if (isDemoMode) {
-        const demoUser = demoLookupName || DEFAULT_DEMO_USER;
-        const userData = CLUSTER3_DUMMY_BY_USER[demoUser] || CLUSTER3_DUMMY_BY_USER[DEFAULT_DEMO_USER];
-        setPortfolioOutputs(userData.outputs);
-        setPortfolioOutputChannels(userData.outputChannels);
-        const updatedSlides = topWorksSlides.map((slide, index) => {
-          if (userData.outputs[index]) {
-            return { ...slide, link: userData.outputs[index] };
-          }
-          return slide;
-        });
-        setTopWorksSlides(updatedSlides);
-        return;
-      }
-      if (!session?.user?.email) return;
-
-      try {
-        const response = await fetch("/api/portfolio-outputs");
-        const result = await response.json();
-
-        if (response.ok && result.data) {
-          setPortfolioOutputs(result.data);
-          // 채널 정보도 업데이트
-          if (result.channels) {
-            setPortfolioOutputChannels(result.channels);
-          }
-          // topWorksSlides 링크도 업데이트
-          const updatedSlides = topWorksSlides.map((slide, index) => {
-            if (result.data[index]) {
-              return { ...slide, link: result.data[index] };
-            }
-            return slide;
-          });
-          setTopWorksSlides(updatedSlides);
-        }
-      } catch (error) {
-        console.error("포트폴리오 Output 데이터 로드 오류:", error);
-      }
-    };
-
-    fetchPortfolioOutputs();
-  }, [session?.user?.email]);
-
-  // 포트폴리오 Output 저장 함수
-  const savePortfolioOutputs = async (links: string[], channels: string[]) => {
-    if (isDemoMode) {
-      setPortfolioOutputs(links);
-      setPortfolioOutputChannels(channels);
-      // topWorksSlides 링크도 업데이트 (UI 즉시 반영)
-      const updatedSlides = topWorksSlides.map((slide, index) => ({
-        ...slide,
-        link: links[index] || "",
-      }));
-      setTopWorksSlides(updatedSlides);
-      await popup.alert("저장되었습니다.");
-      setSection4ModalOpen(false);
-      return;
-    }
-    setIsSavingOutputs(true);
-    try {
-      const response = await fetch(apiUrl("/api/portfolio-outputs"), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ portfolioOutputs: links, portfolioOutputChannels: channels }),
-      });
-
-      const result = await response.json();
-      if (response.ok) {
-        setPortfolioOutputs(links);
-        setPortfolioOutputChannels(channels);
-        // topWorksSlides 링크도 업데이트
-        const updatedSlides = topWorksSlides.map((slide, index) => ({
-          ...slide,
-          link: links[index] || "",
-        }));
-        setTopWorksSlides(updatedSlides);
-        await popup.alert("저장되었습니다.");
-        return true;
-      } else {
-        console.error("저장 실패:", result.error);
-        await popup.alert(result.error || "저장에 실패했습니다.");
-        return false;
-      }
-    } catch (error) {
-      console.error("포트폴리오 Output 저장 오류:", error);
-      await popup.alert("저장 중 오류가 발생했습니다.");
-      return false;
-    } finally {
-      setIsSavingOutputs(false);
-    }
-  };
-
-  // Detail 10 데이터 가져오기
-  // 다른 크루 페이지에선 skip (신규 /api/portfolio-top-cards가 채워줌)
-  useEffect(() => {
-    const fetchPortfolioDetails = async () => {
-      if (urlUserId && urlUserId !== session?.user?.id) return;
-      if (isDemoMode) {
-        const demoUser = demoLookupName || DEFAULT_DEMO_USER;
-        const userData = CLUSTER3_DUMMY_BY_USER[demoUser] || CLUSTER3_DUMMY_BY_USER[DEFAULT_DEMO_USER];
-        setPortfolioDetails(userData.details);
-        setPortfolioDetailChannels(userData.detailChannels);
-        const updatedThumbnails = detailThumbnails.map((thumb, index) => {
-          if (userData.details[index]) {
-            return { ...thumb, link: userData.details[index] };
-          }
-          return thumb;
-        });
-        setDetailThumbnails(updatedThumbnails);
-        return;
-      }
-      if (!session?.user?.email) return;
-
-      try {
-        const response = await fetch("/api/portfolio-details");
-        const result = await response.json();
-
-        if (response.ok && result.data) {
-          setPortfolioDetails(result.data);
-          // 채널 정보도 업데이트
-          if (result.channels) {
-            setPortfolioDetailChannels(result.channels);
-          }
-          // detailThumbnails 링크도 업데이트
-          const updatedThumbnails = detailThumbnails.map((thumb, index) => {
-            if (result.data[index]) {
-              return { ...thumb, link: result.data[index] };
-            }
-            return thumb;
-          });
-          setDetailThumbnails(updatedThumbnails);
-        }
-      } catch (error) {
-        console.error("Detail 10 데이터 로드 오류:", error);
-      }
-    };
-
-    fetchPortfolioDetails();
-  }, [session?.user?.email]);
-
-  // Detail 10 저장 함수
-  const savePortfolioDetails = async (links: string[], channels: string[]) => {
-    if (isDemoMode) {
-      setPortfolioDetails(links);
-      setPortfolioDetailChannels(channels);
-      // detailThumbnails 링크도 업데이트 (UI 즉시 반영)
-      const updatedThumbnails = detailThumbnails.map((thumb, index) => ({
-        ...thumb,
-        link: links[index] || "",
-      }));
-      setDetailThumbnails(updatedThumbnails);
-      await popup.alert("저장되었습니다.");
-      setSection5ModalOpen(false);
-      return;
-    }
-    setIsSavingDetails(true);
-    try {
-      const response = await fetch(apiUrl("/api/portfolio-details"), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ portfolioDetails: links, portfolioDetailChannels: channels }),
-      });
-
-      const result = await response.json();
-      if (response.ok) {
-        setPortfolioDetails(links);
-        setPortfolioDetailChannels(channels);
-        // detailThumbnails 링크도 업데이트
-        const updatedThumbnails = detailThumbnails.map((thumb, index) => ({
-          ...thumb,
-          link: links[index] || "",
-        }));
-        setDetailThumbnails(updatedThumbnails);
-        await popup.alert("저장되었습니다.");
-        return true;
-      } else {
-        console.error("저장 실패:", result.error);
-        await popup.alert(result.error || "저장에 실패했습니다.");
-        return false;
-      }
-    } catch (error) {
-      console.error("Detail 10 저장 오류:", error);
-      await popup.alert("저장 중 오류가 발생했습니다.");
-      return false;
-    } finally {
-      setIsSavingDetails(false);
-    }
-  };
+    if (!isDemoMode) return;
+    const demoUser = demoLookupName || DEFAULT_DEMO_USER;
+    const userData = CLUSTER3_DUMMY_BY_USER[demoUser] || CLUSTER3_DUMMY_BY_USER[DEFAULT_DEMO_USER];
+    setTopWorksSlides((prev) =>
+      prev.map((slide, index) =>
+        userData.outputs[index] ? { ...slide, link: userData.outputs[index] } : slide,
+      ),
+    );
+    setDetailThumbnails((prev) =>
+      prev.map((thumb, index) =>
+        userData.details[index] ? { ...thumb, link: userData.details[index] } : thumb,
+      ),
+    );
+  }, [isDemoMode, demoLookupName]);
 
   // API에서 일정 신뢰도 데이터 가져오기
   useEffect(() => {
@@ -2187,19 +1862,6 @@ const Cluster3Content = () => {
     return etcIcons[id ? id % etcIcons.length : Math.floor(Math.random() * etcIcons.length)];
   };
 
-  // 카드 데이터의 링크로 state 초기화
-  useEffect(() => {
-    if (section3Links.length === 0) {
-      setSection3Links(channelCards.slice(0, 16).map((card) => card.link));
-    }
-    if (section4Links.length === 0) {
-      setSection4Links(topWorksSlides.map((slide) => slide.link));
-    }
-    if (section5Links.length === 0) {
-      setSection5Links(detailThumbnails.map((thumb) => thumb.link));
-    }
-  }, []);
-
   return (
     <div className="cluster3-content">
       {/* Section 1: CLUB FINAL INDEX - 새 디자인 */}
@@ -2547,11 +2209,6 @@ const Cluster3Content = () => {
       {/* Section 3: 포트폴리오 마케팅 Channel */}
       <section className="cluster3-section3">
         <div className="floating-icons" style={{ display: "flex" }}>
-          {/* edit-icon 주석 처리 유지
-          <div className="edit-icon" style={{ cursor: "pointer" }} onClick={() => { setCurrentCardIndex(0); setSection3ModalOpen(true); }}>
-            <i className="ti ti-pencil" style={{ fontSize: "16px", color: "#1a1a1a" }}></i>
-          </div>
-          */}
           <div className="edit-icon search-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" strokeWidth="2">
               <circle cx="11" cy="11" r="8" />
@@ -2583,17 +2240,6 @@ const Cluster3Content = () => {
           {channelCards.slice(section3Page * 8, section3Page * 8 + 8).map((card, index) => {
             const actualIndex = section3Page * 8 + index;
             const isUnlocked = actualIndex < unlockedCardCount;
-            // DB 연동 카드(1~10)는 드롭다운 선택 채널 아이콘 사용, 나머지는 기존 고정 아이콘
-            const cardIndex = card.id - 1;
-            let snsImage: string;
-            if (cardIndex < 10) {
-              const selectedChannel = portfolioArchiveChannels[cardIndex];
-              const channelOption = channelOptions.find((opt) => opt.value === selectedChannel);
-              snsImage = channelOption?.icon || snsIconOrder[cardIndex] || snsIconOrder[snsIconOrder.length - 1];
-            } else {
-              snsImage = snsIconOrder[cardIndex] || snsIconOrder[snsIconOrder.length - 1];
-            }
-            const isEtcIcon = snsImage.includes("etc");
             const isLocked = !isUnlocked;
             const isComplete = isCardComplete(card);
             return (
@@ -2668,27 +2314,6 @@ const Cluster3Content = () => {
       <section className="cluster3-section4">
         {/* 플로팅 아이콘 - 로그인한 본인만 표시 */}
         <div className="floating-icons" style={{ display: "flex" }}>
-          {/* edit 아이콘 주석 처리 — 카드 클릭으로 모달 열기로 대체
-          <div
-            className="edit-icon"
-            style={{ cursor: isOwner || isDemoMode ? "pointer" : "not-allowed", opacity: isOwner || isDemoMode ? 1 : 0.4 }}
-            onClick={
-              isOwner || isDemoMode
-                ? () => {
-                    // 강제 정렬(compaction): 값이 있는 항목을 앞으로 밀착
-                    const paired = portfolioOutputs.map((link, i) => ({ link, channel: portfolioOutputChannels[i] || "" }));
-                    const filled = paired.filter((item) => item.link?.trim());
-                    const total = portfolioOutputs.length;
-                    setEditingSection4Links([...filled.map((item) => item.link), ...Array(total - filled.length).fill("")]);
-                    setEditingOutputChannels([...filled.map((item) => item.channel), ...Array(total - filled.length).fill("")]);
-                    setSection4ModalOpen(true);
-                  }
-                : undefined
-            }
-          >
-            <i className="ti ti-pencil" style={{ fontSize: "16px", color: "#1a1a1a" }}></i>
-          </div>
-          */}
           <div className="edit-icon search-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" strokeWidth="2">
               <circle cx="11" cy="11" r="8" />
@@ -2735,11 +2360,6 @@ const Cluster3Content = () => {
 
         <div className="top-works-slider">
           {topWorksSlides.map((slide, index) => {
-            // 선택된 채널에 따른 아이콘 표시
-            const selectedChannel = portfolioOutputChannels[index];
-            const channelOption = channelOptions.find((opt) => opt.value === selectedChannel);
-            const channelIcon = channelOption?.icon || "";
-
             // 현재 활성 슬라이드 기준으로 원형 회전 위치 계산
             const totalSlides = topWorksSlides.length;
             let position = index - activeSlide;
@@ -2804,26 +2424,6 @@ const Cluster3Content = () => {
         <div className="cluster3-section5">
           {/* 플로팅 아이콘 - 로그인한 본인만 표시 */}
           <div className="floating-icons" style={{ display: "flex" }}>
-            {/* 주석 처리: edit 아이콘 (detail-modal이 대체)
-            <div
-              className="edit-icon"
-              style={{ cursor: isOwner || isDemoMode ? "pointer" : "not-allowed", opacity: isOwner || isDemoMode ? 1 : 0.4 }}
-              onClick={
-                isOwner || isDemoMode
-                  ? () => {
-                      const paired = portfolioDetails.map((link, i) => ({ link, channel: portfolioDetailChannels[i] || "" }));
-                      const filled = paired.filter((item) => item.link?.trim());
-                      const total = portfolioDetails.length;
-                      setEditingSection5Links([...filled.map((item) => item.link), ...Array(total - filled.length).fill("")]);
-                      setEditingDetailChannels([...filled.map((item) => item.channel), ...Array(total - filled.length).fill("")]);
-                      setSection5ModalOpen(true);
-                    }
-                  : undefined
-              }
-            >
-              <i className="ti ti-pencil" style={{ fontSize: "16px", color: "#1a1a1a" }}></i>
-            </div>
-            */}
             <div className="edit-icon search-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" strokeWidth="2">
                 <circle cx="11" cy="11" r="8" />
@@ -2852,10 +2452,6 @@ const Cluster3Content = () => {
 
           <div className="detail-grid">
             {detailThumbnails.map((thumb, index) => {
-              // 선택된 채널에 따른 아이콘 표시
-              const selectedChannel = portfolioDetailChannels[index];
-              const channelOption = channelOptions.find((opt) => opt.value === selectedChannel);
-              const channelIcon = channelOption?.icon || "";
               const isVoidDetail = index >= unlockedDetailCount;
               // 작성된 카드만 선명 (채널과 동일 패턴)
               const isDetailComplete = !isVoidDetail && validateOutputCard(detailCards[index]).length === 0;
@@ -5074,85 +4670,6 @@ const Cluster3Content = () => {
       )}
 
 
-      {/* 섹션 5 모달 - Detail 10 링크 편집 (detail-modal이 대체, 주석 처리) */}
-      {false && section5ModalOpen && (
-        <div className="section-modal-overlay">
-          <div className="section-modal">
-            <div className="section-modal-header">
-              <h3>The Detail 10 링크 편집</h3>
-              <p className="modal-subtitle">위 대표 결과물 5개를 제외한 클럽 활동 결과물 중, 추가로 보여주고 싶은 결과물 링크를 등록해 주세요.</p>
-              <button className="modal-close-btn" onClick={() => setSection5ModalOpen(false)}>
-                <i className="ti ti-x"></i>
-              </button>
-            </div>
-            <div className="section-modal-body" ref={section5ModalBodyRef}>
-              {editingSection5Links.map((link, index) => {
-                const prevFilled = index === 0 || editingSection5Links[index - 1]?.trim();
-                const isDisabled = !prevFilled;
-                return (
-                  <div key={index} className={`link-edit-item${isDisabled ? " disabled" : ""}`}>
-                    <div className="link-item-header">
-                      <span className="link-label">Detail {index + 1}</span>
-                    </div>
-                    <p style={{ color: isPX ? PX_ACCENT_SOFT : isEC ? EC_ACCENT_SOFT : "#FFC107", fontSize: "16px", margin: "0 0 8px 0" }}>채널 선택:</p>
-                    <CustomSelect
-                      className="channel-select"
-                      style={{ display: "block", marginBottom: "8px", pointerEvents: isDisabled ? "none" : "auto", opacity: isDisabled ? 0.4 : 1 }}
-                      value={link?.trim() ? editingDetailChannels[index] || "" : ""}
-                      onChange={(val) => {
-                        const newChannels = [...editingDetailChannels];
-                        newChannels[index] = val;
-                        setEditingDetailChannels(newChannels);
-                      }}
-                      options={channelOptions}
-                    />
-                    <input
-                      type="url"
-                      placeholder="링크를 입력하세요 (https://...)"
-                      value={link}
-                      disabled={isDisabled}
-                      onChange={(e) => {
-                        const newLinks = [...editingSection5Links];
-                        newLinks[index] = e.target.value;
-                        if (!e.target.value.trim()) {
-                          for (let i = index + 1; i < newLinks.length; i++) {
-                            newLinks[i] = "";
-                          }
-                          const newChannels = [...editingDetailChannels];
-                          for (let i = index + 1; i < newChannels.length; i++) {
-                            newChannels[i] = "";
-                          }
-                          setEditingDetailChannels(newChannels);
-                        }
-                        setEditingSection5Links(newLinks);
-                      }}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-            <div className="section-modal-footer">
-              <button className="cancel-btn" onClick={() => setSection5ModalOpen(false)}>
-                취소
-              </button>
-              <button
-                className="save-btn"
-                disabled={isSavingDetails}
-                onClick={async () => {
-                  if (!validateAndScrollToEmpty(section5ModalBodyRef, editingSection5Links, editingDetailChannels)) return;
-                  const success = await savePortfolioDetails(editingSection5Links, editingDetailChannels);
-                  if (success) {
-                    setSection5Links([...editingSection5Links]);
-                    setSection5ModalOpen(false);
-                  }
-                }}
-              >
-                {isSavingDetails ? "저장 중..." : "저장"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -1,3 +1,9 @@
+// DEPRECATED — legacy link-only store for cluster-3 Section 3 channel cards.
+// Canonical source: portfolio_channel_cards (read via /api/portfolio-channel-cards).
+// Front (Cluster3Content.tsx) no longer calls this route — kept temporarily so
+// any external integration / old build doesn't 404. Delete together with
+// user_introductions.portfolio_archive_{1..10} column drop migration.
+// TODO(cluster3-legacy-drop): remove this file + columns once migration confirmed.
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
