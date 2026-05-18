@@ -48,6 +48,20 @@ export const CLUSTER3_CHANNEL_DEFAULTS = {
   },
 };
 
+// Production 초기 state — 16카드 모두 emptyCard.
+// canonical fetch (portfolio_channel_cards) 가 아직 응답하기 전이라도
+// `firstCard` sample 값이 state 에 들어 있으면, 사용자가 무심코 모달 Save 를
+// 눌렀을 때 sample 페이로드가 canonical row 를 덮어쓰는 사고가 발생한다.
+// (실제 2026-05-18 사고 — channel_name 이 '@ Discovery_Korea' 로 revert.)
+// → production initial state 에서는 sample 을 절대 시드하지 않는다.
+//   sample 데이터는 데모 모드에서만 별도 useEffect 가 명시적으로 주입한다.
+export const createEmptyChannelCards = () =>
+  Array.from({ length: 16 }, (_, i) => ({
+    id: i + 1,
+    ...CLUSTER3_CHANNEL_DEFAULTS.emptyCard,
+  }));
+
+// Demo 모드 전용 — card 1 만 firstCard sample 로 시드. production 사용 금지.
 export const createInitialChannelCards = () => [
   { ...CLUSTER3_CHANNEL_DEFAULTS.firstCard },
   ...Array.from({ length: 15 }, (_, i) => ({

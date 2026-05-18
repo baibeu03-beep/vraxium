@@ -24,7 +24,7 @@ import {
   CLUSTER3_DUMMY_OUTPUT_CARDS,
   DEFAULT_DEMO_USER,
 } from "@/constants/dummyData";
-import { CLUSTER3_CHANNEL_DEFAULTS, createInitialChannelCards } from "@/constants/dummyData/cluster3-section-default";
+import { CLUSTER3_CHANNEL_DEFAULTS, createEmptyChannelCards } from "@/constants/dummyData/cluster3-section-default";
 import { OUTPUT_CARD_1_DEFAULT } from "@/constants/dummyData/cluster3-output-default";
 import { DETAIL_CARD_1_DEFAULT, createInitialDetailCardsWithDefault } from "@/constants/dummyData/cluster3-detail-default";
 
@@ -497,23 +497,32 @@ const Cluster3Content = () => {
     { value: "etc", label: "기타", icon: "/images/0/cluster 3/icon/etc 2.png" },
   ];
 
-  // 데모 모드에서 채널 카드 1~10 링크를 dummy 데이터로 시드.
-  // 일반 모드의 link 값은 아래 portfolio_channel_cards canonical fetch가 채운다.
+  // 데모 모드 sample seed:
+  //   - card 1 만 firstCard sample (Discovery_Korea 등) 전체 시드
+  //   - card 1~10 link 는 dummy.archives 로 추가 시드
+  // production 에서는 절대 실행되지 않는다. canonical fetch 가 빈 응답이어도
+  // state 는 emptyCard 그대로 유지되어 sample 값이 PUT 경로로 흘러가지 않는다.
   useEffect(() => {
     if (!isDemoMode) return;
     const demoUser = demoLookupName || DEFAULT_DEMO_USER;
     const userData = CLUSTER3_DUMMY_BY_USER[demoUser] || CLUSTER3_DUMMY_BY_USER[DEFAULT_DEMO_USER];
     setChannelCards((prev) =>
-      prev.map((card, index) =>
-        index < 10 && userData.archives[index]
-          ? { ...card, link: userData.archives[index] }
-          : card,
-      ),
+      prev.map((card, index) => {
+        // index 0 = card 1 → firstCard sample 전체로 교체 (id 보존)
+        if (index === 0) {
+          return { ...CLUSTER3_CHANNEL_DEFAULTS.firstCard, id: card.id };
+        }
+        // index 1~9 = link 만 dummy seed
+        if (index < 10 && userData.archives[index]) {
+          return { ...card, link: userData.archives[index] };
+        }
+        return card;
+      }),
     );
   }, [isDemoMode, demoLookupName]);
 
   // 채널 카드 16개 풀 데이터 로드 (portfolio_channel_cards 테이블)
-  // 저장된 카드만 응답에 포함되며, 미저장 카드는 default(1번=샘플, 2~16=빈) 그대로 유지
+  // 저장된 카드만 응답에 포함되며, 미저장 카드는 emptyCard 상태 그대로 유지
   useEffect(() => {
     if (isDemoMode) return;
     const fetchChannelCards = async () => {
@@ -559,11 +568,35 @@ const Cluster3Content = () => {
     fetchChannelCards();
   }, [session?.user?.email, urlUserId, isDemoMode]);
 
+  // sample/default seed 가 PUT 으로 흘러가는 사고 방지용 marker 비교.
+  // production 의 initial state 는 emptyCard 만 사용 (createEmptyChannelCards) 이므로
+  // 정상 흐름에서는 이 marker 가 절대 매칭되지 않는다. 매칭되는 경우는 누군가
+  // sample 객체를 그대로 PUT 페이로드로 보낸 케이스 — canonical row 덮어쓰기 차단.
+  const isFirstCardSamplePayload = (card: any): boolean => {
+    if (!card) return false;
+    const s = CLUSTER3_CHANNEL_DEFAULTS.firstCard;
+    return (
+      card.channelName === s.channelName &&
+      card.link === s.link &&
+      card.platform === s.platform
+    );
+  };
+
   // 채널 카드 저장: blob URL 이미지 업로드 → 카드 PUT
   // 성공 시 업로드된 URL이 반영된 카드 객체 반환, 실패 시 null
   const saveChannelCard = async (cardIndex: number, card: any): Promise<any | null> => {
     if (isDemoMode) {
       return card;
+    }
+    // 방어: sample(firstCard) 페이로드는 production DB 에 절대 PUT 하지 않는다.
+    // 2026-05-18 사고 — canonical row 의 channel_name 이 '@ Discovery_Korea' 로 revert.
+    if (isFirstCardSamplePayload(card)) {
+      console.warn(
+        "[saveChannelCard] firstCard sample 페이로드 PUT 차단",
+        { cardIndex, channelName: card?.channelName },
+      );
+      await popup.alert("샘플 데이터는 저장할 수 없습니다. 실제 채널 정보를 입력해주세요.");
+      return null;
     }
     setIsSavingChannelCard(true);
     try {
@@ -895,7 +928,11 @@ const Cluster3Content = () => {
   const MANAGEMENT_OPTIONS = ["개인 소유 관리", "팀 소속 협업", "기타 진행"];
   const STATUS_OPTIONS = ["운영 중", "운영 중단", "운영 보류"];
 
-  const [channelCards, setChannelCards] = useState(createInitialChannelCards());
+  // production initial state = 16 카드 모두 empty.
+  // sample/default 데이터가 state 에 들어가면 modal Save 가 그대로 PUT 되어
+  // canonical row 를 덮어쓰는 사고가 발생한다. demo 모드는 별도 useEffect 가
+  // card 1 만 firstCard sample 로 시드 (아래 `데모 모드에서 sample seed` 참고).
+  const [channelCards, setChannelCards] = useState(createEmptyChannelCards());
   const [cardSnapshot, setCardSnapshot] = useState<any>(null);
 
   // Output(Top Works) 모달 — 타입 B (보기+편집+좌우) 1-6단계 UI

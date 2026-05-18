@@ -35,6 +35,28 @@ const sanitizeImages = (raw: unknown): (string | null)[] => {
   return normalized;
 };
 
+// firstCard sample marker. constants/dummyData/cluster3-section-default.ts 의
+// CLUSTER3_CHANNEL_DEFAULTS.firstCard 와 동일 값을 hardcoded — 서버 사이드
+// guard 가 클라이언트 코드 dependency 없이 독립적으로 동작해야 하므로 의도적 중복.
+// 어떤 클라이언트가 보내든 (front, admin, 외부) 이 marker 가 매칭되면 거절.
+const FIRST_CARD_SAMPLE_MARKER = {
+  channelName: "@ Discovery_Korea",
+  platform: "유튜브",
+  link: "https://www.youtube.com/@Discovery_Korea",
+} as const;
+
+const isFirstCardSamplePayload = (body: {
+  channelName?: unknown;
+  platform?: unknown;
+  link?: unknown;
+}): boolean => {
+  return (
+    body.channelName === FIRST_CARD_SAMPLE_MARKER.channelName &&
+    body.platform === FIRST_CARD_SAMPLE_MARKER.platform &&
+    body.link === FIRST_CARD_SAMPLE_MARKER.link
+  );
+};
+
 // GET: 대상 유저의 채널 카드 16개 (저장된 카드만 반환, 나머지는 클라가 default로 채움)
 export async function GET(request: Request) {
   try {
@@ -122,6 +144,28 @@ export async function PUT(request: Request) {
       return NextResponse.json(
         { error: "잘못된 카드 인덱스입니다." },
         { status: 400 }
+      );
+    }
+
+    // 회귀 진단용 — 어떤 페이로드가 PUT 으로 들어오는지 추적.
+    // 2026-05-18 사고 (canonical row 가 sample 로 덮어써짐) 재발 시
+    // 원인 클라이언트/시간 식별을 위해 cardIndex + channel_name + UA 를 남긴다.
+    console.log("[portfolio-channel-cards PUT]", {
+      userId: profile.id,
+      cardIndex,
+      channelName: typeof body.channelName === "string" ? body.channelName : null,
+      ua: request.headers.get("user-agent")?.slice(0, 120) ?? null,
+    });
+
+    // 방어: firstCard sample 페이로드는 production DB 에 절대 upsert 하지 않는다.
+    if (isFirstCardSamplePayload(body)) {
+      console.warn("[portfolio-channel-cards PUT] firstCard sample 차단", {
+        userId: profile.id,
+        cardIndex,
+      });
+      return NextResponse.json(
+        { error: "샘플 데이터는 저장할 수 없습니다. 실제 채널 정보를 입력해주세요." },
+        { status: 400 },
       );
     }
 
