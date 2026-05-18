@@ -2834,6 +2834,17 @@ const Cluster3Content = () => {
                         disabled={isSavingChannelCard}
                         onClick={async () => {
                           const card = channelCards[currentCardIndex];
+
+                          // 방어: 사용자가 실제로 편집하지 않은 카드는 절대 PUT 하지 않는다.
+                          // cardSnapshot 은 edit 모드 진입 시 캡처된 원본. dirty 가 false 면
+                          // 사용자가 어떤 필드도 바꾸지 않았다는 뜻 → PUT 발사 금지.
+                          // (이 가드가 없으면 canonical state 와 동일한 값을 의도 없이 PUT 해서
+                          //  생기는 사고 — 예: 누군가 무심코 Save 누름 — 을 막을 수 없다.)
+                          if (!isCardDirty()) {
+                            await popup.alert("변경된 내용이 없습니다.");
+                            return;
+                          }
+
                           const missing: string[] = [];
                           if (!card.channelName?.trim()) missing.push("channelName");
                           if (!card.platform) missing.push("platform");

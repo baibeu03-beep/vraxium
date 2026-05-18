@@ -149,11 +149,14 @@ export async function PUT(request: Request) {
 
     // 회귀 진단용 — 어떤 페이로드가 PUT 으로 들어오는지 추적.
     // 2026-05-18 사고 (canonical row 가 sample 로 덮어써짐) 재발 시
-    // 원인 클라이언트/시간 식별을 위해 cardIndex + channel_name + UA 를 남긴다.
+    // 원인 클라이언트/타임라인 식별. 본 endpoint 는 single-card upsert 이므로
+    // count 는 항상 1 — 형태 일관성을 위해 명시.
+    const incomingChannelName =
+      typeof body.channelName === "string" ? body.channelName : null;
     console.log("[portfolio-channel-cards PUT]", {
       userId: profile.id,
-      cardIndex,
-      channelName: typeof body.channelName === "string" ? body.channelName : null,
+      count: 1,
+      first: { card_index: cardIndex, channel_name: incomingChannelName },
       ua: request.headers.get("user-agent")?.slice(0, 120) ?? null,
     });
 
