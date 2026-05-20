@@ -446,6 +446,13 @@ export async function GET(request: NextRequest) {
     console.log('[Profile API] Returning profile for:', profile.id, profile.display_name);
 
     const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const normalizeDateOnly = (value: string) => {
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return null;
+      parsed.setHours(0, 0, 0, 0);
+      return parsed;
+    };
 
     // 모든 쿼리를 병렬로 실행 (성능 최적화)
     const [
@@ -496,25 +503,14 @@ export async function GET(request: NextRequest) {
       supabaseAdmin.from("user_cumulative_points").select("total_stars, total_lightnings, total_shields").eq("user_id", profile.id).maybeSingle(),
 
       // season_histories
-      supabaseAdmin.from("user_season_histories").select(`
-        id,
-        role_in_season,
-        approved_weeks,
-        total_weeks,
-        progress_status,
-        review_status,
-        is_qualified,
-        rating,
-        review,
-        review_link,
-        seasons (
-          id,
-          year,
-          name,
-          start_date,
-          end_date
-        )
-      `).eq("user_id", profile.id),
+      // 실제 user_season_histories 컬럼: id, user_id, season_id, rating, review,
+      //                                    created_at, updated_at (그 외 컬럼 없음)
+      // role_in_season / approved_weeks / total_weeks / progress_status /
+      // review_status / is_qualified 는 schema 에 없으므로 select 에 포함하지 않는다.
+      // 누락 필드는 attachSeasons() 에서 기본값으로 채워 Front 호환성 유지.
+      supabaseAdmin.from("user_season_histories").select(
+        "id, user_id, season_id, rating, review, created_at, updated_at"
+      ).eq("user_id", profile.id),
 
       // grade_stats (품계 정보)
       supabaseAdmin.from("user_grade_stats").select("avg_percentile, grade, grade_label").eq("user_id", profile.id).maybeSingle(),
@@ -529,7 +525,9 @@ export async function GET(request: NextRequest) {
       supabaseAdmin.from("rest_requests").select("week_id").eq("user_id", profile.id).eq("status", "approved"),
 
       // 모든 시즌 (성장 가능 시즌 계산용)
-      supabaseAdmin.from("seasons").select("id, name, year, start_date, end_date").order("start_date", { ascending: true }),
+      // 실제 schema 컬럼명: id, name, season_index, started_at, ended_at
+      // → 응답을 JS 단에서 { year, start_date, end_date } shape 로 변환.
+      supabaseAdmin.from("seasons").select("id, name, season_index, started_at, ended_at").order("started_at", { ascending: true }),
 
       // 해당 유저의 성공 주차 (주차별) - user_weekly_growth 사용 (pms1.5와 동일)
       supabaseAdmin.from("user_weekly_growth").select("week_id").eq("user_id", profile.id).eq("is_success", true),
@@ -631,13 +629,64 @@ export async function GET(request: NextRequest) {
     const activitiesData = activityRecordsData.filter((ar: { is_completed: boolean }) => ar.is_completed);
     const weeklyActivities = weeklyActivitiesResult.data;
     const cumulativePoints = cumulativePointsResult.data;
-    const seasonHistories = seasonHistoriesResult.data;
     const gradeStats = gradeStatsResult.data;
     const growthStats = growthStatsResult.data;
     const allWeeks = allWeeksResult.data || [];
     const allRests = allRestsResult.data || [];
-    const allSeasons = allSeasonsResult.data || [];
     const userActivities = userActivitiesResult.data || [];
+
+    // 실제 seasons 컬럼: id, name, season_index, started_at, ended_at
+    // 본 라우트 + sortedSeasonHistories filter 가 기대하는 shape:
+    //   { id, name, year, start_date, end_date }
+    // ended_at 이 null 인 (= 현재 진행 중) 시즌은 end_date 를 now() 로 잡아
+    //   line 1085 의 "end_date >= growthStartDate" 필터를 통과하게 한다.
+    const nowIso = new Date().toISOString();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allSeasonsRaw = (allSeasonsResult.data || []) as any[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allSeasons = allSeasonsRaw.map((s: any) => ({
+      id: s.id,
+      name: s.name,
+      year: s.season_index,
+      start_date: s.started_at,
+      end_date: s.ended_at ?? nowIso,
+    }));
+
+    // 진단 로그 (사용자 요청)
+    console.log('[Profile API] targetUserId', profile.id);
+    console.log('[Profile API] raw season histories', seasonHistoriesResult.data);
+    if (seasonHistoriesResult.error) {
+      console.error('[Profile API] season histories error', seasonHistoriesResult.error);
+    }
+    console.log('[Profile API] all seasons (raw)', allSeasonsRaw);
+    console.log('[Profile API] all seasons (mapped)', allSeasons);
+    if (allSeasonsResult.error) {
+      console.error('[Profile API] all seasons error', allSeasonsResult.error);
+    }
+
+    // user_season_histories raw 데이터에 seasons 객체 attach (client-side merge).
+    // nested seasons() 를 제거했으므로 allSeasons 의 매핑된 shape 를 사용한다.
+    // 실제 schema 에 없는 컬럼(role_in_season / approved_weeks / total_weeks /
+    // progress_status / review_status / is_qualified) 은 Front 가 기대하는 기본값으로 채움.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const seasonsMap = new Map<string, any>(allSeasons.map((s) => [s.id, s]));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const attachSeasons = (rows: any[] | null | undefined): any[] =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (rows || []).map((row: any) => ({
+        ...row,
+        // 누락 컬럼 기본값 보정 (schema 에 추가될 때까지의 호환 레이어)
+        role_in_season: row.role_in_season ?? null,
+        approved_weeks: row.approved_weeks ?? 0,
+        total_weeks: row.total_weeks ?? 0,
+        progress_status: row.progress_status ?? 'in_progress',
+        review_status: row.review_status ?? 'reviewing',
+        is_qualified: row.is_qualified ?? false,
+        seasons: row.season_id ? seasonsMap.get(row.season_id) || null : null,
+      }));
+    const seasonHistories = attachSeasons(seasonHistoriesResult.data);
+
+    console.log('[Profile API] final seasonHistories', seasonHistories);
 
     // 실시간 성장 기간 통계 계산 (user_growth_stats 테이블에 데이터가 없을 때)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -941,11 +990,9 @@ export async function GET(request: NextRequest) {
           }
         });
 
-        // 각 시즌에 대해 user_season_histories INSERT
-        const today = new Date().toISOString().split('T')[0];
-        const insertPromises = Array.from(seasonMap.values()).map(async ({ seasonId, seasonData, successWeekIds }) => {
+        // 각 시즌에 대해 user_season_histories INSERT (minimal payload)
+        const insertPromises = Array.from(seasonMap.values()).map(async ({ seasonId }) => {
           if (!supabaseAdmin) return; // null 체크
-          const approvedWeeks = successWeekIds.size; // 성공한 주차 수
           // 이미 존재하는지 확인
           const { data: existing } = await supabaseAdmin
             .from('user_season_histories')
@@ -955,60 +1002,29 @@ export async function GET(request: NextRequest) {
             .maybeSingle();
 
           if (!existing) {
-            // 해당 시즌의 총 주차 수 조회
-            const { data: seasonWeeks } = await supabaseAdmin
-              .from('weeks')
-              .select('id')
-              .eq('season_id', seasonId);
-
-            const totalWeeks = seasonWeeks?.length || 13;
-
-            // 시즌 종료일이 지났으면 승인완료, 아니면 검수중
-            const isSeasonEnded = seasonData.end_date < today;
-            const progressStatus = isSeasonEnded ? 'completed' : 'in_progress';
-            const reviewStatus = isSeasonEnded ? 'approved' : 'reviewing';
-
+            // 실제 schema 컬럼만 INSERT (user_id, season_id).
+            // role_in_season / approved_weeks / total_weeks / progress_status /
+            // review_status 는 schema 에 없어 PostgREST 400 으로 떨어지므로 제거.
             await supabaseAdmin
               .from('user_season_histories')
               .insert({
                 user_id: profile.id,
                 season_id: seasonId,
-                role_in_season: profile.role || 'crew_regular',
-                approved_weeks: approvedWeeks,
-                total_weeks: totalWeeks,
-                progress_status: progressStatus,
-                review_status: reviewStatus
               });
           }
         });
 
         await Promise.all(insertPromises);
 
-        // 다시 조회
+        // 다시 조회 — minimal select (실제 schema 에 존재하는 컬럼만)
         const { data: newSeasonHistories } = await supabaseAdmin
           .from('user_season_histories')
-          .select(`
-            id,
-            role_in_season,
-            approved_weeks,
-            total_weeks,
-            progress_status,
-            review_status,
-            is_qualified,
-            rating,
-            review,
-            review_link,
-            seasons (
-              id,
-              year,
-              name,
-              start_date,
-              end_date
-            )
-          `)
+          .select(
+            "id, user_id, season_id, rating, review, created_at, updated_at"
+          )
           .eq('user_id', profile.id);
 
-        finalSeasonHistories = newSeasonHistories || [];
+        finalSeasonHistories = attachSeasons(newSeasonHistories);
         console.log('[Profile API] Auto-generated season histories:', finalSeasonHistories.length);
       }
     }
@@ -1026,70 +1042,73 @@ export async function GET(request: NextRequest) {
       const missingSeasons = currentSeasons.filter((s: any) => !existingSeasonIds.has(s.id));
 
       if (missingSeasons.length > 0) {
+        // 실제 schema 컬럼만 INSERT (user_id, season_id).
+        // 그 외 컬럼은 schema 에 없으므로 attachSeasons() 기본값 보정에 의존.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const insertPromises = missingSeasons.map(async (season: any) => {
-          const { data: seasonWeeks } = await supabaseAdmin
-            .from('weeks')
-            .select('id')
-            .eq('season_id', season.id);
-
           await supabaseAdmin
             .from('user_season_histories')
             .insert({
               user_id: profile.id,
               season_id: season.id,
-              role_in_season: profile.role || 'crew_regular',
-              approved_weeks: 0,
-              total_weeks: seasonWeeks?.length || 16,
-              progress_status: 'in_progress',
-              review_status: 'reviewing'
             });
         });
 
         await Promise.all(insertPromises);
 
-        // 다시 조회
+        // 다시 조회 — minimal select (실제 schema 에 존재하는 컬럼만)
         const { data: refreshed } = await supabaseAdmin
           .from('user_season_histories')
-          .select(`
-            id, role_in_season, approved_weeks, total_weeks, progress_status,
-            review_status, is_qualified, rating, review, review_link,
-            seasons (id, year, name, start_date, end_date)
-          `)
+          .select(
+            "id, user_id, season_id, rating, review, created_at, updated_at"
+          )
           .eq('user_id', profile.id);
 
-        finalSeasonHistories = refreshed || finalSeasonHistories;
+        finalSeasonHistories = refreshed ? attachSeasons(refreshed) : finalSeasonHistories;
       }
     }
 
+    // 4단계 필터를 명시적으로 분리 + 각 단계 통과 개수 진단 로그.
+    // null-safe 가드 추가: start_date / end_date / name 이 falsy 인 경우 통과 처리
+    // (이전엔 undefined <= today 가 false 로 평가되어 row 가 silent 하게 제거됨).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sortedSeasonHistories = finalSeasonHistories
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .filter((item: any) => item.seasons !== null)
-      // break 시즌 제외 (winter_spring_break, spring_summer_break 등)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .filter((item: any) => {
-        const seasonName = item.seasons.name || '';
-        return !seasonName.toLowerCase().includes('break');
-      })
-      // 아직 시작하지 않은 미래 시즌 제외 (시즌 시작일이 오늘 이후인 경우)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .filter((item: any) => {
-        return item.seasons.start_date <= today;
-      })
-      // 가입일이 속한 시즌 이후만 표시 (가입 시즌 포함)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .filter((item: any) => {
-        if (!growthStartDate) return true;
-        // 시즌 종료일이 가입일 이후이면 표시 (가입 시즌 포함)
-        return item.seasons.end_date >= growthStartDate;
-      })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .sort((a: any, b: any) => {
-        const yearDiff = b.seasons.year - a.seasons.year;
-        if (yearDiff !== 0) return yearDiff;
-        return (seasonOrderMap[b.seasons.name] || 0) - (seasonOrderMap[a.seasons.name] || 0);
-      });
+    const afterSeasonsNotNull = finalSeasonHistories.filter((item: any) => item.seasons !== null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const afterBreakExcluded = afterSeasonsNotNull.filter((item: any) => {
+      const seasonName = item.seasons?.name || '';
+      return !seasonName.toLowerCase().includes('break');
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const afterFutureExcluded = afterBreakExcluded.filter((item: any) => {
+      // start_date 가 없으면 통과 (시즌 메타 데이터 미설정 → 표시)
+      if (!item.seasons?.start_date) return true;
+      const seasonStartDate = normalizeDateOnly(item.seasons.start_date);
+      if (!seasonStartDate) return true;
+      return seasonStartDate <= now;
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const afterGrowthStart = afterFutureExcluded.filter((item: any) => {
+      if (!growthStartDate || !item.seasons?.end_date) return true;
+      // end_date 가 없으면 통과 (진행 중 시즌 등)
+      return item.seasons.end_date >= growthStartDate;
+    });
+
+    console.log('[Profile API] sortedSeasonHistories step counts', {
+      raw: finalSeasonHistories.length,
+      afterSeasonsNotNull: afterSeasonsNotNull.length,
+      afterBreakExcluded: afterBreakExcluded.length,
+      afterFutureExcluded: afterFutureExcluded.length,
+      afterGrowthStart: afterGrowthStart.length,
+      today,
+      growthStartDate,
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sortedSeasonHistories = afterGrowthStart.sort((a: any, b: any) => {
+      const yearDiff = (b.seasons?.year ?? 0) - (a.seasons?.year ?? 0);
+      if (yearDiff !== 0) return yearDiff;
+      return (seasonOrderMap[b.seasons?.name] || 0) - (seasonOrderMap[a.seasons?.name] || 0);
+    });
 
     // 시즌별 휴식/성공 시즌 수 실시간 계산 (sortedSeasonHistories 기반)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1349,6 +1368,11 @@ export async function GET(request: NextRequest) {
       // 온보딩 주차 반영은 이미 seasonSuccessWeeksMap에서 처리됨
       return updatedItem;
     });
+
+    console.log('[Profile API] response seasonHistories length', finalSeasonHistoriesWithOnboarding.length);
+    if (finalSeasonHistoriesWithOnboarding.length > 0) {
+      console.log('[Profile API] response seasonHistories[0].id', finalSeasonHistoriesWithOnboarding[0]?.id);
+    }
 
     return NextResponse.json({
       success: true,
