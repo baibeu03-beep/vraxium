@@ -21,7 +21,7 @@ const SEASON_ORDER: Record<string, number> = {
 };
 
 const parseYearSeason = (text: string) => {
-  const match = text.match(/(\d{4})년\s*(봄|여름|가을|겨울)\s*시즌/);
+  const match = text.match(/(\d{4})년,?\s*(봄|여름|가을|겨울)\s*시즌/);
   if (!match) return null;
   return {
     year: Number(match[1]),
@@ -41,11 +41,11 @@ const parseWeekSortKey = (seasonName: string) => {
 };
 
 // 카드 seasonName → 시즌 필터 value (= label).
-// 카드와 필터가 동일 문자열을 공유해 별도 mapping 불필요.
+// 카드와 필터가 동일 문자열을 공유 → 별도 mapping 불필요.
 const getSeasonFilterValue = (seasonName: string) => {
   const ys = parseYearSeason(seasonName);
   if (!ys) return "";
-  return `${ys.year}년 ${ys.season} 시즌`;
+  return `${ys.year}년, ${ys.season} 시즌`;
 };
 
 const WeeklyRankingContent = () => {
@@ -54,7 +54,7 @@ const WeeklyRankingContent = () => {
   const [leagueValue, setLeagueValue] = useState<string>("");
   const [demo, setDemo] = useState(false);
 
-  // localStorage는 SSR 접근 불가 → 마운트 후 클라 체크
+  // localStorage는 SSR 접근 불가 — 마운트 후 한 번 체크
   useEffect(() => {
     setDemo(isDemoMode());
   }, []);
@@ -86,7 +86,7 @@ const WeeklyRankingContent = () => {
     return [{ value: "", label: "종합" }, ...Array.from(set).map((s) => ({ value: s, label: s }))];
   }, [allCards]);
 
-  // 필터 + 정렬 결과. useMemo로 ref 안정화 → 자식 페이지네이션 reset effect 트리거 적정화.
+  // 필터 + 정렬 결과. useMemo로 ref 안정화 — 자식 페이지네이션 reset effect 트리거 적정화.
   const filteredAndSortedCards = useMemo<WeeklyCardData[]>(() => {
     let result = allCards;
 
@@ -102,7 +102,7 @@ const WeeklyRankingContent = () => {
     switch (sortValue) {
       case "latest":
         // seasonName 에서 연도/시즌/주차 파싱 후 DESC 정렬.
-        // 시즌 우선순위: 가을 > 여름 > 봄 > 겨울 (같은 해에서).
+        // 시즌 우선순위: 가을 > 여름 > 봄 > 겨울 (같은 해 안에서).
         sorted.sort((a, b) => {
           const ak = parseWeekSortKey(a.seasonName);
           const bk = parseWeekSortKey(b.seasonName);
@@ -149,9 +149,9 @@ const WeeklyRankingContent = () => {
               </h1>
             </div>
             <div className="weekly-hero__slogan">
-              <p>과거를 도약하는 청춘들의 실시간 주차별 성장 리그!</p>
-              <p>플레이어로서 한 발 더 성장하는 과정</p>
-              <p className="weekly-hero__slogan-strong">이번 주, 그들은 얼마나 성장했을까요?</p>
+              <p>전국의 내로라하는 청춘들이 펼치는, 주차별 성장 리그!</p>
+              <p>위대한 성취는, 당장의 한 걸음부터.</p>
+              <p className="weekly-hero__slogan-strong">이번 주 그대는 얼마나 성장하였는가?</p>
               <span className="weekly-hero__sparkle weekly-hero__sparkle--tr" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M12 0 L14 10 L24 12 L14 14 L12 24 L10 14 L0 12 L10 10 Z" fill="currentColor" />
@@ -207,10 +207,10 @@ const WeeklyRankingContent = () => {
         onReset={handleReset}
       />
 
-      {/* 
-        팀 통계 영역 (다음 단계 소통 후 예정) — 임시 비활성화
+      {/*
+        팀 통계 영역 (다음 회차 재통합 예정) — 임시 비활성화
         <div className="weekly-team-stats-placeholder">
-          <p>팀 통계 영역 (다음 단계 소통 후 예정)</p>
+          <p>팀 통계 영역 (다음 회차 재통합 예정)</p>
         </div>
       */}
 
