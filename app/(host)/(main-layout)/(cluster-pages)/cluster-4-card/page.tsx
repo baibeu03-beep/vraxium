@@ -10,10 +10,17 @@ const Cluster4CardPage = () => {
 
   // 현재 주차로 리다이렉트
   useEffect(() => {
-    // ?admin=true이면 dw-01 더미 카드로 직행 (파라미터 유지로 DemoToggle 활성화도 그대로 작동)
+    // demoMode 가 켜져 있을 때만 dw-01 더미 카드로 직행.
+    // ?admin=true 는 DemoToggle 노출 신호일 뿐 (DemoToggle.tsx 가 처리) — 단독으로
+    // dw-01 redirect 를 트리거하지 않는다. dw-01 은 frontend dummy 라
+    // demoMode=false 에서 흘러가면 실 API 가 weekId='dw-01' 을 UUID 캐스트하다 실패.
     const params = new URLSearchParams(window.location.search);
-    if (params.get('admin') === 'true') {
-      router.replace(`/cluster-4-card/dw-01?${params.toString()}`);
+    const demoOn =
+      typeof window !== 'undefined' &&
+      window.localStorage.getItem('demoMode') === 'true';
+    if (demoOn) {
+      const qs = params.toString();
+      router.replace(qs ? `/cluster-4-card/dw-01?${qs}` : '/cluster-4-card/dw-01');
       return;
     }
 
@@ -21,12 +28,12 @@ const Cluster4CardPage = () => {
       try {
         const today = new Date().toISOString().split('T')[0];
 
-        // 현재 날짜가 포함된 주차 찾기
+        // 현재 날짜가 포함된 주차 찾기 — v1: 실 컬럼명 (started_at/ended_at) 사용
         const { data: currentWeek, error } = await supabase
           .from('weeks')
-          .select('id, start_date, end_date, seasons(name)')
-          .lte('start_date', today)
-          .gte('end_date', today)
+          .select('id, started_at, ended_at, seasons(name)')
+          .lte('started_at', today)
+          .gte('ended_at', today)
           .single();
 
         if (error || !currentWeek) {
@@ -34,7 +41,7 @@ const Cluster4CardPage = () => {
           const { data: latestWeek } = await supabase
             .from('weeks')
             .select('id, seasons(name)')
-            .order('start_date', { ascending: false })
+            .order('started_at', { ascending: false })
             .limit(1)
             .single();
 

@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-server";
-import { getUserProfile } from "@/lib/get-user-profile";
 import { extractTargetUserId } from "@/lib/admin";
+import { requireOwnerOrAdmin } from "@/lib/api-auth";
+import { getUserProfile } from "@/lib/get-user-profile";
+import { hasOpenEditWindow } from "@/lib/editWindow";
+import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
+import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -33,8 +39,13 @@ const toClient = (row: WeeklyReviewRow) => ({
   updated_at: row.updated_at,
 });
 
-// GET: 주차 리뷰 조회 — 열람은 누구나 가능(타 크루 리뷰도 조회 가능)
-//   userId 쿼리 파라미터: 명시하면 그 유저의 리뷰. 없으면 로그인 본인 리뷰.
+// GET: 주차 리뷰 조회.
+//
+// 권한 정책 (2026-05-22 변경):
+//   - cluster-4-card peer-view 가시화를 위해 owner-or-admin 게이트 제거 → "로그인만".
+//   - 응답에 PII 없음 (id/user_id UUID/week_card_id/rating/content/timestamps).
+//   - POST (mutation) / PUT/DELETE (`[id]` 라우트) 권한 및 작성기간 게이트는 그대로 유지.
+//   - userId 쿼리 파라미터: 명시하면 그 유저의 리뷰. 없으면 로그인 본인 리뷰.
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -48,29 +59,27 @@ export async function GET(request: Request) {
       );
     }
 
-    let targetUserId: string | null = null;
-
-    if (explicitUserId) {
-      if (!isValidUUID(explicitUserId)) {
-        return NextResponse.json(
-          { error: "유효한 userId가 필요합니다." },
-          { status: 400 }
-        );
-      }
-      targetUserId = explicitUserId;
-    } else {
-      const adminTargetUserId = extractTargetUserId(request);
-      const { profile, error: profileError } = await getUserProfile(
-        "id",
-        adminTargetUserId
+    if (explicitUserId && !isValidUUID(explicitUserId)) {
+      return NextResponse.json(
+        { error: "유효한 userId가 필요합니다." },
+        { status: 400 }
       );
+    }
+
+    // 로그인만 검증.
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+    }
+
+    // explicitUserId 미지정 시 본인 리뷰 조회로 해석.
+    let targetUserId = explicitUserId;
+    if (!targetUserId) {
+      const { profile, error: profileError } = await getUserProfile<{ user_id: string }>("user_id", null);
       if (profileError) {
-        return NextResponse.json(
-          { error: profileError.message },
-          { status: profileError.status }
-        );
+        return NextResponse.json({ error: profileError.message }, { status: profileError.status });
       }
-      targetUserId = profile.id;
+      targetUserId = profile.user_id;
     }
 
     const supabase = createAdminClient();
@@ -104,20 +113,16 @@ export async function GET(request: Request) {
 }
 
 // POST: 주차 리뷰 신규 작성
+//   - owner 본인 또는 관리자만 write 허용 (requireOwnerOrAdmin)
+//   - 관리자가 아니면 user_edit_windows.cluster4.weekly_reviews 가 열려 있어야 함
+//   - 관리자는 작성 기간 무관 통과
 export async function POST(request: Request) {
   try {
     const adminTargetUserId = extractTargetUserId(request);
-    const { profile, error: profileError } = await getUserProfile(
-      "id",
-      adminTargetUserId
-    );
+    const gate = await requireOwnerOrAdmin(adminTargetUserId);
+    if (!gate.ok) return gate.response;
 
-    if (profileError) {
-      return NextResponse.json(
-        { error: profileError.message },
-        { status: profileError.status }
-      );
-    }
+    const writerUserId = gate.context.targetUserId;
 
     const body = await request.json();
     const { weekCardId, rating, content } = body ?? {};
@@ -155,13 +160,31 @@ export async function POST(request: Request) {
       );
     }
 
+    // 작성 기간 게이트 — admin 우회. owner 본인은 user_edit_windows row 가 열려 있어야 함.
+    if (!gate.context.isAdmin) {
+      const open = await hasOpenEditWindow({
+        userId: writerUserId,
+        resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.weeklyReviews,
+      });
+      if (!open) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "EDIT_WINDOW_CLOSED",
+            message: EDIT_WINDOW_LOCKED_MESSAGE,
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     const supabase = createAdminClient();
 
     // 중복 방지 — 이미 존재하면 클라이언트가 PUT을 사용해야 함
     const { data: existing } = await supabase
       .from("weekly_reviews")
       .select("id")
-      .eq("user_id", profile.id)
+      .eq("user_id", writerUserId)
       .eq("week_card_id", weekCardId)
       .maybeSingle();
 
@@ -180,7 +203,7 @@ export async function POST(request: Request) {
       .from("weekly_reviews")
       .insert({
         id: crypto.randomUUID(),
-        user_id: profile.id,
+        user_id: writerUserId,
         week_card_id: weekCardId,
         rating,
         content: content.trim(),

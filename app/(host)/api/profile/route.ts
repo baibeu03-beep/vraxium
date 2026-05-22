@@ -391,6 +391,71 @@ export async function GET(request: NextRequest) {
 
     // ========== context=card: 카드 페이지용 경량 응답 (시즌 통계/계산 전부 스킵) ==========
     if (context === 'card') {
+      // Cluster4CardContent 의 weekBundle 의존성 복원.
+      //   - commit 001777e 가 도입한 7 개 server-side 쿼리. host 그룹 라우트 이동 시 누락된 부분.
+      //   - weekId 미지정 시 weekBundle = null — sidebar 등 기존 context=card 호출은 그대로 작동.
+      const weekId = searchParams.get('weekId');
+
+      // weekId UUID 검증 — frontend dummy id (예: "dw-01") 가 흘러들어와
+      //   `weeks.id` (UUID 컬럼) 캐스트로 silent fail 하는 것을 차단.
+      //   /api/weekly-reviews:48,112 / /api/weekly-colleagues:20 의 정규식과 동일.
+      //   weekId 미지정은 허용 (sidebar 등 weekBundle 불필요한 호출).
+      if (weekId !== null) {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(weekId)) {
+          return NextResponse.json(
+            {
+              error: "유효한 weekId(UUID)가 필요합니다.",
+              hint: "weeks.id 는 UUID 타입입니다. frontend dummy id 는 demoMode=true 클라이언트 분기에서만 의미가 있습니다.",
+              received: weekId,
+            },
+            { status: 400 }
+          );
+        }
+      }
+      // v1 schema adapter: 운영 DB 의 실제 컬럼 (week_index, started_at, ended_at,
+      //   season_index) 을 select 한 뒤 JS 단에서 frontend 가 기대하는 legacy shape
+      //   (week_number, start_date, end_date, year, term_number, is_club_break,
+      //   holiday_name) 로 매핑한다. 운영 정책 (v1):
+      //     - is_club_break  → 항상 false   (D1)
+      //     - holiday_name   → 항상 null    (D2)
+      //     - term_number    → 항상 null    (D3)
+      //   휴식 / 공휴일 / 차수 의미는 v2 에서 운영 데이터 모델 확정 후 복원 예정.
+      const weekQueries = weekId ? [
+        // [10] activity_types (cluster_id 분류 + eligibility 메타데이터)
+        supabaseAdmin.from("activity_types")
+          .select("id, name, line_code, cluster_id, description, eligible_min_approved_weeks, eligible_max_approved_weeks, count_once_in_total")
+          .eq("is_active", true),
+        // [11] current week (seasons join 포함) — 실 컬럼 SELECT, JS 에서 legacy shape 변환
+        supabaseAdmin.from("weeks")
+          .select("id, week_index, started_at, ended_at, season_id, seasons (id, season_index, name)")
+          .eq("id", weekId)
+          .single(),
+        // [12] all weeks (prev/next 네비게이션 + 누적 주차 필터링)
+        supabaseAdmin.from("weeks")
+          .select("id, started_at, ended_at, season_id, seasons(name)")
+          .order("started_at", { ascending: false }),
+        // [13] weekly_activities for this week
+        supabaseAdmin.from("weekly_activities")
+          .select("id, activity_type_id, title, is_active, opened_at, output_links")
+          .eq("week_id", weekId),
+        // [14] user_weekly_growth for this week
+        supabaseAdmin.from("user_weekly_growth")
+          .select("is_success, is_resting, is_club_break, failure_reason")
+          .eq("user_id", profile.id)
+          .eq("week_id", weekId)
+          .maybeSingle(),
+        // [15] all points for user (단감/인절미/어흥 누적 계산)
+        supabaseAdmin.from("points")
+          .select("week_id, point_type, points")
+          .eq("user_id", profile.id),
+        // [16] success weeks for cumulative count — weeks embed 도 실 컬럼명 사용
+        supabaseAdmin.from("user_weekly_growth")
+          .select("week_id, weeks!inner(ended_at)")
+          .eq("user_id", profile.id)
+          .eq("is_success", true),
+      ] as const : [];
+
       const [
         joinedWeekResult,
         allRestsResult,
@@ -402,30 +467,89 @@ export async function GET(request: NextRequest) {
         userTeamPartsResult,
         teamsData,
         partsData,
+        ...weekResults
       ] = await Promise.all([
         profile.onboarding_week_id
-          ? supabaseAdmin.from("weeks").select("start_date").eq("id", profile.onboarding_week_id).maybeSingle()
+          ? supabaseAdmin.from("weeks").select("started_at").eq("id", profile.onboarding_week_id).maybeSingle()
           : Promise.resolve({ data: null }),
         supabaseAdmin.from("rest_requests").select("week_id").eq("user_id", profile.id).eq("status", "approved"),
         supabaseAdmin.from("user_weekly_growth").select("week_id").eq("user_id", profile.id).eq("is_success", true),
         supabaseAdmin.from("user_role_history").select("id, user_id, role, started_at, ended_at").eq("user_id", profile.id),
         supabaseAdmin.from("activity_records").select("id, week_id, activity_type_id, is_completed").eq("user_id", profile.id),
-        supabaseAdmin.from("user_activity_details").select("week_id, activity_type_id, sub_title, output_links").eq("user_id", profile.id),
-        supabaseAdmin.from("points").select("activity_id, points").eq("user_id", profile.id).eq("point_type", "star").not("activity_id", "is", null),
+        supabaseAdmin.from("user_activity_details").select("week_id, activity_type_id, sub_title, output_links, growth_point, image_urls, image_captions, rating").eq("user_id", profile.id),
+        // activityPoints (point_type='star') 기반 라인 평점 경로는 폐기 — SoT 가 user_activity_details.rating 으로 이동.
+        // 응답 shape 호환을 위해 빈 결과만 반환 (consumer 측에서도 함께 정리).
+        Promise.resolve({ data: [], error: null }),
         supabaseAdmin.from("user_team_parts").select("user_id, team_id, part_id, joined_at, left_at, generation, managed_team_id").eq("user_id", profile.id),
         getCachedTeams(),
         getCachedParts(),
+        ...weekQueries,
       ]);
 
       const activityRecordsData = activityRecordsResult.data || [];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const completedActivities = activityRecordsData.filter((ar: any) => ar.is_completed);
 
+      // weekResults 는 weekQueries 와 같은 순서 (7 개). Front (Cluster4CardContent.tsx:1095~1152) 의
+      //   wb.{activityTypes, currentWeek, allWeeks, weeklyActivities, weeklyGrowth, allPoints, successWeeks}
+      // 의존성을 1:1 만족.
+      //
+      // v1 schema adapter: 실 컬럼 → legacy shape 매핑. 컴포넌트 측 코드는 손대지 않음.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawCurrentWeek = (weekResults[1]?.data as any) ?? null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawAllWeeks = ((weekResults[2]?.data as any[]) ?? []);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawSuccessWeeks = ((weekResults[6]?.data as any[]) ?? []);
+
+      const adaptedCurrentWeek = rawCurrentWeek ? {
+        id:            rawCurrentWeek.id,
+        week_number:   rawCurrentWeek.week_index,         // week_index → week_number
+        start_date:    rawCurrentWeek.started_at,         // started_at → start_date
+        end_date:      rawCurrentWeek.ended_at,           // ended_at   → end_date
+        is_club_break: false,                              // v1 D1
+        holiday_name:  null,                               // v1 D2
+        season_id:     rawCurrentWeek.season_id,
+        seasons: rawCurrentWeek.seasons ? {
+          id:          rawCurrentWeek.seasons.id,
+          name:        rawCurrentWeek.seasons.name,
+          year:        rawCurrentWeek.seasons.season_index, // season_index → year
+          term_number: null,                                 // v1 D3
+        } : null,
+      } : null;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const adaptedAllWeeks = rawAllWeeks.map((w: any) => ({
+        id:         w.id,
+        start_date: w.started_at,
+        end_date:   w.ended_at,
+        season_id:  w.season_id,
+        seasons:    w.seasons,
+      }));
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const adaptedSuccessWeeks = rawSuccessWeeks.map((s: any) => ({
+        week_id: s.week_id,
+        weeks:   s.weeks ? { end_date: s.weeks.ended_at } : null,
+      }));
+
+      const weekBundle = weekId && weekResults.length === 7 ? {
+        activityTypes: weekResults[0]?.data || [],
+        currentWeek:   adaptedCurrentWeek,
+        allWeeks:      adaptedAllWeeks,
+        weeklyActivities: weekResults[3]?.data || [],
+        weeklyGrowth: weekResults[4]?.data || null,
+        allPoints: weekResults[5]?.data || [],
+        successWeeks: adaptedSuccessWeeks,
+      } : null;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const joinedWeekRaw = joinedWeekResult.data as any;
       return NextResponse.json({
         success: true,
         data: profile,
         onboardingWeekId: profile.onboarding_week_id || null,
-        growthInfo: { startDate: joinedWeekResult.data?.start_date || null },
+        growthInfo: { startDate: joinedWeekRaw?.started_at || null },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         activityWeekIds: completedActivities.map((a: any) => a.week_id),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -439,6 +563,7 @@ export async function GET(request: NextRequest) {
         teams: teamsData || [],
         parts: partsData || [],
         resumeCardSettings,
+        weekBundle,
       });
     }
 
@@ -538,14 +663,15 @@ export async function GET(request: NextRequest) {
       // 해당 유저의 활동 이행 기록 (강화 상태 판단용) - id 추가 (points 매핑용)
       supabaseAdmin.from("activity_records").select("id, week_id, activity_type_id, is_completed").eq("user_id", profile.id),
 
-      // 해당 유저의 2차 정보 (서브타이틀, 아웃풋링크)
-      supabaseAdmin.from("user_activity_details").select("week_id, activity_type_id, sub_title, output_links").eq("user_id", profile.id),
+      // 해당 유저의 2차 정보 (서브타이틀, 아웃풋링크, 라인 평점)
+      supabaseAdmin.from("user_activity_details").select("week_id, activity_type_id, sub_title, output_links, growth_point, image_urls, image_captions, rating").eq("user_id", profile.id),
 
       // activity_types (cluster_id 기반 분류용) - 캐시 사용
       getCachedActivityTypes(),
 
-      // 해당 유저의 활동별 포인트 (평점용) - star 타입만
-      supabaseAdmin.from("points").select("activity_id, points").eq("user_id", profile.id).eq("point_type", "star").not("activity_id", "is", null),
+      // activityPoints (point_type='star') 기반 라인 평점 경로는 폐기 — SoT 는 user_activity_details.rating.
+      // 응답 shape 호환을 위해 빈 결과만 반환.
+      Promise.resolve({ data: [], error: null }),
 
       // 해당 유저의 시즌별 포인트 (week_id를 통해 season 조인)
       supabaseAdmin.from("points").select("week_id, point_type, points, weeks!inner(season_id)").eq("user_id", profile.id),

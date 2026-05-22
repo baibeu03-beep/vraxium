@@ -12639,7 +12639,50 @@
         &.star-full {
           color: #faab07;
         }
+
+        // edit 모드: 별 하나 위에 좌/우 절반 클릭존 — 글리프 위에 absolute 버튼 두 개
+        &.is-interactive {
+          position: relative;
+          display: inline-block;
+          width: 1em;
+          height: 1em;
+          cursor: pointer;
+
+          .rating-star-glyph {
+            display: block;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+          }
+
+          .rating-star-half {
+            position: absolute;
+            top: 0;
+            width: 50%;
+            height: 100%;
+            background: transparent;
+            border: 0;
+            padding: 0;
+            margin: 0;
+            cursor: pointer;
+            z-index: 1;
+
+            &.rating-star-left  { left: 0; }
+            &.rating-star-right { right: 0; }
+
+            &:focus-visible {
+              outline: 1px solid #faab07;
+              outline-offset: 1px;
+            }
+          }
+        }
       }
+    }
+
+    &.is-editable .rating-stars:focus-visible {
+      outline: 1px solid rgba(250, 171, 7, 0.6);
+      outline-offset: 2px;
+      border-radius: 2px;
     }
 
     .rating-number-input {

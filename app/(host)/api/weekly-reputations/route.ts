@@ -5,16 +5,52 @@ import { getUserProfile } from "@/lib/get-user-profile";
 import { extractTargetUserId, isAdminEmail } from "@/lib/admin";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { hasOpenEditWindow } from "@/lib/editWindow";
+import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
+import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 // GET: 주차 평판 조회
+//
+// 권한 정책 (2026-05-22 변경):
+//   - peer-review 가시화를 위해 owner-or-admin 게이트 제거 → "로그인만" 으로 완화.
+//   - 작성자(reviewer)가 본인이 쓴 평판 + 같은 타깃의 다른 평판을 확인할 수 있어야 함.
+//   - 응답에 PII (email/phone/auth_email 등) 노출 없음 — reviewer 프로필은
+//     display_name/gender/birth_date/profile_photo_url/vision + 학력/팀/파트만.
+//   - season-reputations GET 과 동일 패턴.
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const targetUserId = searchParams.get("targetUserId");
     const weekCardId = searchParams.get("weekCardId");
+
+    if (targetUserId) {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(targetUserId)) {
+        return NextResponse.json(
+          { error: "유효하지 않은 사용자 ID 형식입니다." },
+          { status: 400 }
+        );
+      }
+    }
+
+    // 로그인만 검증 — peer-view 허용. owner/admin 차단 제거.
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+    }
+
+    // targetUserId 미지정 시 본인 평판 조회로 해석 (apiUrl 헬퍼 없이 호출 호환).
+    let effectiveTargetUserId = targetUserId;
+    if (!effectiveTargetUserId) {
+      const { profile, error: profileError } = await getUserProfile<{ user_id: string }>("user_id", null);
+      if (profileError) {
+        return NextResponse.json({ error: profileError.message }, { status: profileError.status });
+      }
+      effectiveTargetUserId = profile.user_id;
+    }
 
     const supabase = createAdminClient();
 
@@ -30,18 +66,8 @@ export async function GET(request: Request) {
         keyword,
         created_at
       `)
+      .eq("target_user_id", effectiveTargetUserId)
       .order("created_at", { ascending: true });
-
-    if (targetUserId) {
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(targetUserId)) {
-        return NextResponse.json(
-          { error: "유효하지 않은 사용자 ID 형식입니다." },
-          { status: 400 }
-        );
-      }
-      query = query.eq("target_user_id", targetUserId);
-    }
 
     if (weekCardId) {
       query = query.eq("week_card_id", weekCardId);
@@ -212,6 +238,30 @@ export async function POST(request: Request) {
       );
     }
 
+    // 작성 기간 게이트 — admin 우회. 일반 유저는 reviewer 의 user_edit_windows
+    // (resource_key=cluster4.weekly_reputation) 가 열려 있어야 함.
+    // season_reputation 과 키가 분리되어 있어 운영자가 두 영역 기간을 독립적으로 통제 가능.
+    // 정책: window 는 작성자(reviewer = session user) 기준으로 검사 — target 기준 아님.
+    const postSession = await getServerSession(authOptions);
+    const isPostAdmin =
+      !!postSession?.user?.email && isAdminEmail(postSession.user.email);
+    if (!isPostAdmin) {
+      const hasOpenWindow = await hasOpenEditWindow({
+        userId: reviewerProfile.user_id,
+        resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.weeklyReputation,
+      });
+      if (!hasOpenWindow) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "EDIT_WINDOW_CLOSED",
+            message: EDIT_WINDOW_LOCKED_MESSAGE,
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     // 중복 평판 체크 (같은 주차에 같은 사람에게 이미 평판을 남겼는지)
     const { data: existingReputation } = await supabase
       .from("weekly_reputations")
@@ -377,7 +427,7 @@ export async function PUT(request: Request) {
 
     const isAdmin = isAdminEmail(session.user.email);
 
-    // 일반 유저는 본인이 작성한 평판인지 확인
+    // 일반 유저는 본인이 작성한 평판인지 확인 + 작성 기간 게이트
     if (!isAdmin) {
       const adminTargetUserId = extractTargetUserId(request);
       const { profile, error: profileError } = await getUserProfile<{ user_id: string }>("user_id", adminTargetUserId);
@@ -396,6 +446,23 @@ export async function PUT(request: Request) {
       }
       if (existing.reviewer_id !== profile.user_id) {
         return NextResponse.json({ error: "본인이 작성한 평판만 수정할 수 있습니다." }, { status: 403 });
+      }
+
+      // 작성 기간 게이트 (PUT 도 동일 키로 enforce — admin 우회는 위 isAdmin 분기로 처리됨).
+      // 정책: reviewer(=session user) 기준 window.
+      const hasOpenWindow = await hasOpenEditWindow({
+        userId: profile.user_id,
+        resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.weeklyReputation,
+      });
+      if (!hasOpenWindow) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "EDIT_WINDOW_CLOSED",
+            message: EDIT_WINDOW_LOCKED_MESSAGE,
+          },
+          { status: 403 }
+        );
       }
     }
 

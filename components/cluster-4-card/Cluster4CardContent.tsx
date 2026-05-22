@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { useSearchParams, usePathname } from "next/navigation";
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { getFixedDropdownPosition } from "@/utils/documentZoom";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { useDebugLayout } from "@/utils/debugLayout";
@@ -15,6 +15,9 @@ import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
 import { isPxRoute, isEcRoute, withPxRoute, getThemeClass } from "@/lib/cluster-route";
+import { isAdminEmail } from "@/lib/admin";
+import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
+import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
 import DetailLogModal from "./DetailLogModal";
 import confetti from "canvas-confetti";
 import HelpModalBody from "@/components/shared/HelpModalBody";
@@ -243,6 +246,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const { mask } = useDataMasking();
   const searchParams = useSearchParams();
   const pathname = usePathname();
+  const router = useRouter();
   // PX / EC 컨텍스트면 prev/next/filter/weekly 링크가 모두 해당 org 라우트로 이동.
   // 모든 cluster navigation 은 withPxRoute(path, pathname) 으로 일반화된 suffix 적용.
   const isPX = isPxRoute(pathname);
@@ -469,11 +473,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     growth_point?: string | null;
     image_urls?: (string | null)[] | null;
     image_captions?: string[] | null;
+    rating?: number | null;
   }
   const [weekActivityDetails, setWeekActivityDetails] = useState<ActivityDetail[]>([]);
-
-  // 활동별 평점 (activity_type_id → points)
-  const [activityRatings, setActivityRatings] = useState<Map<string, number>>(new Map());
 
   // 어드민 개별 권한 부여 (secondary_info_grants)
   interface SecondaryInfoGrant { activity_type_id: string; deadline: string; }
@@ -1029,6 +1031,27 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
       return;
     }
+
+    // 실 모드 방어 — weekId 가 UUID 가 아니면 (frontend dummy 가 흘러들어왔다는 신호)
+    //   profile API 호출을 차단하고 base route 로 redirect 한다. base route 가
+    //   현재 주차 UUID 를 다시 계산해서 정상 경로로 보낸다.
+    //   silent fail (weekData=null 영구) 회피를 위해 명시적 분기.
+    if (weekId) {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(weekId)) {
+        console.warn(
+          `[cluster-4-card] Non-UUID weekId "${weekId}" in non-demo mode — redirecting to base route to resolve current UUID.`,
+        );
+        // pathname 마지막 segment (= 잘못된 weekId) 제거하고 base route 로.
+        // PX/EC 변형 라우트도 동일 패턴이라 generic 하게 처리.
+        const baseRoute = pathname.replace(/\/[^/]+\/?$/, "") || "/cluster-4-card";
+        const qs = urlUserId ? `?userId=${urlUserId}` : "";
+        router.replace(`${baseRoute}${qs}`);
+        setIsLoadingWeek(false);
+        return;
+      }
+    }
+
     const fetchWeekData = async () => {
       if (!weekId) return;
 
@@ -1078,7 +1101,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         const apiApprovedActivities = profileResult.approvedActivities || [];
         const apiActivityRecords = profileResult.activityRecords || [];
         const apiActivityDetails = profileResult.activityDetails || [];
-        const apiActivityPoints = profileResult.activityPoints || [];
 
         // profile API에서 제공하는 teams, parts 사용
         const apiTeams = profileResult.teams || [];
@@ -1370,20 +1392,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             setSecondaryInfoGrants(wb.secondaryInfoGrants as SecondaryInfoGrant[]);
           }
 
-          // 13. 평점 매핑 — points.line_id (= activity_types.id) + 현재 주차 매칭.
-          //   어드민(compliance-manage)은 (reward_star + 보너스 평점) 을 한 행에 합산해 저장하므로,
-          //   화면 표시는 라인의 reward_star 만큼 차감해 실제 평점(0~10) 만 노출.
-          //   (예: 26봄 9주차부터 실무 경험 reward_star=10 → 저장 20 = 평점 10 으로 환산)
-          //   apiActivityPoints 는 given_at desc 정렬이므로 동일 키 중복 시 최신 값이 우선.
-          const ratingsMap = new Map<string, number>();
-          apiActivityPoints.forEach((p: { line_id: string | null; week_id: string | null; points: number }) => {
-            if (p.line_id && p.week_id === weekId && !ratingsMap.has(p.line_id)) {
-              const baseStar = typesMap.get(p.line_id)?.reward_star || 0;
-              const rating = Math.max(0, (p.points || 0) - baseStar);
-              ratingsMap.set(p.line_id, rating);
-            }
-          });
-          setActivityRatings(ratingsMap);
+          // 13. 평점은 user_activity_details.rating 에서 직접 가져옴 (workExpCards 빌더에서 detail.rating 사용).
+          //   SoT 전환: points(point_type='star') 기반 매핑은 폐기. 라인 평점은 self-edit 항목으로 관리.
 
           // cluster-4-1과 동일한 로직으로 해당 주차 데이터 계산
           // 온보딩 주차 확인
@@ -1809,6 +1819,136 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     setCanEditColleague(isDemoMode);
   }, [isDemoMode]);
 
+  // ============================================================
+  // user_edit_windows 기반 Cluster4 작성 기간 권한 (cluster3 패턴 재사용)
+  //   - cluster4.weekly_reviews   → Weekly Review 박스 저장 (POST/PUT/DELETE)
+  //   - cluster4.work_info        → Work Info 모달 (신규 분할 키)
+  //   - cluster4.work_ability     → Work Ability 모달 (신규 분할 키)
+  //   - cluster4.work_exp         → Work Exp 모달 (신규 분할 키, rating 포함)
+  //   - cluster4.work_career      → Work Career 모달 (신규 분할 키)
+  //   - cluster4.activity_details → legacy. 4개 모달 신규 키가 없을 때 fallback 으로 사용.
+  // 우선순위:
+  //   1) isDemoMode      → 자동 허용
+  //   2) admin           → 자동 허용 (마더 계정)
+  //   3) dev override    → ?unlockCluster4* (DEV/QA 전용, 서버 PUT 에는 영향 없음)
+  //   4) permission API  → /api/edit-windows/permission?resource_key=cluster4.*
+  // 서버 PUT 도 동일 resource_key 로 enforce 되므로, dev override 는 프론트 UI 만 풀고
+  // 서버는 여전히 작성 기간을 검사한다 (서버 우회 X).
+  const [canEditWeeklyReviews, setCanEditWeeklyReviews] = useState<boolean>(isDemoMode);
+  const [canEditActivityDetails, setCanEditActivityDetails] = useState<boolean>(isDemoMode);
+  // 모달별 신규 키 — 어드민이 카드별로 따로 열고 닫는다.
+  const [workInfoWindowOpen, setWorkInfoWindowOpen] = useState<boolean>(isDemoMode);
+  const [workAbilityWindowOpen, setWorkAbilityWindowOpen] = useState<boolean>(isDemoMode);
+  const [workExpWindowOpen, setWorkExpWindowOpen] = useState<boolean>(isDemoMode);
+  const [workCareerWindowOpen, setWorkCareerWindowOpen] = useState<boolean>(isDemoMode);
+  // 주간 평판(weekly_reputation) 작성기간 — season_reputation 과 별도 키.
+  // 정책: user_edit_windows.user_id = 작성자(reviewer = session user) 기준.
+  //       타 크루(non-owner)가 본 페이지 owner 에게 평판을 남길 때, 어드민이 reviewer 의
+  //       user_edit_windows row 를 열어두면 작성 가능. (peer-review 이므로 page owner 의
+  //       user_edit_windows 가 아닌 session user 자신의 row 를 검사한다.)
+  const [weeklyReputationWindowOpen, setWeeklyReputationWindowOpen] = useState<boolean>(isDemoMode);
+  const [editWindowRefreshTick, setEditWindowRefreshTick] = useState(0);
+
+  useEffect(() => {
+    const isAdminCombined =
+      !!session?.user?.isAdmin || isAdminEmail(session?.user?.email);
+    const unlockAll = searchParams.get("unlockCluster4") === "1";
+    const unlockWeekly =
+      searchParams.get("unlockCluster4WeeklyReviews") === "1";
+    const unlockActivity =
+      searchParams.get("unlockCluster4ActivityDetails") === "1";
+    // 모달별 dev override (없으면 unlockActivity / unlockAll 로 폴백)
+    const unlockWorkInfo = searchParams.get("unlockCluster4WorkInfo") === "1";
+    const unlockWorkAbility = searchParams.get("unlockCluster4WorkAbility") === "1";
+    const unlockWorkExp = searchParams.get("unlockCluster4WorkExp") === "1";
+    const unlockWorkCareer = searchParams.get("unlockCluster4WorkCareer") === "1";
+
+    const unlockWeeklyReputation =
+      searchParams.get("unlockCluster4WeeklyReputation") === "1";
+
+    // 데모/관리자/admin URL 진입은 fetch 없이 즉시 허용.
+    if (isDemoMode || isAdminCombined) {
+      setCanEditWeeklyReviews(true);
+      setCanEditActivityDetails(true);
+      setWorkInfoWindowOpen(true);
+      setWorkAbilityWindowOpen(true);
+      setWorkExpWindowOpen(true);
+      setWorkCareerWindowOpen(true);
+      setWeeklyReputationWindowOpen(true);
+      return;
+    }
+
+    // 미로그인은 dev override 만 허용 (서버는 별도 401).
+    if (!session?.user) {
+      setCanEditWeeklyReviews(unlockAll || unlockWeekly);
+      setCanEditActivityDetails(unlockAll || unlockActivity);
+      setWorkInfoWindowOpen(unlockAll || unlockActivity || unlockWorkInfo);
+      setWorkAbilityWindowOpen(unlockAll || unlockActivity || unlockWorkAbility);
+      setWorkExpWindowOpen(unlockAll || unlockActivity || unlockWorkExp);
+      setWorkCareerWindowOpen(unlockAll || unlockActivity || unlockWorkCareer);
+      setWeeklyReputationWindowOpen(unlockAll || unlockWeeklyReputation);
+      return;
+    }
+
+    // dev override 베이스라인 + permission API OR 결합
+    setCanEditWeeklyReviews(unlockAll || unlockWeekly);
+    setCanEditActivityDetails(unlockAll || unlockActivity);
+    setWorkInfoWindowOpen(unlockAll || unlockActivity || unlockWorkInfo);
+    setWorkAbilityWindowOpen(unlockAll || unlockActivity || unlockWorkAbility);
+    setWorkExpWindowOpen(unlockAll || unlockActivity || unlockWorkExp);
+    setWorkCareerWindowOpen(unlockAll || unlockActivity || unlockWorkCareer);
+    setWeeklyReputationWindowOpen(unlockAll || unlockWeeklyReputation);
+
+    let cancelled = false;
+    const loadPermission = async (resourceKey: string): Promise<boolean> => {
+      try {
+        const response = await fetch(
+          `/api/edit-windows/permission?resource_key=${encodeURIComponent(resourceKey)}`,
+          { cache: "no-store" }
+        );
+        const result = await response.json();
+        const permission = result?.data;
+        if (result?.success && permission && typeof permission.canEdit === "boolean") {
+          return Boolean(permission.canEdit);
+        }
+      } catch (error) {
+        console.error(`[cluster4 permission] ${resourceKey} 조회 실패`, error);
+      }
+      return false;
+    };
+
+    Promise.all([
+      loadPermission(CLUSTER4_EDIT_RESOURCE_KEYS.weeklyReviews),
+      loadPermission(CLUSTER4_EDIT_RESOURCE_KEYS.activityDetails),
+      loadPermission(CLUSTER4_EDIT_RESOURCE_KEYS.workInfo),
+      loadPermission(CLUSTER4_EDIT_RESOURCE_KEYS.workAbility),
+      loadPermission(CLUSTER4_EDIT_RESOURCE_KEYS.workExp),
+      loadPermission(CLUSTER4_EDIT_RESOURCE_KEYS.workCareer),
+      loadPermission(CLUSTER4_EDIT_RESOURCE_KEYS.weeklyReputation),
+    ]).then(([weeklyOpen, activityOpen, workInfoOpen, workAbilityOpen, workExpOpen, workCareerOpen, weeklyReputationOpen]) => {
+      if (cancelled) return;
+      setCanEditWeeklyReviews((unlockAll || unlockWeekly) || weeklyOpen);
+      setCanEditActivityDetails((unlockAll || unlockActivity) || activityOpen);
+      setWorkInfoWindowOpen((unlockAll || unlockActivity || unlockWorkInfo) || workInfoOpen);
+      setWorkAbilityWindowOpen((unlockAll || unlockActivity || unlockWorkAbility) || workAbilityOpen);
+      setWorkExpWindowOpen((unlockAll || unlockActivity || unlockWorkExp) || workExpOpen);
+      setWorkCareerWindowOpen((unlockAll || unlockActivity || unlockWorkCareer) || workCareerOpen);
+      setWeeklyReputationWindowOpen((unlockAll || unlockWeeklyReputation) || weeklyReputationOpen);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isDemoMode,
+    session?.user,
+    session?.user?.isAdmin,
+    session?.user?.email,
+    searchParams,
+    editWindowRefreshTick,
+  ]);
+  // ============================================================
+
   // Weekly Review / 연계동료 작성 시간 윈도우
   // 앵커 = weekData.startDate (= N주차 월요일 00:00 KST)
   //   144h(=6d 0h)  → N주차 일요일 00:00 KST  → +1min = 일 00:01 (오픈)
@@ -1832,9 +1972,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     return true;
   };
 
-  // 일반 모드 백엔드 승인 상태 → 모든 canEdit* 플래그에 일괄 반영
+  // 일반 모드 백엔드 승인 상태 → 4개 모달 canEdit* 플래그 합성
   // 다른 크루 카드 열람 시(isOwner=false)에는 승인됐어도 수정 비활성화
-  // 어드민(마더) 계정은 승인/소유 무관하게 모든 라인 카드 수정 가능
+  // 어드민(마더) 계정은 승인/소유/작성기간 무관하게 모든 라인 카드 수정 가능
+  //
+  // 합성 규칙 (4개 모달):
+  //   isDemoMode → true
+  //   admin      → true
+  //   else       → (approved && isOwner) && (모달별 신규 키 열림 OR legacy activity_details 열림)
+  //
+  // canEditReputation / canEditColleague:
+  //   - canEditColleague: 본인 페이지에서 본인이 작성 → approved+isOwner.
+  //   - canEditReputation: peer-review 라 타 크루(non-owner)가 작성 → approved && !isOwner
+  //     AND user_edit_windows(resource_key=cluster4.weekly_reputation) 가 reviewer 기준 열림.
+  //     (admin 은 위 분기에서 우회. season_reputation 과 동일 패턴.)
   useEffect(() => {
     if (isDemoMode) return; // 데모 모드는 위 useEffect들이 true로 셋업
     if (session?.user?.isAdmin) {
@@ -1850,18 +2001,33 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     (async () => {
       const approved = await checkApprovalStatus();
       if (cancelled) return;
-      const editable = approved && isOwner;
-      setCanEditReputation(editable);
-      setCanEditColleague(editable);
-      setCanEditWorkInfo(editable);
-      setCanEditWorkAbility(editable);
-      setCanEditWorkExp(editable);
-      setCanEditWorkCareer(editable);
+      const approvedAndOwner = approved && isOwner;
+      // weekly_reputation 은 peer-review — 타 크루가 본 페이지 owner 에게 평판을 작성한다.
+      // 그러므로 session user 가 owner 가 아닐 때만 활성화한다.
+      setCanEditReputation(approved && !isOwner && weeklyReputationWindowOpen);
+      setCanEditColleague(approvedAndOwner);
+      // 4개 모달 — 승인+소유 AND (신규 키 OR legacy activity_details)
+      // canEditActivityDetails 는 legacy fallback. 신규 키가 닫혀 있어도
+      // 기존 어드민이 activity_details 만 열어둔 경우엔 그대로 동작한다.
+      setCanEditWorkInfo(approvedAndOwner && (workInfoWindowOpen || canEditActivityDetails));
+      setCanEditWorkAbility(approvedAndOwner && (workAbilityWindowOpen || canEditActivityDetails));
+      setCanEditWorkExp(approvedAndOwner && (workExpWindowOpen || canEditActivityDetails));
+      setCanEditWorkCareer(approvedAndOwner && (workCareerWindowOpen || canEditActivityDetails));
     })();
     return () => {
       cancelled = true;
     };
-  }, [isDemoMode, session, isOwner]);
+  }, [
+    isDemoMode,
+    session,
+    isOwner,
+    workInfoWindowOpen,
+    workAbilityWindowOpen,
+    workExpWindowOpen,
+    workCareerWindowOpen,
+    canEditActivityDetails,
+    weeklyReputationWindowOpen,
+  ]);
 
   // 작업 3: 이번 주 내가 보낸 평판 리스트 (중복 방지 + 7명 제한 체크용 — best-effort)
   // TODO: [백엔드 작업 필요]
@@ -2135,13 +2301,31 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     return "waiting";
   };
 
-  // 강화 실패 / 해당 없음이면 수정 불가
+  // 강화 실패 / 해당 없음이면 수정 불가 (라인 카드 strict 정책 — 기존 로직 보존)
   const isLineLocked = (card: any): boolean => {
     const s = getEnhanceStatus(card);
     return s === "failed" || s === "not_applicable";
   };
 
+  // 4개 모달 (Work Info/Ability/Exp/Career) 전용 — strict 보다 한 단계 완화된 lock 평가.
+  // 정책 (2026-05 임시):
+  //   - "failed"          → 영구 잠금 (진짜 강화 실패는 수정 불가 정책 유지)
+  //   - "not_applicable"  → 모달의 작성기간(canEdit)이 열려 있으면 해제.
+  //     운영 DB 에 weekly_activities / activity_records 가 없어서 getEnhancementStatus 가
+  //     모든 카드를 not_applicable 로 계산하는 데이터 부재 케이스를 어드민이 명시적으로
+  //     작성기간을 열어줬을 때 unblock 하기 위함. 진짜 "해당 없음" 카드도 작성기간이
+  //     별도로 열려 있을 때만 우회되므로 통제 가능.
+  //   - 그 외 status      → 잠금 아님
+  // (empty 상태는 별도 isEmpty / status === "empty" 게이트가 담당하므로 여기서 미처리)
+  const isLineLockedForEdit = (card: any, canEdit: boolean): boolean => {
+    const s = getEnhanceStatus(card);
+    if (s === "failed") return true;
+    if (s === "not_applicable") return !canEdit;
+    return false;
+  };
+
   const LINE_LOCKED_TITLE = "강화 실패 또는 해당 없음 상태에서는 수정할 수 없습니다.";
+  const LINE_FAILED_TITLE = "강화 실패 상태에서는 수정할 수 없습니다.";
 
   // workInfo View 모달 — 보기/편집 토글 핸들러 (Type B 푸터 규칙 + 관리자 승인)
   const handleEditWorkInfo = async () => {
@@ -2260,6 +2444,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   // user_activity_details 저장 (모달 저장 공용 헬퍼). 데모 모드에서는 API 호출 스킵.
+  // resourceKey: 어느 모달에서 저장하는지 서버에 알려주는 hint. 서버는 이 키 또는
+  // legacy cluster4.activity_details 중 하나가 열려 있으면 통과시킨다.
   const persistActivityDetailToServer = async (params: {
     activityTypeId: string;
     subTitle: string | null;
@@ -2267,6 +2453,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     growthPoint: string | null;
     images: (string | null)[];
     imageCaptions: string[];
+    resourceKey?: string;
+    // workExp 전용 — 라인 평점 (0~10 정수 또는 null). self-edit 항목으로
+    // user_activity_details.rating 컬럼에 그대로 저장된다.
+    rating?: number | null;
   }): Promise<{ images: (string | null)[] }> => {
     if (isDemoMode) return { images: params.images };
     if (!currentUserId || !weekId) return { images: params.images };
@@ -2281,10 +2471,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         week_id: weekId,
         activity_type_id: params.activityTypeId,
         sub_title: params.subTitle,
-        output_links: userLinks.length > 0 ? userLinks : null,
+        // DB output_links 는 NOT NULL — 빈 경우에도 [] 로 전송 (서버측에서도 ?? [] 정규화).
+        output_links: userLinks,
         growth_point: params.growthPoint,
         image_urls: persistedImages,
         image_captions: params.imageCaptions,
+        ...(params.resourceKey ? { resource_key: params.resourceKey } : {}),
+        ...(params.rating === null || typeof params.rating === "number" ? { rating: params.rating } : {}),
       }),
     });
     if (!res.ok) {
@@ -2324,6 +2517,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           growthPoint: newGrowthPoint,
           images: editingImages,
           imageCaptions: editingImageCaptions,
+          resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.workInfo,
         });
         persistedImages = persisted.images;
       } catch (err) {
@@ -2564,6 +2758,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           growthPoint: newGrowthPoint,
           images: editingAbilityImages,
           imageCaptions: editingAbilityImageCaptions,
+          resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.workAbility,
         });
         persistedImages = persisted.images;
       } catch (err) {
@@ -2711,7 +2906,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     for (let i = 0; i < WORKINFO_IMAGE_SLOT_COUNT; i++) {
       if ((snapCaptions[i] || "") !== (editingExpImageCaptions[i] || "")) return true;
     }
-    // 라인 평점은 어드민 전용 — dirty 판단 대상 아님
+    // 라인 평점도 self-edit 항목 — dirty 판단 포함
+    if ((snap.rating ?? 0) !== (editingExpRating ?? 0)) return true;
     return false;
   };
 
@@ -2768,13 +2964,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
-    // 초기화 = 크루 입력 필드만 빈 값으로 (라인 평점은 어드민 전용 → 손 대지 않음)
+    // 초기화 = 크루 입력 필드 모두 빈 값으로 (라인 평점 포함 — self-edit)
     if (!(await popup.confirm("내용을 모두 초기화하시겠어요?"))) return;
     setEditingExpSubTitle("");
     setEditingExpGrowthPoint("");
     setEditingExpOutputLinks(Array(5).fill({ desc: "", url: "" }));
     setEditingExpImages(createEmptyWorkInfoImages());
     setEditingExpImageCaptions(createEmptyWorkInfoCaptions());
+    setEditingExpRating(0);
   };
 
   const handleSaveWorkExp = async () => {
@@ -2782,9 +2979,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
-    // 아웃풋 이미지 ↔ 캡션 1:1 페어 검증 (이미지 1개 = 캡션 1개, 한쪽만 입력 불가)
+    // workCareer 와 동일: 어드민 output_images 가 차지한 앞쪽 슬롯은 user_activity_details 에 저장하지 않음.
+    // 카드 빌더(5717–5742) 가 weekly_activities.output_images + user_activity_details.image_urls 를
+    // 재머지하므로 DB 에는 크루 슬롯만 저장한다. (admin URL 중복 저장/stale 위험 제거)
+    const expActivityForSave = weeklyActivities.find((a) => a.activity_type_id === selectedWorkExpCard?.activityTypeId);
+    const expAdminImgsForSave = (expActivityForSave?.output_images || []).filter((i: { url?: string }) => i?.url?.trim());
+    const expAdminImgCount = expAdminImgsForSave.length;
+    // 아웃풋 이미지 ↔ 캡션 1:1 페어 검증 (admin 슬롯은 외부 입력이라 페어 검증 제외 — workCareer 와 동일)
     {
-      const mismatch = findImageCaptionMismatch(editingExpImages, editingExpImageCaptions);
+      const mismatch = findImageCaptionMismatch(editingExpImages, editingExpImageCaptions, expAdminImgCount);
       if (mismatch) {
         setWorkExpFooterNotice("error");
         await popup.alert(captionMismatchMessage(mismatch));
@@ -2797,32 +3000,55 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const newSubTitle = editingExpSubTitle.trim() || null;
       const newOutputLinks = editingExpOutputLinks;
       const newGrowthPoint = editingExpGrowthPoint.trim() || null;
-      let persistedImages: (string | null)[] = editingExpImages;
+      // 어드민 슬롯 잘라낸 크루 전용 배열만 서버로 전송
+      const crewImagesToSave = editingExpImages.slice(expAdminImgCount);
+      const crewCaptionsToSave = editingExpImageCaptions.slice(expAdminImgCount);
+      let persistedCrewImages: (string | null)[] = crewImagesToSave;
       try {
         const persisted = await persistActivityDetailToServer({
           activityTypeId: selectedWorkExpCard.activityTypeId,
           subTitle: newSubTitle,
           outputLinks: newOutputLinks,
           growthPoint: newGrowthPoint,
-          images: editingExpImages,
-          imageCaptions: editingExpImageCaptions,
+          images: crewImagesToSave,
+          imageCaptions: crewCaptionsToSave,
+          resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.workExp,
+          // rating 은 self-edit 항목 — 0~10 정수, 0 입력은 null 로 보내 미입력 상태로 복원 가능하게.
+          rating: editingExpRating > 0 ? editingExpRating : null,
         });
-        persistedImages = persisted.images;
+        persistedCrewImages = persisted.images;
       } catch (err) {
         console.error("workExp 저장 실패:", err);
         alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
         return;
       }
-      setEditingExpImages(persistedImages);
+      // 화면 state 는 admin + crew 머지 결과로 복원 (workCareer 패턴)
+      const mergedExpImages: (string | null)[] = [];
+      const mergedExpCaptions: string[] = [];
+      for (let i = 0; i < WORKINFO_IMAGE_SLOT_COUNT; i++) {
+        if (i < expAdminImgCount) {
+          mergedExpImages.push(expAdminImgsForSave[i].url);
+          mergedExpCaptions.push(expAdminImgsForSave[i].caption || "");
+        } else {
+          const crewIdx = i - expAdminImgCount;
+          mergedExpImages.push(persistedCrewImages[crewIdx] || null);
+          mergedExpCaptions.push(crewCaptionsToSave[crewIdx] || "");
+        }
+      }
+      setEditingExpImages(mergedExpImages);
+      setEditingExpImageCaptions(mergedExpCaptions);
+      const persistedRating: number | null = editingExpRating > 0 ? editingExpRating : null;
       setWeekActivityDetails((prev) => {
+        // DB 동기 거울 — image_urls/captions 는 크루 전용 (admin 제외) 저장 정책 반영
         const nextDetail = {
           week_id: weekId,
           activity_type_id: selectedWorkExpCard.activityTypeId,
           sub_title: newSubTitle,
           output_links: newOutputLinks,
           growth_point: newGrowthPoint,
-          image_urls: persistedImages,
-          image_captions: editingExpImageCaptions,
+          image_urls: persistedCrewImages,
+          image_captions: crewCaptionsToSave,
+          rating: persistedRating,
         };
         const existingIndex = prev.findIndex((d) => d.activity_type_id === selectedWorkExpCard.activityTypeId);
         if (existingIndex < 0) return [...prev, nextDetail];
@@ -2835,9 +3061,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               subTitle: newSubTitle || "",
               outputLinks: newOutputLinks,
               growthPoint: editingExpGrowthPoint,
-              images: persistedImages,
-              imageCaptions: editingExpImageCaptions,
-              // rating은 어드민(compliance-manage)에서만 갱신 — 크루 저장 시 건드리지 않음
+              images: mergedExpImages,
+              imageCaptions: mergedExpCaptions,
+              // card.rating 은 5점 만점(0~5 half-step) — 저장된 0~10 값을 /2 로 변환
+              rating: persistedRating != null ? persistedRating / 2 : 0,
+              ratingCount: persistedRating != null && persistedRating > 0 ? `${persistedRating} / 10` : "- / 10",
             }
           : prev,
       );
@@ -2845,8 +3073,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         subTitle: newSubTitle || "",
         growthPoint: editingExpGrowthPoint,
         outputLinks: JSON.parse(JSON.stringify(newOutputLinks)),
-        images: [...persistedImages],
-        imageCaptions: [...editingExpImageCaptions],
+        images: [...mergedExpImages],
+        imageCaptions: [...mergedExpCaptions],
         rating: editingExpRating,
       };
     }
@@ -3074,6 +3302,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           growthPoint: newGrowthPoint,
           images: crewImagesToSave,
           imageCaptions: crewCaptionsToSave,
+          resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.workCareer,
         });
         persistedCrewImages = persisted.images;
       } catch (err) {
@@ -3764,6 +3993,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       return { id: `demo-weekly-review-${Date.now()}`, weekCardId: weekId, created_at: now };
     }
 
+    // 작성 기간 게이트 — 클라이언트가 즉시 차단 (서버는 별도 enforce).
+    if (!canEditWeeklyReviews) {
+      await popup.alert(EDIT_WINDOW_LOCKED_MESSAGE);
+      return null;
+    }
+
     try {
       const endpoint = isUpdate ? `/api/weekly-reviews/${weeklyReviewFromDB?.id}` : "/api/weekly-reviews";
       const method = isUpdate ? "PUT" : "POST";
@@ -3774,6 +4009,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       });
       if (!res.ok) {
         const errJson = await res.json().catch(() => null);
+        // 서버가 작성 기간 닫힘으로 거부 → 통일 문구 + 권한 재조회 트리거.
+        if (res.status === 403 && errJson?.error === "EDIT_WINDOW_CLOSED") {
+          setCanEditWeeklyReviews(false);
+          setEditWindowRefreshTick((t) => t + 1);
+          await popup.alert(EDIT_WINDOW_LOCKED_MESSAGE);
+          return null;
+        }
         console.error("[weekly-review] API 응답 오류:", res.status, errJson);
         return null;
       }
@@ -5098,6 +5340,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
     if (!currentUserId || !weekId) return;
 
+    // 작성 기간 게이트 — 서버는 별도 enforce. UI 차단을 우선 표시.
+    if (!canEditActivityDetails) {
+      await popup.alert(EDIT_WINDOW_LOCKED_MESSAGE);
+      return;
+    }
+
     setIsSaving(true);
     try {
       const detail = editingDetails[activityType];
@@ -5135,7 +5383,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = await response.json().catch(() => null);
+        // 서버가 작성 기간 닫힘으로 거부 → 통일 문구 + 권한 재조회 트리거.
+        if (response.status === 403 && error?.error === "EDIT_WINDOW_CLOSED") {
+          setCanEditActivityDetails(false);
+          setEditWindowRefreshTick((t) => t + 1);
+          await popup.alert(EDIT_WINDOW_LOCKED_MESSAGE);
+          return;
+        }
         console.error("Failed to save activity detail:", error);
         await popup.alert("저장에 실패했습니다.");
         return;
@@ -5305,7 +5560,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const lineCode = activityTypesMap.get(typeId)?.line_code || typeId;
       return lineCode.replace(/\s+/g, "") === lineCodeKey;
     });
-    const activityTypeId = matchedActivityTypeId || lineCodeKey;
+    // 분류 정합성 (2026-05) — 어드민 Cluster4 활동 탭이 activity_types.cluster_id 로 분류하므로,
+    // 저장되는 activity_type_id 는 반드시 activity_types 테이블의 id 값이어야 한다.
+    // line_code 매칭이 실패하면 (workAbilityLineMap 의 key 와 DB line_code 가 불일치)
+    // workAbilityActivityTypes(=competencyTypeIds) 중 같은 인덱스 또는 첫 번째 값으로 fallback.
+    // 마지막 lineCodeKey 폴백은 competencyTypeIds 가 비었을 때만 (어드민 분류 불가 — 데이터 미준비 상태).
+    const activityTypeId =
+      matchedActivityTypeId
+      || workAbilityActivityTypes[index]
+      || workAbilityActivityTypes[0]
+      || lineCodeKey;
     const activityTypeInfo = matchedActivityTypeId ? activityTypesMap.get(matchedActivityTypeId) : undefined;
     const activity = weeklyActivities.find((a) => a.activity_type_id === activityTypeId);
     const detail = weekActivityDetails.find((d) => d.activity_type_id === activityTypeId);
@@ -5368,9 +5632,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 크루가 활동 중(휴식/온보딩 아님)이면 매칭 실패 시 '강화 실패'로 폴백.
   // 휴식 주차 — 모든 카드가 not_applicable 이라 status 기반 매칭이 안 되므로, 운영진이 실제
   // 개설한 라인(hasActivity) 을 우선 찾아 본문(Main Title 등) 을 보여주고 상태만 '해당 없음'.
-  const matchedAbilityCard = isRestMode
+  const baseMatchedAbilityCard = isRestMode
     ? effectiveWorkAbilityCards.find((c) => c.hasActivity)
     : effectiveWorkAbilityCards.find((c) => c.enhancementStatus !== "not_applicable");
+  // 작성기간 폴백 (임시 정책 2026-05) — weekly_activities 부재로 모두 not_applicable 인
+  // 환경에서 어드민이 cluster4.work_ability 작성기간을 열어준 경우, void 대신 실제 카드를
+  // 노출해 모달 진입 + 저장 경로를 살린다. failed 카드는 진짜 강화 실패이므로 우선순위 낮춤.
+  const matchedAbilityCard = baseMatchedAbilityCard
+    ?? (canEditWorkAbility && !isRestMode
+      ? (effectiveWorkAbilityCards.find((c) => c.enhancementStatus !== "failed")
+          ?? effectiveWorkAbilityCards[0])
+      : undefined);
   const isAbilityCardVoid = !matchedAbilityCard;
   const abilityVoidFallbackStatus: EnhancementStatus =
     isRestMode || isOnboardingWeek ? "not_applicable" : "failed";
@@ -5412,7 +5684,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
   });
 
-  const workExpCards = adminProcessedExpTypeIds.map((activityTypeId, index) => {
+  // 작성기간 폴백 (임시 정책 2026-05) — activity_records 부재로 adminProcessedExpTypeIds 가
+  // 빈 경우, canEditWorkExp 가 true 이면 activity_types(cluster=practical_experience) 마스터
+  // 목록(experienceTypeIds) 을 source 로 사용해 카드를 생성한다. 이후 user_activity_details
+  // upsert 가 정상 INSERT 경로로 진입한다 (Work Info 동일 패턴).
+  const expTypeIdsForBuild =
+    adminProcessedExpTypeIds.length > 0
+      ? adminProcessedExpTypeIds
+      : canEditWorkExp
+        ? experienceTypeIds
+        : [];
+
+  const workExpCards = expTypeIdsForBuild.map((activityTypeId, index) => {
       const activityType = activityTypesMap.get(activityTypeId);
       const activity = weeklyActivities.find((a) => a.activity_type_id === activityTypeId);
       const detail = weekActivityDetails.find((d) => d.activity_type_id === activityTypeId);
@@ -5421,9 +5704,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const fallbackMapping = workExpLineMap[lineCodeKey];
       const hasActivity = !!activity;
 
-      // 별점 계산 (points 테이블에서 가져온 평점 사용, 0~10 정수)
-      const ratingScore = activityRatings.get(activityTypeId) || 0;
+      // 별점 계산 — user_activity_details.rating (0~10 정수, null=미입력) 직접 사용.
+      const detailRating: number | null | undefined = detail?.rating;
+      const ratingScore = typeof detailRating === "number" ? detailRating : 0;
       const rating = ratingScore / 2; // 별 표시용 (0~5)
+      const hasRating = typeof detailRating === "number" && detailRating > 0;
 
       // 기존 index === 3 보이드 강제 제거 — workExpLineMap 6개 항목 전부 유효 카드로 처리
 
@@ -5485,7 +5770,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         imageCaptions: normalizeWorkInfoCaptions(mergedCaptions),
         verified: enhStatus === "success",
         rating: rating,
-        ratingCount: hasActivity ? `${ratingScore} / 10` : "- / 10",
+        ratingCount: hasActivity && hasRating ? `${ratingScore} / 10` : "- / 10",
         hasWeb: (detail?.output_links?.length || 0) > 0,
         icon: getWorkExpIcon(fallbackMapping?.lineName || activityType?.name || ""),
         isEmpty: false,
@@ -5520,6 +5805,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   // 휴식 모드(공식/개인) — 운영진 개설 여부와 무관하게 Main Title 강제 '-'.
   // 별점/카테고리 등 본문은 보존, Main Title 만 차폐. 미개설 라인은 void 카드로 패딩.
+  //
+  // 작성기간 폴백 (임시 정책 2026-05) — weekly_activities 부재로 모든 카드가 not_applicable
+  // 인 환경에서 어드민이 cluster4.work_exp 작성기간을 열어준 경우, 필터링된 결과가 비면
+  // not_applicable 카드까지 포함시켜 노출한다 (실제 카드가 있는 경우엔 종전 필터 동작 유지).
+  const workExpFiltered = workExpCards.filter((c) => c.enhancementStatus !== "not_applicable");
+  const workExpRealForEdit =
+    workExpFiltered.length > 0
+      ? workExpFiltered
+      : canEditWorkExp
+        ? workExpCards
+        : [];
   const effectiveWorkExpCards = isRestMode
     ? [
         ...workExpCards
@@ -5536,7 +5832,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         buildVoidWorkExpCard(3),
       ]
     : [
-        ...workExpCards.filter((c) => c.enhancementStatus !== "not_applicable"),
+        ...workExpRealForEdit,
         buildVoidWorkExpCard(0),
         buildVoidWorkExpCard(1),
         buildVoidWorkExpCard(2),
@@ -5576,6 +5872,26 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           const adminUrlSet = new Set(adminImgs.map((i) => i.url));
           const careerActivityType = workCareerActivityTypes[index];
           const careerDetail = careerActivityType ? weekActivityDetails.find((d) => d.activity_type_id === careerActivityType) : null;
+
+          // workExp 패턴과 동일: 어드민(career_projects.output_links) 우선, 그 다음 크루(user_activity_details.output_links).
+          // 어드민이 채운 슬롯 뒤에 크루 슬롯을 이어붙이고 부족분은 빈 객체로 패딩 (총 5슬롯, edit handler 3181 기대 형태).
+          const careerAdminLinks: { desc?: string; url?: string }[] = record.output_links || [];
+          const careerCrewLinks: { desc?: string; url?: string }[] = careerDetail?.output_links || [];
+          const careerAdminLinkCount = careerAdminLinks.filter((l) => l?.url?.trim()).length;
+          const mergedCareerOutputLinks: { desc: string; url: string }[] = [];
+          for (let i = 0; i < 5; i++) {
+            if (i < careerAdminLinkCount && careerAdminLinks[i]?.url?.trim()) {
+              mergedCareerOutputLinks.push({ desc: careerAdminLinks[i].desc || "", url: careerAdminLinks[i].url || "" });
+            } else {
+              const crewIdx = i - careerAdminLinkCount;
+              if (careerCrewLinks[crewIdx]?.url?.trim()) {
+                mergedCareerOutputLinks.push({ desc: careerCrewLinks[crewIdx].desc || "", url: careerCrewLinks[crewIdx].url || "" });
+              } else {
+                mergedCareerOutputLinks.push({ desc: "", url: "" });
+              }
+            }
+          }
+
           const rawCrewImgs = careerDetail?.image_urls || [];
           const rawCrewCaps = careerDetail?.image_captions || [];
           const crewImgs: (string | null)[] = [];
@@ -5620,6 +5936,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             isEmpty: false,
             isFailed: computedStatus === "failed",
             // 추가 정보 (상세 보기용)
+            // edit handler(3185/3191)가 card.subTitle 을 우선 읽는데, 이전엔 키가 없어 projectDescription
+            // alias 로만 도달했고 그 결과 user_activity_details.sub_title 어드민 수정값이 모달 초기화 시 누락됐다.
+            // 직접 키를 도입해 placeholder/real-records 양쪽이 동일하게 동작하도록 정렬.
+            subTitle: careerDetail?.sub_title || record.project_description || "",
+            // 이전엔 카드 객체에 키 자체가 없어 edit handler 가 항상 "" 로 초기화 → 어드민 수정값 손실.
+            growthPoint: careerDetail?.growth_point || "",
+            // projectDescription 은 다른 소비자(상세 카드 본문 등) 호환을 위해 그대로 유지.
             projectDescription: (() => {
               const activityType = workCareerActivityTypes[index];
               const detail = activityType ? weekActivityDetails.find((d) => d.activity_type_id === activityType) : null;
@@ -5630,7 +5953,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             projectId: record.project_id,
             lineCode: record.line_code,
             lineName: record.line_name,
-            outputLinks: record.output_links,
+            // 어드민 career_projects.output_links + 크루 user_activity_details.output_links 병합.
+            outputLinks: mergedCareerOutputLinks,
             secondaryInfoDeadline: record.secondary_info_deadline || null,
             // 어드민 output_images 우선, 남은 슬롯은 크루 user_activity_details.image_urls 로 채움
             images: mergedImages,
@@ -5692,8 +6016,61 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     return nameA.localeCompare(nameB, "ko", { sensitivity: "base" });
   });
 
-  // 데이터 수만큼만 표시, 0개면 빈 카드 1개만
-  const displayWorkCareerCards = sortedWorkCareerCards.length > 0 ? sortedWorkCareerCards : [emptyCareerCard(1)];
+  // 작성기간 폴백 placeholder (임시 정책 2026-05) — career_records 가 비어있고 (admin 아직
+  // 라인을 못 만든 상태) 어드민이 cluster4.work_career 작성기간을 열어준 경우, 1개 placeholder
+  // 카드를 isEmpty=false 로 노출해 user_activity_details INSERT 경로 (subTitle / outputLinks /
+  // images / growthPoint) 만이라도 살린다. 회사명/프로젝트명 등 admin-only 필드는 빈 상태.
+  // 후속 Phase 에서 admin 이 career_records 를 생성하면 (user_id, week_id, activity_type_id)
+  // 키로 user_activity_details 행이 자동 연결된다.
+  //
+  // 새로고침 시 복원 (2026-05-23) — 저장된 user_activity_details row 가 있으면 activityTypeId
+  // (`workCareerActivityTypes[id-1]`) 로 lookup 해서 sub_title / growth_point / output_links /
+  // image_urls / image_captions 을 placeholder 의 본문 필드로 채운다. 이렇게 해야 사용자가
+  // 저장 → 새로고침 후에도 입력값이 모달에 그대로 보인다.
+  const buildCareerPlaceholderCard = (id: number) => {
+    const careerActivityType = workCareerActivityTypes[id - 1] || workCareerActivityTypes[0];
+    const detail = careerActivityType
+      ? weekActivityDetails.find((d) => d.activity_type_id === careerActivityType)
+      : null;
+
+    // 어드민 admin output_images 가 없는 placeholder 경로 — image_urls/captions 전부 크루 슬롯.
+    const crewImages: (string | null)[] = (detail?.image_urls || []).slice(0, WORKCAREER_IMAGE_SLOT_COUNT);
+    const crewCaptions: string[] = (detail?.image_captions || []).slice(0, WORKCAREER_IMAGE_SLOT_COUNT);
+    const paddedImages: (string | null)[] = [];
+    const paddedCaptions: string[] = [];
+    for (let i = 0; i < WORKCAREER_IMAGE_SLOT_COUNT; i++) {
+      paddedImages.push(crewImages[i] ?? null);
+      paddedCaptions.push(crewCaptions[i] ?? "");
+    }
+
+    // detail.output_links 는 워크인포/어빌리티/익스피와 동일하게 JSON 배열로 저장됨.
+    const restoredOutputLinks: { desc: string; url: string }[] = Array.isArray(detail?.output_links)
+      ? (detail!.output_links as { desc?: string; url?: string }[]).map((l) => ({
+          desc: l?.desc || "",
+          url: l?.url || "",
+        }))
+      : [];
+
+    return {
+      ...emptyCareerCard(id),
+      isEmpty: false,
+      title: "(아직 등록된 경력이 없습니다)",
+      // 모달이 읽는 secondary info 필드 복원 (저장 후 새로고침 유지용)
+      projectDescription: detail?.sub_title || null,
+      outputLinks: restoredOutputLinks.length > 0 ? restoredOutputLinks : null,
+      images: paddedImages,
+      imageCaptions: paddedCaptions,
+      growthPoint: detail?.growth_point || "",
+    };
+  };
+
+  // 데이터 수만큼만 표시, 0개면 빈 카드 1개만 (작성기간 열림 시 placeholder 로 승격)
+  const displayWorkCareerCards =
+    sortedWorkCareerCards.length > 0
+      ? sortedWorkCareerCards
+      : canEditWorkCareer
+        ? [buildCareerPlaceholderCard(1)]
+        : [emptyCareerCard(1)];
 
   // 페이지네이션: 6개씩 한 페이지
   const CAREER_CARDS_PER_PAGE = 6;
@@ -5799,13 +6176,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             <div
               className="edit-icon"
               onClick={async () => {
-                // 임시: 마더 계정(어드민) 외에는 주차 평판 작성/수정 비활성화
-                if (!isDemoMode && !session?.user?.isAdmin) {
-                  await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
-                  return;
-                }
+                // peer-review 셀프 차단 — 본인 페이지에서는 작성 불가 (admin 제외).
+                // 작성기간 게이트보다 먼저 검사하여 owner 에게 명확한 안내를 노출한다.
                 if (!isDemoMode && isOwner && !session?.user?.isAdmin) {
                   await popup.alert("주차 평판은 타 크루만이 작성할 수 있습니다.");
+                  return;
+                }
+                // 작성기간 게이트 — user_edit_windows(resource_key=cluster4.weekly_reputation).
+                // admin 우회 / 데모 우회. 서버 POST/PUT 도 동일 키로 enforce.
+                if (
+                  !isDemoMode &&
+                  !session?.user?.isAdmin &&
+                  !weeklyReputationWindowOpen
+                ) {
+                  await popup.alert(EDIT_WINDOW_LOCKED_MESSAGE);
                   return;
                 }
                 handleEditClick(() => {
@@ -8995,10 +9379,43 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 <div className="modal-footer-right">
                   {!workInfoViewIsEditing ? (
                     (() => {
-                      const locked = isLineLocked(selectedWorkInfoCard);
+                      // 임시 정책: 작성기간(canEditWorkInfo) 이 열려 있으면 "not_applicable" 은 우회.
+                      // "failed" 는 진짜 강화 실패이므로 잠금 유지. (data: 테이블 부재 폴백 대응)
+                      const rawLocked = isLineLocked(selectedWorkInfoCard); // strict (참고용)
+                      const lockedForEdit = isLineLockedForEdit(selectedWorkInfoCard, canEditWorkInfo);
+                      const isFailedStatus = getEnhanceStatus(selectedWorkInfoCard) === "failed";
                       const isEmptyStatus = (selectedWorkInfoCard?.status as string) === "empty";
-                      const disabled = !canEditWorkInfo || locked || isEmptyStatus;
-                      const title = isEmptyStatus ? "빈 카드 상태에서는 수정할 수 없습니다." : locked ? LINE_LOCKED_TITLE : canEditWorkInfo ? "수정" : "작성할 수 있는 기간이 아닙니다. 😊";
+                      const disabled = !canEditWorkInfo || lockedForEdit || isEmptyStatus;
+                      // [DEBUG 2026-05-22] 작성기간이 열렸는데도 버튼이 비활성/미렌더 보고 → 게이트값 콘솔 출력.
+                      // 콘솔에 [workInfo gate] 한 줄이 매 렌더마다 찍힌다. 운영 안정화 후 제거.
+                      if (typeof window !== "undefined") {
+                        // eslint-disable-next-line no-console
+                        console.log("[workInfo gate]", {
+                          activityType: selectedWorkInfoCard?.activityType,
+                          status: selectedWorkInfoCard?.status,
+                          enhanceStatus: getEnhanceStatus(selectedWorkInfoCard),
+                          canEditWorkInfo,
+                          rawLocked,
+                          lockedForEdit,
+                          isFailedStatus,
+                          isEmptyStatus,
+                          disabled,
+                          isOwner,
+                          isDemoMode,
+                          isAdmin,
+                          workInfoWindowOpen,
+                          canEditActivityDetails,
+                        });
+                      }
+                      const title = isEmptyStatus
+                        ? "빈 카드 상태에서는 수정할 수 없습니다."
+                        : isFailedStatus
+                          ? LINE_FAILED_TITLE
+                          : lockedForEdit
+                            ? LINE_LOCKED_TITLE
+                            : canEditWorkInfo
+                              ? "수정"
+                              : "작성할 수 있는 기간이 아닙니다. 😊";
                       return (
                         <button className="modal-edit-btn" onClick={handleEditWorkInfo} disabled={disabled} aria-disabled={disabled} style={disabled ? { opacity: 0.3, cursor: "not-allowed" } : undefined} title={title}>
                           수정
@@ -9401,14 +9818,49 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   </div>
                   <span className="line-code image-line-code">{lookupWorkExpMapping(selectedWorkExpCard.code)?.lineCode || selectedWorkExpCard.code || ""}</span>
 
-                  {/* 라인 평점 — 어드민(compliance-manage)에서 입력한 값을 읽기전용으로 표시 (0=미입력, 1~10) */}
+                  {/* 라인 평점 — self-edit: 표시는 항상 보이고, 편집 모드에서 별 클릭(좌/우 절반)으로 0~10 입력 */}
                   {(() => {
-                    const ratingValue = (selectedWorkExpCard?.rating ?? 0) * 2;
+                    const ratingValue = workExpViewIsEditing
+                      ? editingExpRating
+                      : (selectedWorkExpCard?.rating ?? 0) * 2;
                     const halfValue = (ratingValue || 0) / 2;
+                    const editable = workExpViewIsEditing;
+                    const setRating = (next: number) => {
+                      const clamped = Math.max(0, Math.min(10, next));
+                      // 동일 값을 다시 클릭하면 0 으로 리셋 (toggle)
+                      setEditingExpRating((prev) => (prev === clamped ? 0 : clamped));
+                    };
                     return (
-                      <div className="workexp-rating-section" data-field="rating">
+                      <div
+                        className={`workexp-rating-section${editable ? " is-editable" : ""}`}
+                        data-field="rating"
+                      >
                         <span className="rating-label">라인 평점</span>
-                        <div className="rating-stars">
+                        <div
+                          className="rating-stars"
+                          role={editable ? "slider" : undefined}
+                          aria-label={editable ? "라인 평점 (0~10)" : undefined}
+                          aria-valuemin={editable ? 0 : undefined}
+                          aria-valuemax={editable ? 10 : undefined}
+                          aria-valuenow={editable ? ratingValue : undefined}
+                          tabIndex={editable ? 0 : -1}
+                          onKeyDown={(e) => {
+                            if (!editable) return;
+                            if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+                              e.preventDefault();
+                              setRating(ratingValue + 1);
+                            } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+                              e.preventDefault();
+                              setRating(ratingValue - 1);
+                            } else if (e.key === "Home") {
+                              e.preventDefault();
+                              setEditingExpRating(0);
+                            } else if (e.key === "End") {
+                              e.preventDefault();
+                              setEditingExpRating(10);
+                            }
+                          }}
+                        >
                           {[1, 2, 3, 4, 5].map((star) => {
                             let starClass = "star-empty";
                             if (halfValue >= star) {
@@ -9416,9 +9868,37 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                             } else if (halfValue >= star - 0.5) {
                               starClass = "star-half";
                             }
+                            if (!editable) {
+                              return (
+                                <span key={star} className={`rating-star ${starClass}`}>
+                                  ★
+                                </span>
+                              );
+                            }
+                            // 편집 모드: 좌측 절반 = 2N-1, 우측 절반 = 2N
+                            const leftValue = star * 2 - 1;
+                            const rightValue = star * 2;
                             return (
-                              <span key={star} className={`rating-star ${starClass}`}>
-                                ★
+                              <span key={star} className={`rating-star ${starClass} is-interactive`}>
+                                <button
+                                  type="button"
+                                  className="rating-star-half rating-star-left"
+                                  aria-label={`${leftValue}점`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setRating(leftValue);
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  className="rating-star-half rating-star-right"
+                                  aria-label={`${rightValue}점`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setRating(rightValue);
+                                  }}
+                                />
+                                <span className="rating-star-glyph" aria-hidden>★</span>
                               </span>
                             );
                           })}
@@ -9441,9 +9921,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   {!workExpViewIsEditing ? (
                     (() => {
                       const empty = selectedWorkExpCard?.isEmpty;
-                      const locked = isLineLocked(selectedWorkExpCard);
-                      const disabled = !canEditWorkExp || empty || locked;
-                      const title = empty ? "비어있는 카드입니다" : locked ? LINE_LOCKED_TITLE : canEditWorkExp ? "수정" : "작성할 수 있는 기간이 아닙니다. 😊";
+                      // 임시 정책 동기화 (Work Info 와 동일).
+                      const lockedForEdit = isLineLockedForEdit(selectedWorkExpCard, canEditWorkExp);
+                      const isFailedStatus = getEnhanceStatus(selectedWorkExpCard) === "failed";
+                      const disabled = !canEditWorkExp || empty || lockedForEdit;
+                      const title = empty
+                        ? "비어있는 카드입니다"
+                        : isFailedStatus
+                          ? LINE_FAILED_TITLE
+                          : lockedForEdit
+                            ? LINE_LOCKED_TITLE
+                            : canEditWorkExp
+                              ? "수정"
+                              : "작성할 수 있는 기간이 아닙니다. 😊";
                       return (
                         <button className="modal-edit-btn" onClick={handleEditWorkExp} disabled={disabled} style={disabled ? { opacity: 0.3, cursor: "not-allowed" } : undefined} title={title}>
                           수정
@@ -9844,9 +10334,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   {!workAbilityViewIsEditing ? (
                     (() => {
                       const empty = selectedWorkAbilityCard?.isEmpty;
-                      const locked = isLineLocked(selectedWorkAbilityCard);
-                      const disabled = !canEditWorkAbility || empty || locked;
-                      const title = empty ? "비어있는 카드입니다" : locked ? LINE_LOCKED_TITLE : canEditWorkAbility ? "수정" : "작성할 수 있는 기간이 아닙니다. 😊";
+                      // 임시 정책 동기화 (Work Info 와 동일).
+                      const lockedForEdit = isLineLockedForEdit(selectedWorkAbilityCard, canEditWorkAbility);
+                      const isFailedStatus = getEnhanceStatus(selectedWorkAbilityCard) === "failed";
+                      const disabled = !canEditWorkAbility || empty || lockedForEdit;
+                      const title = empty
+                        ? "비어있는 카드입니다"
+                        : isFailedStatus
+                          ? LINE_FAILED_TITLE
+                          : lockedForEdit
+                            ? LINE_LOCKED_TITLE
+                            : canEditWorkAbility
+                              ? "수정"
+                              : "작성할 수 있는 기간이 아닙니다. 😊";
                       return (
                         <button className="modal-edit-btn" onClick={handleEditWorkAbility} disabled={disabled} style={disabled ? { opacity: 0.3, cursor: "not-allowed" } : undefined} title={title}>
                           수정
@@ -10369,9 +10869,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   {!workCareerViewIsEditing ? (
                     (() => {
                       const empty = selectedWorkCareerCard?.isEmpty;
-                      const locked = isLineLocked(selectedWorkCareerCard);
-                      const disabled = !canEditWorkCareer || empty || locked;
-                      const title = empty ? "비어있는 카드입니다" : locked ? LINE_LOCKED_TITLE : canEditWorkCareer ? "수정" : "작성할 수 있는 기간이 아닙니다. 😊";
+                      // 임시 정책 동기화 (Work Info 와 동일).
+                      const lockedForEdit = isLineLockedForEdit(selectedWorkCareerCard, canEditWorkCareer);
+                      const isFailedStatus = getEnhanceStatus(selectedWorkCareerCard) === "failed";
+                      const disabled = !canEditWorkCareer || empty || lockedForEdit;
+                      const title = empty
+                        ? "비어있는 카드입니다"
+                        : isFailedStatus
+                          ? LINE_FAILED_TITLE
+                          : lockedForEdit
+                            ? LINE_LOCKED_TITLE
+                            : canEditWorkCareer
+                              ? "수정"
+                              : "작성할 수 있는 기간이 아닙니다. 😊";
                       return (
                         <button className="modal-edit-btn" onClick={handleEditWorkCareer} disabled={disabled} style={disabled ? { opacity: 0.3, cursor: "not-allowed" } : undefined} title={title}>
                           수정

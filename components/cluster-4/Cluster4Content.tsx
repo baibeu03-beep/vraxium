@@ -16,6 +16,9 @@ import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { DUMMY_SEASON_DATA, DUMMY_SEASON_HISTORIES, REVIEW_COMMENT_DEFAULT } from "@/constants/dummyData";
 import { dedupedJson } from "@/lib/fetch-dedupe";
 import { isPxRoute, isEcRoute, withPxRoute, getThemeClass } from "@/lib/cluster-route";
+import { isAdminEmail } from "@/lib/admin";
+import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
+import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
 import HelpModalBody from "@/components/shared/HelpModalBody";
 
 // 글자수 초과 시 '..' 표시 (CSS ellipsis '…' 대신 JS 처리)
@@ -600,6 +603,134 @@ const Cluster4Content = () => {
     setCanEditSeasonReview(isDemoMode);
   }, [isDemoMode]);
 
+  // ============================================================
+  // user_edit_windows 기반 Cluster4 시즌 리뷰 작성 기간 (cluster3 패턴 재사용)
+  //   resource_key: cluster4.season_review
+  // 우선순위:
+  //   1) isDemoMode      → 자동 허용
+  //   2) admin           → 자동 허용 (마더 계정)
+  //   3) dev override    → ?unlockCluster4 / ?unlockCluster4SeasonReview (DEV/QA 전용)
+  //   4) permission API  → /api/edit-windows/permission?resource_key=cluster4.season_review
+  // 기존 canEditSeasonReview (승인 상태 기반) 와 AND 로 결합되어 저장 시점에만 enforce.
+  // 서버 PUT 도 동일 resource_key 로 enforce 되므로 dev override 는 UI 만 푼다.
+  const [seasonReviewWindowOpen, setSeasonReviewWindowOpen] = useState<boolean>(isDemoMode);
+  const [seasonReputationWindowOpen, setSeasonReputationWindowOpen] = useState<boolean>(isDemoMode);
+  const [editWindowRefreshTick, setEditWindowRefreshTick] = useState(0);
+
+  useEffect(() => {
+    const isAdminCombined =
+      !!session?.user?.isAdmin || isAdminEmail(session?.user?.email);
+    const unlockAll = searchParams?.get("unlockCluster4") === "1";
+    const unlockSeasonReview =
+      searchParams?.get("unlockCluster4SeasonReview") === "1";
+
+    if (isDemoMode || isAdminCombined) {
+      setSeasonReviewWindowOpen(true);
+      return;
+    }
+
+    if (!session?.user) {
+      setSeasonReviewWindowOpen(unlockAll || unlockSeasonReview);
+      return;
+    }
+
+    setSeasonReviewWindowOpen(unlockAll || unlockSeasonReview);
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(
+          `/api/edit-windows/permission?resource_key=${encodeURIComponent(CLUSTER4_EDIT_RESOURCE_KEYS.seasonReview)}`,
+          { cache: "no-store" }
+        );
+        const result = await response.json();
+        const permission = result?.data;
+        if (cancelled) return;
+        if (result?.success && permission && typeof permission.canEdit === "boolean") {
+          setSeasonReviewWindowOpen(
+            (unlockAll || unlockSeasonReview) || Boolean(permission.canEdit)
+          );
+        }
+      } catch (error) {
+        console.error("[cluster4 permission] cluster4.season_review 조회 실패", error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isDemoMode,
+    session?.user,
+    session?.user?.isAdmin,
+    session?.user?.email,
+    searchParams,
+    editWindowRefreshTick,
+  ]);
+  // ============================================================
+
+  // ============================================================
+  // user_edit_windows 기반 Cluster4 시즌 평판 작성 기간 (season_review 패턴 그대로)
+  //   resource_key: cluster4.season_reputation
+  // 우선순위:
+  //   1) isDemoMode      → 자동 허용
+  //   2) admin           → 자동 허용
+  //   3) dev override    → ?unlockCluster4 / ?unlockCluster4SeasonReputation (DEV/QA 전용, UI 만)
+  //   4) permission API  → /api/edit-windows/permission?resource_key=cluster4.season_reputation
+  // 기존 canEditSeasonReputation (승인 상태 기반) 와 AND 로 결합되어 저장 시점에만 enforce.
+  // 서버 POST/PUT 도 동일 resource_key 로 enforce 되며, 서버는 dev override 를 인정하지 않는다.
+  useEffect(() => {
+    const isAdminCombined =
+      !!session?.user?.isAdmin || isAdminEmail(session?.user?.email);
+    const unlockAll = searchParams?.get("unlockCluster4") === "1";
+    const unlockSeasonReputation =
+      searchParams?.get("unlockCluster4SeasonReputation") === "1";
+
+    if (isDemoMode || isAdminCombined) {
+      setSeasonReputationWindowOpen(true);
+      return;
+    }
+
+    if (!session?.user) {
+      setSeasonReputationWindowOpen(unlockAll || unlockSeasonReputation);
+      return;
+    }
+
+    setSeasonReputationWindowOpen(unlockAll || unlockSeasonReputation);
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(
+          `/api/edit-windows/permission?resource_key=${encodeURIComponent(CLUSTER4_EDIT_RESOURCE_KEYS.seasonReputation)}`,
+          { cache: "no-store" }
+        );
+        const result = await response.json();
+        const permission = result?.data;
+        if (cancelled) return;
+        if (result?.success && permission && typeof permission.canEdit === "boolean") {
+          setSeasonReputationWindowOpen(
+            (unlockAll || unlockSeasonReputation) || Boolean(permission.canEdit)
+          );
+        }
+      } catch (error) {
+        console.error("[cluster4 permission] cluster4.season_reputation 조회 실패", error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isDemoMode,
+    session?.user,
+    session?.user?.isAdmin,
+    session?.user?.email,
+    searchParams,
+    editWindowRefreshTick,
+  ]);
+  // ============================================================
+
   // 일반 모드 백엔드 승인 상태 → canEditSeasonReputation / canEditSeasonReview 일괄 반영
   // 어드민(마더) 계정은 승인 체크를 건너뛰고 항상 편집 가능
   useEffect(() => {
@@ -708,6 +839,10 @@ const Cluster4Content = () => {
   // season-reputation form 핸들러
   const handleSeasonReputationEditClick = async () => {
     if (!canEditSeasonReputation) {
+      await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
+      return;
+    }
+    if (!isDemoMode && !seasonReputationWindowOpen) {
       await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
       return;
     }
@@ -857,6 +992,10 @@ const Cluster4Content = () => {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
+    if (!isDemoMode && !seasonReputationWindowOpen) {
+      await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
+      return;
+    }
     if (!(await popup.confirm("작성 내용을 초기 상태로 되돌리시겠습니까?"))) return;
     if (seasonReputationFormSnapshot) {
       setSeasonReputationEditData({ rating: seasonReputationFormSnapshot.rating, content: seasonReputationFormSnapshot.content, keyword1: seasonReputationFormSnapshot.keyword1, keyword2: seasonReputationFormSnapshot.keyword2, keyword3: seasonReputationFormSnapshot.keyword3 });
@@ -905,20 +1044,50 @@ const Cluster4Content = () => {
       if (!res.ok) {
         const errBody = await res.json().catch(() => null);
         console.error("[season-reputation] API 실패:", res.status, errBody);
-        return null;
+        // 서버가 내려준 메시지를 그대로 throw — handleSeasonReputationSave 가 alert 로 표시.
+        // 우선순위: message (사용자용 친절 문구) → error (코드/짧은 사유) → 폴백.
+        const serverMessage =
+          (errBody && (errBody.message || errBody.error)) ||
+          `저장 실패 (HTTP ${res.status})`;
+        throw new Error(serverMessage);
       }
       const data = await res.json();
       const saved = data.data || data;
       return { id: saved.id || (isUpdate ? selectedReputation!.id : undefined), created_at: saved.created_at, updated_at: saved.updated_at };
     } catch (err) {
       console.error("[season-reputation] API 예외:", err);
-      return null;
+      // 위 throw 또는 진짜 네트워크 예외를 그대로 위로 던져 caller 가 메시지 표시.
+      throw err;
     }
   };
 
   const handleSeasonReputationSave = async () => {
+    // [임시 진단 — 작성 차단 원인 파악용. 원인 확정 후 제거 예정]
+    // 콘솔에서 다음 6 필드 확인:
+    //   canEditSeasonReputation (= checkApprovalStatus 결과 또는 admin/demo)
+    //   seasonReputationWindowOpen (= /api/edit-windows/permission cluster4.season_reputation)
+    //   isOwner (true 면 자기리뷰 → 사실상 모달 진입 자체가 막혀 있어야 함)
+    //   alreadySubmitted (true 면 prefill 된 수정 모드)
+    //   selectedSeasonId / currentSeasonId (어느 시즌에 작성 중인지)
+    //   urlUserId (타깃 user_id)
+    console.debug("[season-reputation save] guard snapshot", {
+      isDemoMode,
+      canEditSeasonReputation,
+      seasonReputationWindowOpen,
+      isOwner,
+      alreadySubmitted: !!selectedReputation?.id,
+      selectedSeasonId,
+      currentSeasonId: currentSeason?.id,
+      urlUserId,
+      sessionUserId: session?.user?.id,
+      isAdmin: !!session?.user?.isAdmin,
+    });
     if (!isDemoMode && !canEditSeasonReputation) {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
+      return;
+    }
+    if (!isDemoMode && !seasonReputationWindowOpen) {
+      await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
       return;
     }
     if (!isSeasonReputationValid()) {
@@ -948,6 +1117,8 @@ const Cluster4Content = () => {
     try {
       const savedRecord = await saveSeasonReputation();
       if (!savedRecord) {
+        // saveSeasonReputation 이 실패하면 throw 하므로 정상적으로는 이 분기 도달 X.
+        // 방어적으로 남겨두되 메시지는 일반 폴백.
         await popup.alert("저장에 실패했습니다. 다시 시도해주세요.");
         return;
       }
@@ -960,7 +1131,13 @@ const Cluster4Content = () => {
       setSeasonReputationModalOpen(false);
     } catch (err) {
       console.error("[season-reputation] 저장 실패:", err);
-      await popup.alert("저장 중 오류가 발생했습니다.");
+      // 서버가 내려준 메시지(EDIT_WINDOW_CLOSED 인 경우 EDIT_WINDOW_LOCKED_MESSAGE,
+      // 그 외엔 한글 사유 등)를 사용자에게 그대로 표시.
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "저장 중 오류가 발생했습니다.";
+      await popup.alert(message);
     } finally {
       setSeasonReputationSaving(false);
     }
@@ -2242,6 +2419,10 @@ const Cluster4Content = () => {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
+    if (!isDemoMode && !seasonReputationWindowOpen) {
+      await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
+      return;
+    }
     // 데모 모드: API 호출 없이 UI에만 반영
     if (isDemoMode) {
       setSeasonReputations((prev) => [
@@ -2511,7 +2692,30 @@ const Cluster4Content = () => {
       return;
     }
 
-    if (!currentSeason?.id) {
+    // 실제 user_season_histories row 가 있으면 무조건 그것을 사용한다.
+    // currentSeason 이 defaultSeasonData fallback("dummy-season-1") 을 가리켜도
+    // seasonHistories 에 진짜 row 가 있다면 그쪽 id 로 교정.
+    const fallbackSeasonHistory =
+      seasonHistories[section3Page] || seasonHistories[0];
+    const effectiveSeasonHistoryId: string | undefined =
+      currentSeason?.id && currentSeason.id !== "dummy-season-1"
+        ? currentSeason.id
+        : fallbackSeasonHistory?.id;
+
+    // 진단 로그 — Network 에 PUT 이 안 뜨는 케이스를 추적하기 위한 콘솔 출력.
+    // (저장 흐름이 안정되면 제거 가능)
+    if (typeof window !== "undefined") {
+      // eslint-disable-next-line no-console
+      console.log("[seasonReview] saving", {
+        seasonHistoriesCount: seasonHistories.length,
+        section3Page,
+        currentSeasonId: currentSeason?.id,
+        fallbackId: fallbackSeasonHistory?.id,
+        effectiveSeasonHistoryId,
+      });
+    }
+
+    if (!effectiveSeasonHistoryId || effectiveSeasonHistoryId === "dummy-season-1") {
       setSeasonReviewSaving(false);
       await popup.alert("시즌 정보를 찾을 수 없습니다.");
       return;
@@ -2541,6 +2745,12 @@ const Cluster4Content = () => {
       return;
     }
 
+    // 작성 기간 게이트 — admin/demo/dev 우회는 seasonReviewWindowOpen 안에 이미 반영됨.
+    if (!seasonReviewWindowOpen) {
+      await popup.alert(EDIT_WINDOW_LOCKED_MESSAGE);
+      return;
+    }
+
     setSeasonReviewSaving(true);
     setSeasonReviewError(null);
 
@@ -2549,16 +2759,25 @@ const Cluster4Content = () => {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          seasonHistoryId: currentSeason.id,
+          // effectiveSeasonHistoryId 로 송신 (currentSeason 이 defaultSeasonData
+          // fallback 을 가리킬 때도 실제 row id 로 교정됨)
+          seasonHistoryId: effectiveSeasonHistoryId,
           rating: seasonReviewEditData.rating,
           review: seasonReviewEditData.review.trim(),
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        await popup.alert(data.error || "저장에 실패했습니다.");
+        // 서버가 작성 기간 닫힘으로 거부 → 통일 문구 + 권한 재조회 트리거.
+        if (res.status === 403 && data?.error === "EDIT_WINDOW_CLOSED") {
+          setSeasonReviewWindowOpen(false);
+          setEditWindowRefreshTick((t) => t + 1);
+          await popup.alert(EDIT_WINDOW_LOCKED_MESSAGE);
+          return;
+        }
+        await popup.alert(data?.error || "저장에 실패했습니다.");
         return;
       }
 
@@ -3289,14 +3508,23 @@ const Cluster4Content = () => {
                   <div
                     className="edit-icon"
                     onClick={async () => {
-                      // 임시: 마더 계정(어드민) 외에는 시즌 평판 작성/수정 비활성화 (주차 평판과 동일 정책)
-                      if (!isDemoMode && !session?.user?.isAdmin) {
-                        await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
-                        return;
-                      }
+                      // 시즌 평판 작성 게이트.
+                      // demo / admin → 무조건 통과.
+                      // owner(자기 자신) → peer-review 라 자기리뷰 불가.
+                      // 그 외 일반 유저 → 승인 상태(canEditSeasonReputation) + 작성 기간(seasonReputationWindowOpen) 모두 통과해야 함.
                       if (!isDemoMode && isOwner) {
                         await popup.alert("시즌 평판은 타 크루끼리 작성합니다.");
                         return;
+                      }
+                      if (!isDemoMode && !session?.user?.isAdmin) {
+                        if (!canEditSeasonReputation) {
+                          await popup.alert("관리자 승인 후 작성할 수 있습니다.");
+                          return;
+                        }
+                        if (!seasonReputationWindowOpen) {
+                          await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
+                          return;
+                        }
                       }
                       handleEditClick(openSeasonReputationModal);
                     }}
