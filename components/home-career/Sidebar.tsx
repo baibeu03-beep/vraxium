@@ -1,6 +1,6 @@
 "use client";
 import Image from "next/image";
-import { useEffect, useLayoutEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
@@ -16,7 +16,7 @@ import { useModalScroll } from "@/utils/useModalScroll";
 import { usePopup } from "@/components/ui/popup";
 import { logEvent } from "@/utils/blackScreenDiagnostics";
 import koreaRegionsData from "@/data/korea-regions.json";
-import { isPxRoute, withPxRoute } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, getThemeClass, withPxRoute } from "@/lib/cluster-route";
 
 const koreaRegions: { [key: string]: string[] } = koreaRegionsData;
 const DEFAULT_PHONE_COMMENT = "평일 오전 10시 ~ 오후 20시 사이에 언제든지 연락가능합니다. 주말은 문자나 텍스트로만 부탁드려요! 😊";
@@ -142,6 +142,72 @@ const Sidebar = () => {
   // 동적 subpath 포함 매칭. non-PX 라우트는 false → 기존 색 그대로.
   // 판정 로직은 lib/cluster-route 로 일원화.
   const isPX = isPxRoute(pathname);
+
+  // Phase D5 — Sidebar inline accent theme helper.
+  //
+  // Sidebar 는 main-layout / cluster-pages layout / career / index-two 등 거의
+  // 모든 페이지에 렌더됨. inline style hardcode (`#FFA500`, `rgba(255,165,0,X)`)
+  // 가 ~70건 분포 — Edit Profile Modal portal, date/address/email dropdown
+  // selected·hover, Phone Comment/Help modal, Mobile Profile slide-out 등.
+  //
+  // SCSS override 는 portal/inline style/styled-jsx/hover handler 에 닿지 못
+  // 하므로 본 변수로 일괄 분기. cluster route 의 -px/-ec suffix 만 매칭하며
+  // 비-cluster 라우트(/career, /index-two 등) 는 default yellow 유지.
+  //
+  // alpha helper 는 rgba 정밀 alpha 값을 함수로 받아 톤 유지.
+  // gradient 는 mobile profile slide-out tab 의 vertical PROFILE 버튼 등 단일
+  // 위치 쓰임.
+  // Phase D5-B — sidebarAccent / sidebarThemeClass 에 query `org` 분기 추가.
+  //
+  // 원인:
+  //   - `/crews?org=phalanx` 는 pathname segment 에 `-px` 없음 → isPxRoute=false
+  //   - `/crews/page.tsx:297` 가 `<main class="phalanx-theme">` 클래스 사용
+  //   - 결과: sidebarAccent.main 이 default fallback `#FFA500` 으로 resolve →
+  //     Phone Help modal / Edit Profile modal 등 inline border 가 yellow 그대로
+  //
+  // Fix: pathname-based 판정 OR query `?org=phalanx|encre` 도 PX/EC 로 인정.
+  // 둘 다 false 인 경우만 default yellow.
+  //
+  // sidebarThemeClass 도 동일하게 query org 시 cluster-px-theme/encre-theme 반환
+  // (SCSS combined selector `.help-modal-overlay.cluster-px-theme` 등이 future-
+  // ready 하게 매칭되도록 cluster route 와 동일 className 사용).
+  const sidebarAccent = useMemo(() => {
+    const orgParam = searchParams.get("org");
+    const isPxCtx = isPxRoute(pathname) || orgParam === "phalanx";
+    const isEcCtx = isEcRoute(pathname) || orgParam === "encre";
+    if (isPxCtx) {
+      return {
+        main: "#1E9503",
+        soft: "#B2FF8F",
+        alpha: (a: number) => `rgba(30, 149, 3, ${a})`,
+        gradient: "linear-gradient(180deg, #B2FF8F 0%, #1E9503 100%)",
+      };
+    }
+    if (isEcCtx) {
+      return {
+        main: "#FF4B70",
+        soft: "#FF98A6",
+        alpha: (a: number) => `rgba(255, 75, 112, ${a})`,
+        gradient: "linear-gradient(180deg, #FF98A6 0%, #FF4B70 100%)",
+      };
+    }
+    return {
+      main: "#FFA500",
+      soft: "#FFC300",
+      alpha: (a: number) => `rgba(255, 165, 0, ${a})`,
+      gradient: "linear-gradient(180deg, #FAAB07 0%, #e09600 100%)",
+    };
+  }, [pathname, searchParams]);
+  // portal/inline modal root 에 결합되는 theme class. pathname segment 우선,
+  // query org fallback. cluster route + /crews?org= 양쪽 cover.
+  const sidebarThemeClass = useMemo(() => {
+    const pathClass = getThemeClass(pathname);
+    if (pathClass) return pathClass;
+    const orgParam = searchParams.get("org");
+    if (orgParam === "phalanx") return "cluster-px-theme";
+    if (orgParam === "encre") return "encre-theme";
+    return "";
+  }, [pathname, searchParams]);
   const router = useRouter();
   const targetUserId = searchParams.get("userId") || searchParams.get("userID");
   const sessionUserId = session?.user?.id ?? null;
@@ -2674,7 +2740,11 @@ const Sidebar = () => {
         typeof document !== "undefined" &&
         createPortal(
           // overlay (부모 div) - 여기에 스크롤과 padding 추가
+          // Phase D5 — portal root overlay 에 theme class 결합. 향후 SCSS
+          // combined selector (`.edit-modal-overlay.cluster-px-theme`) 확장
+          // 대비. cluster route 외에선 빈 문자열 → 영향 0.
           <div
+            className={`edit-modal-overlay ${sidebarThemeClass}`.trim()}
             style={{
               position: "fixed",
               top: 0,
@@ -2692,10 +2762,10 @@ const Sidebar = () => {
           >
             {/* modal (자식 div) */}
             <div
-              className="edit-modal-content"
+              className={`edit-modal-content ${sidebarThemeClass}`.trim()}
               style={{
-                border: "1px solid #FFA500",
-                boxShadow: "0 0 10px rgba(255, 165, 0, 0.15)",
+                border: `1px solid ${sidebarAccent.main}`,
+                boxShadow: `0 0 10px ${sidebarAccent.alpha(0.15)}`,
                 width: "580px",
                 maxHeight: "700px",
               }}
@@ -2889,7 +2959,7 @@ const Sidebar = () => {
                         style={{
                           flex: 1,
                           padding: "14px 16px",
-                          backgroundColor: formData.gender === "male" ? "#FFA500" : "#252836",
+                          backgroundColor: formData.gender === "male" ? sidebarAccent.main : "#252836",
                           border: "1px solid transparent",
                           borderRadius: "0",
                           color: formData.gender === "male" ? "#1a1d29" : "#8a8d98",
@@ -2914,7 +2984,7 @@ const Sidebar = () => {
                         style={{
                           flex: 1,
                           padding: "14px 16px",
-                          backgroundColor: formData.gender === "female" ? "#FFA500" : "#252836",
+                          backgroundColor: formData.gender === "female" ? sidebarAccent.main : "#252836",
                           border: "1px solid transparent",
                           borderRadius: "0",
                           color: formData.gender === "female" ? "#1a1d29" : "#8a8d98",
@@ -2937,6 +3007,9 @@ const Sidebar = () => {
                     <label style={{ color: "#8a8d98", fontSize: "14px", display: "block", marginBottom: "10px" }}>생년월일</label>
                     <style
                       dangerouslySetInnerHTML={{
+                        // Phase D5 — styled-jsx scrollbar 를 sidebarAccent 기반
+                        // template literal 로 변환. cluster route 외 default
+                        // yellow 유지. hover state 도 동일 분기 (consistency).
                         __html: `
                   .edit-modal-content {
                     font-family: 'Pretendard', sans-serif !important;
@@ -2952,11 +3025,11 @@ const Sidebar = () => {
                     border-radius: 2px;
                   }
                   .edit-modal-body::-webkit-scrollbar-thumb {
-                    background: #FFA500;
+                    background: ${sidebarAccent.main};
                     border-radius: 2px;
                   }
                   .edit-modal-body::-webkit-scrollbar-thumb:hover {
-                    background: #22c55e;
+                    background: ${sidebarAccent.soft};
                   }
                   .edit-modal-body::-webkit-scrollbar-button {
                     display: none;
@@ -2970,7 +3043,7 @@ const Sidebar = () => {
                     border-radius: 3px;
                   }
                   .custom-dropdown-list::-webkit-scrollbar-thumb {
-                    background: #FFA500;
+                    background: ${sidebarAccent.main};
                     border-radius: 3px;
                   }
                 `,
@@ -2995,7 +3068,7 @@ const Sidebar = () => {
                             display: "flex",
                             justifyContent: "space-between",
                             alignItems: "center",
-                            border: openDropdown === "year" ? "1px solid #FFA500" : "1px solid transparent",
+                            border: openDropdown === "year" ? `1px solid ${sidebarAccent.main}` : "1px solid transparent",
                             transition: "all 0.2s ease",
                           }}
                         >
@@ -3040,19 +3113,19 @@ const Sidebar = () => {
                                 }}
                                 style={{
                                   padding: "12px 14px",
-                                  color: formData.birthDate.split("-")[0] === String(year) ? "#FFA500" : "#fff",
-                                  backgroundColor: formData.birthDate.split("-")[0] === String(year) ? "rgba(255, 165, 0, 0.1)" : "transparent",
+                                  color: formData.birthDate.split("-")[0] === String(year) ? sidebarAccent.main : "#fff",
+                                  backgroundColor: formData.birthDate.split("-")[0] === String(year) ? sidebarAccent.alpha(0.1) : "transparent",
                                   cursor: "pointer",
                                   transition: "all 0.15s ease",
                                   borderBottom: "1px solid #252836",
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = "rgba(255, 165, 0, 0.15)";
-                                  e.currentTarget.style.color = "#FFA500";
+                                  e.currentTarget.style.backgroundColor = sidebarAccent.alpha(0.15);
+                                  e.currentTarget.style.color = sidebarAccent.main;
                                 }}
                                 onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor = formData.birthDate.split("-")[0] === String(year) ? "rgba(255, 165, 0, 0.1)" : "transparent";
-                                  e.currentTarget.style.color = formData.birthDate.split("-")[0] === String(year) ? "#FFA500" : "#fff";
+                                  e.currentTarget.style.backgroundColor = formData.birthDate.split("-")[0] === String(year) ? sidebarAccent.alpha(0.1) : "transparent";
+                                  e.currentTarget.style.color = formData.birthDate.split("-")[0] === String(year) ? sidebarAccent.main : "#fff";
                                 }}
                               >
                                 {year}년
@@ -3080,7 +3153,7 @@ const Sidebar = () => {
                             display: "flex",
                             justifyContent: "space-between",
                             alignItems: "center",
-                            border: openDropdown === "month" ? "1px solid #FFA500" : "1px solid transparent",
+                            border: openDropdown === "month" ? `1px solid ${sidebarAccent.main}` : "1px solid transparent",
                             transition: "all 0.2s ease",
                           }}
                         >
@@ -3125,19 +3198,19 @@ const Sidebar = () => {
                                 }}
                                 style={{
                                   padding: "12px 14px",
-                                  color: formData.birthDate.split("-")[1] === String(month).padStart(2, "0") ? "#FFA500" : "#fff",
-                                  backgroundColor: formData.birthDate.split("-")[1] === String(month).padStart(2, "0") ? "rgba(255, 165, 0, 0.1)" : "transparent",
+                                  color: formData.birthDate.split("-")[1] === String(month).padStart(2, "0") ? sidebarAccent.main : "#fff",
+                                  backgroundColor: formData.birthDate.split("-")[1] === String(month).padStart(2, "0") ? sidebarAccent.alpha(0.1) : "transparent",
                                   cursor: "pointer",
                                   transition: "all 0.15s ease",
                                   borderBottom: "1px solid #252836",
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = "rgba(255, 165, 0, 0.15)";
-                                  e.currentTarget.style.color = "#FFA500";
+                                  e.currentTarget.style.backgroundColor = sidebarAccent.alpha(0.15);
+                                  e.currentTarget.style.color = sidebarAccent.main;
                                 }}
                                 onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor = formData.birthDate.split("-")[1] === String(month).padStart(2, "0") ? "rgba(255, 165, 0, 0.1)" : "transparent";
-                                  e.currentTarget.style.color = formData.birthDate.split("-")[1] === String(month).padStart(2, "0") ? "#FFA500" : "#fff";
+                                  e.currentTarget.style.backgroundColor = formData.birthDate.split("-")[1] === String(month).padStart(2, "0") ? sidebarAccent.alpha(0.1) : "transparent";
+                                  e.currentTarget.style.color = formData.birthDate.split("-")[1] === String(month).padStart(2, "0") ? sidebarAccent.main : "#fff";
                                 }}
                               >
                                 {month}월
@@ -3165,7 +3238,7 @@ const Sidebar = () => {
                             display: "flex",
                             justifyContent: "space-between",
                             alignItems: "center",
-                            border: openDropdown === "day" ? "1px solid #FFA500" : "1px solid transparent",
+                            border: openDropdown === "day" ? `1px solid ${sidebarAccent.main}` : "1px solid transparent",
                             transition: "all 0.2s ease",
                           }}
                         >
@@ -3210,19 +3283,19 @@ const Sidebar = () => {
                                 }}
                                 style={{
                                   padding: "12px 14px",
-                                  color: formData.birthDate.split("-")[2] === String(day).padStart(2, "0") ? "#FFA500" : "#fff",
-                                  backgroundColor: formData.birthDate.split("-")[2] === String(day).padStart(2, "0") ? "rgba(255, 165, 0, 0.1)" : "transparent",
+                                  color: formData.birthDate.split("-")[2] === String(day).padStart(2, "0") ? sidebarAccent.main : "#fff",
+                                  backgroundColor: formData.birthDate.split("-")[2] === String(day).padStart(2, "0") ? sidebarAccent.alpha(0.1) : "transparent",
                                   cursor: "pointer",
                                   transition: "all 0.15s ease",
                                   borderBottom: "1px solid #252836",
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = "rgba(255, 165, 0, 0.15)";
-                                  e.currentTarget.style.color = "#FFA500";
+                                  e.currentTarget.style.backgroundColor = sidebarAccent.alpha(0.15);
+                                  e.currentTarget.style.color = sidebarAccent.main;
                                 }}
                                 onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor = formData.birthDate.split("-")[2] === String(day).padStart(2, "0") ? "rgba(255, 165, 0, 0.1)" : "transparent";
-                                  e.currentTarget.style.color = formData.birthDate.split("-")[2] === String(day).padStart(2, "0") ? "#FFA500" : "#fff";
+                                  e.currentTarget.style.backgroundColor = formData.birthDate.split("-")[2] === String(day).padStart(2, "0") ? sidebarAccent.alpha(0.1) : "transparent";
+                                  e.currentTarget.style.color = formData.birthDate.split("-")[2] === String(day).padStart(2, "0") ? sidebarAccent.main : "#fff";
                                 }}
                               >
                                 {day}일
@@ -3257,7 +3330,7 @@ const Sidebar = () => {
                               display: "flex",
                               justifyContent: "space-between",
                               alignItems: "center",
-                              border: openDropdown === "city" ? "1px solid #FFA500" : "1px solid transparent",
+                              border: openDropdown === "city" ? `1px solid ${sidebarAccent.main}` : "1px solid transparent",
                               transition: "all 0.2s ease",
                             }}
                           >
@@ -3300,19 +3373,19 @@ const Sidebar = () => {
                                   }}
                                   style={{
                                     padding: "12px 14px",
-                                    color: formData.addressCity === city ? "#FFA500" : "#fff",
-                                    backgroundColor: formData.addressCity === city ? "rgba(255, 165, 0, 0.1)" : "transparent",
+                                    color: formData.addressCity === city ? sidebarAccent.main : "#fff",
+                                    backgroundColor: formData.addressCity === city ? sidebarAccent.alpha(0.1) : "transparent",
                                     cursor: "pointer",
                                     transition: "all 0.15s ease",
                                     borderBottom: "1px solid #252836",
                                   }}
                                   onMouseEnter={(e) => {
-                                    e.currentTarget.style.backgroundColor = "rgba(255, 165, 0, 0.15)";
-                                    e.currentTarget.style.color = "#FFA500";
+                                    e.currentTarget.style.backgroundColor = sidebarAccent.alpha(0.15);
+                                    e.currentTarget.style.color = sidebarAccent.main;
                                   }}
                                   onMouseLeave={(e) => {
-                                    e.currentTarget.style.backgroundColor = formData.addressCity === city ? "rgba(255, 165, 0, 0.1)" : "transparent";
-                                    e.currentTarget.style.color = formData.addressCity === city ? "#FFA500" : "#fff";
+                                    e.currentTarget.style.backgroundColor = formData.addressCity === city ? sidebarAccent.alpha(0.1) : "transparent";
+                                    e.currentTarget.style.color = formData.addressCity === city ? sidebarAccent.main : "#fff";
                                   }}
                                 >
                                   {city}
@@ -3327,7 +3400,7 @@ const Sidebar = () => {
                                 }}
                                 style={{
                                   padding: "12px 14px",
-                                  color: "#FFA500",
+                                  color: sidebarAccent.main,
                                   backgroundColor: "transparent",
                                   cursor: "pointer",
                                   transition: "all 0.15s ease",
@@ -3335,7 +3408,7 @@ const Sidebar = () => {
                                   fontWeight: 500,
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = "rgba(255, 165, 0, 0.15)";
+                                  e.currentTarget.style.backgroundColor = sidebarAccent.alpha(0.15);
                                 }}
                                 onMouseLeave={(e) => {
                                   e.currentTarget.style.backgroundColor = "transparent";
@@ -3369,7 +3442,7 @@ const Sidebar = () => {
                               display: "flex",
                               justifyContent: "space-between",
                               alignItems: "center",
-                              border: openDropdown === "district" ? "1px solid #FFA500" : "1px solid transparent",
+                              border: openDropdown === "district" ? `1px solid ${sidebarAccent.main}` : "1px solid transparent",
                               transition: "all 0.2s ease",
                               opacity: formData.addressCity ? 1 : 0.6,
                             }}
@@ -3414,19 +3487,19 @@ const Sidebar = () => {
                                   }}
                                   style={{
                                     padding: "12px 14px",
-                                    color: formData.addressDistrict === district ? "#FFA500" : "#fff",
-                                    backgroundColor: formData.addressDistrict === district ? "rgba(255, 165, 0, 0.1)" : "transparent",
+                                    color: formData.addressDistrict === district ? sidebarAccent.main : "#fff",
+                                    backgroundColor: formData.addressDistrict === district ? sidebarAccent.alpha(0.1) : "transparent",
                                     cursor: "pointer",
                                     transition: "all 0.15s ease",
                                     borderBottom: "1px solid #252836",
                                   }}
                                   onMouseEnter={(e) => {
-                                    e.currentTarget.style.backgroundColor = "rgba(255, 165, 0, 0.15)";
-                                    e.currentTarget.style.color = "#FFA500";
+                                    e.currentTarget.style.backgroundColor = sidebarAccent.alpha(0.15);
+                                    e.currentTarget.style.color = sidebarAccent.main;
                                   }}
                                   onMouseLeave={(e) => {
-                                    e.currentTarget.style.backgroundColor = formData.addressDistrict === district ? "rgba(255, 165, 0, 0.1)" : "transparent";
-                                    e.currentTarget.style.color = formData.addressDistrict === district ? "#FFA500" : "#fff";
+                                    e.currentTarget.style.backgroundColor = formData.addressDistrict === district ? sidebarAccent.alpha(0.1) : "transparent";
+                                    e.currentTarget.style.color = formData.addressDistrict === district ? sidebarAccent.main : "#fff";
                                   }}
                                 >
                                   {district}
@@ -3480,8 +3553,8 @@ const Sidebar = () => {
                               transition: "all 0.2s ease",
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.borderColor = "#FFA500";
-                              e.currentTarget.style.color = "#FFA500";
+                              e.currentTarget.style.borderColor = sidebarAccent.main;
+                              e.currentTarget.style.color = sidebarAccent.main;
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.borderColor = "#555";
@@ -3660,7 +3733,7 @@ const Sidebar = () => {
                               display: "flex",
                               justifyContent: "space-between",
                               alignItems: "center",
-                              border: openDropdown === "emailDomain" ? "1px solid #FFA500" : "1px solid transparent",
+                              border: openDropdown === "emailDomain" ? `1px solid ${sidebarAccent.main}` : "1px solid transparent",
                               transition: "all 0.2s ease",
                             }}
                           >
@@ -3704,19 +3777,19 @@ const Sidebar = () => {
                                   }}
                                   style={{
                                     padding: "12px 14px",
-                                    color: formData.emailDomain === domain ? "#FFA500" : "#fff",
-                                    backgroundColor: formData.emailDomain === domain ? "rgba(255, 165, 0, 0.1)" : "transparent",
+                                    color: formData.emailDomain === domain ? sidebarAccent.main : "#fff",
+                                    backgroundColor: formData.emailDomain === domain ? sidebarAccent.alpha(0.1) : "transparent",
                                     cursor: "pointer",
                                     transition: "all 0.15s ease",
                                     borderBottom: "1px solid #252836",
                                   }}
                                   onMouseEnter={(e) => {
-                                    e.currentTarget.style.backgroundColor = "rgba(255, 165, 0, 0.15)";
-                                    e.currentTarget.style.color = "#FFA500";
+                                    e.currentTarget.style.backgroundColor = sidebarAccent.alpha(0.15);
+                                    e.currentTarget.style.color = sidebarAccent.main;
                                   }}
                                   onMouseLeave={(e) => {
-                                    e.currentTarget.style.backgroundColor = formData.emailDomain === domain ? "rgba(255, 165, 0, 0.1)" : "transparent";
-                                    e.currentTarget.style.color = formData.emailDomain === domain ? "#FFA500" : "#fff";
+                                    e.currentTarget.style.backgroundColor = formData.emailDomain === domain ? sidebarAccent.alpha(0.1) : "transparent";
+                                    e.currentTarget.style.color = formData.emailDomain === domain ? sidebarAccent.main : "#fff";
                                   }}
                                 >
                                   {domain}
@@ -3731,7 +3804,7 @@ const Sidebar = () => {
                                 }}
                                 style={{
                                   padding: "12px 14px",
-                                  color: "#FFA500",
+                                  color: sidebarAccent.main,
                                   backgroundColor: "transparent",
                                   cursor: "pointer",
                                   transition: "all 0.15s ease",
@@ -3739,7 +3812,7 @@ const Sidebar = () => {
                                   fontWeight: 500,
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = "rgba(255, 165, 0, 0.15)";
+                                  e.currentTarget.style.backgroundColor = sidebarAccent.alpha(0.15);
                                 }}
                                 onMouseLeave={(e) => {
                                   e.currentTarget.style.backgroundColor = "transparent";
@@ -3795,8 +3868,8 @@ const Sidebar = () => {
                               transition: "all 0.2s ease",
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.borderColor = "#FFA500";
-                              e.currentTarget.style.color = "#FFA500";
+                              e.currentTarget.style.borderColor = sidebarAccent.main;
+                              e.currentTarget.style.color = sidebarAccent.main;
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.borderColor = "#555";
@@ -3902,7 +3975,7 @@ const Sidebar = () => {
                     style={{
                       width: "100%",
                       padding: "16px",
-                      backgroundColor: "#FFA500",
+                      backgroundColor: sidebarAccent.main,
                       border: "none",
                       borderRadius: "0",
                       color: "#1a1d29",
@@ -3926,6 +3999,7 @@ const Sidebar = () => {
       {/* 핸드폰 코멘트 모달 - 타크루 프로필용 (안내 팝업) */}
       {isPhoneCommentModalOpen && debugProfileType === "타크루" && (
         <div
+          className={`phone-comment-modal-overlay ${sidebarThemeClass}`.trim()}
           style={{
             position: "fixed",
             top: 0,
@@ -3940,14 +4014,14 @@ const Sidebar = () => {
           }}
         >
           <div
-            className="edit-modal-content"
+            className={`edit-modal-content ${sidebarThemeClass}`.trim()}
             onClick={(e) => e.stopPropagation()}
             style={{
               padding: "24px",
               width: "90%",
               maxWidth: "480px",
               boxShadow: "0 20px 60px rgba(0, 0, 0, 0.5)",
-              border: "1px solid #FFA500",
+              border: `1px solid ${sidebarAccent.main}`,
             }}
           >
             {/* 헤더 */}
@@ -4188,13 +4262,13 @@ const Sidebar = () => {
       )}
       {/* 연락 가능 시간대 도움말 모달 */}
       {isPhoneHelpModalOpen && (
-        <div className="help-modal-overlay" onClick={() => setIsPhoneHelpModalOpen(false)} style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100vh", background: "rgba(0, 0, 0, 0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2001 }}>
-          <div className="help-modal" onClick={(e) => e.stopPropagation()} style={{ width: "1024px", maxWidth: "1024px", height: "794px", maxHeight: "794px", border: "1px solid #ffa500", display: "flex", flexDirection: "column" as const, overflow: "hidden", position: "relative" }}>
-            <div className="help-modal-header" style={{ height: "153px", minHeight: "153px", maxHeight: "153px", flexShrink: 0, boxSizing: "border-box" as const, display: "flex", flexDirection: "column" as const, padding: "20px 24px", borderBottom: "1px solid rgba(255, 165, 0, 0.2)" }}>
+        <div className={`help-modal-overlay ${sidebarThemeClass}`.trim()} onClick={() => setIsPhoneHelpModalOpen(false)} style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100vh", background: "rgba(0, 0, 0, 0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2001 }}>
+          <div className={`help-modal ${sidebarThemeClass}`.trim()} onClick={(e) => e.stopPropagation()} style={{ width: "1024px", maxWidth: "1024px", height: "794px", maxHeight: "794px", border: `1px solid ${sidebarAccent.main}`, display: "flex", flexDirection: "column" as const, overflow: "hidden", position: "relative" }}>
+            <div className="help-modal-header" style={{ height: "153px", minHeight: "153px", maxHeight: "153px", flexShrink: 0, boxSizing: "border-box" as const, display: "flex", flexDirection: "column" as const, padding: "20px 24px", borderBottom: `1px solid ${sidebarAccent.alpha(0.2)}` }}>
               <div className="modal-header-top" style={{ display: "flex", alignItems: "center", width: "100%" }}>
                 <span style={{ fontSize: "20px" }}>🔎</span>
-                <h3 style={{ margin: 0, color: "#ffa500", fontSize: "2.0625rem", fontWeight: 700, flex: 1, marginLeft: "10px" }}>도움말</h3>
-                <button className="modal-close-btn" onClick={() => setIsPhoneHelpModalOpen(false)} style={{ background: "transparent", border: "none", color: "#ffa500", fontSize: "20px", cursor: "pointer" }}>
+                <h3 style={{ margin: 0, color: sidebarAccent.main, fontSize: "2.0625rem", fontWeight: 700, flex: 1, marginLeft: "10px" }}>도움말</h3>
+                <button className="modal-close-btn" onClick={() => setIsPhoneHelpModalOpen(false)} style={{ background: "transparent", border: "none", color: sidebarAccent.main, fontSize: "20px", cursor: "pointer" }}>
                   ✕
                 </button>
               </div>
@@ -4289,6 +4363,7 @@ const Sidebar = () => {
         {createPortal(
           <button
             onClick={() => setIsProfileOpen(true)}
+            className={sidebarThemeClass}
             style={{
               position: "fixed",
               left: 0,
@@ -4297,7 +4372,7 @@ const Sidebar = () => {
               zIndex: 9989,
               writingMode: "vertical-rl",
               textOrientation: "mixed",
-              background: isProfileOpen ? "transparent" : "linear-gradient(180deg, #FAAB07 0%, #e09600 100%)",
+              background: isProfileOpen ? "transparent" : sidebarAccent.gradient,
               color: "#000",
               fontSize: "12px",
               fontWeight: 800,
@@ -4306,7 +4381,7 @@ const Sidebar = () => {
               borderRadius: "0 8px 8px 0",
               cursor: "pointer",
               userSelect: "none" as const,
-              boxShadow: isProfileOpen ? "none" : "2px 2px 12px rgba(250, 171, 7, 0.3)",
+              boxShadow: isProfileOpen ? "none" : `2px 2px 12px ${sidebarAccent.alpha(0.3)}`,
               border: "none",
               fontFamily: "Pretendard, sans-serif",
               opacity: isProfileOpen ? 0 : 1,
@@ -4341,6 +4416,7 @@ const Sidebar = () => {
 
             {/* 슬라이드 패널 */}
             <div
+              className={sidebarThemeClass}
               style={{
                 position: "fixed",
                 top: 0,
@@ -4354,7 +4430,7 @@ const Sidebar = () => {
                 transition: "transform 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
                 overflowY: "auto",
                 overflowX: "hidden",
-                borderRight: isProfileOpen ? "1px solid #FAAB07" : "1px solid #333",
+                borderRight: isProfileOpen ? `1px solid ${sidebarAccent.main}` : "1px solid #333",
                 boxShadow: isProfileOpen ? "4px 0 20px rgba(0, 0, 0, 0.5)" : "none",
               }}
             >

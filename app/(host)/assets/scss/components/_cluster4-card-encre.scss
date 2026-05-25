@@ -585,3 +585,221 @@
     }
   }
 }
+
+// =================================================================
+// Phase D2 — cluster-4-card subclass modal deep override (Encre).
+// _cluster4-card-px.scss 의 Phase D2 블록 1:1 mirror, color rgba 만 EC.
+// 보존: review star gold / required-mark / 외곽 (위 .section-modal 블록) /
+// layout / animation.
+// =================================================================
+
+.encre-theme {
+  .section-modal-weekly-review-form {
+    .modal-header-top h3 {
+      color: var(--org-accent-soft) !important;
+    }
+    .modal-close-btn:hover {
+      color: var(--org-accent) !important;
+    }
+    .review-week-info .week-info-text {
+      color: var(--org-accent) !important;
+    }
+    textarea:focus,
+    input:focus {
+      border-color: rgba(255, 75, 112, 0.5) !important;
+    }
+    .modal-footer-right button[type="submit"],
+    .modal-footer-right .modal-save-btn,
+    .modal-footer-right .modal-edit-btn,
+    .save-btn {
+      background: var(--org-accent) !important;
+      border-color: var(--org-accent) !important;
+      color: #111 !important;
+
+      &:hover {
+        background: var(--org-accent-soft) !important;
+      }
+    }
+  }
+
+  .section-modal.section-modal-work-edit,
+  .section-modal.section-modal-colleague-edit,
+  .section-modal.section-modal-reputation-form {
+    .modal-header-top h3,
+    [class*="modal-header"] h3 {
+      color: var(--org-accent-soft) !important;
+    }
+    .modal-close-btn:hover {
+      color: var(--org-accent) !important;
+    }
+    input:focus,
+    textarea:focus,
+    select:focus {
+      border-color: var(--org-accent) !important;
+    }
+    .modal-save-btn,
+    .modal-edit-btn,
+    button[type="submit"]:not(.cancel-btn):not(.modal-cancel-btn) {
+      background: var(--org-accent) !important;
+      border-color: var(--org-accent) !important;
+
+      &:hover {
+        background: var(--org-accent-soft) !important;
+      }
+    }
+    .modal-cancel-btn,
+    .modal-reset-btn {
+      border-color: var(--org-accent) !important;
+      color: var(--org-accent) !important;
+    }
+  }
+
+  .section-modal.reputation-view-modal {
+    .modal-header-top h3,
+    [class*="modal-header"] h3 {
+      color: var(--org-accent-soft) !important;
+    }
+    .modal-close-btn:hover {
+      color: var(--org-accent) !important;
+    }
+    .reputation-content-box,
+    .workinfo-personal-card,
+    .reputation-detail-highlight {
+      &.highlighted {
+        background: rgba(255, 75, 112, 0.2) !important;
+      }
+    }
+  }
+
+  // =================================================================
+  // Phase D4-B — cluster-4-card modal body inner accents (Encre, reconciled).
+  // _cluster4-card-px.scss Phase D4-B 블록 1:1 mirror, rgba 만 EC.
+  // =================================================================
+
+  .section-modal.section-modal-work-edit,
+  .section-modal.section-modal-colleague-edit,
+  .section-modal.section-modal-reputation-form,
+  .section-modal-weekly-review-form {
+    .main-title {
+      color: var(--org-accent) !important;
+    }
+    .content-title {
+      color: var(--org-accent) !important;
+    }
+    .modal-code-badge {
+      background: rgba(255, 75, 112, 0.2) !important;
+      color: var(--org-accent) !important;
+
+      &,
+      * {
+        color: var(--org-accent) !important;
+      }
+    }
+    .modal-card-tag {
+      &:not(.tag--cyan):not(.tag--red):not(.tag--success):not(.tag--warn) {
+        color: var(--org-accent) !important;
+      }
+    }
+    .modal-input-group {
+      .section-label {
+        color: var(--org-accent) !important;
+      }
+    }
+    .link-url:focus {
+      border-color: var(--org-accent) !important;
+      color: var(--org-accent-soft) !important;
+    }
+    .link-desc:focus {
+      border-color: var(--org-accent) !important;
+    }
+    .output-links-buttons .link-button {
+      &:hover {
+        border-color: var(--org-accent) !important;
+        color: var(--org-accent) !important;
+      }
+    }
+  }
+
+  .section-modal.work-view-modal,
+  .section-modal.reputation-view-modal,
+  .section-modal.colleague-view-modal {
+    .workinfo-image-grid {
+      .workinfo-image-slot {
+        border-color: rgba(255, 75, 112, 0.3) !important;
+      }
+      .image-preview {
+        border-color: rgba(255, 75, 112, 0.3) !important;
+      }
+      .image-action-btn {
+        color: var(--org-accent) !important;
+        border-color: var(--org-accent) !important;
+
+        &:hover {
+          background: rgba(255, 75, 112, 0.15) !important;
+        }
+        &.active {
+          background: var(--org-accent) !important;
+          color: #fff !important;
+        }
+      }
+    }
+    .field-label {
+      color: var(--org-accent) !important;
+    }
+    .link-dot {
+      background: var(--org-accent) !important;
+    }
+    .link-open-btn {
+      &:hover {
+        color: var(--org-accent) !important;
+        border-color: var(--org-accent) !important;
+      }
+    }
+  }
+
+  .section-modal-overlay.encre-theme .section-modal-weekly-review-form {
+    .field-label,
+    label.required {
+      color: var(--org-accent) !important;
+    }
+    .field-value {
+      &.accent,
+      &.themed {
+        color: var(--org-accent) !important;
+      }
+    }
+    .char-count:not(.over-limit):not(.error),
+    .limit-hint {
+      color: var(--org-accent-soft) !important;
+    }
+    .tag-badge.tag-role {
+      background: rgba(255, 75, 112, 0.15) !important;
+      border-color: rgba(255, 75, 112, 0.3) !important;
+      color: var(--org-accent) !important;
+    }
+  }
+
+  // ── Phase D3 — inline section-modal outer chrome (defense) ──
+  // _cluster4-card-px.scss Phase D3 블록과 1:1 mirror.
+  .section-modal.section-modal-work-edit,
+  .section-modal.section-modal-colleague-edit,
+  .section-modal.section-modal-reputation-form,
+  .section-modal.reputation-view-modal,
+  .section-modal-weekly-review-form {
+    border-color: var(--org-accent) !important;
+    box-shadow: 0px 0px 60px 0px rgba(255, 75, 112, 0.15) !important;
+  }
+  .section-modal.section-modal-work-edit::before,
+  .section-modal.section-modal-work-edit::after,
+  .section-modal.section-modal-colleague-edit::before,
+  .section-modal.section-modal-colleague-edit::after,
+  .section-modal.section-modal-reputation-form::before,
+  .section-modal.section-modal-reputation-form::after,
+  .section-modal.reputation-view-modal::before,
+  .section-modal.reputation-view-modal::after,
+  .section-modal-weekly-review-form::before,
+  .section-modal-weekly-review-form::after {
+    border-color: var(--org-accent) !important;
+  }
+}
+

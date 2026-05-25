@@ -108,7 +108,7 @@
     right: 0;
     height: 35px;
     background:
-      linear-gradient(to right, rgba(0, 0, 0, var(--identity-tab-overlay, 0.45)), rgba(250, 171, 7, 0.75)),
+      linear-gradient(to right, rgba(0, 0, 0, var(--identity-tab-overlay, 0.45)), var(--identity-tab-accent, rgba(250, 171, 7, 0.75))),
       var(--identity-tab-bg) center 42% / cover no-repeat;
     z-index: 1;
   }
@@ -693,6 +693,8 @@
     position: relative;
 
     // 왼쪽 금색 바 - 시안 Vector 9.svg (75px, round cap)
+    // Phase D5-D: var(--org-accent-soft) cascade — PX 라우트에선 #B2FF8F,
+    // EC 라우트에선 #FF98A6, 원본/non-themed 라우트에선 fallback #ffc300 유지.
     &::before {
       content: "";
       position: absolute;
@@ -701,7 +703,7 @@
       transform: translateY(-50%);
       width: 2px;
       height: 75px;
-      background: #ffc300;
+      background: var(--org-accent-soft, #ffc300);
       border-radius: 1px;
     }
 
@@ -1084,6 +1086,7 @@
         height: 36px;
         border-radius: 0;
         overflow: hidden;
+        transform: translateY(-4px);
 
         img {
           display: block;
@@ -1096,6 +1099,7 @@
       .activity-content {
         flex: 1;
         padding-left: 0;
+        transform: translateY(-4px);
 
         .activity-line {
           display: flex;
@@ -1211,24 +1215,33 @@
   // Skills
   // Skills — 피그마: 4열 가로 배치, 각 카드는 세로(아이콘→숫자+단위→라벨)
   .resume-skills {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     align-items: flex-start;
-    justify-content: center;
-    gap: 18px;
-    padding: 30px 0 0;
+    padding: 30px 17px 0 28px;
     margin: 0;
     width: 100%;
     position: relative;
     z-index: 3;
+    box-sizing: border-box;
 
     .skill-card {
       display: flex;
       flex-direction: column;
       align-items: center;
+      justify-self: center;
       position: relative;
       background: transparent;
       border: none;
       padding: 0;
+
+      &:first-child {
+        justify-self: start;
+      }
+
+      &:last-child {
+        justify-self: end;
+      }
 
       .skill-icon {
         width: 34px;

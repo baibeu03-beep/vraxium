@@ -20,7 +20,23 @@
 // =============================================================
 
 .cluster-px-theme,
-.resume-card.px-theme {
+.resume-card.px-theme,
+.phalanx-theme {
+  // Phase D5-C — `.phalanx-theme` 추가.
+  //
+  // 원인: `/crews/page.tsx:297` 가 `<main class="phalanx-theme">` 부착 →
+  // 본 토큰 selector 가 `.cluster-px-theme` 만 인식해 cascade 실패 → resume-
+  // card / sidebar 등 SCSS-driven 영역이 PX route 임에도 yellow fallback.
+  //
+  // EC 측은 `_theme-tokens.scss:22` 가 `.encre-theme,` 자체를 selector 로
+  // 가지고 `/crews?org=encre` 의 `<main class="encre-theme">` 와 자동 일치
+  // → 본 누락은 PX 한정 비대칭.
+  //
+  // `.phalanx-theme` 추가만으로 `/crews?org=phalanx` 의 모든 PX token cascade
+  // (--org-accent, --org-accent-soft, --org-accent-glow, --modal-* 등) 가
+  // `/cluster-*-px` 와 동일하게 동작. _crews-phalanx.scss 의 기존 `.phalanx-
+  // theme` rule 과는 별개의 CSS 변수 정의만 추가이므로 충돌 0.
+  //
   // Theme-agnostic canonical (Phase A 추가) — 신규 popup/modal/공통 override
   // 는 본 --org-* 변수만 참조한다. PX/EC 양쪽 wrapper 가 동일 이름으로
   // 노출하므로 selector 중복 없이 한 selector 안에서 var(--org-accent) 한
@@ -51,6 +67,11 @@
   --modal-divider-color: rgba(30, 149, 3, 0.25);
   --modal-close-hover-color: var(--org-accent);
   --modal-scrollbar-thumb: var(--org-accent);
+
+  // Phase D5-D — resume-card Identity-Core 탭 우측 그라데이션 stop.
+  // _resume-card.scss:111 의 `var(--identity-tab-accent, rgba(250,171,7,0.75))`
+  // 가 본 토큰을 참조. 원본 yellow alpha 0.75 와 동등한 PX rgba.
+  --identity-tab-accent: rgba(30, 149, 3, 0.75);
 }
 
 // =============================================================

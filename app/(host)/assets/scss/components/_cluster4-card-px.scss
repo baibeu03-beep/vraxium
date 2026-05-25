@@ -703,3 +703,280 @@
     }
   }
 }
+
+// =================================================================
+// Phase D2 — cluster-4-card subclass modal deep override (PX).
+//
+// _cluster4-week.scss 의 modal-specific 블록(.section-modal-weekly-review-form
+// L13520, .section-modal-work-edit L5194, .section-modal-colleague-edit L5201,
+// .section-modal.section-modal-reputation-form L13382, .reputation-view-modal
+// L12080/12977/13031) 안쪽에 .modal-header-top h3 / .modal-close-btn:hover /
+// textarea:focus / .modal-save-btn / 등이 자체 셀렉터 깊이로 yellow 를 박아둔
+// 영역. 위쪽 `.cluster-px-theme .section-modal {...}` 글로벌 override 보다
+// base specificity 가 더 높아 cascade 가 닿지 않는다 → 동일 깊이로 mirror.
+//
+// 보존:
+//   - .star-rating i / .rating-text (review star gold — semantic)
+//   - .required-mark / #e74c3c (validation red)
+//   - .section-modal 외곽 border/glow (위 11번 블록에서 이미 처리됨)
+//   - layout / size / animation / open-close logic
+// =================================================================
+
+.cluster-px-theme {
+  // ── weeklyReviewModal (portal) ──
+  // 본 modal 은 createPortal 로 document.body 직속 렌더 + Phase C 에서 root
+  // 에 cluster-px-theme 클래스를 결합. 따라서 .cluster-px-theme descendant
+  // selector 도 portal 내부에 cascade 된다 (root 자체에 클래스가 있으므로).
+  .section-modal-weekly-review-form {
+    .modal-header-top h3 {
+      color: var(--org-accent-soft) !important;
+    }
+    .modal-close-btn:hover {
+      color: var(--org-accent) !important;
+    }
+    .review-week-info .week-info-text {
+      color: var(--org-accent) !important;
+    }
+    textarea:focus,
+    input:focus {
+      border-color: rgba(30, 149, 3, 0.5) !important;
+    }
+    // 저장/완료 등 footer action bg #faab07 (L14060/14104)
+    .modal-footer-right button[type="submit"],
+    .modal-footer-right .modal-save-btn,
+    .modal-footer-right .modal-edit-btn,
+    .save-btn {
+      background: var(--org-accent) !important;
+      border-color: var(--org-accent) !important;
+      color: #111 !important;
+
+      &:hover {
+        background: var(--org-accent-soft) !important;
+      }
+    }
+  }
+
+  // ── work-edit (4개 modal 공유) · colleague-edit · reputation-form ──
+  .section-modal.section-modal-work-edit,
+  .section-modal.section-modal-colleague-edit,
+  .section-modal.section-modal-reputation-form {
+    .modal-header-top h3,
+    [class*="modal-header"] h3 {
+      color: var(--org-accent-soft) !important;
+    }
+    .modal-close-btn:hover {
+      color: var(--org-accent) !important;
+    }
+    input:focus,
+    textarea:focus,
+    select:focus {
+      border-color: var(--org-accent) !important;
+    }
+    .modal-save-btn,
+    .modal-edit-btn,
+    button[type="submit"]:not(.cancel-btn):not(.modal-cancel-btn) {
+      background: var(--org-accent) !important;
+      border-color: var(--org-accent) !important;
+
+      &:hover {
+        background: var(--org-accent-soft) !important;
+      }
+    }
+    .modal-cancel-btn,
+    .modal-reset-btn {
+      border-color: var(--org-accent) !important;
+      color: var(--org-accent) !important;
+    }
+  }
+
+  // ── reputation-view-modal (view 전용) ──
+  // _cluster4-week.scss:13031~13165 에 inner accent (배경 rgba(255,165,0,0.2)
+  // L13134) — 강조 박스 1곳. 외곽은 위 .section-modal 룰에서 처리됨.
+  .section-modal.reputation-view-modal {
+    .modal-header-top h3,
+    [class*="modal-header"] h3 {
+      color: var(--org-accent-soft) !important;
+    }
+    .modal-close-btn:hover {
+      color: var(--org-accent) !important;
+    }
+    // L13134 의 강조 배경
+    .reputation-content-box,
+    .workinfo-personal-card,
+    .reputation-detail-highlight {
+      &.highlighted {
+        background: rgba(30, 149, 3, 0.2) !important;
+      }
+    }
+  }
+
+  // =================================================================
+  // Phase D4-B — cluster-4-card modal body inner accents (PX, reconciled).
+  //
+  // 정정 사유: Phase D4 가 .section-modal-work-edit 단일 scope 에서 일부
+  // dead selector (upload-frame, pin-icon, loading-text, dot-indicator,
+  // bookmark-icon, modal-action-btn 등) + wrong-modal selector (image-grid /
+  // image-slot / image-action-btn 은 실제로 .work-view-modal scope 에 존재)
+  // 를 사용. 본 블록에서 actual JSX className 기준 재작성.
+  //
+  // 실제 JSX className 검증 (Cluster4CardContent.tsx):
+  //   work-edit (.section-modal-work-edit) line 7091-7193 — sub-title/output-
+  //     link 만 존재. image-grid/upload-icon/loading-text 없음.
+  //   work-view (.section-modal.work-view-modal.workinfo-view-modal /
+  //     workexp-view / workability-view / workcareer-view) line 8520+ — 좌측
+  //     인적사항/output + 우측 image-grid. image-action-btn 존재.
+  //   weeklyReview (.section-modal-weekly-review-form) line 10454+ — .field-
+  //     label / .field-value / personal-* / tag-badge 존재.
+  // =================================================================
+
+  // ── work-edit (Sub Title text edit + Output Link buttons) ──
+  // 실제 JSX className: .section-label (NOT .field-label), .modal-input-group,
+  // .link-num, .link-url, .link-button, .output-links-buttons
+  .section-modal.section-modal-work-edit,
+  .section-modal.section-modal-colleague-edit,
+  .section-modal.section-modal-reputation-form,
+  .section-modal-weekly-review-form {
+    .main-title {
+      color: var(--org-accent) !important;
+    }
+    .content-title {
+      color: var(--org-accent) !important;
+    }
+    .modal-code-badge {
+      background: rgba(30, 149, 3, 0.2) !important;
+      color: var(--org-accent) !important;
+
+      &,
+      * {
+        color: var(--org-accent) !important;
+      }
+    }
+    .modal-card-tag {
+      &:not(.tag--cyan):not(.tag--red):not(.tag--success):not(.tag--warn) {
+        color: var(--org-accent) !important;
+      }
+    }
+    .modal-input-group {
+      .section-label {
+        color: var(--org-accent) !important;
+      }
+    }
+    .link-url:focus {
+      border-color: var(--org-accent) !important;
+      color: var(--org-accent-soft) !important;
+    }
+    .link-desc:focus {
+      border-color: var(--org-accent) !important;
+    }
+    .output-links-buttons .link-button {
+      &:hover {
+        border-color: var(--org-accent) !important;
+        color: var(--org-accent) !important;
+      }
+    }
+  }
+
+  // ── view modals — 우측 image grid + image actions ──
+  // 실제 JSX: .section-modal.work-view-modal.workinfo-view-modal /
+  // .workexp-view-modal / .workability-view-modal / .workcareer-view-modal /
+  // .reputation-view-modal / .colleague-view-modal
+  // Inner: .workinfo-image-grid > .workinfo-image-slot.image-slot >
+  //         .image-actions-overlay > .image-action-btn / .image-preview
+  .section-modal.work-view-modal,
+  .section-modal.reputation-view-modal,
+  .section-modal.colleague-view-modal {
+    .workinfo-image-grid {
+      .workinfo-image-slot {
+        border-color: rgba(30, 149, 3, 0.3) !important;
+      }
+      .image-preview {
+        border-color: rgba(30, 149, 3, 0.3) !important;
+      }
+      .image-action-btn {
+        color: var(--org-accent) !important;
+        border-color: var(--org-accent) !important;
+
+        &:hover {
+          background: rgba(30, 149, 3, 0.15) !important;
+        }
+        &.active {
+          background: var(--org-accent) !important;
+          color: #fff !important;
+        }
+      }
+    }
+    // .field-label / .field-value 는 view modal 에 실제 존재 (line 8536+ 등)
+    .field-label {
+      color: var(--org-accent) !important;
+    }
+    // .link-dot / .link-open-btn — output link list 의 dot/button accent
+    .link-dot {
+      background: var(--org-accent) !important;
+    }
+    .link-open-btn {
+      &:hover {
+        color: var(--org-accent) !important;
+        border-color: var(--org-accent) !important;
+      }
+    }
+  }
+
+  // ── weeklyReviewModal (portal) inner accents ──
+  // 실제 JSX className: .field-label / .field-value / .char-count / .limit-hint
+  // / .personal-* / .tag-badge / .review-content-section
+  .section-modal-overlay.cluster-px-theme .section-modal-weekly-review-form {
+    .field-label,
+    label.required {
+      color: var(--org-accent) !important;
+    }
+    .field-value {
+      &.accent,
+      &.themed {
+        color: var(--org-accent) !important;
+      }
+    }
+    .char-count:not(.over-limit):not(.error),
+    .limit-hint {
+      color: var(--org-accent-soft) !important;
+    }
+    // .tag-badge.tag-role 만 themable (yellow). tag-keyword 는 cyan semantic.
+    .tag-badge.tag-role {
+      background: rgba(30, 149, 3, 0.15) !important;
+      border-color: rgba(30, 149, 3, 0.3) !important;
+      color: var(--org-accent) !important;
+    }
+  }
+
+  // ── Phase D3 — inline section-modal outer chrome (defense) ──
+  // 본 블록은 TOP-LEVEL `.cluster-px-theme` 스코프라 `.cluster4-card-content`
+  // ancestor 를 요구하지 않는다. 기존 .cluster4-card-content nesting (위 11번
+  // 블록 L284) 와 중복이지만 cascade order 가 본 블록이 뒤라 동일 specificity
+  // 일 때 본 블록이 이긴다. 어떤 이유로든 nested override 가 매칭되지 않는
+  // 경우(SCSS compile 이슈 / wrapper 클래스 누락 등) 대비.
+  //
+  // 적용 대상: 모든 inline section-modal subclass (work-edit / colleague-edit /
+  // reputation-form / reputation-view / weekly-review-form (portal)).
+  // base .cluster4-card-content .section-modal { border:1px solid #ffa500 }
+  // (specificity 0,2,0) 를 0,3,0 + !important 로 이김.
+  .section-modal.section-modal-work-edit,
+  .section-modal.section-modal-colleague-edit,
+  .section-modal.section-modal-reputation-form,
+  .section-modal.reputation-view-modal,
+  .section-modal-weekly-review-form {
+    border-color: var(--org-accent) !important;
+    box-shadow: 0px 0px 60px 0px rgba(30, 149, 3, 0.15) !important;
+  }
+  .section-modal.section-modal-work-edit::before,
+  .section-modal.section-modal-work-edit::after,
+  .section-modal.section-modal-colleague-edit::before,
+  .section-modal.section-modal-colleague-edit::after,
+  .section-modal.section-modal-reputation-form::before,
+  .section-modal.section-modal-reputation-form::after,
+  .section-modal.reputation-view-modal::before,
+  .section-modal.reputation-view-modal::after,
+  .section-modal-weekly-review-form::before,
+  .section-modal-weekly-review-form::after {
+    border-color: var(--org-accent) !important;
+  }
+}
+

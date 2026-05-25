@@ -15,6 +15,7 @@ import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
 import { isPxRoute, isEcRoute, withPxRoute, getThemeClass } from "@/lib/cluster-route";
+import { REPUTATION_KEYWORD_GROUPS } from "@/lib/reputation-keywords";
 import DetailLogModal from "./DetailLogModal";
 import confetti from "canvas-confetti";
 import HelpModalBody from "@/components/shared/HelpModalBody";
@@ -136,99 +137,6 @@ const stripFieldLabel = (value: string | null | undefined, labels: string[]) => 
   const matchedLabel = labels.find((label) => text.endsWith(label));
   return matchedLabel ? text.slice(0, -matchedLabel.length).trim() || text : text;
 };
-
-// ============================================================================
-// reputation-form 중첩 모달 — 키워드 선택 (5군락 100개)
-// TODO: [백엔드 작업 필요] reputationKeywords DB를 5군락 구조로 매핑 후 대체
-// ============================================================================
-interface KeywordGroup {
-  id: string;
-  color: "blue" | "green" | "yellow" | "orange" | "red";
-  emoji: string;
-  title: string;
-  count: number;
-  keywords: string[];
-}
-
-const KEYWORD_GROUPS: KeywordGroup[] = [
-  {
-    id: "group1",
-    color: "blue",
-    emoji: "🔵",
-    title: "도구 · 기술 · 시스템 활용 역량",
-    count: 36,
-    keywords: [
-      "노션 유망주",
-      "노션 마스터",
-      "인스타 유망주",
-      "인스타 마스터",
-      "유튜브 유망주",
-      "유튜브 마스터",
-      "AI 유망주",
-      "AI 마스터",
-      "블로그 유망주",
-      "블로그 마스터",
-      "미드저니 유망주",
-      "미드저니 마스터",
-      "깃업 유망주",
-      "깃업 마스터",
-      "노코드 유망주",
-      "노코드 마스터",
-      "옵시디언 유망주",
-      "옵시디언 마스터",
-      "파워포인트",
-      "엑셀 유망주",
-      "엑셀 마스터",
-      "카카오 생태계",
-      "네이버 생태계",
-      "구글 생태계",
-      "퍼블리싱",
-      "UI / UX 기획",
-      "웹 develop",
-      "앱 develop",
-      "서버 관리",
-      "데이터 처리",
-      "데이터 분석",
-      "데이터 해석",
-      "AI 프롬프트",
-      "시스템 구축력",
-      "도구 사용력",
-      "기술 습득력",
-    ],
-  },
-  {
-    id: "group2",
-    color: "green",
-    emoji: "🟢",
-    title: "콘텐츠 · 표현 · 메시지 생산 역량",
-    count: 16,
-    keywords: ["콘텐츠", "카드 콘텐츠", "텍스트 콘텐츠", "스토리텔링", "동영상 숏폼", "동영상 롱폼", "릴스 특화", "쇼츠 특화", "캐치프레이즈", "슬로건", "표현력", "언어 능력", "설득력", "상상력", "유머와 재미", "창의성"],
-  },
-  {
-    id: "group3",
-    color: "yellow",
-    emoji: "🟡",
-    title: "마케팅 · 확산 · 영향력 설계",
-    count: 10,
-    keywords: ["퍼포먼스", "브랜딩 마케팅", "바이럴 마케팅", "커뮤니티", "연관 검색어", "구글 트렌드", "정보력", "사회성", "소통력", "공감력"],
-  },
-  {
-    id: "group4",
-    color: "orange",
-    emoji: "🟠",
-    title: "사고 · 분석 · 구조화 역량",
-    count: 16,
-    keywords: ["인지력", "관찰력", "이해력", "논리력", "상황 추론력", "문제 정의력", "연구력", "업무 분석력", "업무 기획력", "계획력", "구조화", "도식화", "범위화", "항목화", "자료화", "변칙성"],
-  },
-  {
-    id: "group5",
-    color: "red",
-    emoji: "🔴",
-    title: "태도 · 실행 · 지속성 기반 역량",
-    count: 22,
-    keywords: ["지속성", "기민성", "신뢰성", "성장성", "유연성", "안정성", "위기 대응성", "학습력", "지도력", "소속감", "적극성", "자신감", "헌신성", "행동력", "회복력", "몰입력", "잠재력", "업무 진행력", "업무 관리력", "수용력", "지구력", "강인한 체력"],
-  },
-];
 
 // 기업 로고 클릭 → 기업 홈페이지 1번 링크 새 탭. URL 없으면 동작 안 함.
 const handleCompanyLogoClick = (e: React.MouseEvent, url: string | null | undefined) => {
@@ -8311,7 +8219,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   </div>
 
                   <div className="section-modal-body keyword-select-body">
-                    {KEYWORD_GROUPS.map((group, gIdx) => (
+                    {REPUTATION_KEYWORD_GROUPS.map((group, gIdx) => (
                       <div key={group.id} className={`keyword-group group-${group.color}`}>
                         <h4 className="group-title">
                           [군락 {gIdx + 1}] {group.title}

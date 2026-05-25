@@ -19,6 +19,60 @@
 // CSS variable 로 처리되므로 본 파일에서 별도 selector 가 필요 없다.
 // =============================================================
 
+// --- Phase D3 — section-modal portal outer chrome (PX & EC) ----
+//
+// 정적 분석 결과:
+//   - inline section-modal 의 outer border 는 `.weekly-card-detail
+//     .section-modal { border: 1px solid #ffa500 }` (_cluster4-week.scss:5106
+//     안 ancestor .weekly-card-detail line 975) 와 `.cluster4-card-content
+//     .section-modal` (_cluster4-season.scss:5650) 두 곳에서 출발한다.
+//   - PX/EC override 도 동일한 ancestor 안에 nesting (`_cluster4-card-px.scss`
+//     L284 `.cluster-px-theme .cluster4-card-content .section-modal`) — inline
+//     modal 에는 정상 매칭/!important 우선.
+//   - 단, weeklyReviewModal 은 createPortal 로 document.body 직속이라
+//     `.weekly-card-detail` / `.cluster4-card-content` ancestor 가 둘 다 없다.
+//     base 룰도 매칭 안 되지만, PX override 도 매칭 안 되어 outer chrome 이
+//     theme 톤으로 칠해지지 않는다.
+//
+// 해결: portal root (`.section-modal-overlay`) 에 Phase C 에서 결합한
+// `.cluster-px-theme` / `.encre-theme` 클래스를 활용해 combined selector 로
+// portal 안의 .section-modal · .section-modal-weekly-review-form 외곽
+// chrome (border + glow + corner deco ::before/::after) 을 직접 그린다.
+//
+// 본 selector 는 portal 전용 — inline modal 은 .section-modal-overlay 에
+// theme class 가 결합되지 않으므로 매칭되지 않는다 (regression 0).
+//
+// 보존: layout (width/height/display/flex/border-radius/animation) · semantic
+// 별점 gold · validation red · 헤더/푸터 divider 텍스트 (Phase C 토큰).
+
+.section-modal-overlay.cluster-px-theme > .section-modal,
+.section-modal-overlay.cluster-px-theme .section-modal,
+.section-modal-overlay.cluster-px-theme .section-modal-weekly-review-form {
+  border: 1px solid var(--org-accent) !important;
+  box-shadow: 0px 0px 60px 0px var(--org-accent-glow) !important;
+}
+
+.section-modal-overlay.cluster-px-theme .section-modal::before,
+.section-modal-overlay.cluster-px-theme .section-modal::after,
+.section-modal-overlay.cluster-px-theme .section-modal-weekly-review-form::before,
+.section-modal-overlay.cluster-px-theme .section-modal-weekly-review-form::after {
+  border-color: var(--org-accent) !important;
+}
+
+.section-modal-overlay.encre-theme > .section-modal,
+.section-modal-overlay.encre-theme .section-modal,
+.section-modal-overlay.encre-theme .section-modal-weekly-review-form {
+  border: 1px solid var(--org-accent) !important;
+  box-shadow: 0px 0px 60px 0px var(--org-accent-glow) !important;
+}
+
+.section-modal-overlay.encre-theme .section-modal::before,
+.section-modal-overlay.encre-theme .section-modal::after,
+.section-modal-overlay.encre-theme .section-modal-weekly-review-form::before,
+.section-modal-overlay.encre-theme .section-modal-weekly-review-form::after {
+  border-color: var(--org-accent) !important;
+}
+
 // --- DetailLogModal: PX theme ---------------------------------
 .section-modal-overlay.cluster-px-theme {
   // _global.scss 의 [class*="modal-close"]:hover 가 #ffa500 !important 라
