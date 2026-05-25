@@ -9,6 +9,7 @@ import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { isAdminEmail } from "@/lib/admin";
+import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { isPxRoute, isEcRoute } from "@/lib/cluster-route";
 import { usePopup } from "@/components/ui/popup";
 import { logEvent } from "@/utils/blackScreenDiagnostics";
@@ -1602,15 +1603,16 @@ const Cluster2Content = () => {
     return `${year}.${month}.${day} ${hour}:${minute}`;
   };
 
+  // Cluster2 Club Review Link 잠금/허용 메시지.
+  //   - 잠금 상태(loading / not_started / expired / not_granted 등)는 사유 노출 없이
+  //     EDIT_WINDOW_LOCKED_MESSAGE 로 통일 (cluster3 Output/Detail 과 동일 톤).
+  //   - 열림 상태에서는 expiresAt 이 있으면 "...까지 작성 가능" 안내를 유지.
   const getReviewPermissionMessage = () => {
-    if (reviewPermissionLoading) return "권한 확인 중...";
     if (canEditClubReview) {
       const expiresAt = formatReviewPermissionDate(clubReviewPermissionExpiresAt);
       return expiresAt ? `${expiresAt}까지 작성 가능` : "작성 가능";
     }
-    if (clubReviewPermissionReason === "not_started") return "아직 작성 기간이 아닙니다";
-    if (clubReviewPermissionReason === "expired") return "작성 기간이 종료되었습니다";
-    return "관리자 승인 필요";
+    return EDIT_WINDOW_LOCKED_MESSAGE;
   };
 
   // 리뷰 링크 저장

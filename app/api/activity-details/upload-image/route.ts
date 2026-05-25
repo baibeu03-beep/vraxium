@@ -73,7 +73,24 @@ export async function POST(request: Request) {
 
     if (uploadError) {
       console.error("activity-details 이미지 업로드 오류:", uploadError);
-      return NextResponse.json({ error: "이미지 업로드에 실패했습니다." }, { status: 500 });
+      // 진단 (2026-05) — bucket 부재 / 권한 / RLS 등 supabase storage 실제 오류를
+      // 브라우저 Network 탭으로 직접 보이게 한다. 운영 모드는 generic 메시지 유지.
+      const isProd = process.env.NODE_ENV === "production";
+      const detail =
+        typeof (uploadError as { message?: unknown })?.message === "string"
+          ? (uploadError as { message: string }).message
+          : "unknown";
+      return NextResponse.json(
+        isProd
+          ? { error: "이미지 업로드에 실패했습니다." }
+          : {
+              error: "이미지 업로드에 실패했습니다.",
+              stage: "supabase.storage.upload",
+              bucket: BUCKET,
+              detail,
+            },
+        { status: 500 },
+      );
     }
 
     const { data: urlData } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(fileName);
@@ -81,6 +98,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, url: urlData.publicUrl, fileName });
   } catch (err) {
     console.error("activity-details 이미지 업로드 API 오류:", err);
-    return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
+    const isProd = process.env.NODE_ENV === "production";
+    const detail = err instanceof Error ? err.message : "unknown";
+    return NextResponse.json(
+      isProd
+        ? { error: "서버 오류가 발생했습니다." }
+        : { error: "서버 오류가 발생했습니다.", stage: "handler", detail },
+      { status: 500 },
+    );
   }
 }

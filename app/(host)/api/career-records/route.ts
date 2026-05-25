@@ -1,9 +1,17 @@
 import { createAdminClient } from '@/lib/supabase-server'
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 
 export const dynamic = "force-dynamic"
 
 // GET: 사용자의 경력 기록 조회 (프로젝트 정보 포함)
+//
+// 권한 정책 (2026-05-22 변경):
+//   - cluster-4-card peer-view 가시화를 위해 owner-or-admin 게이트를 제거하고
+//     "로그인 사용자면 누구나 조회 가능" 으로 완화. season-reputations GET 패턴과 동일.
+//   - 응답에 PII (email/phone/auth_email 등) 가 노출되지 않음을 사전 점검 후 적용.
+//   - mutation (없음 — 이 라우트는 GET 전용) / 작성기간 게이트는 무관.
 export async function GET(request: NextRequest) {
   try {
     const supabaseAdmin = createAdminClient()
@@ -15,6 +23,15 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('user_id')
     const weekId = searchParams.get('week_id')
     const seasonId = searchParams.get('season_id')
+
+    // 로그인만 검증 — 타 크루 카드 진입(peer-view) 허용.
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
+    }
+
+    // user_id 가 주어졌으면 그 유저 기준으로 조회, 없으면 프로젝트 마스터만 반환.
+    const effectiveUserId: string | null = userId || null
 
     // 주차별 프로젝트와 사용자 기록을 함께 조회
     if (weekId) {
@@ -48,13 +65,13 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: projectsError.message }, { status: 500 })
       }
 
-      // 2. 해당 사용자의 해당 주차 경력 기록 조회 (userId가 있는 경우만)
+      // 2. 해당 사용자의 해당 주차 경력 기록 조회 (effectiveUserId가 있는 경우만)
       let records: any[] = []
-      if (userId) {
+      if (effectiveUserId) {
         const { data, error: recordsError } = await supabaseAdmin
           .from('career_records')
           .select('*')
-          .eq('user_id', userId)
+          .eq('user_id', effectiveUserId)
           .eq('week_id', weekId)
 
         if (recordsError) {
@@ -96,7 +113,7 @@ export async function GET(request: NextRequest) {
 
           // 사용자 기록 상태
           record_id: userRecord?.id || null,
-          user_id: userId,
+          user_id: effectiveUserId,
           enhancement_status: userRecord?.enhancement_status || 'not_applicable',
           grade: userRecord?.grade || null,
           grade_points: userRecord?.grade_points || null,
@@ -124,7 +141,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 시즌별 또는 전체 조회 (userId 필수)
-    if (!userId) {
+    if (!effectiveUserId) {
       return NextResponse.json({ error: 'user_id is required for non-week queries' }, { status: 400 })
     }
 
@@ -175,7 +192,7 @@ export async function GET(request: NextRequest) {
           )
         )
       `)
-      .eq('user_id', userId)
+      .eq('user_id', effectiveUserId)
       .in('enhancement_status', ['pending', 'enhanced'])  // 참여한 경력만
       .order('created_at', { ascending: false })
 

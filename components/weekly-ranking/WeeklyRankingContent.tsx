@@ -3,22 +3,19 @@
 import { useEffect, useMemo, useState } from "react";
 import WeeklyFilterBar from "./WeeklyFilterBar";
 import WeeklyCardList from "./WeeklyCardList";
-import {
-  WEEKLY_CARD_DUMMY,
-  type WeeklyCardData,
-} from "@/constants/dummyData/weekly-card-dummy";
+import { WEEKLY_CARD_DUMMY, type WeeklyCardData } from "@/constants/dummyData/weekly-card-dummy";
 import { isDemoMode } from "@/utils/isDemoMode";
 
 const SORT_OPTIONS = [
-  { value: "latest",         label: "최신 순" },
+  { value: "latest", label: "최신 순" },
   { value: "growth-success", label: "성장 성공률" },
-  { value: "growth-try",     label: "성장 도전율" },
-  { value: "crew-count",     label: "리그 크루 수" },
+  { value: "growth-try", label: "성장 도전율" },
+  { value: "crew-count", label: "리그 크루 수" },
 ];
 
 const SEASON_ORDER: Record<string, number> = {
   겨울: 1,
-  봄:   2,
+  봄: 2,
   여름: 3,
   가을: 4,
 };
@@ -52,7 +49,7 @@ const getSeasonFilterValue = (seasonName: string) => {
 };
 
 const WeeklyRankingContent = () => {
-  const [sortValue,   setSortValue]   = useState<string>("latest");
+  const [sortValue, setSortValue] = useState<string>("latest");
   const [seasonValue, setSeasonValue] = useState<string>("");
   const [leagueValue, setLeagueValue] = useState<string>("");
   const [demo, setDemo] = useState(false);
@@ -62,10 +59,7 @@ const WeeklyRankingContent = () => {
     setDemo(isDemoMode());
   }, []);
 
-  const allCards = useMemo<WeeklyCardData[]>(
-    () => (demo ? WEEKLY_CARD_DUMMY : []),
-    [demo]
-  );
+  const allCards = useMemo<WeeklyCardData[]>(() => (demo ? WEEKLY_CARD_DUMMY : []), [demo]);
 
   // 카드 데이터에 실제 존재하는 시즌만 옵션으로. 최신(year + seasonOrder DESC) 정렬.
   const seasonOptions = useMemo(() => {
@@ -80,10 +74,7 @@ const WeeklyRankingContent = () => {
       if (!ay || !by) return 0;
       return by.year - ay.year || by.seasonOrder - ay.seasonOrder;
     });
-    return [
-      { value: "", label: "-" },
-      ...sorted.map((s) => ({ value: s, label: s })),
-    ];
+    return [{ value: "", label: "전체 시즌" }, ...sorted.map((s) => ({ value: s, label: s }))];
   }, [allCards]);
 
   // 카드 데이터의 leagueResultStatus 값을 그대로 옵션화 (value === label).
@@ -92,10 +83,7 @@ const WeeklyRankingContent = () => {
     allCards.forEach((card) => {
       if (card.leagueResultStatus) set.add(card.leagueResultStatus);
     });
-    return [
-      { value: "", label: "-" },
-      ...Array.from(set).map((s) => ({ value: s, label: s })),
-    ];
+    return [{ value: "", label: "종합" }, ...Array.from(set).map((s) => ({ value: s, label: s }))];
   }, [allCards]);
 
   // 필터 + 정렬 결과. useMemo로 ref 안정화 — 자식 페이지네이션 reset effect 트리거 적정화.
@@ -103,9 +91,7 @@ const WeeklyRankingContent = () => {
     let result = allCards;
 
     if (seasonValue) {
-      result = result.filter(
-        (card) => getSeasonFilterValue(card.seasonName) === seasonValue
-      );
+      result = result.filter((card) => getSeasonFilterValue(card.seasonName) === seasonValue);
     }
 
     if (leagueValue) {
@@ -120,11 +106,7 @@ const WeeklyRankingContent = () => {
         sorted.sort((a, b) => {
           const ak = parseWeekSortKey(a.seasonName);
           const bk = parseWeekSortKey(b.seasonName);
-          return (
-            bk.year - ak.year ||
-            bk.seasonOrder - ak.seasonOrder ||
-            bk.week - ak.week
-          );
+          return bk.year - ak.year || bk.seasonOrder - ak.seasonOrder || bk.week - ak.week;
         });
         break;
       case "growth-success":
@@ -149,23 +131,19 @@ const WeeklyRankingContent = () => {
 
   return (
     <section className="weekly-ranking-page">
-
       <div className="weekly-hero">
         <div className="weekly-hero__bg" aria-hidden="true" />
         <div className="weekly-hero__overlay" aria-hidden="true" />
         <div className="weekly-hero__inner">
           <div className="weekly-hero__top">
             <div className="weekly-hero__title-wrap">
-              <h1 className="weekly-hero__title-shadow" aria-hidden="true">Weekly League</h1>
+              <h1 className="weekly-hero__title-shadow" aria-hidden="true">
+                Weekly League
+              </h1>
               <h1 className="weekly-hero__title" aria-label="Weekly League">
-                {'Weekly League'.split('').map((char, i) => (
-                  <span
-                    key={i}
-                    className="weekly-hero__title-char"
-                    style={{ animationDelay: `${0.3 + i * 0.05}s` }}
-                    aria-hidden="true"
-                  >
-                    {char === ' ' ? ' ' : char}
+                {"Weekly League".split("").map((char, i) => (
+                  <span key={i} className="weekly-hero__title-char" style={{ animationDelay: `${0.3 + i * 0.05}s` }} aria-hidden="true">
+                    {char === " " ? " " : char}
                   </span>
                 ))}
               </h1>
@@ -200,25 +178,14 @@ const WeeklyRankingContent = () => {
           <div className="weekly-hero__desc">
             <p>위클리 리그는 전국청춘성장 클럽의 매 주 활동을 토대로 진행되는, 성장 경쟁 리그입니다.</p>
             <p>월요일부터 토요일까지 한 주 동안, 우리 클럽 크루들의 성장 활동이 어떻게 진행되었을지!</p>
-            <p className="weekly-hero__desc-strong">
-              그리고, 나는 어느 정도의 성장을 이루었는지를 체크해보자구요! 😊
-            </p>
+            <p className="weekly-hero__desc-strong">그리고, 나는 어느 정도의 성장을 이루었는지를 체크해보자구요! 😊</p>
           </div>
 
           <div className="weekly-hero__quote">
-            <img
-              className="weekly-hero__quote-image"
-              src="/images/0/cluster 2/명언 2.png"
-              alt=""
-              aria-hidden="true"
-            />
+            <img className="weekly-hero__quote-image" src="/images/0/cluster 2/명언 2.png" alt="" aria-hidden="true" />
             <div className="weekly-hero__quote-body">
-              <p className="weekly-hero__quote-ko">
-                &quot;모든 위대한 걸음은, 작은 한 걸음에서 시작된다.&quot;
-              </p>
-              <p className="weekly-hero__quote-en">
-                A Journey of a thousand miles begins with a single step
-              </p>
+              <p className="weekly-hero__quote-ko">&quot;모든 위대한 걸음은, 작은 한 걸음에서 시작된다.&quot;</p>
+              <p className="weekly-hero__quote-en">A journey of a thousand miles begins with a single step</p>
               <p className="weekly-hero__quote-author">- 노자</p>
             </div>
           </div>
@@ -248,7 +215,6 @@ const WeeklyRankingContent = () => {
       */}
 
       <WeeklyCardList cards={filteredAndSortedCards} />
-
     </section>
   );
 };

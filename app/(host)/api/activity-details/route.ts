@@ -1,5 +1,36 @@
 import { createAdminClient } from '@/lib/supabase-server'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireOwnerOrAdmin } from '@/lib/api-auth'
+import { hasOpenEditWindowAny } from '@/lib/editWindow'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import {
+  CLUSTER4_EDIT_RESOURCE_KEYS,
+  CLUSTER4_ACTIVITY_DETAILS_KEY_GROUP,
+  type Cluster4EditResourceKey,
+} from '@/lib/cluster4EditWindow'
+import { EDIT_WINDOW_LOCKED_MESSAGE } from '@/lib/editWindowMessages'
+
+// 프론트가 보낸 resource_key 가 4개 모달 신규 키 중 하나라면 그 키를 우선 검사하고,
+// 닫혀 있어도 legacy activity_details 가 열려 있으면 통과시킨다 (legacy fallback).
+// 미전달(undefined) 이면 legacy activity_details 만 검사 — 구 프론트 호환.
+function resolveCluster4GateKeys(
+  hint: unknown,
+): readonly Cluster4EditResourceKey[] {
+  const allowed = new Set<string>(CLUSTER4_ACTIVITY_DETAILS_KEY_GROUP)
+  if (typeof hint === 'string' && allowed.has(hint)) {
+    // 신규 키 우선, legacy 폴백 1개를 OR 로 묶어서 본다.
+    if (hint === CLUSTER4_EDIT_RESOURCE_KEYS.activityDetails) {
+      return [CLUSTER4_EDIT_RESOURCE_KEYS.activityDetails]
+    }
+    return [
+      hint as Cluster4EditResourceKey,
+      CLUSTER4_EDIT_RESOURCE_KEYS.activityDetails,
+    ]
+  }
+  // hint 없음 → legacy 단독 검사
+  return [CLUSTER4_EDIT_RESOURCE_KEYS.activityDetails]
+}
 
 // Output Link 타입
 interface OutputLink {
@@ -7,7 +38,13 @@ interface OutputLink {
   url: string;
 }
 
-// GET: 특정 유저의 특정 주차 2차 정보 조회
+// GET: 특정 유저의 특정 주차 2차 정보 조회.
+//
+// 권한 정책 (2026-05-22 변경):
+//   - cluster-4-card peer-view 가시화를 위해 owner-or-admin 게이트 제거 → "로그인만".
+//   - 응답에 PII 없음 — user_activity_details 컬럼은 sub_title/output_links/
+//     growth_point/image_urls/image_captions 등 콘텐츠/관계키만 (schema 확인됨).
+//   - POST/DELETE (mutation) / 작성기간 게이트는 그대로 유지 (line 115, 323).
 export async function GET(request: NextRequest) {
   try {
     const supabaseAdmin = createAdminClient()
@@ -22,6 +59,12 @@ export async function GET(request: NextRequest) {
 
     if (!userId || !weekId) {
       return NextResponse.json({ error: 'user_id and week_id are required' }, { status: 400 })
+    }
+
+    // 로그인만 검증 — peer-view 허용.
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
     }
 
     let query = supabaseAdmin
@@ -58,7 +101,18 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { user_id, week_id, activity_type_id, sub_title, output_links, growth_point, image_urls, image_captions } = body
+    const {
+      user_id,
+      week_id,
+      activity_type_id,
+      sub_title,
+      output_links,
+      growth_point,
+      image_urls,
+      image_captions,
+      rating, // Work Exp 라인 평점 (0~10 정수 또는 null). undefined 면 미전달 → 기존 값 유지.
+      resource_key, // optional — cluster4 모달 신규 키 (work_info/ability/exp/career). 없으면 legacy
+    } = body
 
     // 필수 필드 검증
     if (!user_id || !week_id || !activity_type_id) {
@@ -66,6 +120,35 @@ export async function POST(request: NextRequest) {
         { error: 'user_id, week_id, and activity_type_id are required' },
         { status: 400 }
       )
+    }
+
+    // owner 본인 또는 관리자만 write 허용
+    const gate = await requireOwnerOrAdmin(user_id)
+    if (!gate.ok) return gate.response
+
+    // 작성 기간 게이트 — admin 우회. owner 본인은 user_edit_windows row 가 열려 있어야 함.
+    // 프론트가 보낸 resource_key 가 신규 모달 키이면 (신규 키 OR legacy activity_details) 로,
+    // 없으면 legacy activity_details 단독 키로 검사한다.
+    // 통과 결과(hasOpenWindow)는 하단 weekly_activities/secondary_info_grants 게이트와
+    // OR 결합되어 "어드민이 작성기간을 명시적으로 열어줬다 = secondary_info_grants 와 동등 권한"
+    // 으로 처리된다.
+    let hasOpenWindow = false
+    if (!gate.context.isAdmin) {
+      const gateKeys = resolveCluster4GateKeys(resource_key)
+      hasOpenWindow = await hasOpenEditWindowAny({
+        userId: gate.context.targetUserId,
+        resourceKeys: gateKeys,
+      })
+      if (!hasOpenWindow) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'EDIT_WINDOW_CLOSED',
+            message: EDIT_WINDOW_LOCKED_MESSAGE,
+          },
+          { status: 403 }
+        )
+      }
     }
 
     // sub_title 길이 검증 (300자)
@@ -115,6 +198,16 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           )
         }
+      }
+    }
+
+    // rating 검증 (0~10 정수 또는 null). undefined 면 미전달로 간주.
+    if (rating !== undefined && rating !== null) {
+      if (typeof rating !== 'number' || !Number.isInteger(rating) || rating < 0 || rating > 10) {
+        return NextResponse.json(
+          { error: 'rating must be an integer between 0 and 10, or null' },
+          { status: 400 }
+        )
       }
     }
 
@@ -176,7 +269,16 @@ export async function POST(request: NextRequest) {
     const grant = grantResult.data
     const hasActiveGrant = grant && new Date(grant.deadline).getTime() > Date.now()
 
-    if (!isBeforeDeadline && !hasActiveGrant) {
+    // 관리자는 마감 시간 게이트 우회 가능 (운영상 복구/보강용).
+    // user_edit_windows row 가 열려 있는 사용자도 같은 의미적 등급으로 우회 허용:
+    // 어드민이 명시적으로 작성기간을 열어줬다 = secondary_info_grants 와 동등 권한 부여.
+    // weekly_activities 테이블 부재 / 마감 시간 미설정 환경에서 신규 키 정책으로 통일.
+    if (
+      !gate.context.isAdmin &&
+      !hasOpenWindow &&
+      !isBeforeDeadline &&
+      !hasActiveGrant
+    ) {
       return NextResponse.json(
         { error: '2차 정보 입력 권한이 없습니다. (마감 시간 경과 또는 권한 미부여)' },
         { status: 403 }
@@ -192,10 +294,12 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     }
     if (sub_title !== undefined) upsertPayload.sub_title = sub_title || null
-    if (output_links !== undefined) upsertPayload.output_links = output_links || null
+    // output_links 는 DB NOT NULL — null/undefined 는 빈 배열로 정규화 (image_urls/captions 와 동일 패턴).
+    if (output_links !== undefined) upsertPayload.output_links = output_links ?? []
     if (growth_point !== undefined) upsertPayload.growth_point = growth_point || null
     if (image_urls !== undefined) upsertPayload.image_urls = image_urls ?? []
     if (image_captions !== undefined) upsertPayload.image_captions = image_captions ?? []
+    if (rating !== undefined) upsertPayload.rating = rating === null ? null : Number(rating)
 
     const { data, error } = await supabaseAdmin
       .from('user_activity_details')
@@ -229,6 +333,7 @@ export async function DELETE(request: NextRequest) {
     const userId = searchParams.get('user_id')
     const weekId = searchParams.get('week_id')
     const activityTypeId = searchParams.get('activity_type_id')
+    const resourceKeyHint = searchParams.get('resource_key') // optional — 신규 모달 키 hint
 
     if (!userId || !weekId || !activityTypeId) {
       return NextResponse.json(
@@ -237,10 +342,34 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
+    // owner 본인 또는 관리자만 delete 허용
+    const gate = await requireOwnerOrAdmin(userId)
+    if (!gate.ok) return gate.response
+
+    // 작성 기간 게이트 — admin 우회. 신규 키 hint 가 있으면 (신규 키 OR legacy) 로,
+    // 없으면 legacy activity_details 단독으로 검사 (POST 와 동일 규칙).
+    if (!gate.context.isAdmin) {
+      const gateKeys = resolveCluster4GateKeys(resourceKeyHint)
+      const open = await hasOpenEditWindowAny({
+        userId: gate.context.targetUserId,
+        resourceKeys: gateKeys,
+      })
+      if (!open) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'EDIT_WINDOW_CLOSED',
+            message: EDIT_WINDOW_LOCKED_MESSAGE,
+          },
+          { status: 403 }
+        )
+      }
+    }
+
     const { error } = await supabaseAdmin
       .from('user_activity_details')
       .delete()
-      .eq('user_id', userId)
+      .eq('user_id', gate.context.targetUserId)
       .eq('week_id', weekId)
       .eq('activity_type_id', activityTypeId)
 

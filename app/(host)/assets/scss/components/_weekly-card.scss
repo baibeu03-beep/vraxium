@@ -337,15 +337,103 @@
       .stat-unit {
         display: inline-block;
       }
+
+      // [작은 데스크톱 보정] xl 브레이크포인트(1200~1399.98px)에서 3-col 레이아웃이 되면
+      // 카드 내부 폭(약 332px)이 좁아지면서 label(106) + 12 + bar(155) + 41 + percent(46) = 360px 가
+      // 셀을 초과 → 성공률/도전율 row 가 percent 위로 겹친다.
+      // 해당 범위에서만 bar track 을 1fr 로 유동화하고 column-gap 을 축소해 겹침 제거.
+      @media (min-width: 1200px) and (max-width: 1399.98px) {
+        grid-template-columns: minmax(0, 1fr) 46px !important;
+        column-gap: 12px !important;
+      }
+    }
+
+    // [대전 중 indeterminate] 혼합 — 사선 stripe 배경 흐름 + Material 2-band L→R + bar vertical breathing.
+    .weekly-card__stat-meter--ongoing .progress-bar {
+      height: 6px !important;                                  // 3px → 6px 키워서 vertical 모션이 보이게
+      // [중요] 아래 base 룰 `.weekly-card__stat-meter .progress-bar` 에 min/max-height: 4px 클램프가 있어
+      // !important 없이 두면 max-height 가 6px height 를 4px 로 잘라 indeterminate 의 vertical breathing 이 죽음.
+      // ongoing 한정으로 짝 클램프를 6px 로 강제하여 base clamp 를 이스케이프.
+      min-height: 6px !important;
+      max-height: 6px !important;
+      background: repeating-linear-gradient(
+        -45deg,
+        rgba(132, 255, 0, 0.32) 0,
+        rgba(132, 255, 0, 0.32) 4px,
+        rgba(132, 255, 0, 0.1) 4px,
+        rgba(132, 255, 0, 0.1) 8px
+      ) !important;
+      background-size: 11.3px 100% !important;
+      animation:
+        weekly-card-stripe-flow 6s linear infinite,
+        weekly-card-bar-breathe 7.2s ease-in-out infinite;
+      transform-origin: center center;
+
+      // band 1 — lead (빠르게 전진, ease-out)
+      &::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          #84ff00 50%,
+          transparent 100%
+        );
+        box-shadow: 0 0 8px rgba(132, 255, 0, 0.9);
+        border-radius: 5px;
+        animation: weekly-card-band-lead 10.5s cubic-bezier(0.65, 0.815, 0.735, 0.395) infinite;
+        pointer-events: none;
+      }
+
+      // band 2 — follow (느리게 따라옴, delay 1.15s)
+      &::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          rgba(132, 255, 0, 0.75) 50%,
+          transparent 100%
+        );
+        border-radius: 5px;
+        animation: weekly-card-band-follow 10.5s cubic-bezier(0.165, 0.84, 0.44, 1) infinite 5.7s;
+        pointer-events: none;
+      }
+
+      .progress-fill {
+        display: none;                                          // 0% 빈 fill 숨김
+      }
     }
 
     // 모든 카드의 .progress-bar 가 동일한 155px track 폭을 갖도록 강제.
+    // [두께 통일 — 복구분]
+    //  (1) 두 row 간 시각 두께 차이 원인 1: 3px(홀수) + parallax-tilt 3D transform 조합으로
+    //      grid `align-items: center` 시 row 별 subpixel(0.5px) Y-offset 차이 → 위쪽 bar 가 더
+    //      가늘게 보이는 안티앨리어싱 차이. 해결: 짝수 4px 로 픽셀 안착 + min/max-height 클램프 +
+    //      line-height:0 / display:block 로 baseline·inline 영향 제거.
+    //  (2) fill 폭(%) 별 시각 두께 차이 원인 2: fill 의 border-radius: 5px 가 4px 높이 안에서 항상
+    //      "알약" 으로 클램프 → 좁은 폭(19%) 에서는 둥근 양끝 비율이 커서 가운데가 가늘게, 넓은 폭
+    //      (85%) 에서는 거의 직사각형이라 두껍게 보임. 해결: fill 의 자체 border-radius 를 0 으로
+    //      두고 모서리 둥글기는 parent (.progress-bar border-radius + overflow:hidden) 에 일임.
+    //      → 모든 폭에서 시각 패턴이 "좌측 곡선 + 우측 수직선" 으로 동일 두께 인지.
+    //  [주의] ongoing 한정 6px / breathing 모션은 위 `.weekly-card__stat-meter--ongoing .progress-bar`
+    //  의 !important 룰이 base 클램프를 6px 로 이스케이프하므로 본 4px 클램프와 충돌 없음.
     .weekly-card__stat-meter .progress-bar {
       width: 155px !important;
       min-width: 155px !important;
       max-width: 155px !important;
       flex: none;
-      height: 3px;
+      display: block;
+      height: 4px;
+      min-height: 4px;
+      max-height: 4px;
+      line-height: 0;
       background: #555555;
       border: none;
       border-radius: 5px;
@@ -353,11 +441,21 @@
       position: relative;
 
       .progress-fill {
-        height: 100%;
-        background: #ffec8f;
-        border-radius: 5px;
-        transition: width 0.3s ease;
         display: block;
+        height: 100%;
+        min-height: 4px;
+        max-height: 4px;
+        background: #ffec8f;
+        border-radius: 0;
+        transition: width 0.3s ease;
+      }
+
+      // [작은 데스크톱 보정] 위 .weekly-card__stat-meter 의 1fr 트랙에 맞춰
+      // bar 자체도 셀을 가득 채우도록 유동 폭으로 전환. 155px 강제값 해제가 핵심.
+      @media (min-width: 1200px) and (max-width: 1399.98px) {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
       }
     }
   }
@@ -478,6 +576,17 @@
     -webkit-user-drag: none;
   }
 
+  // [icon 변형] 대전 중 / 대전 집계 상태에서 trophy 자리를 모래시계 폰트 아이콘으로 swap.
+  // 동일 absolute 슬롯(48×48, top:-12px, left:8px) 유지 — layout shift 방지.
+  i.weekly-card__winner-trophy--icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    line-height: 1;
+    color: #fed402;
+  }
+
   .weekly-card__winner-label {
     position: absolute;
     top: 0px;
@@ -513,6 +622,229 @@
     pointer-events: none;
     user-select: none;
     font-family: inherit;
+  }
+
+  /* ---------- 미확정 단계 (대전 중 / 대전 집계 / 공표 중) ----------
+     yellow 박스 전체를 큰 모래시계가 채우고, 단계 라벨이 중앙에 오버레이.
+     박스(컨테이너) 자체에 단계별 색상 테두리/배경 — '우승' 의 노란색 톤과 동일 구조. */
+  .weekly-card__winner-pending-icon {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+    pointer-events: none;
+
+    img {
+      width: 96px;
+      height: 96px;
+      object-fit: contain;
+      opacity: 0.9;
+      transform-origin: center center;
+      animation: weekly-card-hourglass-flip 3.2s ease-in-out infinite;
+      filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+  }
+
+  .weekly-card__winner-pending-label {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    // 동글동글 강조체 임팩트 — HakgyoansimTuho. cluster-4-week/season 등에서 이미 로드된 폰트 재활용.
+    font-family: 'HakgyoansimTuho', 'Pretendard', sans-serif;
+    font-size: 28px;                                           // 24 → 28 살짝 키움
+    font-weight: 400;                                          // HakgyoansimTuho 자체가 굵어서 weight 키울 필요 X
+    letter-spacing: 2.5px;
+    line-height: 1;
+    white-space: nowrap;
+
+    // 하드 다크 그림자 (blur 없음) — 글자 가독성 ↑ 입체감, 흐림은 없음.
+    text-shadow:
+      0 2px 0  rgba(0, 0, 0, 0.55),
+      0 1px 3px rgba(0, 0, 0, 0.6);
+
+    animation: weekly-card-pending-pulse 1.8s ease-in-out infinite;
+  }
+
+  // 단계별: 박스(컨테이너) 배경/테두리 색상 + 라벨은 네온톤 쨍한 색 + 같은 톤 글로우.
+  // '우승' 박스의 노란 배경/border 동일 구조를 라임/황금/핑크로 변형.
+  // 팔레트: 아케이드/네온 톤 (#00E5FF 시안 / #FFE66D 옐로우 / #FF2DAA 마젠타).
+  // [핵심] 글자 자체는 글로우/stroke 전혀 없이 sharp solid color — 가독성 100% 보장.
+  // 화려함은 박스의 inset 글로우 + 외곽 헤일로 + 모래시계 아이콘 + scale pulse 가 담당.
+  .weekly-card__winner--battle {
+    background: rgba(132, 255, 0, 0.14);
+    border-color: rgba(132, 255, 0, 0.75);
+    box-shadow:
+      inset 0 0 22px rgba(132, 255, 0, 0.35),
+      0 0 18px rgba(132, 255, 0, 0.5);
+
+    // 좌상단 LIVE 도트 — 방송 LIVE 시그널처럼 깜빡임
+    &::before {
+      content: 'LIVE';
+      position: absolute;
+      top: 8px;
+      left: 10px;
+      z-index: 5;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px 2px 16px;
+      font-family: 'HakgyoansimTuho', 'Pretendard', sans-serif;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      color: #ffffff;
+      background: rgba(132, 255, 0, 0.25);
+      border: 1px solid rgba(132, 255, 0, 0.8);
+      border-radius: 999px;
+      box-shadow: 0 0 8px rgba(132, 255, 0, 0.6);
+      pointer-events: none;
+      animation: weekly-card-live-pulse 1s ease-in-out infinite;
+    }
+    // 도트 자체 (LIVE 글자 앞 ●)
+    &::after {
+      content: '';
+      position: absolute;
+      top: 14px;
+      left: 16px;
+      z-index: 6;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #84ff00;
+      box-shadow: 0 0 6px #84ff00, 0 0 12px rgba(132, 255, 0, 0.8);
+      pointer-events: none;
+      animation: weekly-card-live-dot-blink 0.9s steps(2, end) infinite;
+    }
+
+    .weekly-card__winner-pending-label {
+      color: #84ff00;                                          // sharp 네온 라임
+    }
+  }
+
+  .weekly-card__winner--aggregate {
+    background: rgba(255, 230, 109, 0.14);
+    border-color: rgba(255, 230, 109, 0.75);
+    box-shadow:
+      inset 0 0 22px rgba(255, 230, 109, 0.35),
+      0 0 18px rgba(255, 230, 109, 0.5);
+    .weekly-card__winner-pending-label {
+      color: #ffe66d;                                          // sharp 옐로우
+    }
+  }
+
+  .weekly-card__winner--announce {
+    background: rgba(255, 45, 170, 0.16);
+    border-color: rgba(255, 45, 170, 0.75);
+    box-shadow:
+      inset 0 0 22px rgba(255, 45, 170, 0.4),
+      0 0 18px rgba(255, 45, 170, 0.55);
+
+    // 좌상단 ON AIR 뱃지 — 대전 중 LIVE 와 동일 구조 (마젠타 톤)
+    &::before {
+      content: 'ON AIR';
+      position: absolute;
+      top: 8px;
+      left: 10px;
+      z-index: 5;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px 2px 16px;
+      font-family: 'HakgyoansimTuho', 'Pretendard', sans-serif;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      color: #ffffff;
+      background: rgba(255, 45, 170, 0.25);
+      border: 1px solid rgba(255, 45, 170, 0.85);
+      border-radius: 999px;
+      box-shadow: 0 0 8px rgba(255, 45, 170, 0.7);
+      pointer-events: none;
+      animation: weekly-card-onair-pulse 1s ease-in-out infinite;
+    }
+    &::after {
+      content: '';
+      position: absolute;
+      top: 14px;
+      left: 16px;
+      z-index: 6;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #ff2daa;
+      box-shadow: 0 0 6px #ff2daa, 0 0 12px rgba(255, 45, 170, 0.9);
+      pointer-events: none;
+      animation: weekly-card-live-dot-blink 0.9s steps(2, end) infinite;
+    }
+
+    .weekly-card__winner-pending-label {
+      color: #ff2daa;                                          // sharp 마젠타
+    }
+  }
+
+  @keyframes weekly-card-hourglass-flip {
+    0%   { transform: rotate(0deg);   opacity: 0.35; }
+    45%  { transform: rotate(0deg);   opacity: 0.5;  }
+    50%  { transform: rotate(180deg); opacity: 0.5;  }
+    95%  { transform: rotate(180deg); opacity: 0.35; }
+    100% { transform: rotate(360deg); opacity: 0.35; }
+  }
+
+  @keyframes weekly-card-pending-pulse {
+    0%, 100% { transform: scale(1);    opacity: 1;    }
+    50%      { transform: scale(1.07); opacity: 0.85; }
+  }
+
+  // 3) LIVE 뱃지 미세 펄스 (전체 뱃지가 살짝 호흡)
+  @keyframes weekly-card-live-pulse {
+    0%, 100% { transform: scale(1);    box-shadow: 0 0 8px rgba(132, 255, 0, 0.6);  }
+    50%      { transform: scale(1.05); box-shadow: 0 0 14px rgba(132, 255, 0, 0.9); }
+  }
+
+  // 3) LIVE 도트 ● 깜빡임 — 0.9s 주기 ON/OFF
+  @keyframes weekly-card-live-dot-blink {
+    0%, 49%   { opacity: 1; }
+    50%, 100% { opacity: 0.15; }
+  }
+
+  // 3-2) ON AIR 뱃지 펄스 (LIVE 와 동일 구조, 마젠타 톤)
+  @keyframes weekly-card-onair-pulse {
+    0%, 100% { transform: scale(1);    box-shadow: 0 0 8px rgba(255, 45, 170, 0.7);  }
+    50%      { transform: scale(1.05); box-shadow: 0 0 14px rgba(255, 45, 170, 0.95); }
+  }
+
+  // 5-0) 사선 stripe 흐름 (좌→우 방향, background-position 음수로 이동)
+  @keyframes weekly-card-stripe-flow {
+    0%   { background-position: 0 0; }
+    100% { background-position: -11.3px 0; }
+  }
+
+  // 5-1) 대전 중 progress bar — vertical breathing (위아래 호흡)
+  @keyframes weekly-card-bar-breathe {
+    0%, 100% { transform: scaleY(1);   }
+    50%      { transform: scaleY(1.4); }
+  }
+
+  // 5-2) Material Design indeterminate — band 1 (lead, 빠르게 좌→우)
+  @keyframes weekly-card-band-lead {
+    0%   { left: -35%; width: 35%; }
+    60%  { left: 100%; width: 90%; }
+    100% { left: 100%; width: 10%; }
+  }
+
+  // 5-3) Material Design indeterminate — band 2 (follow, 느리게 좌→우)
+  @keyframes weekly-card-band-follow {
+    0%   { left: -25%; width: 25%; }
+    60%  { left: 107%; width: 65%; }
+    100% { left: 107%; width: 10%; }
   }
 
   /* ---------- Top 3 크루 ---------- */

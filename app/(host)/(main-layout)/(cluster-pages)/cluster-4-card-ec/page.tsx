@@ -12,9 +12,15 @@ const Cluster4CardEcPage = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    // demoMode 가 켜져 있을 때만 dw-01 더미 카드로 직행.
+    // ?admin=true 는 DemoToggle 노출 신호일 뿐 — 단독 트리거 금지 (base route 와 동기).
     const params = new URLSearchParams(window.location.search);
-    if (params.get("admin") === "true") {
-      router.replace(`/cluster-4-card-ec/dw-01?${params.toString()}`);
+    const demoOn =
+      typeof window !== "undefined" &&
+      window.localStorage.getItem("demoMode") === "true";
+    if (demoOn) {
+      const qs = params.toString();
+      router.replace(qs ? `/cluster-4-card-ec/dw-01?${qs}` : "/cluster-4-card-ec/dw-01");
       return;
     }
 
@@ -22,18 +28,19 @@ const Cluster4CardEcPage = () => {
       try {
         const today = new Date().toISOString().split("T")[0];
 
+        // v1: 실 컬럼명 (started_at/ended_at) 사용
         const { data: currentWeek, error } = await supabase
           .from("weeks")
-          .select("id, start_date, end_date, seasons(name)")
-          .lte("start_date", today)
-          .gte("end_date", today)
+          .select("id, started_at, ended_at, seasons(name)")
+          .lte("started_at", today)
+          .gte("ended_at", today)
           .single();
 
         if (error || !currentWeek) {
           const { data: latestWeek } = await supabase
             .from("weeks")
             .select("id, seasons(name)")
-            .order("start_date", { ascending: false })
+            .order("started_at", { ascending: false })
             .limit(1)
             .single();
 

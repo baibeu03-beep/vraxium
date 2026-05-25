@@ -4,6 +4,9 @@ import { getUserProfile } from "@/lib/get-user-profile";
 import { extractTargetUserId, isAdminEmail } from "@/lib/admin";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { hasOpenEditWindow } from "@/lib/editWindow";
+import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
+import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -125,6 +128,24 @@ export async function PUT(
       );
     }
 
+    // 작성 기간 게이트 — admin 우회. owner 는 user_edit_windows row 가 열려 있어야 함.
+    if (!isAdmin) {
+      const open = await hasOpenEditWindow({
+        userId: existing.user_id,
+        resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.weeklyReviews,
+      });
+      if (!open) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "EDIT_WINDOW_CLOSED",
+            message: EDIT_WINDOW_LOCKED_MESSAGE,
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     const { data: updated, error: updateError } = await supabase
       .from("weekly_reviews")
       .update({
@@ -200,6 +221,22 @@ export async function DELETE(
         );
       }
       deleteQuery = deleteQuery.eq("user_id", profile.id);
+
+      // 작성 기간 게이트 — owner 가 직접 삭제하려면 user_edit_windows 가 열려 있어야 함.
+      const open = await hasOpenEditWindow({
+        userId: profile.id,
+        resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.weeklyReviews,
+      });
+      if (!open) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "EDIT_WINDOW_CLOSED",
+            message: EDIT_WINDOW_LOCKED_MESSAGE,
+          },
+          { status: 403 }
+        );
+      }
     }
 
     const { error: deleteError } = await deleteQuery;

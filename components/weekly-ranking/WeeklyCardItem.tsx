@@ -2,7 +2,22 @@
 
 import Image from "next/image";
 import Tilt from "react-parallax-tilt";
-import type { WeeklyCardData } from "@/constants/dummyData/weekly-card-dummy";
+import type { WeeklyCardCrew, WeeklyCardData } from "@/constants/dummyData/weekly-card-dummy";
+
+type CrewRow = WeeklyCardCrew & { isPlaceholder?: boolean };
+
+const PLACEHOLDER_TEXT = '-';
+
+// placeholder 표시 형태: "- | -    팀 | -    파트"
+// 실제 데이터 row 와 동일한 inner grid(minmax(0,1fr) auto + suffix justify-self:end) 를 그대로 사용.
+// text span 에 "-" 를 채워 좌측 정렬, suffix span 의 "팀"/"파트" 는 기존처럼 우측 정렬 유지.
+const buildPlaceholderRow = (rank: 1 | 2 | 3): CrewRow => ({
+  rank,
+  name: PLACEHOLDER_TEXT,
+  team: PLACEHOLDER_TEXT,
+  part: PLACEHOLDER_TEXT,
+  isPlaceholder: true,
+});
 
 const stripSuffix = (value: string | null | undefined, suffix: string): string => {
   if (!value) return '';
@@ -62,6 +77,28 @@ interface Props {
 }
 
 export default function WeeklyCardItem({ data }: Props) {
+  // [crew row placeholder 규칙]
+  // - "대전 중" / "대전 집계" (leagueRecordStatus): 결과 미확정이라 실제 top crew 노출 금지 → 3행 placeholder.
+  // - "공식 휴식" (leagueResultStatus): 주차 자체가 휴식 → 3행 placeholder.
+  // - 그 외 상태에서도 data.top3 가 비어 있거나 3개 미만이면 부족한 slot 만 placeholder 로 채워
+  //   crew list 영역이 빈칸으로 보이는 것을 방지(높이/3행 1열 구조 항상 유지).
+  const shouldForceCrewPlaceholder =
+    data.leagueRecordStatus === '대전 중' ||
+    data.leagueRecordStatus === '대전 집계' ||
+    data.leagueResultStatus === '공식 휴식';
+
+  const crewRows: CrewRow[] = (() => {
+    const ranks: Array<1 | 2 | 3> = [1, 2, 3];
+    if (shouldForceCrewPlaceholder) {
+      return ranks.map((rank) => buildPlaceholderRow(rank));
+    }
+    const source = Array.isArray(data.top3) ? data.top3 : [];
+    return ranks.map((rank) => {
+      const existing = source.find((crew) => crew?.rank === rank);
+      return existing ?? buildPlaceholderRow(rank);
+    });
+  })();
+
   return (
     <Tilt
       tiltMaxAngleX={5}
@@ -124,36 +161,46 @@ export default function WeeklyCardItem({ data }: Props) {
           )}
         </div>
 
-        <div className="resume-stats weekly-card__rates">
-          <div className="stat-item">
-            <div className="stat-row">
-              <span className="stat-label"><span className="stat-dot">·</span> 성장 성공율</span>
-              <div className="weekly-card__stat-meter">
-                <div className="progress-bar">
-                  <div className="progress-fill" style={{ width: `${data.growthSuccessRate}%` }} />
+        {(() => {
+          // "대전 중" / "대전 집계" 주차는 결과 미확정 → 성공율/도전율 값이 아직 고정되지 않아 'N %' 로 노출.
+          // (공표 중 부터는 값 확정으로 간주하여 숫자 그대로 표시.)
+          const isOngoing = data.leagueRecordStatus === '대전 중' || data.leagueRecordStatus === '대전 집계';
+          const successFillWidth = isOngoing ? 0 : data.growthSuccessRate;
+          const challengeFillWidth = isOngoing ? 0 : data.growthChallengeRate;
+          return (
+            <div className="resume-stats weekly-card__rates">
+              <div className="stat-item">
+                <div className="stat-row">
+                  <span className="stat-label"><span className="stat-dot">·</span> 성장 성공율</span>
+                  <div className={`weekly-card__stat-meter ${isOngoing ? 'weekly-card__stat-meter--ongoing' : ''}`}>
+                    <div className="progress-bar">
+                      <div className="progress-fill" style={{ width: `${successFillWidth}%` }} />
+                    </div>
+                    <span className="stat-value">{isOngoing ? 'N' : data.growthSuccessRate}<span className="stat-unit">%</span></span>
+                  </div>
                 </div>
-                <span className="stat-value">{data.growthSuccessRate}<span className="stat-unit">%</span></span>
+              </div>
+              <div className="stat-item">
+                <div className="stat-row">
+                  <span className="stat-label"><span className="stat-dot">·</span> 성장 도전율</span>
+                  <div className={`weekly-card__stat-meter ${isOngoing ? 'weekly-card__stat-meter--ongoing' : ''}`}>
+                    <div className="progress-bar">
+                      <div className="progress-fill" style={{ width: `${challengeFillWidth}%` }} />
+                    </div>
+                    <span className="stat-value">{isOngoing ? 'N' : data.growthChallengeRate}<span className="stat-unit">%</span></span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-row">
-              <span className="stat-label"><span className="stat-dot">·</span> 성장 도전율</span>
-              <div className="weekly-card__stat-meter">
-                <div className="progress-bar">
-                  <div className="progress-fill" style={{ width: `${data.growthChallengeRate}%` }} />
-                </div>
-                <span className="stat-value">{data.growthChallengeRate}<span className="stat-unit">%</span></span>
-              </div>
-            </div>
-          </div>
-        </div>
+          );
+        })()}
 
         <div className="resume-skills weekly-card__skills">
+          {/* '대전 중' 주차는 명수 결과 미확정 → 5개 카드 값 모두 'N' 으로 노출 (성공율/도전율 'N %' 와 동일 정책). */}
           <div className="skill-card">
             <Image src="/images/0/cluster4/icon/icon - cluv.png" alt="" width={34} height={34} className="skill-icon" />
             <div className="skill-num-row">
-              <span className="skill-num">{data.totalCrews}</span>
+              <span className="skill-num">{data.leagueRecordStatus === '대전 중' ? 'N' : data.totalCrews}</span>
               <span className="skill-unit">명</span>
             </div>
             <span className="skill-label">전체 크루</span>
@@ -162,7 +209,7 @@ export default function WeeklyCardItem({ data }: Props) {
           <div className="skill-card">
             <Image src="/images/0/cluster4/icon/icon - 성장 (진행 중).png" alt="" width={34} height={34} className="skill-icon" />
             <div className="skill-num-row">
-              <span className="skill-num">{data.growthChallenge}</span>
+              <span className="skill-num">{data.leagueRecordStatus === '대전 중' ? 'N' : data.growthChallenge}</span>
               <span className="skill-unit">명</span>
             </div>
             <span className="skill-label">성장 도전</span>
@@ -171,7 +218,7 @@ export default function WeeklyCardItem({ data }: Props) {
           <div className="skill-card">
             <Image src="/images/0/cluster4/icon/icon - 성장(성공).png" alt="" width={34} height={34} className="skill-icon" />
             <div className="skill-num-row">
-              <span className="skill-num">{data.growthSuccess}</span>
+              <span className="skill-num">{data.leagueRecordStatus === '대전 중' ? 'N' : data.growthSuccess}</span>
               <span className="skill-unit">명</span>
             </div>
             <span className="skill-label">성장 성공</span>
@@ -180,7 +227,7 @@ export default function WeeklyCardItem({ data }: Props) {
           <div className="skill-card">
             <Image src="/images/0/cluster4/icon/icon - 성장(실패).png" alt="" width={34} height={34} className="skill-icon" />
             <div className="skill-num-row">
-              <span className="skill-num">{data.growthFail}</span>
+              <span className="skill-num">{data.leagueRecordStatus === '대전 중' ? 'N' : data.growthFail}</span>
               <span className="skill-unit">명</span>
             </div>
             <span className="skill-label">성장 실패</span>
@@ -189,30 +236,62 @@ export default function WeeklyCardItem({ data }: Props) {
           <div className="skill-card">
             <Image src="/images/0/cluster4/icon/icon - 휴식(개인).png" alt="" width={34} height={34} className="skill-icon" />
             <div className="skill-num-row">
-              <span className="skill-num">{data.personalRest}</span>
+              <span className="skill-num">{data.leagueRecordStatus === '대전 중' ? 'N' : data.personalRest}</span>
               <span className="skill-unit">명</span>
             </div>
             <span className="skill-label">개인 휴식</span>
           </div>
 
-          <div className="weekly-card__winner">
-            <img
-              className="weekly-card__winner-trophy"
-              src="/images/0/crown.png"
-              alt=""
-              aria-hidden="true"
-            />
-            <span className="weekly-card__winner-label">우승</span>
-            {data.winningTeamImage ? (
-              <Image src={data.winningTeamImage} alt="우승 팀" width={80} height={80} className="weekly-card__winner-image" />
-            ) : (
-              <div className="weekly-card__winner-placeholder" />
-            )}
-          </div>
+          {(() => {
+            // status badge "대전 중" / "대전 집계" 는 leagueRecordStatus 값.
+            // (leagueResultStatus 는 '정상 진행' | '심화 진행' | '공식 휴식' 만 가질 수 있어 분기 대상 아님.)
+            // '검수 완료' 만 결과 확정 → 왕관 + '우승' + 우승팀 이미지.
+            // 그 외(대전 중/대전 집계/공표 중) 는 결과 미확정 → 모래시계가 box 전체 채우고 단계 라벨 중앙 오버레이.
+            const isFinal = data.leagueRecordStatus === '검수 완료';
+            const stageMod =
+              data.leagueRecordStatus === '대전 중'   ? 'battle' :
+              data.leagueRecordStatus === '대전 집계' ? 'aggregate' :
+              data.leagueRecordStatus === '공표 중'   ? 'announce' : '';
+            const stageLabel =
+              data.leagueRecordStatus === '대전 중'   ? '대전 중' :
+              data.leagueRecordStatus === '대전 집계' ? '집계 중' :
+              data.leagueRecordStatus === '공표 중'   ? '공표 중' :
+              '우승';
+            const winnerClass = isFinal
+              ? 'weekly-card__winner'
+              : `weekly-card__winner weekly-card__winner--pending weekly-card__winner--${stageMod}`;
+            return (
+              <div className={winnerClass}>
+                {isFinal ? (
+                  <>
+                    <img
+                      className="weekly-card__winner-trophy"
+                      src="/images/0/crown.png"
+                      alt=""
+                      aria-hidden="true"
+                    />
+                    <span className="weekly-card__winner-label">{stageLabel}</span>
+                    {data.winningTeamImage ? (
+                      <Image src={data.winningTeamImage} alt="우승 팀" width={80} height={80} className="weekly-card__winner-image" />
+                    ) : (
+                      <div className="weekly-card__winner-placeholder" />
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <span className="weekly-card__winner-pending-icon" aria-hidden="true">
+                      <img src="/images/0/clock.png" alt="" />
+                    </span>
+                    <span className="weekly-card__winner-pending-label">{stageLabel}</span>
+                  </>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         <div className="weekly-card__top3">
-          {data.top3.map((crew) => (
+          {crewRows.map((crew) => (
             <div key={crew.rank} className={`weekly-card__crew weekly-card__rank-row weekly-card__crew--rank${crew.rank}`}>
               <div className="weekly-card__crew-icon weekly-card__rank-badge">
                 <Image
@@ -223,18 +302,20 @@ export default function WeeklyCardItem({ data }: Props) {
                   className="weekly-card__rank-image"
                 />
               </div>
-              <span className="weekly-card__rank-name">{truncateName(crew.name)}</span>
+              <span className="weekly-card__rank-name">
+                {crew.isPlaceholder ? PLACEHOLDER_TEXT : truncateName(crew.name)}
+              </span>
               <span className="weekly-card__rank-separator" aria-hidden="true">|</span>
               <span className="weekly-card__rank-team">
                 <span className="weekly-card__rank-team-text">
-                  {truncateLabel(stripSuffix(crew.team, '팀'))}
+                  {crew.isPlaceholder ? PLACEHOLDER_TEXT : truncateLabel(stripSuffix(crew.team, '팀'))}
                 </span>
                 <span className="weekly-card__rank-team-suffix">팀</span>
               </span>
               <span className="weekly-card__rank-separator" aria-hidden="true">|</span>
               <span className="weekly-card__rank-part">
                 <span className="weekly-card__rank-part-text">
-                  {truncateLabel(stripSuffix(crew.part, '파트'))}
+                  {crew.isPlaceholder ? PLACEHOLDER_TEXT : truncateLabel(stripSuffix(crew.part, '파트'))}
                 </span>
                 <span className="weekly-card__rank-part-suffix">파트</span>
               </span>

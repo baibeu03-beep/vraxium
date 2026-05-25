@@ -4,11 +4,21 @@ import { getUserProfile } from "@/lib/get-user-profile";
 import { extractTargetUserId, isAdminEmail } from "@/lib/admin";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+// requireOwnerOrAdmin 은 더 이상 사용하지 않음 — Season Reputation 은 peer-review 이므로
+// GET 은 로그인만 게이트 (자기/관리자 제한 제거). POST/PUT 은 isAdmin + getUserProfile 로 자체 권한 처리.
+// import { requireOwnerOrAdmin } from "@/lib/api-auth";
+// 진단 로깅 기간에는 hasOpenEditWindow 대신 인라인 쿼리 사용. 원인 확정 후 import 복귀 예정.
+// import { hasOpenEditWindow } from "@/lib/editWindow";
+import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
+import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 // GET: 시즌 평판 조회
+//   정책: Season Reputation 은 peer-review — 누군가가 나에 대해 쓴 평판은 본인 + 타 크루 모두 가시화.
+//         (모달이 타인 프로필에서 열리므로 cross-user read 가 정상 흐름)
+//         로그인은 필수. targetUserId 가 명시되지 않으면 session user 로 해석.
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -16,7 +26,33 @@ export async function GET(request: Request) {
     const seasonHistoryId = searchParams.get("seasonHistoryId");
 
     if (!supabaseAdmin) {
-      return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
+      return NextResponse.json(
+        { error: "서버 설정 오류", route: "GET /api/season-reputations" },
+        { status: 500 }
+      );
+    }
+
+    // 최소 게이트 — 로그인만 확인. owner/admin 차단 제거 (peer-review 가시화).
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { error: "로그인이 필요합니다.", route: "GET /api/season-reputations" },
+        { status: 401 }
+      );
+    }
+
+    // targetUserId 가 비어 있으면 본인 평판 조회로 해석.
+    // (apiUrl 헬퍼 없이 호출되는 경로 호환)
+    let effectiveTargetUserId = targetUserId;
+    if (!effectiveTargetUserId) {
+      const { profile, error: profileError } = await getUserProfile<{ user_id: string }>("user_id", null);
+      if (profileError) {
+        return NextResponse.json(
+          { error: profileError.message, route: "GET /api/season-reputations" },
+          { status: profileError.status }
+        );
+      }
+      effectiveTargetUserId = profile.user_id;
     }
 
     let query = supabaseAdmin
@@ -33,11 +69,8 @@ export async function GET(request: Request) {
         keyword_3,
         created_at
       `)
+      .eq("target_user_id", effectiveTargetUserId)
       .order("created_at", { ascending: true });
-
-    if (targetUserId) {
-      query = query.eq("target_user_id", targetUserId);
-    }
 
     if (seasonHistoryId) {
       query = query.eq("season_history_id", seasonHistoryId);
@@ -225,6 +258,70 @@ export async function POST(request: Request) {
       );
     }
 
+    // 작성 기간 게이트 — admin 우회. 일반 유저는 reviewer 의 user_edit_windows
+    // (resource_key=cluster4.season_reputation) 가 열려 있어야 함. seasonReview 와
+    // 키가 분리되어 있어 운영자가 두 영역 기간을 독립적으로 통제할 수 있다.
+    // 정책: window 는 작성자(reviewer = session user) 기준으로 검사. target user_id 기준 아님.
+    const postSession = await getServerSession(authOptions);
+    const isPostAdmin =
+      !!postSession?.user?.email && isAdminEmail(postSession.user.email);
+    if (!isPostAdmin) {
+      // [임시 진단 로깅 — 403 원인 추적용. 원인 확정 후 hasOpenEditWindow 단일 호출로 복귀]
+      // maybeSingle() 대신 list 쿼리로 중복 row 케이스도 진단 가능하게 처리.
+      const resourceKey = CLUSTER4_EDIT_RESOURCE_KEYS.seasonReputation;
+      const now = new Date();
+      const { data: matchedRows, error: windowError } = await supabaseAdmin
+        .from("user_edit_windows")
+        .select("id, user_id, resource_key, opened_at, expires_at, created_at, updated_at")
+        .eq("user_id", reviewerProfile.user_id)
+        .eq("resource_key", resourceKey)
+        .order("opened_at", { ascending: false });
+
+      const rows = matchedRows ?? [];
+      // 여러 row 중 하나라도 현재 열려 있으면 통과.
+      const openRow = rows.find(
+        (r) =>
+          !!r.opened_at &&
+          !!r.expires_at &&
+          new Date(r.opened_at) <= now &&
+          now < new Date(r.expires_at)
+      );
+      const hasOpenWindow = !!openRow;
+
+      const snapshot = {
+        sessionUserId: postSession?.user?.id ?? null,
+        sessionEmail: postSession?.user?.email ?? null,
+        reviewerId: reviewerProfile.user_id,
+        targetUserId,
+        resourceKey,
+        hasOpenWindow,
+        now: now.toISOString(),
+        matchedCount: rows.length,
+        matchedWindow: openRow ?? rows[0] ?? null,
+        allMatchedRows: rows, // 중복 진단용
+        windowError: windowError
+          ? { code: windowError.code, message: windowError.message }
+          : null,
+      };
+      console.debug("[season-reputations POST] edit-window gate", snapshot);
+
+      if (!hasOpenWindow) {
+        // dev 환경에서는 응답 body 에 진단 snapshot 첨부 (브라우저 Network 탭에서 즉시 확인).
+        // production 에서는 메시지만 노출 — PII (이메일) 유출 방지.
+        const debugPayload =
+          process.env.NODE_ENV !== "production" ? { debug: snapshot } : {};
+        return NextResponse.json(
+          {
+            success: false,
+            error: "EDIT_WINDOW_CLOSED",
+            message: EDIT_WINDOW_LOCKED_MESSAGE,
+            ...debugPayload,
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     // 중복 평판 체크 (같은 시즌에 같은 사람에게 이미 평판을 남겼는지)
     const { data: existingReputation } = await supabaseAdmin
       .from("season_reputations")
@@ -398,7 +495,7 @@ export async function PUT(request: Request) {
 
     const isAdmin = isAdminEmail(session.user.email);
 
-    // 일반 유저는 본인이 작성한 평판인지 확인
+    // 일반 유저는 본인이 작성한 평판인지 확인 + 작성 기간 게이트
     if (!isAdmin) {
       const adminTargetUserId = extractTargetUserId(request);
       const { profile, error: profileError } = await getUserProfile<{ user_id: string }>("user_id", adminTargetUserId);
@@ -417,6 +514,59 @@ export async function PUT(request: Request) {
       }
       if (existing.reviewer_id !== profile.user_id) {
         return NextResponse.json({ error: "본인이 작성한 평판만 수정할 수 있습니다." }, { status: 403 });
+      }
+
+      // 작성 기간 게이트 (PUT 도 동일 키로 enforce — admin 우회는 위 isAdmin 분기로 처리됨)
+      // [임시 진단 로깅 — POST 와 동일 패턴. 원인 확정 후 hasOpenEditWindow 단일 호출로 복귀]
+      const resourceKey = CLUSTER4_EDIT_RESOURCE_KEYS.seasonReputation;
+      const now = new Date();
+      const { data: matchedRows, error: windowError } = await supabaseAdmin
+        .from("user_edit_windows")
+        .select("id, user_id, resource_key, opened_at, expires_at, created_at, updated_at")
+        .eq("user_id", profile.user_id)
+        .eq("resource_key", resourceKey)
+        .order("opened_at", { ascending: false });
+
+      const rows = matchedRows ?? [];
+      const openRow = rows.find(
+        (r) =>
+          !!r.opened_at &&
+          !!r.expires_at &&
+          new Date(r.opened_at) <= now &&
+          now < new Date(r.expires_at)
+      );
+      const hasOpenWindow = !!openRow;
+
+      const snapshot = {
+        sessionUserId: session?.user?.id ?? null,
+        sessionEmail: session?.user?.email ?? null,
+        reviewerId: profile.user_id,
+        targetUserId: null, // PUT 은 body 에 targetUserId 없음 (id 기준 수정)
+        reputationId: id,
+        resourceKey,
+        hasOpenWindow,
+        now: now.toISOString(),
+        matchedCount: rows.length,
+        matchedWindow: openRow ?? rows[0] ?? null,
+        allMatchedRows: rows,
+        windowError: windowError
+          ? { code: windowError.code, message: windowError.message }
+          : null,
+      };
+      console.debug("[season-reputations PUT] edit-window gate", snapshot);
+
+      if (!hasOpenWindow) {
+        const debugPayload =
+          process.env.NODE_ENV !== "production" ? { debug: snapshot } : {};
+        return NextResponse.json(
+          {
+            success: false,
+            error: "EDIT_WINDOW_CLOSED",
+            message: EDIT_WINDOW_LOCKED_MESSAGE,
+            ...debugPayload,
+          },
+          { status: 403 }
+        );
       }
     }
 
