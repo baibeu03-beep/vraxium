@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getCachedTeams, getCachedParts, getCachedActivityTypes } from "@/lib/cached-data";
 import { getProfileLookupKey, resolveUserProfileAccess } from "@/lib/user-profile-access";
+import { seasonLabel } from "@/lib/cluster4-types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -42,6 +43,89 @@ const EMPTY_RESUME_CARD_SETTINGS: ResumeCardSettings = {
   noticeBottomStampImageUrl: null,
   helpTooltipDefault: null,
 };
+
+type GrowthStartWeekDto = {
+  seasonKey: string | null;
+  seasonLabel: string | null;
+  weekNumber: number | null;
+  startDate: string | null;
+  endDate: string | null;
+};
+
+function toGrowthStartDisplayLabel(season: any): string | null {
+  if (!season) return null;
+  if (season.season_label) return season.season_label;
+  const year = season.year ? `${season.year}년도 ` : "";
+  const name = seasonLabel(season.season_type || "");
+  return name ? `${year}${name}시즌` : null;
+}
+
+function toLegacyGrowthStartWeekInfo(week: GrowthStartWeekDto | null, isBreak = false) {
+  if (!week) return null;
+  const match = week.seasonLabel?.match(/^(\d{4})년도\s*(.+?)시즌$/);
+  const fallbackYear = week.startDate ? new Date(week.startDate).getFullYear() : null;
+  const fallbackSeasonName = week.seasonLabel?.replace(/^\d{4}년도\s*/, "").replace(/시즌$/, "") || null;
+  return {
+    year: match ? Number(match[1]) : fallbackYear,
+    seasonName: match ? match[2] : fallbackSeasonName,
+    weekNumber: isBreak ? null : week.weekNumber,
+    isBreak,
+  };
+}
+
+async function resolveGrowthStartWeek(client: any, profile: any) {
+  let growthStartWeek: GrowthStartWeekDto | null = null;
+  let isBreak = false;
+
+  if (profile?.activity_started_at) {
+    const activityStartDate = String(profile.activity_started_at).split("T")[0];
+    const { data: week } = await client
+      .from("weeks")
+      .select("week_number, start_date, end_date, season_key, season_definitions!inner(season_key, season_label, season_type, year)")
+      .lte("start_date", activityStartDate)
+      .gte("end_date", activityStartDate)
+      .maybeSingle();
+
+    if (week) {
+      const season = week.season_definitions;
+      isBreak = String(season?.season_type || "").includes("break");
+      growthStartWeek = {
+        seasonKey: week.season_key || season?.season_key || null,
+        seasonLabel: toGrowthStartDisplayLabel(season),
+        weekNumber: isBreak ? null : week.week_number,
+        startDate: week.start_date || null,
+        endDate: week.end_date || null,
+      };
+    }
+  }
+
+  const fallbackStartWeekId = profile?.joined_week_id || profile?.onboarding_week_id || null;
+  if (!growthStartWeek && fallbackStartWeekId) {
+    const { data: week } = await client
+      .from("weeks")
+      .select("week_number, start_date, end_date, season_key, season_definitions!inner(season_key, season_label, season_type, year)")
+      .eq("id", fallbackStartWeekId)
+      .maybeSingle();
+
+    if (week) {
+      const season = week.season_definitions;
+      isBreak = String(season?.season_type || "").includes("break");
+      growthStartWeek = {
+        seasonKey: week.season_key || season?.season_key || null,
+        seasonLabel: toGrowthStartDisplayLabel(season),
+        weekNumber: isBreak ? null : week.week_number,
+        startDate: week.start_date || null,
+        endDate: week.end_date || null,
+      };
+    }
+  }
+
+  return {
+    growthStartWeek,
+    startWeekInfo: toLegacyGrowthStartWeekInfo(growthStartWeek, isBreak),
+    startDate: growthStartWeek?.startDate || profile?.activity_started_at || null,
+  };
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchResumeCardSettings(client: any, userId: string | null, orgSlug: string | null): Promise<ResumeCardSettings> {
@@ -413,47 +497,40 @@ export async function GET(request: NextRequest) {
           );
         }
       }
-      // v1 schema adapter: 운영 DB 의 실제 컬럼 (week_index, started_at, ended_at,
-      //   season_index) 을 select 한 뒤 JS 단에서 frontend 가 기대하는 legacy shape
-      //   (week_number, start_date, end_date, year, term_number, is_club_break,
-      //   holiday_name) 로 매핑한다. 운영 정책 (v1):
-      //     - is_club_break  → 항상 false   (D1)
-      //     - holiday_name   → 항상 null    (D2)
-      //     - term_number    → 항상 null    (D3)
-      //   휴식 / 공휴일 / 차수 의미는 v2 에서 운영 데이터 모델 확정 후 복원 예정.
+      // DB 정규 컬럼 기준 (season_definitions FK):
+      //   weeks: week_number, start_date, end_date, is_official_rest, holiday_name, season_key
+      //   season_definitions: season_key, season_label, season_type, year
       const weekQueries = weekId ? [
         // [10] activity_types (cluster_id 분류 + eligibility 메타데이터)
         supabaseAdmin.from("activity_types")
           .select("id, name, line_code, cluster_id, description, eligible_min_approved_weeks, eligible_max_approved_weeks, count_once_in_total")
           .eq("is_active", true),
-        // [11] current week (seasons join 포함) — 실 컬럼 SELECT, JS 에서 legacy shape 변환
+        // [11] current week (season_definitions join)
         supabaseAdmin.from("weeks")
-          .select("id, week_index, started_at, ended_at, season_id, seasons (id, season_index, name)")
+          .select("id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, season_definitions!inner(season_key, season_label, season_type, year)")
           .eq("id", weekId)
           .single(),
         // [12] all weeks (prev/next 네비게이션 + 누적 주차 필터링)
         supabaseAdmin.from("weeks")
-          .select("id, started_at, ended_at, season_id, seasons(name)")
-          .order("started_at", { ascending: false }),
+          .select("id, start_date, end_date, season_key, season_definitions(season_type)")
+          .order("start_date", { ascending: false }),
         // [13] weekly_activities for this week
         supabaseAdmin.from("weekly_activities")
           .select("id, activity_type_id, title, is_active, opened_at, output_links")
           .eq("week_id", weekId),
-        // [14] user_weekly_growth for this week
-        supabaseAdmin.from("user_weekly_growth")
-          .select("is_success, is_resting, is_club_break, failure_reason")
-          .eq("user_id", profile.id)
-          .eq("week_id", weekId)
-          .maybeSingle(),
+        // [14] user_week_statuses for this user (전체 → JS에서 weekId 매칭)
+        supabaseAdmin.from("user_week_statuses")
+          .select("week_start_date, status")
+          .eq("user_id", profile.id),
         // [15] all points for user (단감/인절미/어흥 누적 계산)
         supabaseAdmin.from("points")
           .select("week_id, point_type, points")
           .eq("user_id", profile.id),
-        // [16] success weeks for cumulative count — weeks embed 도 실 컬럼명 사용
-        supabaseAdmin.from("user_weekly_growth")
-          .select("week_id, weeks!inner(ended_at)")
+        // [16] success weeks — user_week_statuses status=success 기반
+        supabaseAdmin.from("user_week_statuses")
+          .select("week_start_date")
           .eq("user_id", profile.id)
-          .eq("is_success", true),
+          .eq("status", "success"),
       ] as const : [];
 
       const [
@@ -503,53 +580,72 @@ export async function GET(request: NextRequest) {
       const rawSuccessWeeks = ((weekResults[6]?.data as any[]) ?? []);
 
       const adaptedCurrentWeek = rawCurrentWeek ? {
-        id:            rawCurrentWeek.id,
-        week_number:   rawCurrentWeek.week_index,         // week_index → week_number
-        start_date:    rawCurrentWeek.started_at,         // started_at → start_date
-        end_date:      rawCurrentWeek.ended_at,           // ended_at   → end_date
-        is_club_break: false,                              // v1 D1
-        holiday_name:  null,                               // v1 D2
-        season_id:     rawCurrentWeek.season_id,
-        seasons: rawCurrentWeek.seasons ? {
-          id:          rawCurrentWeek.seasons.id,
-          name:        rawCurrentWeek.seasons.name,
-          year:        rawCurrentWeek.seasons.season_index, // season_index → year
-          term_number: null,                                 // v1 D3
+        id:               rawCurrentWeek.id,
+        week_number:      rawCurrentWeek.week_number,
+        start_date:       rawCurrentWeek.start_date,
+        end_date:         rawCurrentWeek.end_date,
+        is_official_rest: rawCurrentWeek.is_official_rest || false,
+        holiday_name:     rawCurrentWeek.holiday_name || null,
+        season_key:       rawCurrentWeek.season_key,
+        seasons: rawCurrentWeek.season_definitions ? {
+          season_key:  rawCurrentWeek.season_definitions.season_key,
+          name:        rawCurrentWeek.season_definitions.season_type,
+          year:        rawCurrentWeek.season_definitions.year,
+          season_label: rawCurrentWeek.season_definitions.season_label,
         } : null,
       } : null;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const adaptedAllWeeks = rawAllWeeks.map((w: any) => ({
         id:         w.id,
-        start_date: w.started_at,
-        end_date:   w.ended_at,
-        season_id:  w.season_id,
-        seasons:    w.seasons,
+        start_date: w.start_date,
+        end_date:   w.end_date,
+        season_key: w.season_key,
+        seasons:    w.season_definitions,
       }));
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const adaptedSuccessWeeks = rawSuccessWeeks.map((s: any) => ({
-        week_id: s.week_id,
-        weeks:   s.weeks ? { end_date: s.weeks.ended_at } : null,
-      }));
+      // user_week_statuses → weeklyGrowth 변환 (현재 주차 매칭)
+      const rawWeekStatuses = (weekResults[4]?.data as any[]) || [];
+      const currentWeekStartDate = adaptedCurrentWeek?.start_date;
+      const matchedStatus = currentWeekStartDate
+        ? rawWeekStatuses.find((s: any) => s.week_start_date === currentWeekStartDate)
+        : null;
+      const adaptedWeeklyGrowth = matchedStatus ? {
+        is_success: matchedStatus.status === 'success',
+        is_resting: matchedStatus.status === 'personal_rest',
+        is_official_rest: matchedStatus.status === 'official_rest',
+        failure_reason: matchedStatus.status === 'fail' ? 'fail' : null,
+      } : null;
+
+      // success weeks → weeks end_date 매칭
+      const successStartDates = new Set((weekResults[6]?.data as any[] || []).map((s: any) => s.week_start_date));
+      const adaptedSuccessWeeks = adaptedAllWeeks
+        .filter((w: any) => successStartDates.has(w.start_date))
+        .map((w: any) => ({ week_id: w.id, weeks: { end_date: w.end_date } }));
 
       const weekBundle = weekId && weekResults.length === 7 ? {
         activityTypes: weekResults[0]?.data || [],
         currentWeek:   adaptedCurrentWeek,
         allWeeks:      adaptedAllWeeks,
         weeklyActivities: weekResults[3]?.data || [],
-        weeklyGrowth: weekResults[4]?.data || null,
+        weeklyGrowth:  adaptedWeeklyGrowth,
         allPoints: weekResults[5]?.data || [],
         successWeeks: adaptedSuccessWeeks,
       } : null;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const joinedWeekRaw = joinedWeekResult.data as any;
+      const resolvedGrowthStart = await resolveGrowthStartWeek(supabaseAdmin, profile);
       return NextResponse.json({
         success: true,
         data: profile,
         onboardingWeekId: profile.onboarding_week_id || null,
-        growthInfo: { startDate: joinedWeekRaw?.started_at || null },
+        growthStartWeek: resolvedGrowthStart.growthStartWeek,
+        growthInfo: {
+          startDate: resolvedGrowthStart.startDate || joinedWeekRaw?.started_at || null,
+          startWeekInfo: resolvedGrowthStart.startWeekInfo,
+          growthStartWeek: resolvedGrowthStart.growthStartWeek,
+        },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         activityWeekIds: completedActivities.map((a: any) => a.week_id),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -601,21 +697,22 @@ export async function GET(request: NextRequest) {
       userTeamPartsResult,
       teamsResult,
       partsResult,
-      userWeeklyGrowthResult
+      userWeeklyGrowthResult,
+      weekStatusesResult,
+      seasonStatusesResult
     ] = await Promise.all([
       // 성장 시작일 (onboarding_week_id로 weeks 조회) - 시즌 정보 포함
       profile.onboarding_week_id
-        ? supabaseAdmin.from("weeks").select("start_date, week_number, season_id, seasons (id, year, name)").eq("id", profile.onboarding_week_id).maybeSingle()
+        ? supabaseAdmin.from("weeks").select("start_date, week_number, season_key, season_definitions!inner(season_key, season_label, season_type, year)").eq("id", profile.onboarding_week_id).maybeSingle()
         : Promise.resolve({ data: null }),
 
       // 성장 종료일 - 시즌 정보 포함
       profile.status === 'suspended' && profile.suspended_week_id
-        ? supabaseAdmin.from("weeks").select("end_date, week_number, seasons (year, name)").eq("id", profile.suspended_week_id).maybeSingle()
+        ? supabaseAdmin.from("weeks").select("end_date, week_number, season_definitions!inner(season_label, season_type, year)").eq("id", profile.suspended_week_id).maybeSingle()
         : profile.status === 'graduated'
           ? supabaseAdmin.from("user_season_histories")
-              .select(`seasons (year, name, end_date)`)
+              .select(`season_definitions!inner(season_label, season_type, year)`)
               .eq("user_id", profile.id)
-              .eq("progress_status", "completed")
               .order("created_at", { ascending: false })
               .limit(1)
               .maybeSingle()
@@ -644,15 +741,13 @@ export async function GET(request: NextRequest) {
       supabaseAdmin.from("user_growth_stats").select("approved_weeks, unapproved_weeks, rest_weeks, club_break_weeks, passed_weeks, available_weeks, available_weeks_club, available_seasons, rest_seasons, approved_seasons, reliability_rate").eq("user_id", profile.id).maybeSingle(),
 
       // 모든 주차 (실시간 계산용) - 미래 주차 포함 (시즌 전체 주차 수 계산용)
-      supabaseAdmin.from("weeks").select("id, start_date, end_date, is_club_break, season_id, week_number").order("start_date", { ascending: true }),
+      supabaseAdmin.from("weeks").select("id, start_date, end_date, is_official_rest, season_key, week_number").order("start_date", { ascending: true }),
 
       // 해당 유저의 승인된 휴식 요청
       supabaseAdmin.from("rest_requests").select("week_id").eq("user_id", profile.id).eq("status", "approved"),
 
-      // 모든 시즌 (성장 가능 시즌 계산용)
-      // 실제 schema 컬럼명: id, name, season_index, started_at, ended_at
-      // → 응답을 JS 단에서 { year, start_date, end_date } shape 로 변환.
-      supabaseAdmin.from("seasons").select("id, name, season_index, started_at, ended_at").order("started_at", { ascending: true }),
+      // 모든 시즌 — season_definitions 테이블 사용
+      supabaseAdmin.from("season_definitions").select("season_key, season_label, season_type, year").order("year", { ascending: true }),
 
       // 해당 유저의 성공 주차 (주차별) - user_weekly_growth 사용 (pms1.5와 동일)
       supabaseAdmin.from("user_weekly_growth").select("week_id").eq("user_id", profile.id).eq("is_success", true),
@@ -674,7 +769,7 @@ export async function GET(request: NextRequest) {
       Promise.resolve({ data: [], error: null }),
 
       // 해당 유저의 시즌별 포인트 (week_id를 통해 season 조인)
-      supabaseAdmin.from("points").select("week_id, point_type, points, weeks!inner(season_id)").eq("user_id", profile.id),
+      supabaseAdmin.from("points").select("week_id, point_type, points, weeks!inner(season_key)").eq("user_id", profile.id),
 
       // 해당 유저의 팀/파트 이력 (시즌 상태 표시용)
       supabaseAdmin.from("user_team_parts").select("user_id, team_id, part_id, joined_at, left_at, generation, managed_team_id").eq("user_id", profile.id),
@@ -686,43 +781,37 @@ export async function GET(request: NextRequest) {
       getCachedParts(),
 
       // user_weekly_growth (시즌별 성공 주차 실시간 계산용)
-      supabaseAdmin.from("user_weekly_growth").select("week_id, is_success, is_resting, weeks!inner(season_id)").eq("user_id", profile.id)
+      supabaseAdmin.from("user_weekly_growth").select("week_id, is_success, is_resting, weeks!inner(season_key)").eq("user_id", profile.id),
+
+      // Period SoT (admin 에서 시드/관리하는 canonical 테이블)
+      supabaseAdmin.from("user_week_statuses").select("status").eq("user_id", profile.id),
+      supabaseAdmin.from("user_season_statuses").select("status").eq("user_id", profile.id),
     ]);
 
-    // 시즌 이름 변환 맵 (영문 → 한글)
-    const seasonNameKoreanMap: { [key: string]: string } = {
-      'spring': '봄',
-      'summer': '여름',
-      'fall': '가을',
-      'winter': '겨울'
-    };
-
-    // break 시즌 이름 변환 함수 (spring_summer_break → 여름)
-    // isBreak=true일 때 프론트에서 "시즌, 전환 주차"를 붙임
-    const parseBreakSeasonName = (rawName: string): { seasonName: string; isBreak: boolean } => {
-      if (!rawName || !rawName.toLowerCase().includes('break')) {
-        return { seasonName: seasonNameKoreanMap[rawName] || rawName, isBreak: false };
+    // season_type → 한글 라벨 변환 (season_definitions 기준)
+    const { seasonLabel: slFn } = await import("@/lib/cluster4-types");
+    const parseSeasonType = (sType: string): { seasonName: string; isBreak: boolean } => {
+      if (!sType || !sType.includes('break')) {
+        return { seasonName: slFn(sType), isBreak: false };
       }
-      // spring_summer_break → ['spring', 'summer']
-      const parts = rawName.replace('_break', '').split('_');
-      if (parts.length >= 2) {
-        const toSeason = seasonNameKoreanMap[parts[1]] || parts[1];
-        return { seasonName: toSeason, isBreak: true };
-      }
-      return { seasonName: rawName, isBreak: false };
+      const parts = sType.replace('_break', '').split('_');
+      return { seasonName: parts.length >= 2 ? slFn(parts[1]) : sType, isBreak: true };
     };
 
     // 결과 처리
-    const growthStartDate = joinedWeekResult.data?.start_date || null;
+    const resolvedGrowthStart = await resolveGrowthStartWeek(supabaseAdmin, profile);
+    const growthStartDate = resolvedGrowthStart.startDate || joinedWeekResult.data?.start_date || profile.activity_started_at || null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const joinedWeekData = joinedWeekResult.data as any;
-    const startSeasonParsed = joinedWeekData?.seasons?.name ? parseBreakSeasonName(joinedWeekData.seasons.name) : null;
-    const growthStartWeekInfo = joinedWeekData ? {
-      year: joinedWeekData.seasons?.year || null,
+    const startSd = joinedWeekData?.season_definitions;
+    const startSeasonParsed = startSd?.season_type ? parseSeasonType(startSd.season_type) : null;
+    const legacyGrowthStartWeekInfo = joinedWeekData ? {
+      year: startSd?.year || null,
       seasonName: startSeasonParsed?.seasonName || null,
       weekNumber: startSeasonParsed?.isBreak ? null : (joinedWeekData.week_number || null),
       isBreak: startSeasonParsed?.isBreak || false
     } : null;
+    const growthStartWeekInfo = resolvedGrowthStart.startWeekInfo || legacyGrowthStartWeekInfo;
 
     let growthEndDate = null;
     let growthEndWeekInfo = null;
@@ -730,9 +819,10 @@ export async function GET(request: NextRequest) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const endWeekData = growthEndDateResult.data as any;
       growthEndDate = endWeekData?.end_date || null;
-      const endSeasonParsed = endWeekData?.seasons?.name ? parseBreakSeasonName(endWeekData.seasons.name) : null;
+      const endSd = endWeekData?.season_definitions;
+      const endSeasonParsed = endSd?.season_type ? parseSeasonType(endSd.season_type) : null;
       growthEndWeekInfo = endWeekData ? {
-        year: endWeekData.seasons?.year || null,
+        year: endSd?.year || null,
         seasonName: endSeasonParsed?.seasonName || null,
         weekNumber: endSeasonParsed?.isBreak ? null : (endWeekData.week_number || null),
         isBreak: endSeasonParsed?.isBreak || false
@@ -740,13 +830,14 @@ export async function GET(request: NextRequest) {
     } else if (profile.status === 'graduated') {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const graduatedData = growthEndDateResult.data as any;
-      growthEndDate = graduatedData?.seasons?.end_date || null;
-      const graduatedSeasonParsed = graduatedData?.seasons?.name ? parseBreakSeasonName(graduatedData.seasons.name) : null;
-      growthEndWeekInfo = graduatedData?.seasons ? {
-        year: graduatedData.seasons.year || null,
-        seasonName: graduatedSeasonParsed?.seasonName || null,
-        weekNumber: null, // 졸업의 경우 주차 정보 없음
-        isBreak: graduatedSeasonParsed?.isBreak || false
+      const gradSd = graduatedData?.season_definitions;
+      growthEndDate = null;
+      const gradParsed = gradSd?.season_type ? parseSeasonType(gradSd.season_type) : null;
+      growthEndWeekInfo = gradSd ? {
+        year: gradSd.year || null,
+        seasonName: gradParsed?.seasonName || null,
+        weekNumber: null,
+        isBreak: gradParsed?.isBreak || false
       } : null;
     }
 
@@ -761,21 +852,18 @@ export async function GET(request: NextRequest) {
     const allRests = allRestsResult.data || [];
     const userActivities = userActivitiesResult.data || [];
 
-    // 실제 seasons 컬럼: id, name, season_index, started_at, ended_at
-    // 본 라우트 + sortedSeasonHistories filter 가 기대하는 shape:
-    //   { id, name, year, start_date, end_date }
-    // ended_at 이 null 인 (= 현재 진행 중) 시즌은 end_date 를 now() 로 잡아
-    //   line 1085 의 "end_date >= growthStartDate" 필터를 통과하게 한다.
+    // season_definitions 테이블 — season_key, season_label, season_type, year
     const nowIso = new Date().toISOString();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allSeasonsRaw = (allSeasonsResult.data || []) as any[];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allSeasons = allSeasonsRaw.map((s: any) => ({
-      id: s.id,
-      name: s.name,
-      year: s.season_index,
-      start_date: s.started_at,
-      end_date: s.ended_at ?? nowIso,
+      id: s.season_key,
+      name: s.season_type,
+      season_label: s.season_label,
+      year: s.year,
+      start_date: null,
+      end_date: nowIso,
     }));
 
     // 진단 로그 (사용자 요청)
@@ -814,182 +902,60 @@ export async function GET(request: NextRequest) {
 
     console.log('[Profile API] final seasonHistories', seasonHistories);
 
-    // 실시간 성장 기간 통계 계산 (user_growth_stats 테이블에 데이터가 없을 때)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const userRestWeekIds = new Set(allRests.map((r: any) => r.week_id));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const activityByWeek = new Map(userActivities.map((a: any) => [a.week_id, a]));
-
-    // 시즌 휴식 상태인 시즌의 ID들 추출 (progress_status='full_rest', 현재 진행 중인 시즌 포함 - pms1.5와 동일)
-    const restingSeasonIds = new Set<string>();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (seasonHistories || []).forEach((sh: any) => {
-      if (sh.progress_status === 'full_rest' && sh.seasons?.id) {
-        restingSeasonIds.add(sh.seasons.id);
-      }
-    });
-
-    // 시즌 휴식 주차 ID들 (시즌 전체가 휴식인 경우의 주차들)
-    const seasonRestWeekIds = new Set<string>();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    allWeeks.forEach((week: any) => {
-      if (week.season_id && restingSeasonIds.has(week.season_id)) {
-        seasonRestWeekIds.add(week.id);
-      }
-    });
-
-    // 가입 주차 시작일 찾기
-    const joinedWeekStartDate = growthStartDate;
-
-    // 가입 이후 지나간 주차 필터링 (현재 주차 제외 - 아직 진행 중이므로)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const passedWeeksForUser = allWeeks.filter((w: any) => {
-      if (!joinedWeekStartDate) return false;
-      // 가입 이후 주차만
-      if (w.start_date < joinedWeekStartDate) return false;
-      // 현재 주차 제외 (end_date가 오늘 이후인 경우 = 아직 진행 중인 주차)
-      if (w.end_date >= today) return false;
-      return true;
-    });
-
-    // break 시즌 ID 목록 (전환 시즌) - 주차별 통계 계산 전에 미리 생성
+    // break 시즌 ID 목록 (전환 시즌) — completionRate 등 하류 계산에 필요
     const breakSeasonIds = new Set(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       allSeasons.filter((s: any) => s.name?.toLowerCase().includes('break')).map((s: any) => s.id)
     );
 
-    // 주차별 통계 계산
-    let approvedWeeksCount = 0;      // a: 활동 인정 주차
-    let unapprovedWeeksCount = 0;    // b: 활동 미인정 주차
-    let restWeeksCount = 0;          // c: 활동 휴식 주차
-    let clubBreakWeeksCount = 0;     // d: 공식 휴식 주차
+    // ─── Period 계산 (SoT: user_week_statuses + user_season_statuses) ───
+    const wsRows = ((weekStatusesResult as { data: Array<{ status: string }> | null })?.data ?? []);
+    const ssRows = ((seasonStatusesResult as { data: Array<{ status: string }> | null })?.data ?? []);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    passedWeeksForUser.forEach((week: any) => {
-      // 시즌 휴식 주차는 통계에서 제외 (시즌 단위로만 카운트됨)
-      if (seasonRestWeekIds.has(week.id)) {
-        return;
+    let approvedWeeksCount = 0;      // a: 성장(성공) 주차
+    let unapprovedWeeksCount = 0;    // b: 성장(실패) 주차
+    let restWeeksCount = 0;          // c: 휴식(개인) 주차
+    let clubBreakWeeksCount = 0;     // d: 휴식(공식) 주차
+    for (const r of wsRows) {
+      switch (r.status) {
+        case 'success':       approvedWeeksCount++; break;
+        case 'fail':          unapprovedWeeksCount++; break;
+        case 'personal_rest': restWeeksCount++; break;
+        case 'official_rest': clubBreakWeeksCount++; break;
       }
+    }
+    const availableWeeksCount = approvedWeeksCount + unapprovedWeeksCount + restWeeksCount; // e
+    const availableWeeksClubCount = availableWeeksCount; // e = a+b+c (성장 가능 주차)
 
-      const hasActivity = activityByWeek.has(week.id);
-      // 개인 휴식만 카운트 (시즌 휴식은 위에서 제외됨)
-      const hasPersonalRest = userRestWeekIds.has(week.id);
-      // break 시즌 소속 주차도 공식 휴식으로 처리 (is_club_break가 false여도)
-      const isClubBreak = week.is_club_break || breakSeasonIds.has(week.season_id);
-      const isOnboardingWeek = week.id === profile.onboarding_week_id;
+    let restSeasonsFromTable = 0;    // f
+    let approvedSeasonsFromTable = 0; // g
+    for (const r of ssRows) {
+      if (r.status === 'rest') restSeasonsFromTable++;
+      else approvedSeasonsFromTable++;
+    }
+    const availableSeasonsCount = restSeasonsFromTable + approvedSeasonsFromTable;
 
-      // 온보딩 주차는 무조건 성공 처리
-      if (isOnboardingWeek) {
-        approvedWeeksCount++;
-        return;
-      }
-
-      // 특수 케이스: 공식 휴식 주차인데 활동 인정 받은 경우 → a에만 +1
-      if (isClubBreak && hasActivity) {
-        approvedWeeksCount++;
-        return;
-      }
-
-      // 공식 휴식 주차 (d)
-      if (isClubBreak) {
-        clubBreakWeeksCount++;
-        return;
-      }
-
-      // 개인 휴식 주차 (c) - 시즌 휴식 제외, 개인 휴식만
-      if (hasPersonalRest) {
-        restWeeksCount++;
-        return;
-      }
-
-      // 활동 인정 (a)
-      if (hasActivity) {
-        approvedWeeksCount++;
-        return;
-      }
-
-      // 활동 미인정 (b)
-      unapprovedWeeksCount++;
-    });
-
-    // e: 활동 가능 주차 = a + b + c
-    const availableWeeksCount = approvedWeeksCount + unapprovedWeeksCount + restWeeksCount;
-
-    // break 시즌 ID 목록 (전환 시즌) - 위에서 이미 생성됨
-
-    // 성장 가능 시즌 수 계산 (가입 이후 클럽 정상 운영 시즌, break 시즌 제외)
-    let availableSeasonsCount = 0;
-    if (joinedWeekStartDate) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      availableSeasonsCount = allSeasons.filter((season: any) => {
-        // break 시즌 제외
-        if (breakSeasonIds.has(season.id)) return false;
-
-        // 가입 이후 시작된 시즌 또는 가입일이 해당 시즌 내인 경우
-        const seasonStartsAfterJoin = season.start_date >= joinedWeekStartDate;
-        const joinedDuringSeason = season.start_date <= joinedWeekStartDate && season.end_date >= joinedWeekStartDate;
-
-        if (!seasonStartsAfterJoin && !joinedDuringSeason) return false;
-
-        // 완료된 시즌만 (현재 진행 중인 시즌 제외)
-        return season.end_date < today;
-      }).length;
+    if (wsRows.length === 0) {
+      console.warn(`[Profile API] user_week_statuses EMPTY for user ${profile.id} — Period will be all 0`);
     }
 
-    // 성장 가능 주차 수 계산 (클럽 정상 운영 주차, break 시즌/공식 휴식 제외)
-    let availableWeeksClubCount = 0;
-    console.log('[Profile API] joinedWeekStartDate:', joinedWeekStartDate);
-    console.log('[Profile API] allWeeks count:', allWeeks.length);
-    console.log('[Profile API] breakSeasonIds:', Array.from(breakSeasonIds));
-    if (joinedWeekStartDate) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const filteredWeeks = allWeeks.filter((week: any) => {
-        // 가입 이전 주차 제외
-        if (week.start_date < joinedWeekStartDate) return false;
-
-        // 시즌 휴식 주차 제외 (시즌 전체가 휴식인 경우)
-        if (seasonRestWeekIds.has(week.id)) return false;
-
-        // 클럽 공식 휴식 주차 체크 (활동 인정 받은 경우 예외)
-        if (week.is_club_break) {
-          const hasApprovedActivity = activityByWeek.has(week.id);
-          if (!hasApprovedActivity) return false;
-        }
-
-        // 전환 시즌(break) 주차 제외
-        if (week.season_id && breakSeasonIds.has(week.season_id)) return false;
-
-        // 완료된 주차만 (현재 주차 제외)
-        return week.end_date < today;
-      });
-      availableWeeksClubCount = filteredWeeks.length;
-      console.log('[Profile API] availableWeeksClubCount:', availableWeeksClubCount);
-      console.log('[Profile API] filteredWeeks:', filteredWeeks.map((w: any) => ({ id: w.id, start_date: w.start_date, is_club_break: w.is_club_break })));
-    }
-
-    // 일정 신뢰도: user_growth_stats 테이블 값 사용 (pms1.5와 동일하게)
-    // i = (a+c)/(h-d) * 100, 올림 처리
-    // a: 활동 인정, c: 휴식, h: 지나간 주차, d: 공식 휴식
-    const gsApprovedWeeks = growthStats?.approved_weeks ?? approvedWeeksCount;
-    const gsRestWeeks = growthStats?.rest_weeks ?? restWeeksCount;
-    const gsPassedWeeks = growthStats?.passed_weeks ?? (approvedWeeksCount + unapprovedWeeksCount + restWeeksCount + clubBreakWeeksCount);
-    const gsClubBreakWeeks = growthStats?.club_break_weeks ?? clubBreakWeeksCount;
-    const reliabilityDenominator = gsPassedWeeks - gsClubBreakWeeks; // h - d
+    // 일정 신뢰도: i = (a+c)/(h-d) * 100, 올림
+    const totalWeeks = approvedWeeksCount + unapprovedWeeksCount + restWeeksCount + clubBreakWeeksCount; // h
+    const reliabilityDenominator = totalWeeks - clubBreakWeeksCount; // h - d
     let calculatedReliabilityRate = 0;
     if (reliabilityDenominator > 0) {
-      calculatedReliabilityRate = Math.min(100, Math.ceil(((gsApprovedWeeks + gsRestWeeks) / reliabilityDenominator) * 100));
+      calculatedReliabilityRate = Math.min(100, Math.ceil(((approvedWeeksCount + restWeeksCount) / reliabilityDenominator) * 100));
     }
 
-    // 항상 실시간 계산 값 사용 (현재 진행 중인 주차 제외)
     const finalGrowthPeriodStats = {
-      approvedWeeks: approvedWeeksCount,        // 성장 성공 주차
-      unapprovedWeeks: unapprovedWeeksCount,    // 성장 실패 주차
-      restWeeks: restWeeksCount,                // 성장 휴식 주차 (개인)
-      clubBreakWeeks: clubBreakWeeksCount,      // 클럽 공식 휴식 주차
-      availableWeeks: availableWeeksClubCount,  // 성장 가능 주차 (현재 주차 제외, break/공식휴식/시즌휴식 제외)
-      availableSeasons: growthStats?.available_seasons ?? availableSeasonsCount,
-      restSeasons: 0,      // 나중에 실시간 계산 값으로 덮어씀
-      approvedSeasons: 0,  // 나중에 실시간 계산 값으로 덮어씀
+      approvedWeeks: approvedWeeksCount,
+      unapprovedWeeks: unapprovedWeeksCount,
+      restWeeks: restWeeksCount,
+      clubBreakWeeks: clubBreakWeeksCount,
+      availableWeeks: availableWeeksClubCount,
+      availableSeasons: availableSeasonsCount,
+      restSeasons: restSeasonsFromTable,
+      approvedSeasons: approvedSeasonsFromTable,
       reliabilityRate: calculatedReliabilityRate,
     };
 
@@ -1022,7 +988,7 @@ export async function GET(request: NextRequest) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const validWeekIds = new Set(allWeeks.filter((w: any) => {
         if (w.start_date < growthStartDate) return false;
-        if (w.season_id && breakSeasonIds.has(w.season_id)) return false;
+        if (w.season_key && breakSeasonIds.has(w.season_key)) return false;
         return true;
       }).map((w: { id: string }) => w.id));
 
@@ -1236,20 +1202,14 @@ export async function GET(request: NextRequest) {
       return (seasonOrderMap[b.seasons?.name] || 0) - (seasonOrderMap[a.seasons?.name] || 0);
     });
 
-    // 시즌별 휴식/성공 시즌 수 실시간 계산 (sortedSeasonHistories 기반)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const restSeasonsCount = sortedSeasonHistories.filter((item: any) =>
-      item.progress_status === 'full_rest'
-    ).length;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const approvedSeasonsCount = sortedSeasonHistories.filter((item: any) =>
-      item.progress_status === 'completed'
-    ).length;
+    // 시즌 수: user_season_statuses SoT 기반 (위에서 이미 계산됨)
+    const restSeasonsCount = restSeasonsFromTable;
+    const approvedSeasonsCount = approvedSeasonsFromTable;
 
     // 클럽 온보딩 주차 반영: 온보딩 시즌의 approved_weeks에 +1
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const onboardingWeek = allWeeks.find((w: any) => w.id === profile.onboarding_week_id);
-    const onboardingSeasonId = onboardingWeek?.season_id;
+    const onboardingSeasonId = onboardingWeek?.season_key;
 
     // 시즌별 포인트 집계
     const seasonPointsData = seasonPointsResult.data || [];
@@ -1257,7 +1217,7 @@ export async function GET(request: NextRequest) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     seasonPointsData.forEach((p: any) => {
-      const seasonId = p.weeks?.season_id;
+      const seasonId = p.weeks?.season_key;
       if (!seasonId) return;
 
       if (!seasonPointsMap.has(seasonId)) {
@@ -1297,7 +1257,7 @@ export async function GET(request: NextRequest) {
     const allRestingWeekIds = new Set<string>(); // 전체 휴식 주차 ID (시즌 구분 없이)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     userWeeklyGrowthData.forEach((wg: any) => {
-      const seasonId = wg.weeks?.season_id;
+      const seasonId = wg.weeks?.season_key;
 
       if (wg.is_success && seasonId) {
         seasonSuccessWeeksMap.set(seasonId, (seasonSuccessWeeksMap.get(seasonId) || 0) + 1);
@@ -1338,7 +1298,7 @@ export async function GET(request: NextRequest) {
       // 해당 시즌의 주차들 필터링 (유저 가입일 이후, 현재 진행 중인 주차 제외)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const seasonWeeks = allWeeks.filter((w: any) => {
-        if (w.season_id !== seasonId) return false;
+        if (w.season_key !== seasonId) return false;
         // 유저 가입일 이후 주차만 포함
         if (growthStartDate && w.start_date < growthStartDate) return false;
         // 현재 진행 중인 주차 제외
@@ -1349,12 +1309,12 @@ export async function GET(request: NextRequest) {
       });
       // 운영 주차 (공식 휴식 제외)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const operatingWeeks = seasonWeeks.filter((w: any) => !w.is_club_break);
+      const operatingWeeks = seasonWeeks.filter((w: any) => !w.is_official_rest);
       const totalOperatingWeeks = operatingWeeks.length;
 
       // 시즌 전체 주차 수 (미래 주차 포함, 공식 휴식 포함) - total_weeks 표시용
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const allSeasonWeeks = allWeeks.filter((w: any) => w.season_id === seasonId);
+      const allSeasonWeeks = allWeeks.filter((w: any) => w.season_key === seasonId);
       const seasonTotalWeeks = allSeasonWeeks.length;
 
       // 해당 시즌의 주차 ID 목록
@@ -1512,12 +1472,14 @@ export async function GET(request: NextRequest) {
         shields: cumulativePoints?.total_shields || 0,
       },
       seasonHistories: finalSeasonHistoriesWithOnboarding,
+      growthStartWeek: resolvedGrowthStart.growthStartWeek,
       growthInfo: {
         status: profile.status,
         growthStatus: profile.growth_status,
         startDate: growthStartDate,
         endDate: growthEndDate,
         startWeekInfo: growthStartWeekInfo,
+        growthStartWeek: resolvedGrowthStart.growthStartWeek,
         endWeekInfo: growthEndWeekInfo,
       },
       gradeStats: gradeStats ? {
