@@ -10695,7 +10695,7 @@
     h3 {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 48px;
       color: #ffa500;
       font-family: "Pretendard", sans-serif;
       font-size: 24px;
@@ -10711,7 +10711,7 @@
 
       // ?쇱씤/移댄뀒怨좊━ ?띿뒪????留먯쨪???쒓굅, ?꾩껜 ?쒖떆 (workInfo + workExp 怨듯넻)
       .line-name-text {
-        color: #ffa500;
+        color: #FFEC8F;
         max-width: none !important;
         display: inline-block;
         overflow: visible !important;
@@ -11219,14 +11219,59 @@
       --enhance-color: 255, 107, 154;
       grid-column: 3;
       grid-row: 1;
-      align-self: start;
+      align-self: stretch; // personal-grid::before와 동일하게 row 1 전체 높이 채움 (top/bottom y 일치 보장)
       justify-self: end;
       display: flex;
       align-items: center;
+      justify-content: center; // 강화 상태(아이콘+텍스트 / void 마크) 박스 가로 정중앙 정렬
       gap: 8px;
       min-width: 180px;
-      padding-left: 16px;
-      transform: none !important; // DPR/subpixel rounding에 따른 우측 밀림 방지
+      padding-left: 0; // 박스 가로 중앙 정렬을 위해 비대칭 좌측 패딩 제거 (16 → 0)
+      transform: translateX(4px) !important; // 4개 모달 공통: output-links 우측 정렬 기준 미세 조정 (-19 → 4, +23px 우측)
+      position: relative; // ::before 배경 레이어 기준점
+      border: none;
+      outline: none;
+      box-shadow: none;
+
+      // 비-void 상태(강화 성공/대기/실패/해당없음)에서만 아이콘+문구 묶음을 ~8px 좌측 이동.
+      // 박스 자체는 이동하지 않고 padding-right 로 중앙 정렬의 기준선만 좌측으로 옮김 (padding-right N → 컨텐츠 N/2 좌측 이동).
+      // void 상태는 padding-right 0 유지 → 정중앙 그대로.
+      &:not(:has(.line-enhance-void)) {
+        padding-right: 16px; // 컨텐츠 8px 좌측 이동 (더 필요시 20px=-10px, 24px=-12px)
+      }
+
+      // .personal-line-status는 transform으로 이미 stacking context 보유 → z-index:-1로 자식(icon/text) 뒤에 안전 배치.
+      // 배경 아트(/images/0/bg01.png) + radial(중앙 보호) + 대각선 linear(컬러 톤) 조합.
+      // 단색 black 필터가 아닌 "딥네이비 → 자수정" 톤으로 살짝 물들여 "배경 효과" 느낌 유지.
+      // 텍스트/아이콘이 자리한 중앙은 radial로 더 어둡게, 가장자리로 갈수록 이미지가 자연스럽게 살아남.
+      &::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+          radial-gradient(
+            ellipse 85% 95% at 50% 50%,
+            rgba(8, 12, 22, 0.72) 0%,
+            rgba(8, 12, 22, 0.45) 60%,
+            rgba(8, 12, 22, 0.2) 100%
+          ),
+          linear-gradient(
+            135deg,
+            rgba(30, 45, 85, 0.4) 0%,
+            rgba(20, 18, 38, 0.25) 50%,
+            rgba(60, 30, 95, 0.4) 100%
+          ),
+          url("/images/0/bg01.png");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        filter: saturate(0.9) brightness(0.92);
+        border: none;
+        outline: none;
+        box-shadow: none;
+        pointer-events: none;
+        z-index: -1;
+      }
 
       &:has(.enhance-success) {
         --enhance-color: 255, 107, 154;
@@ -11294,15 +11339,14 @@
       // 'empty' 상태: 보이드 기호 3개 (정사각형 칩 ▮ ▮ ▮) — 색상 rgba(255, 195, 0, 1) 고정
       // 영역 폭 확대(102px = 14×3 + 30×2)로 칩 사이 명확한 분리감 확보.
       // space-between으로 양 끝 + 가운데 배치 → 칩 사이 간격 자동 30px.
-      // margin-left: 102px — 칩 그룹 자체를 오른쪽으로 102px 이동 (empty 케이스 전용).
-      // 부모 .personal-line-status의 transform은 다른 상태와 공유되므로 손대지 않음.
+      // 부모 .personal-line-status가 justify-content: center 이므로 void 자체 margin-left 불필요.
       .line-enhance-void {
         width: 102px;
         height: 60px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-left: 60px;
+        margin-left: 0;
         transform: none !important;
 
         .void-mark {
@@ -11403,6 +11447,28 @@
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
+    position: relative; // .workinfo-mid-divider absolute 기준점 (overflow:visible 보장됨)
+
+    // mid-col1 ↔ text-section 사이 시각적 구분선 — flow 비점유, .workinfo-left 의 overflow-y:auto 영향 X
+    // 위치: mid-section 하단 + 58px (≈ 1.5cm) → text-section 상단 영역
+    .workinfo-mid-divider {
+      position: absolute;
+      top: calc(100% + 12px);
+      left: calc(50% - 30px);
+      transform: translateX(-50%);
+      width: 180px;
+      height: 2px;
+      border-radius: 999px;
+      background: linear-gradient(
+        90deg,
+        transparent,
+        #faab07,
+        transparent
+      );
+      box-shadow: 0 0 4px rgba(250, 171, 7, 0.28);
+      pointer-events: none;
+      z-index: 10;
+    }
 
     .workinfo-mid-col1 {
       flex: 1;
@@ -11426,6 +11492,7 @@
   }
 
   .workinfo-date-badge {
+    margin-top: -4px; // date 영역 미세 상향 (요청: 살짝 위로)
     display: flex !important;
     flex-direction: row !important; // column ??row 媛뺤젣 (?ㅻⅨ ??됲꽣 override 諛⑹?)
     align-items: baseline;
@@ -11451,10 +11518,10 @@
   }
 
   .workinfo-line-info {
+    margin-top: -4px; // line-info 영역 미세 상향 (요청: 살짝 위로)
     display: flex;
     flex-direction: column;
     gap: 0;
-    margin: 0;
     padding: 0;
 
     .line-info-row {
@@ -11590,7 +11657,8 @@
     max-width: 270px;
     min-width: 0;
     box-sizing: border-box;
-    transform: none !important; // DPR/subpixel rounding에 따른 수직 밀림 방지
+    margin-top: 2px !important; // base 위치 — flow 차지 공간 변경 없음 (margin-top 증가 시 col2 가 col1 보다 커서 .workinfo-mid-section 의 min/실효 높이가 같이 커져 .workinfo-text-section 까지 밀어내는 부작용 있었음. 그래서 시각 이동은 transform 으로만.)
+    transform: translateY(34px) !important; // output-links 영역만 시각적으로 아래로 이동 — layout box 영향 없음 → downstream flow(.workinfo-text-section / .workinfo-image-grid / .workcareer-grade-section 등) y 좌표 보존. 4개 모달 공통.
 
     .output-link-row {
       display: flex;
@@ -11717,6 +11785,7 @@
     display: flex;
     flex-direction: column;
     gap: 16px !important;
+    // (구 ::before gold divider 제거 — .workinfo-mid-section > .workinfo-mid-divider 로 이전)
 
     .workinfo-text-block {
       display: flex;
@@ -12262,6 +12331,15 @@
   // ?꾨뱶 怨좎젙 ?꾩튂 ?먯튃 ?곸슜: min-width 吏?? 留먯쨪???쒓굅 (?몄쟻?ы빆怨??숈씪 ?먯튃)
   // 移대뱶 ?щ’ ??~210px (workinfo-right 420px / 2) ?덉뿉 ?섏슜?섎룄濡??고듃 10px, min-width 90px 湲곗?
   // ??????????????????????????????????????????????????????????????????????
+  // workCareer 전용 인적사항 카드 폰트 확대는 4개 모달 공통 블록(line 12914)으로 일원화.
+  // (이 블록에 padding-block 6px 가 있었으나 외곽 height 증가로 후속 flow 를 밀어내는 부작용이 있어 제거.)
+
+  // workCareer 전용: Output Link 영역만 약 0.5cm(18px) 아래로 이동
+  // (공통 .workinfo-output-links margin-top: 2px → 20px, 다른 요소 영향 없음)
+  .workinfo-output-links {
+    margin-top: 20px !important;
+  }
+
   .sponsor-card-slot {
     cursor: default !important;
 
@@ -12461,18 +12539,22 @@
     display: flex;
     align-items: center;
     justify-content: flex-end !important; // ?곗륫 ?뺣젹 (?대?吏 洹몃━??醫낅즺 x醫뚰몴 ?쇱튂)
-    gap: 8px;
-    width: 100%;
+    gap: 6px; // workCareer downsize: 8 -> 6 (label <-> grade-row tighter)
+    width: auto; // shrink to content (was 100% as flex item; now absolute-positioned)
     border: none !important;
     background: transparent !important;
     margin: 0 !important; // 紐⑤뱺 margin 由ъ뀑
-    margin-top: -31px !important; // ?됱젏 top = ?쇱씤肄붾뱶 top ?뺣젹 (?ㅼ륫 31px ?곹뼢)
+    // bottom: -12px — grade circles (28px) are 12px taller than (image-line-code.height + .workinfo-right gap = 16px).
+    // Hanging the wrapper 12px below .workinfo-right bottom moves grade.top down to exactly meet imageGrid.bottom.
+    // The 12px hang sits inside .section-modal-body's 20px bottom padding, so it doesn't visually overflow the modal.
+    // Grade is now positioned independently of line-code's bottom (per the explicit allowance to decouple).
+    position: absolute !important; right: 0; bottom: -12px; // anchor to .workinfo-right bottom-right (== .image-line-code bottom). Out of flex flow so .workinfo-image-grid flex: 1 1 0 stretches normally.
     padding: 0 !important; // 紐⑤뱺 padding 由ъ뀑
     flex-shrink: 0 !important;
 
     .grade-label {
       font-family: "Pretendard", sans-serif !important;
-      font-size: 14px !important; // 13 ??14 (?듭씪)
+      font-size: 13px !important; // workCareer downsize: 14 -> 13
       font-weight: 700 !important; // 600 ??700 (?듭씪)
       color: #ddd !important;
       white-space: nowrap;
@@ -12480,22 +12562,22 @@
 
     .grade-row {
       display: flex;
-      gap: 6px;
+      gap: 5px; // workCareer downsize: 6 -> 5 (button spacing)
 
       .grade {
-        width: 32px;
-        height: 32px;
+        width: 28px; // workCareer downsize: 32 -> 28
+        height: 28px; // workCareer downsize: 32 -> 28 (~87.5%)
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1.125rem;
+        font-size: 1rem; // workCareer downsize: 1.125rem -> 1rem
         font-weight: 400;
         color: #9c9c9c;
         background: linear-gradient(145deg, #d4d4d4, #a8a8a8);
         font-family: "Black Ops One", sans-serif;
         text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.35);
-        cursor: default; // ?ъ슜?먮뒗 ?좏깮 遺덇?
+        cursor: default;
         box-shadow:
           4px 4px 10px rgba(0, 0, 0, 0.5),
           -2px -2px 6px rgba(255, 255, 255, 0.15),
@@ -12523,14 +12605,29 @@
 
   // ?곗륫 而щ읆??醫뚯륫 ?꾩껜 ?믪씠??留욎떠 stretch (workexp? ?듭씪)
   .workinfo-right {
+    position: relative; // workcareer-only: positioning context for absolute-positioned .workcareer-grade-section
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 22px !important; // L10822 selector .workinfo-content-layout .workinfo-right has higher specificity (0,6,0) and applies gap:8px. !important needed to win over that.
     height: auto !important;
     max-height: none !important;
     align-self: stretch !important;
     padding-bottom: 0 !important;
     margin-bottom: 0 !important;
+  }
+
+  // workCareer only: force equal grid row heights even if sponsor-card (slot 4) tries to overflow its track.
+  // 1fr defaults to minmax(auto, 1fr); minmax(0, 1fr) overrides the auto min to keep rows strictly equal.
+  .workinfo-image-grid.workcareer-image-grid {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) !important;
+  }
+
+  // workCareer only: .workcareer-grade-section uses absolute positioning (right:0 bottom:0) inside .workinfo-right (position: relative).
+  // Removed from flex flow so .workinfo-image-grid (flex:1 1 0) can stretch and grid-template-rows resolve to equal heights.
+
+
+  .workinfo-text-section {
+    margin-bottom: 0 !important; // -31px offset on .workcareer-grade-section was removed; the paired +9px compensation here is no longer needed.
   }
 
   // (?대?吏 洹몃━??洹쒖튃? 怨듭슜 scope L8910???뺤쓽 ??workInfo 湲곗? ?듭씪. 以묐났 ?쒓굅)
@@ -12841,6 +12938,15 @@
 .cluster4-card-content .section-modal.work-view-modal.workcareer-view-modal,
 .cluster4-card-content .section-modal.work-view-modal.workexp-view-modal {
   .workinfo-personal-card {
+    // 4개 모달 공통: 인적사항 카드 텍스트는 자연스럽게 확대(폰트 13→16, tag 13→14, line-height/gap 기존값 유지)
+    // 폰트 확대로 인한 .personal-info 외곽 자연 증가분(약 +10px, 16×1.14×3 vs 13×1.14×3) 은
+    // .workinfo-personal-card 자신의 margin-bottom 음수로 layout 흐름에서 상쇄 →
+    // 후속 .workinfo-mid-section / .workinfo-text-section / .workinfo-output-links 의 y 좌표 보존.
+    // (downstream 요소에 -Npx 거는 땜질 대신 원인 측인 personal-card 에서 자체 보정.)
+    // 시각 결과: 카드 내부는 자연 line-height/gap 으로 깨끗하게 보이고, 카드 외곽과 mid-section 사이의
+    // gap 만 약 10px 좁아짐 (10px → ~0px). 카드 자체 위치 / 다음 요소 위치는 모두 수정 전 상태 그대로.
+    margin-bottom: -12px !important;
+
     .personal-row-1,
     .personal-row-2,
     .personal-row-3,
@@ -12849,12 +12955,12 @@
     .personal-age,
     .personal-separator,
     .field-value,
-    .field-label,
-    .tag-badge {
-      font-size: 13px !important;
+    .field-label {
+      font-size: 16px !important; // 13 → 16 (자연 확대, line-height/gap 손대지 않음)
     }
 
     .tag-badge {
+      font-size: 14px !important; // 13 → 14
       padding: 3px 10px !important;
     }
   }
@@ -12898,7 +13004,7 @@
 
       .personal-line-status {
         min-width: 0;
-        padding-left: 8px;
+        padding-left: 0; // 박스 가로 중앙 정렬 유지 — 좌측 비대칭 패딩 제거
         gap: 6px;
       }
 
@@ -14610,5 +14716,66 @@
     .supervisor-details {
       overflow-wrap: anywhere;
     }
+  }
+}
+
+// =====================================================================
+// Zone C (> 1920px) — work-view-modal 4종 큰 해상도 비율 보정 (v3: uniform scale)
+//
+// 시도 이력:
+//   v1: width: min(76.5vw, 2400px) — 외곽만 커지고 내부 px-고정 요소들은
+//       그대로 → 좌측 컬럼만 늘고 우측 컬럼/폰트/gap/아이콘 비율 깨짐.
+//   v2: height 추가 min(79vh, 1700px) — 가로/세로는 함께 컸지만 여전히
+//       내부 (workinfo-right 552px, mid-col2 360px, font 13~24px, gap,
+//       header 110px, icon 72/28px 등) 모든 px-고정값이 스케일 안되어
+//       "외곽만 크고 내부가 작게 떠 보이는" 현상 지속.
+//
+// 근본 원인:
+//   work-view-modal 내부 거의 모든 치수가 px 고정 (개별 보정 시 4종 모달
+//   × 수십 selector 의 회귀 위험). 외곽 박스만 vw/vh 로 키워서는 1920
+//   baseline 비율 재현 불가.
+//
+// 처방 (v3):
+//   1) 모달 layout box 는 1920 baseline 사이즈(1468×855) 그대로 보존.
+//   2) transform: scale(K) 로 modal 전체를 통째로 비례 확대.
+//      K = max(1, min(100vw / 1920px, 100vh / 1080px))
+//      - <length>/<length> = <number> (CSS Values 4, modern browsers).
+//      - min() 로 viewport 가로/세로 중 더 빡빡한 쪽 기준 → 절대 overflow X.
+//      - max(1, …) 로 ≤ 1920 비표준 viewport 에서 축소 방지.
+//   3) overlay 는 position:fixed + grid place-items:center 로 layout box
+//      (1468×855) 를 viewport 정중앙 배치. transform 은 center origin 으로
+//      균등 확대 → 시각적으로도 정중앙.
+//
+// 효과:
+//   1920 baseline 의 모든 내부 비율(좌:우 컬럼 904:552, 폰트, gap, icon,
+//   header, image grid, output-links, footer) 이 임의 해상도에서 정확히
+//   동일 비율로 함께 확대됨. 개별 selector 수정 없이 4종 모달 공통 적용.
+//
+// 범위: width > 1920px (=1920 이하 구간 전체 절대 무변경)
+// =====================================================================
+@media (min-width: 1921px) {
+  // (1) overlay 를 viewport 정중앙 centering — 부모 .cluster4-card-content
+  //     (max-width: 1330px, overflow-x: clip) 컨테이너 탈출 강제.
+  .cluster4-card-content .section-modal-overlay {
+    position: fixed !important;
+    inset: 0 !important;
+    display: grid !important;
+    place-items: center !important;
+    overflow: auto !important;
+  }
+
+  // (2) 모달 layout box 는 1920 baseline 그대로, transform 으로 균등 확대.
+  .cluster4-card-content .section-modal.work-view-modal.workinfo-view-modal,
+  .cluster4-card-content .section-modal.work-view-modal.workexp-view-modal,
+  .cluster4-card-content .section-modal.work-view-modal.workability-view-modal,
+  .cluster4-card-content .section-modal.work-view-modal.workcareer-view-modal {
+    width: 1468px !important;
+    max-width: 1468px !important;
+    height: 855px !important;
+    max-height: 855px !important;
+    // Sass 가 calc() 내부 '/' 를 division 으로 잡아 단위 불일치 에러를 내므로
+    // 전체 식을 문자열 보간으로 통째로 raw CSS 출력 (Sass 파서 우회).
+    transform: scale(#{"max(1, min(calc(100vw / 1920px), calc(100vh / 1080px)))"}) !important;
+    transform-origin: center center !important;
   }
 }

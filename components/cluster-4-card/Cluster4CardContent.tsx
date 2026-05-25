@@ -8618,7 +8618,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 <img src="/images/0/write.png" alt="write" />
                 {/* TODO: [백엔드 작업 필요] line↔activity 매핑 확정 후 "[라인: {lineName}]" 형태로 복원 — 현재는 category 표시 */}
                 <h3>
-                  실무 정보 [<span className="line-name-text">{selectedWorkInfoCard.category || "카테고리"}</span>]
+                  실무 정보 <span className="line-name-text">{selectedWorkInfoCard.category || "카테고리"}</span>
                 </h3>
               </div>
               <p className="modal-subtitle">이번 주에 어떤 실무 정보들을 통해, 어떤 과정과 성장을 이루어냈는지를 마음껏 어필해주세요. 😊</p>
@@ -8776,6 +8776,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         })}
                       </div>
                     </div>
+                    <div className="workinfo-mid-divider" aria-hidden="true" />
                   </div>
 
                   {/* 좌하단: Main Title (운영진 read-only) + Sub Title 200자 + Growth Point 100자 */}
@@ -9050,7 +9051,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <div className="modal-header-top">
                 <img src="/images/0/write.png" alt="write" />
                 <h3>
-                  실무 경험 [<span className="line-name-text">{lookupWorkExpMapping(selectedWorkExpCard.code)?.lineName || selectedWorkExpCard.badge || "카테고리"}</span>]
+                  실무 경험 <span className="line-name-text">{lookupWorkExpMapping(selectedWorkExpCard.code)?.lineName || selectedWorkExpCard.badge || "카테고리"}</span>
                 </h3>
               </div>
               <p className="modal-subtitle">이번 주에 어떤 실무 경험을 직접 진행해보며, 어떤 과정과 결과를 도출해냈는지를 마음껏 어필해주세요. 😊</p>
@@ -9205,6 +9206,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         })}
                       </div>
                     </div>
+                    <div className="workinfo-mid-divider" aria-hidden="true" />
                   </div>
 
                   {/* 좌하단: Main Title + Sub Title + Growth Point */}
@@ -9511,7 +9513,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <div className="modal-header-top">
                 <img src="/images/0/write.png" alt="write" />
                 <h3>
-                  실무 역량 [<span className="line-name-text">{selectedWorkAbilityCard.lineName || "카테고리"}</span>]
+                  실무 역량 <span className="line-name-text">{selectedWorkAbilityCard.lineName || "카테고리"}</span>
                 </h3>
               </div>
               <p className="modal-subtitle">이번 주에 어떤 실무 역량들을 습득하며, 어떤 과정과 성장을 이루어냈는지를 마음껏 어필해주세요. 😊</p>
@@ -9650,6 +9652,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         })}
                       </div>
                     </div>
+                    <div className="workinfo-mid-divider" aria-hidden="true" />
                   </div>
 
                   <div className="workinfo-text-section">
@@ -9912,7 +9915,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <div className="modal-header-top">
                 <img src="/images/0/write.png" alt="write" />
                 <h3>
-                  실무 경력 [<span className="line-name-text">{selectedWorkCareerCard.lineName || selectedWorkCareerCard.badge || "카테고리"}</span>]
+                  실무 경력 <span className="line-name-text">{selectedWorkCareerCard.lineName || selectedWorkCareerCard.badge || "카테고리"}</span>
                 </h3>
               </div>
               <p className="modal-subtitle">이번 주에 어떤 실무 경력을 쌓았으며, 그 과정 속에서 어떤 인사이트와 저변을 넓혔는지를 마음껏 어필해주세요. 😊</p>
@@ -10064,6 +10067,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         })}
                       </div>
                     </div>
+                    <div className="workinfo-mid-divider" aria-hidden="true" />
                   </div>
 
                   {/* 좌하단: Main Title(읽기전용) + Sub Title + Growth Point */}

@@ -40,7 +40,7 @@
 // 기본값을 visible로 두어 클라이언트 초기화가 실패해도
 // 전체 앱이 검정 화면처럼 영구히 숨겨지지 않게 한다.
 .nftg-app {
-  opacity: 1;
+  opacity: 0;
 }
 .nftg-app.app-ready {
   opacity: 1;

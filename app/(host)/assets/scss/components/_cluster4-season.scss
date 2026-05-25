@@ -4999,6 +4999,14 @@
             &.rest-official {
               color: #ffea48;
             }
+
+            &.in-progress {
+              color: #9b59b6;
+            }
+
+            &.counting {
+              color: #ff1493;
+            }
           }
 
           strong {

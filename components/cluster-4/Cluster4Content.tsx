@@ -3021,7 +3021,15 @@ const Cluster4Content = () => {
                         const halfValue = star * 2 - 1;
                         const isFull = currentSeason.rating >= fullValue;
                         const isHalf = !isFull && currentSeason.rating >= halfValue;
-                        return <img key={star} className={`star-icon ${isFull ? "" : isHalf ? "half" : "empty"}`} src="/images/0/cluster4/icon - star.png" alt="star" style={{ opacity: isFull ? 1 : isHalf ? 0.6 : 0.3 }} />;
+                        if (isHalf) {
+                          return (
+                            <span key={star} className="star-icon star-half" style={{ position: "relative", display: "inline-block" }}>
+                              <img src="/images/0/cluster4/icon - empty star.png" alt="star" style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "contain", opacity: 0.3, zIndex: 1 }} />
+                              <img src="/images/0/cluster4/icon - star.png" alt="star" style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "contain", clipPath: "inset(0 50% 0 0)", zIndex: 2 }} />
+                            </span>
+                          );
+                        }
+                        return <img key={star} className={`star-icon ${isFull ? "" : "empty"}`} src={isFull ? "/images/0/cluster4/icon - star.png" : "/images/0/cluster4/icon - empty star.png"} alt="star" />;
                       })}
                       <span className="rating-text">{currentSeason.rating || 0} / 10</span>
                     </div>
