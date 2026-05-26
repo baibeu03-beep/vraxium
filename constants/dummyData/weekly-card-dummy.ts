@@ -9,6 +9,8 @@ export type WeeklyCardCrew = {
   part: string;
 };
 
+export type RestReason = '중간고사' | '기말고사' | '설 연휴' | '한가위' | '시즌 전환';
+
 export type WeeklyCardData = {
   id: string;
   seasonName: string;     // 예: "2026년, 봄 시즌, 3주차" — 그대로 출력
@@ -16,7 +18,7 @@ export type WeeklyCardData = {
   dateRangeText: string;  // 예: "26.03.16(월) - 26.03.22(일)" — 그대로 출력
   status: '정상 진행' | '대전 집계' | '휴식';
   leagueResultStatus: '정상 진행' | '심화 진행' | '공식 휴식';
-  leagueRecordStatus: '대전 중' | '대전 집계' | '공표 중' | '검수 완료';
+  leagueRecordStatus: '대전 중' | '대전 집계' | '공표 중' | '검수 완료' | '대전 휴식';
   imageUrl: string | null;
   growthSuccessRate: number;
   growthChallengeRate: number;
@@ -27,6 +29,7 @@ export type WeeklyCardData = {
   personalRest: number;
   winningTeamImage: string | null;
   top3: WeeklyCardCrew[];
+  restReason?: RestReason;
 };
 
 // TOP3 표시 규칙 검증용 — 이름(3/4/5+), 팀(3/5/6+), 파트(3/5/6+) 케이스를
@@ -57,6 +60,10 @@ const LEAGUE_RECORDS: WeeklyCardData['leagueRecordStatus'][] = [
   '대전 집계',
   '공표 중',
   '검수 완료',
+];
+
+const REST_REASONS: RestReason[] = [
+  '중간고사', '기말고사', '설 연휴', '한가위', '시즌 전환',
 ];
 
 const seededRandom = (seed: number, max: number, min: number = 0): number => {
@@ -211,17 +218,22 @@ export const WEEKLY_CARD_DUMMY: WeeklyCardData[] = WEEKLY_RANKING_DISPLAY_MAP.ma
   (display, i) => {
     const isRest = i % 7 === 6;
     const isAggregating = !isRest && i % 5 === 0;
+    const resultStatus = LEAGUE_RESULTS[seededRandom(i + 61, LEAGUE_RESULTS.length)];
+    const isOfficialRest = resultStatus === '공식 휴식';
     return {
       id: `week-${i}`,
-      // 표시 문자열은 매핑값 그대로 — 연도/시즌명/주차명/기간 재계산 금지.
       seasonName: display.seasonName,
       weekNumber: extractWeekNumber(display.seasonName),
       dateRangeText: display.dateRangeText,
       imageUrl: display.imageUrl,
-      // 그 외 필드는 기존 그대로 seeded random
       status: isRest ? '휴식' : isAggregating ? '대전 집계' : '정상 진행',
-      leagueResultStatus: LEAGUE_RESULTS[seededRandom(i + 61, LEAGUE_RESULTS.length)],
-      leagueRecordStatus: LEAGUE_RECORDS[seededRandom(i + 71, LEAGUE_RECORDS.length)],
+      leagueResultStatus: resultStatus,
+      leagueRecordStatus: isOfficialRest
+        ? '대전 휴식'
+        : LEAGUE_RECORDS[seededRandom(i + 71, LEAGUE_RECORDS.length)],
+      restReason: isOfficialRest
+        ? REST_REASONS[seededRandom(i + 81, REST_REASONS.length)]
+        : undefined,
       growthSuccessRate: seededRate(i + 168),
       growthChallengeRate: seededRate(i + 915),
       totalCrews: 999,

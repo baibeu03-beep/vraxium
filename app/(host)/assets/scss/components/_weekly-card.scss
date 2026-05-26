@@ -847,6 +847,136 @@
     100% { left: 107%; width: 10%; }
   }
 
+  /* ---------- 공식 휴식 안내 ---------- */
+  .weekly-card__rest-notice {
+    position: relative;
+    display: block;
+    min-height: 232px;
+    padding: 42px 8px 8px;
+    flex: 1;
+    overflow: visible;
+  }
+
+  .weekly-card__rest-image-wrap {
+    position: absolute;
+    z-index: 1;
+    width: 194px;
+    height: 194px;
+    left: 24px;
+    top: 6px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid rgba(255, 236, 143, 0.2);
+    box-shadow:
+      0 0 28px rgba(255, 236, 143, 0.1),
+      inset 0 0 12px rgba(0, 0, 0, 0.3);
+    flex-shrink: 0;
+  }
+
+  .weekly-card__rest-image {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover;
+  }
+
+  .weekly-card__rest-copy {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 260px;
+    max-width: calc(100% - 64px);
+    margin-left: 150px;
+    text-align: center;
+    transform: translate(-0.5cm, 1.5cm);
+  }
+
+  .weekly-card__rest-lead,
+  .weekly-card__rest-support,
+  .weekly-card__rest-closing {
+    color: #ffffff;
+    text-shadow:
+      0 3px 12px rgba(0, 0, 0, 0.44),
+      0 1px 2px rgba(0, 0, 0, 0.75);
+  }
+
+  .weekly-card__rest-lead {
+    font-family: 'HakgyoansimTuho', 'Pretendard', sans-serif;
+    font-size: 27px;
+    font-weight: 400;
+    line-height: 1.02;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+
+  .weekly-card__rest-highlight {
+    display: inline;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    margin: 8px 0 9px;
+    padding: 0 0.22em;
+    background:
+      linear-gradient(
+        176deg,
+        transparent 0 16%,
+        rgba(92, 0, 0, 0.2) 16% 20%,
+        rgba(128, 8, 8, 0.88) 20% 34%,
+        rgba(109, 0, 0, 0.96) 34% 72%,
+        rgba(137, 16, 16, 0.84) 72% 84%,
+        rgba(90, 0, 0, 0.18) 84% 88%,
+        transparent 88% 100%
+      ),
+      radial-gradient(
+        120% 68% at 12% 54%,
+        rgba(126, 0, 0, 0.52) 0 20%,
+        transparent 21%
+      ),
+      radial-gradient(
+        140% 72% at 88% 48%,
+        rgba(126, 0, 0, 0.48) 0 18%,
+        transparent 19%
+      );
+    border: 0;
+    box-shadow: none;
+    font-family: 'HakgyoansimTuho', 'Pretendard', sans-serif;
+    font-size: 31px;
+    font-weight: 400;
+    color: #ffe16b;
+    line-height: 1.06;
+    letter-spacing: 0.8px;
+    transform: rotate(-3deg);
+    white-space: normal;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    text-shadow:
+      0 1px 0 rgba(61, 0, 0, 0.7),
+      0 2px 6px rgba(0, 0, 0, 0.35);
+  }
+
+  .weekly-card__rest-support {
+    font-family: 'HakgyoansimTuho', 'Pretendard', sans-serif;
+    font-size: 25px;
+    font-weight: 400;
+    line-height: 1.02;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+
+  .weekly-card__rest-closing {
+    font-family: 'HakgyoansimTuho', 'Pretendard', sans-serif;
+    font-size: 46px;
+    font-weight: 400;
+    line-height: 0.96;
+    letter-spacing: 1px;
+    margin-top: 8px;
+    text-shadow:
+      0 0 20px rgba(255, 255, 255, 0.2),
+      0 3px 12px rgba(0, 0, 0, 0.48),
+      0 1px 2px rgba(0, 0, 0, 0.82);
+  }
+
   /* ---------- Top 3 크루 ---------- */
   // [width 재조정] 이름 truncate 결과 "AAA.." (3 Korean + 2 dots) 가 13px Pretendard 에서
   // 안전하게 보이도록 52 → 60px. 그리드 column-gap 8px + 셀 boundary 누락 보정 마진 포함.
