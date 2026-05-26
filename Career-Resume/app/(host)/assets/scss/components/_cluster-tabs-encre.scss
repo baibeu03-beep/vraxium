@@ -1,0 +1,59 @@
+// =============================================================
+// Encre (EC) cluster-tabs override.
+//
+// 적용 조건:
+//   <main class="nftg-content nftg-content-home encre-theme"> 가 부착된
+//   라우트 (-ec) 에서만 활성화. (cluster-pages)/layout.tsx 가 자동 부착.
+//
+// base : _resume-card.scss line 1731-1873 (.cluster-tabs)
+//        - 기본 텍스트 #fed402
+//        - tab-text gradient #fed402 → #fff1aa
+//        - hover bg rgba(254, 212, 2, 0.15)
+//        - active bg gradient (with !important)
+//        - 흰색 border-top/bottom · 검정 diamond decorations · placeholder
+//          → 모두 의미적 구조(타이포·decoration) 라 미터치
+//
+// 본 override 는 _theme-tokens.scss 의 --ec-* 토큰만 참조한다.
+// active 분기는 base 가 !important 라서 동일 강도를 맞춰야 cascade 로 이긴다.
+//
+// 구조: _cluster-tabs-px.scss 와 1:1 mirror — 같은 selector / 같은 의도,
+//      토큰만 다름. 사용자 정책 "tab layout/spacing 변경 금지" 준수.
+// =============================================================
+
+.encre-theme {
+  .cluster-tabs {
+    .cluster-tab {
+      // 기본 tab 텍스트 색 — gradient 가 background-clip: text 로 fill
+      // 하지만 fallback 으로 soft accent 유지.
+      color: var(--ec-accent-soft);
+
+      .tab-text {
+        // 텍스트 gradient (background-clip: text). base 의
+        // linear-gradient(145deg, #fed402, #fff1aa) 를 EC 대각 그라데이션으로 교체.
+        background: var(--ec-gradient);
+        background-clip: text;
+        -webkit-background-clip: text;
+      }
+
+      // hover : text/background 동일색이 되지 않도록 soft-glow 만 부드러운
+      // 핑크 반투명. 텍스트 자체는 위 gradient 그대로 → contrast 보존.
+      &:hover {
+        background: var(--ec-accent-soft-glow);
+      }
+
+      &.active {
+        // base 의 `linear-gradient(145deg, #fed402, #fff1aa) !important` 를
+        // 동일 강도로 EC gradient 로 치환.
+        background: var(--ec-gradient) !important;
+
+        // active tab text : gradient 해제하고 단색 #000 으로 contrast 유지
+        // (base 동일 — 검정은 핑크 그라데이션 양 끝(#FF98A6, #FF4B70)에서
+        // 모두 충분히 가독, dark/cinematic 톤도 보존).
+        .tab-text {
+          background: none !important;
+          -webkit-text-fill-color: #000 !important;
+        }
+      }
+    }
+  }
+}

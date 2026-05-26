@@ -1,0 +1,502 @@
+// =============================================================
+// PX (Phalanx) cluster-2 override.
+//
+// 적용 조건:
+//   <main class="nftg-content nftg-content-home cluster-px-theme"> 가
+//   부착된 라우트(/cluster-2-px)에서만 활성화. /cluster-2 본체는 무영향.
+//
+// 원칙:
+//   - 절대 _cluster2.scss 본 파일을 건드리지 않는다.
+//   - 모든 selector 는 .cluster-px-theme 하위에서만 매칭.
+//   - rgba/glow 의 alpha 는 유지하고 RGB 만 PX 톤으로 교체.
+//   - inline `style={{ color: "#FAAB07" }}` 같은 JSX 인라인은 CSS 로 못 잡으므로
+//     컴포넌트에서 isPX 분기로 처리(여기선 다루지 않음).
+//
+// 색상 매핑 (요약):
+//   strong yellow/orange (#FFA500 / #FAAB07 / #FFC300 / #FFC919 / #F5A623)
+//     → var(--px-accent)             = #1E9503
+//   light yellow/gold (#FED402 / #FFF1AA / #FFE89C / #FFD700)
+//     → var(--px-accent-soft)        = #B2FF8F
+//   rgba(255,165,0, X) glow         → var(--px-accent-glow) (alpha 0.45 기준)
+//                                      또는 동일 alpha 의 rgba(30,149,3, X)
+// =============================================================
+
+.cluster-px-theme {
+
+  // -------------------------------------------------------
+  // 0) inline SVG attribute fill/stroke 일괄 override
+  //    Cluster2Content.tsx 의
+  //      <circle fill="#FFC300" />, <path fill="#F5A623" />,
+  //      <polygon fill="#FFA500" />, <svg stroke="#FFA500" />,
+  //      <path stroke="#FAAB07" />
+  //    를 CSS 만으로 PX 톤으로 변환.
+  //    (CSS fill/stroke 가 SVG attribute 보다 우선순위 높음)
+  // -------------------------------------------------------
+  svg [fill="#FFA500" i],
+  svg [fill="#FAAB07" i],
+  svg [fill="#FFC300" i],
+  svg [fill="#FFC919" i],
+  svg [fill="#F5A623" i] {
+    fill: var(--px-accent);
+  }
+  svg [fill="#FED402" i],
+  svg [fill="#FFF1AA" i],
+  svg [fill="#FFE89C" i],
+  svg [fill="#FFD700" i] {
+    fill: var(--px-accent-soft);
+  }
+  svg [stroke="#FFA500" i],
+  svg [stroke="#FAAB07" i],
+  svg [stroke="#FFC300" i],
+  svg [stroke="#FFC919" i],
+  svg [stroke="#F5A623" i] {
+    stroke: var(--px-accent);
+  }
+  svg [stroke="#FED402" i],
+  svg [stroke="#FFF1AA" i],
+  svg [stroke="#FFE89C" i] {
+    stroke: var(--px-accent-soft);
+  }
+
+  // -------------------------------------------------------
+  // 1) 공통 — section-edit-btn / floating-icons / edit-icon
+  //    _cluster2.scss line 21~89
+  // -------------------------------------------------------
+  .cluster2-content {
+    .section-edit-btn,
+    .section-edit-btn:hover {
+      background-color: var(--px-accent);
+    }
+
+    .floating-icons .edit-icon {
+      background: var(--px-accent);
+      &:hover {
+        background: var(--px-accent-soft);
+      }
+    }
+
+    // ---------------------------------------------------
+    // 2) cluster2-title-wrapper / quote-highlight gradient
+    //    line 218~228
+    // ---------------------------------------------------
+    .cluster2-title-wrapper .section1-description .quote-highlight {
+      background: var(--px-gradient);
+      -webkit-background-clip: text;
+      background-clip: text;
+    }
+
+    // ---------------------------------------------------
+    // 3) cluster2-top-frame
+    //    - 메인 프레임 PNG (section 01.png) 노란 톤 → PX green 리컬러
+    //    - hex-label hover color (line 387)
+    //    - hex-more bg (line 455), avatar-count color (line 469)
+    //    - progress-value (line 725)
+    //    - with-us-btn (line 728~) : 버튼 배경 PNG 가 노란색이므로
+    //      배경 fallback 색만 토큰으로 교체. PNG 자체는 이미지 파일 수정 금지 정책상 그대로.
+    // ---------------------------------------------------
+    .cluster2-top-frame {
+      // 본 element 의 background-image (section 01.png — 노란 프레임 PNG) 를
+      // 분리된 pseudo-element 로 옮긴 뒤 filter: hue-rotate 로 PX green 으로 recolor.
+      // 자식 노드(텍스트/사진/육각형)는 filter 의 영향을 받지 않도록 isolation 으로
+      // 별도 stacking context 안에 격리 + z-index:-1 로 ::before 만 뒤로 보낸다.
+      // 본 element 의 background-image 는 비워서 yellow 원본이 비치지 않도록 함.
+      isolation: isolate;
+      background-image: none;
+
+      &::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        background-image: url("/images/0/cluster 2/section 01.png");
+        background-size: calc(100% + 12px) calc(100% + 12px);
+        background-repeat: no-repeat;
+        background-position: center;
+        // #FAAB07 (hue ~40°) → #1E9503 (hue ~110°) 약 +72deg.
+        // saturate 살짝 낮춰 PX soft green 톤과 톤매칭. brightness 미세 보정.
+        filter: hue-rotate(72deg) saturate(0.95) brightness(0.92);
+      }
+
+      // 프레임 외곽 PX green glow — 기존 노란 yellow accent edge 의 대체.
+      box-shadow:
+        0 0 18px rgba(30, 149, 3, 0.18),
+        0 0 36px rgba(178, 255, 143, 0.10);
+
+      .frame-left .hexagon-large-row .hexagon-large-item:hover .hex-label {
+        color: var(--px-accent);
+      }
+      .frame-left .avatar-row .hexagon-stack .hex-more {
+        background: var(--px-accent);
+      }
+      .frame-left .avatar-row .avatar-count {
+        color: var(--px-accent);
+      }
+      .frame-right .progress-value {
+        color: var(--px-accent);
+      }
+    }
+
+    // ---------------------------------------------------
+    // 3-bis) mascot-icon (cluster2-top-frame .frame-right .mascot-icon)
+    //    - ::before (line 644~655) : 마스코트 이미지 뒤 rounded rectangle bg #f5a623
+    //    - speech-bubble border (line 669) + ::before 꼬리 테두리 (line 698) #f5a623
+    // ---------------------------------------------------
+    .cluster2-top-frame .frame-right .mascot-icon {
+      &::before {
+        background: var(--px-accent);
+      }
+
+      .speech-bubble {
+        border-color: var(--px-accent);
+        &::before {
+          border-left-color: var(--px-accent);
+        }
+      }
+    }
+
+    // ---------------------------------------------------
+    // 3-ter) with-us-btn (cluster2-top-frame .frame-right .with-us-btn)
+    //    line 728~766: 버튼 자체는 transparent 지만 자식 <img src="button box.png"/>
+    //    가 노란 PNG 라서 PX 톤에서 강한 yellow 가 그대로 노출됨.
+    //    원본 PNG 수정 금지 정책 유지: filter hue-rotate 로 recolor.
+    //    (#FAAB07 hue ~40° → #1E9503 hue ~110°, +72deg)
+    // ---------------------------------------------------
+    .cluster2-top-frame .frame-right .with-us-btn img {
+      filter: hue-rotate(72deg) saturate(0.95) brightness(0.92);
+    }
+
+    // ---------------------------------------------------
+    // 4) cluster2-quotes
+    //    quote-card 내부 yellow accent 가 직접적으론 적지만,
+    //    score-stars / dotted-navigation 등에 #dff314(라임) 이 사용됨 →
+    //    PX 라인업과 색감이 충돌하지 않으므로 여기서 변환하지 않음.
+    //    diamond-icon 이미지·dot active(#dff314) 등은 의도된 디자인 유지.
+    // ---------------------------------------------------
+
+    // ---------------------------------------------------
+    // 5) cluster2-videos
+    //    - 상단 1px 라인 rgba(236,187,2,1) — 노란 라인이라 PX 강조
+    //    - btn-wrapper::after SVG stroke '%23FAAB07'
+    //    - view-all-btn bg (line 1180), hover bg #ffc300 (1191)
+    //    - video-card.has-video:hover .play-button svg circle:nth-child(2) #ffc300 (1231)
+    //    - highlight-orange (line 1359), dot-separator (1386)
+    //    - videos-navigation .nav-btn:hover (1437~1442)
+    //    - progress-fill bg gradient (1456)
+    //    line 1108 ~ 1473
+    // ---------------------------------------------------
+    .cluster2-videos {
+      &::before {
+        background-color: var(--px-accent);
+      }
+
+      .videos-header {
+        // 뒤쪽 offset SVG 테두리(stroke=#FAAB07) 는 data-URL 이라 fill/stroke override 불가.
+        // 대신 PX 톤 SVG data-url 로 다시 그려서 덮는다.
+        .btn-wrapper::after {
+          background: url("data:image/svg+xml,%3Csvg width='137' height='51' viewBox='0 0 137 51' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0.8 0.8H135.4V27.3L108.5 49.8H0.8V0.8Z' stroke='%231E9503' stroke-width='1.62'/%3E%3C/svg%3E") no-repeat center/contain;
+        }
+
+        .view-all-btn {
+          background: var(--px-accent);
+          &:hover {
+            background: var(--px-accent-soft);
+          }
+        }
+      }
+
+      .videos-grid .video-card.has-video:hover .play-button svg {
+        circle:nth-child(2) {
+          fill: var(--px-accent);
+        }
+      }
+
+      .videos-grid .video-card .video-overlay .video-info-top {
+        .video-info-left .video-title .highlight-orange {
+          color: var(--px-accent);
+        }
+        .video-info-right .dot-separator {
+          color: var(--px-accent);
+        }
+      }
+
+      .videos-navigation {
+        .nav-btn:hover {
+          background: rgba(30, 149, 3, 0.2);
+          border-color: var(--px-accent);
+          svg path {
+            stroke: var(--px-accent);
+          }
+        }
+        .progress-bar .progress-fill {
+          background: var(--px-gradient);
+        }
+      }
+    }
+
+    // ---------------------------------------------------
+    // 6) cluster2-education
+    //    - school-circle bg (line 1831)
+    //    - edu-details .dot color (1874)
+    //    - edu-footer::before bg (1938) - 카드 하단 노란 라인
+    //    - edu-footer:hover bg + arrow (1942~1950)
+    //    - final-badge .final-label bg (2038), :hover box-shadow rgba(255,165,0,*)
+    //    - edu-pagination .pagination-dot.active bg (2103)
+    // ---------------------------------------------------
+    .cluster2-education {
+      .edu-card {
+        .edu-header .edu-school .school-circle {
+          background: var(--px-accent);
+        }
+
+        .edu-details li .dot {
+          color: var(--px-accent);
+        }
+
+        .edu-footer {
+          &::before {
+            background: var(--px-accent);
+          }
+          &:hover {
+            background: rgba(30, 149, 3, 0.15);
+            .arrow svg {
+              color: var(--px-accent);
+            }
+          }
+        }
+
+        .final-badge {
+          &:hover .final-label {
+            box-shadow: 0 0 30px var(--px-accent-glow);
+          }
+          .final-label {
+            background: var(--px-accent);
+          }
+        }
+      }
+
+      .edu-pagination .pagination-dot.active {
+        background: var(--px-accent);
+      }
+    }
+
+    // ---------------------------------------------------
+    // 7) cluster2-review-banner
+    //    title-shadow text-stroke 가 #21e786(녹색) 이라 PX 와 동일 계열 → 유지.
+    //    (별도 override 불필요)
+    // ---------------------------------------------------
+
+    // ---------------------------------------------------
+    // 8) cluster2-section4 (Cluving Review)
+    //    - quote-card-item border + box-shadow (2218, 2229, 2233)
+    //    - card-2 / card-3 border 는 light/이미 흰색 톤이라 강조 카드만 변환
+    //    - total-complete-box bg gradient + hover (2344, 2362, 2364)
+    //    - .complete-text h2 .highlight (2429), goto-btn:hover (2450)
+    //    - hex-bg-icon 들은 PNG 이므로 변환 불가
+    //    line 2182 ~ 2594
+    // ---------------------------------------------------
+    .cluster2-section4 {
+      .section4-left .quote-card-item {
+        border-color: var(--px-accent);
+        &.card-1 {
+          border-color: var(--px-accent);
+        }
+        // card-2/card-3 는 #ffe89c/#fffae9 이므로 soft 톤으로 매핑.
+        &.card-2 {
+          border-color: var(--px-accent-soft);
+        }
+        &:hover {
+          box-shadow: 0 25px 50px -12px var(--px-accent-glow);
+        }
+      }
+
+      // review-grid-9 .review-week-item 내부 강조 — 주차 라벨 + hover glow
+      // line 2466~2562
+      .section4-right .review-grid-9 .review-week-item {
+        .review-weeks {
+          color: var(--px-accent);
+        }
+        &:hover {
+          border-color: var(--px-accent-glow);
+          box-shadow:
+            0 10px 25px rgba(0, 0, 0, 0.3),
+            0 0 15px rgba(30, 149, 3, 0.15);
+          .medal-icon {
+            filter: drop-shadow(0 0 8px var(--px-accent-glow));
+          }
+          .review-weeks {
+            text-shadow: 0 0 10px var(--px-accent-glow);
+          }
+        }
+        .review-btn:hover {
+          color: var(--px-accent);
+        }
+      }
+
+      .section4-right .total-complete-box {
+        background: linear-gradient(
+          135deg,
+          rgba(30, 149, 3, 0.15) 0%,
+          rgba(30, 149, 3, 0.05) 100%
+        );
+        &:hover {
+          background: linear-gradient(
+            135deg,
+            rgba(30, 149, 3, 0.25) 0%,
+            rgba(30, 149, 3, 0.12) 100%
+          );
+          box-shadow: 0 8px 25px rgba(30, 149, 3, 0.2);
+        }
+
+        .complete-text h2 .highlight {
+          color: var(--px-accent);
+        }
+        .complete-text .goto-btn:hover {
+          color: var(--px-accent);
+        }
+      }
+    }
+
+    // ---------------------------------------------------
+    // 9) cluster2-intro
+    //    - intro-title-shadow text-stroke #ffa500 (2690)
+    //    - intro-sub::after 노란 underline bar #ffa500 (2738)
+    //    - intro-card .card-header h4 color #faab07 (2820)
+    //    - intro-card .card-arrow border + svg stroke #faab07 (2827, 2845)
+    //    - intro-card .card-arrow::after tooltip border + :hover bg/box-shadow (2868~2877)
+    //    - intro-card .card-subtitle::before border-left #faab07 (2924)
+    // ---------------------------------------------------
+    .cluster2-intro {
+      .intro-title-shadow {
+        -webkit-text-stroke: 1px var(--px-accent);
+        text-stroke: 1px var(--px-accent);
+      }
+      .intro-sub::after {
+        background: var(--px-accent);
+      }
+
+      .intro-cards .intro-card {
+        .card-header h4 {
+          color: var(--px-accent);
+        }
+        .card-header .card-arrow {
+          border: 2px solid var(--px-accent);
+          svg {
+            stroke: var(--px-accent);
+          }
+          &::after {
+            border: 1px solid var(--px-accent);
+          }
+          &:hover {
+            background: var(--px-accent);
+            box-shadow: 0 0 12px var(--px-accent-glow);
+            svg {
+              stroke: #000;
+            }
+          }
+        }
+        .card-subtitle::before {
+          border-left-color: var(--px-accent);
+        }
+      }
+    }
+  }
+}
+
+// =================================================================
+// Phase C — cluster-2 modal 외곽 chrome (PX).
+//
+// _cluster2.scss 가 9개 모달(edu / section1 / section2 / section21 /
+// section3 / section4 / intro / help / photo-preview) 외곽 border·glow·
+// corner 데코를 `#ffa500` / `rgba(255, 165, 0, X)` 로 하드코딩. PX 스코프
+// 에서 동일 selector set 을 mirror 해 var(--org-accent) 톤으로 치환.
+//
+// 헤더 divider / h3 글자 / close 버튼 hover / footer divider / scrollbar
+// 는 _global.scss 의 [class*="modal-header"] / [class*="modal-close"] /
+// [class*="modal-footer"] / .modal-body 글로벌 룰이 본 토큰 변수
+// (--modal-title-color / --modal-divider-color / --modal-close-hover-color /
+// --modal-scrollbar-thumb) 를 통해 자동 분기하므로 본 블록에선 중복 정의 X.
+//
+// inline 렌더링 → `.cluster-px-theme` ancestor selector 그대로 매칭됨
+// (createPortal 미사용). _cluster2.scss 의 !important 가 강해 본 블록도
+// !important 동반.
+//
+// 보존:
+//   - 모달 background-image (dark navy gradient — 구조)
+//   - 모달 layout / border-radius / animation
+//   - photo-preview-modal 내 검정 배경 (semantic 이미지 박스, 변경 X)
+//   - .required-mark / 별점 / 별 아이콘 / status flash — semantic
+// =================================================================
+
+// 9개 모달 외곽 — border / glow / corner ::before·::after 데코
+.cluster-px-theme {
+  .edu-modal,
+  .section1-modal,
+  .section2-modal,
+  .section21-modal,
+  .section3-modal,
+  .section4-modal,
+  .intro-modal,
+  .help-modal {
+    border-color: var(--org-accent) !important;
+    box-shadow: 0px 0px 60px 0px rgba(30, 149, 3, 0.15) !important;
+
+    &::before,
+    &::after {
+      border-color: var(--org-accent) !important;
+    }
+  }
+
+  // 모달 footer 버튼군 (save / edit / reset / cancel)
+  // _cluster2.scss 의 #ffa500 / #faab07 배경·보더 패턴을 PX 톤으로.
+  .edu-modal,
+  .section1-modal,
+  .section2-modal,
+  .section21-modal,
+  .section3-modal,
+  .section4-modal,
+  .intro-modal {
+    .modal-save-btn,
+    .modal-edit-btn {
+      background: var(--org-accent) !important;
+      border-color: var(--org-accent) !important;
+      box-shadow: 0 4px 15px rgba(30, 149, 3, 0.4) !important;
+
+      &:hover {
+        background: var(--org-accent-soft) !important;
+      }
+    }
+
+    .modal-cancel-btn,
+    .modal-reset-btn {
+      border-color: var(--org-accent) !important;
+      color: var(--org-accent) !important;
+
+      &:hover {
+        background: rgba(30, 149, 3, 0.1) !important;
+      }
+    }
+
+    .modal-help-icon {
+      color: var(--org-accent) !important;
+    }
+  }
+
+  // 모달 내부 입력/드롭다운 accent — _cluster2.scss 의 input border ·
+  // focus · select-active 패턴. _global.scss 의 글로벌 hover 가 yellow 라
+  // 본 블록에서 보강.
+  .edu-modal,
+  .section1-modal,
+  .section2-modal,
+  .section21-modal,
+  .section3-modal,
+  .section4-modal,
+  .intro-modal {
+    input:focus,
+    textarea:focus,
+    select:focus {
+      border-color: var(--org-accent) !important;
+    }
+  }
+}
+

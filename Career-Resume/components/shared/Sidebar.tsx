@@ -1,0 +1,219 @@
+"use client";
+import logo from "@/public/images/0/header-logo.png";
+import one from "@/public/images/sidebar/one.png";
+import two from "@/public/images/sidebar/two.png";
+import three from "@/public/images/sidebar/three.png";
+import Image, { StaticImageData } from "next/image";
+import Link from "next/link";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useMemo, useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
+import { dedupedJson } from "@/lib/fetch-dedupe";
+import { Autoplay } from "swiper/modules";
+import { Swiper, SwiperSlide } from "swiper/react";
+import { usePopup } from "@/components/ui/popup";
+// Define the type for the game object
+interface Game {
+  id: number;
+  image: StaticImageData;
+  href: string;
+}
+const games: Game[] = [
+  { id: 1, image: one, href: "/index-two-ec" },
+  { id: 2, image: two, href: "/index-two-ok" },
+  { id: 3, image: three, href: "/index-two-px" },
+  { id: 4, image: one, href: "/index-two-ec" },
+  { id: 5, image: two, href: "/index-two-ok" },
+  { id: 6, image: three, href: "/index-two-px" },
+  { id: 7, image: one, href: "/index-two-ec" },
+  { id: 8, image: two, href: "/index-two-ok" },
+  { id: 9, image: three, href: "/index-two-px" },
+];
+// 동물별 organization slug 매핑.
+// 고슴도치(/index-two-px) → phalanx · 사슴(/index-two-ec) → encre · 호랑이(/index-two-ok) → oranke
+const KNOWN_ORG_SLUGS = ["phalanx", "encre", "oranke"] as const;
+type OrgSlug = typeof KNOWN_ORG_SLUGS[number];
+
+const PATH_TO_ORG: Record<string, OrgSlug> = {
+  "index-two-px": "phalanx",
+  "index-two-ec": "encre",
+  "index-two-ok": "oranke",
+};
+
+const isOrgSlug = (v: string | null | undefined): v is OrgSlug =>
+  !!v && (KNOWN_ORG_SLUGS as readonly string[]).includes(v);
+
+const resolveCurrentOrg = (pathname: string | null, orgParam: string | null): OrgSlug | null => {
+  if (isOrgSlug(orgParam)) return orgParam;
+  if (!pathname) return null;
+  for (const [seg, slug] of Object.entries(PATH_TO_ORG)) {
+    if (pathname.includes(`/${seg}`)) return slug;
+  }
+  return null;
+};
+
+const Sidebar = () => {
+  const { data: session } = useSession();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const popup = usePopup();
+  const [myProfileId, setMyProfileId] = useState<string | null>(null);
+
+  const currentOrg = useMemo(
+    () => resolveCurrentOrg(pathname ?? null, searchParams?.get("org") ?? null),
+    [pathname, searchParams]
+  );
+  const crewsHref = currentOrg ? `/crews?org=${currentOrg}` : "/crews";
+  const weeklyRankingHref = currentOrg ? `/weekly-ranking?org=${currentOrg}` : "/weekly-ranking";
+
+  // 로그인 시 user_profiles ID를 미리 가져옴
+  // 어드민(마더 계정)은 user_profiles에 없어 404 — skip
+  useEffect(() => {
+    if (!session?.user) return;
+    if (session.user.isAdmin) return;
+    dedupedJson<any>('/api/profile/')
+      .then(result => {
+        if (result?.success && result.data?.id) {
+          setMyProfileId(result.data.id);
+        }
+      })
+      .catch(() => {});
+  }, [session]);
+
+  const handleCareerResumeClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (session?.user) {
+      // 어드민(마더 계정)은 본인 프로필이 없어 /cluster-4 가 무의미 — 바로 크루 목록으로
+      if (session.user.isAdmin) {
+        router.push("/crews");
+        return;
+      }
+      if (myProfileId) {
+        router.push(`/cluster-4/?userId=${myProfileId}`);
+      } else {
+        router.push("/cluster-4");
+      }
+    } else {
+      await popup.alert("현재 활동 중이거나 졸업한 크루여야 합니다");
+    }
+  };
+
+  return (
+    <aside className="nftg-sidebar">
+      <div className="container">
+        <div className="row">
+          <div className="col-12">
+            <div className="sidebar__wrapper">
+              <div className="sidebar__widget">
+                <Link href="/" className="sidebar__logo not-cursor" aria-label="home page" title="logo">
+                  <Image src={logo} alt="Logo" 
+                    className="w-16 h-16 left-0 top-[4px] absolute"
+                    width={64} height={64} />
+                </Link>
+              </div>
+              <div className="sidebar__widget sidebar--links">
+                <ul>
+                  <li>
+                    <Link href={weeklyRankingHref} aria-label="주간 랭킹" title="주간 랭킹">
+                      <i className="ti ti-layout-grid-add"></i>
+                      <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
+                        <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
+                      </svg>
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href={crewsHref} aria-label="크루" title="크루">
+                      <i className="ti ti-chart-bar"></i>
+                      <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
+                        <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
+                      </svg>
+                    </Link>
+                  </li>
+                  <li>
+                    <a href="#" onClick={(e) => e.preventDefault()} aria-label="졸업 절차" title="졸업 절차" style={{ cursor: "default" }}>
+                      <i className="ti ti-tag"></i>
+                      <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
+                        <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
+                      </svg>
+                    </a>
+                  </li>
+                  <li>
+                    <a href="#" onClick={handleCareerResumeClick} aria-label="커리어 레쥬메" title="커리어 레쥬메">
+                      <i className="ti ti-coin"></i>
+                      <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
+                        <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
+                      </svg>
+                    </a>
+                  </li>
+                </ul>
+              </div>
+              <div className="sidebar__widget sidebar--images">
+                <div className="sidebar__widget-slider">
+                  <Swiper
+                    loop={true}
+                    speed={1000}
+                    slidesPerView={3}
+                    spaceBetween={20}
+                    centeredSlides={true}
+                    direction="vertical"
+                    modules={[Autoplay]}
+                    autoplay={{
+                      delay: 3000,
+                      disableOnInteraction: false,
+                      pauseOnMouseEnter: true,
+                    }}
+                    className="sidebar-game-slider swiper"
+                  >
+                    {games.map((game) => (
+                      <SwiperSlide key={game.id} className="swiper-slide">
+                        <div className="sidebar-slider__single">
+                          <Link href={game.href} aria-label="open landing page" title="open landing page">
+                            <Image src={game.image} alt="Image" />
+                            <svg viewBox="-3 -3 106 106" xmlns="http://www.w3.org/2000/svg" fill="none" className="hexagon-border">
+                              <polygon points="50 0, 100 25, 100 75, 50 100, 0 75, 0 25" />
+                            </svg>
+                          </Link>
+                        </div>
+                      </SwiperSlide>
+                    ))}
+                  </Swiper>
+                </div>
+              </div>
+              <div className="sidebar__widget sidebar--links">
+                <ul>
+                  <li>
+                    <Link href="/profile" aria-label="add wallet" title="add wallet">
+                      <i className="ti ti-circle-plus"></i>
+                      <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
+                        <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
+                      </svg>
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/profile" aria-label="view settings" title="view settings">
+                      <i className="ti ti-settings"></i>
+                      <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
+                        <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
+                      </svg>
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/" aria-label="log out" title="log out">
+                      <i className="ti ti-logout"></i>
+                      <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
+                        <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
+                      </svg>
+                    </Link>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+};
+
+export default Sidebar;

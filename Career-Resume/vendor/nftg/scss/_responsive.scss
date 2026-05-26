@@ -1,0 +1,2357 @@
+/* ==== 
+ --------- (6.0) responsive styles start ---------
+ ==== */
+
+@media only screen and (min-width: 1400px) {
+  .tournaments,
+  .tournament-details,
+  .badges {
+    .container {
+      max-width: 1496px;
+    }
+  }
+}
+
+@media only screen and (min-width: 1200px) {
+  // header
+  .header {
+    .navbar__item {
+      .dot-menu {
+        padding: 34px 12px 30px;
+        font-size: 24px;
+        span {
+          display: none;
+        }
+        &::after {
+          content: none;
+        }
+      }
+
+      .dot-menu.nftg-open-modal-active {
+        color: var(--primary-color);
+      }
+
+      .nftg-modal-body-active {
+        transform: translateY(-26px);
+        .navbar__sub-menu {
+          opacity: 1;
+          visibility: visible;
+          pointer-events: all;
+        }
+      }
+    }
+  }
+}
+
+@media only screen and (max-width: 1859.98px) {
+  .trending {
+    .trending__wrapper {
+      grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+    }
+  }
+}
+
+@media only screen and (max-width: 1979.98px) {
+  // header
+  .header {
+    .navbar__items {
+      .open-search {
+        display: block !important;
+        line-height: 0px;
+      }
+    }
+  }
+
+  .search-popup {
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100vh;
+    width: 100%;
+    z-index: 99999;
+    margin-top: -540px;
+    transform: translateY(-100%);
+    background-color: var(--secondary-color);
+    transition: all 1500ms cubic-bezier(0.86, 0, 0.07, 1);
+    transition-timing-function: cubic-bezier(0.86, 0, 0.07, 1);
+
+    form {
+      position: absolute;
+      max-width: 700px;
+      top: 50%;
+      left: 15px;
+      right: 15px;
+      margin: -35px auto 0;
+      transform: scaleX(0);
+      transform-origin: center;
+      transition: all 300ms ease;
+    }
+
+    .search-popup__group {
+      position: relative;
+      margin: 0px;
+      overflow: hidden;
+      clip-path: unset;
+
+      .cmn-shape {
+        display: none;
+      }
+
+      input {
+        padding: 16px 60px 16px 24px;
+        border: 1px solid var(--tertiary-color);
+        border-radius: 0px;
+        &:focus {
+          border: 1px solid var(--quaternary-color) !important;
+        }
+      }
+    }
+
+    .close-search {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 75%;
+      margin: 0 auto;
+      margin-top: -160px;
+      height: 70px;
+      font-size: 24px;
+      color: var(--black);
+      line-height: 70px;
+      cursor: pointer;
+      border-radius: 50%;
+      text-align: center;
+      background-color: var(--quaternary-color);
+      width: 70px;
+      cursor: pointer;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+      border-bottom: 3px solid var(--white);
+      transition: all 500ms ease;
+      opacity: 0;
+      visibility: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      span {
+        position: relative;
+        display: block;
+        height: 70px;
+        width: 70px;
+        font-size: 20px;
+        line-height: 70px;
+        color: var(--white);
+      }
+    }
+  }
+
+  .sidenav-bar-visible .search-popup {
+    width: 80%;
+  }
+
+  .search-active .search-popup {
+    transform: translateY(0%);
+    margin-top: 0;
+    form {
+      transform: scaleX(1);
+      transition-delay: 1200ms;
+    }
+    .close-search {
+      visibility: visible;
+      opacity: 1;
+      top: 50%;
+      transition-delay: 1500ms;
+    }
+  }
+
+  // banner
+  .banner {
+    h2 {
+      font-size: 48px;
+      line-height: 58px;
+    }
+  }
+}
+
+@media only screen and (max-width: 1719.98px) {
+  // header
+  .header {
+    .navbar {
+      gap: 12px;
+    }
+
+    .navbar__items,
+    .navbar__items-inner,
+    .navbar__items-wrapper {
+      gap: 16px;
+    }
+
+    .navbar__items-wrapper {
+      justify-content: flex-end;
+    }
+
+    .navbar__items {
+      .btn--primary {
+        display: none;
+      }
+    }
+
+    .navbar__items {
+      &:nth-of-type(1) {
+        margin-right: 0px;
+      }
+    }
+
+    .wallet-ic {
+      span {
+        &:nth-last-of-type(1) {
+          display: none;
+        }
+      }
+    }
+
+    .profile-dropdown {
+      margin-left: 0px;
+      margin-right: 0px;
+      a {
+        gap: 6px;
+      }
+      span {
+        &:nth-of-type(2) {
+          display: none;
+        }
+      }
+      .profile-dropdown-btn {
+        display: none;
+      }
+
+      .profile-dropdown__modal {
+        right: 0px;
+      }
+    }
+  }
+
+  // banner
+  .banner {
+    h2 {
+      font-size: 40px;
+      line-height: 50px;
+    }
+  }
+
+  .banner-two {
+    padding-left: 120px;
+    background-position: right top;
+
+    .banner-two__thumb {
+      img {
+        max-width: 25vw;
+      }
+    }
+  }
+
+  // countdown
+  .countdown {
+    .count-inner {
+      padding-top: 0px;
+    }
+    .count-thumb {
+      left: 62%;
+      max-width: 14vw;
+      img {
+        height: auto;
+        top: unset;
+        bottom: 0px;
+        width: 18vw;
+      }
+    }
+  }
+
+  // cta section
+  .cta {
+    .cta__inner {
+      margin-top: 0px;
+    }
+    .cta__thumb {
+      position: absolute;
+      bottom: 0px;
+      top: unset;
+      right: 5%;
+
+      img {
+        max-width: 20vw;
+      }
+    }
+  }
+
+  // nftg layout two
+  .nftg-app-alt {
+    .nftg-thumb {
+      max-width: 400px;
+    }
+    .nftg-layout-two {
+      width: calc(100% - 400px);
+      margin-left: 400px;
+    }
+  }
+}
+
+@media only screen and (max-width: 1599.98px) {
+  .footer {
+    .footer__widget--alt {
+      padding: 0px 24px;
+    }
+
+    .social {
+      a {
+        font-size: 24px;
+      }
+    }
+  }
+}
+
+@media only screen and (max-width: 1399.98px) {
+  // typography
+  .title-xxl {
+    font-size: 80px;
+    line-height: 90px;
+  }
+
+  .title-xl {
+    font-size: 60px;
+    line-height: 70px;
+  }
+
+  .title-lg {
+    font-size: 52px;
+    line-height: 62px;
+  }
+
+  .title-md {
+    font-size: 48px;
+    line-height: 58px;
+  }
+
+  .title-sm {
+    font-size: 40px;
+    line-height: 50px;
+  }
+
+  .stroked-text {
+    &::after {
+      top: -3px;
+      left: -3px;
+    }
+  }
+
+  // layout
+  .nftg-app {
+    .nftg-sidebar {
+      display: none;
+    }
+
+    .nftg-layout {
+      width: 100%;
+      margin-left: 0px;
+    }
+
+    .nftg-content {
+      padding: 0px;
+    }
+
+    .home-two-sidebar {
+      margin-top: 60px;
+    }
+  }
+
+  .nftg-app.sidebar-remove .header {
+    padding-left: 0px !important;
+  }
+
+  // header
+  .header {
+    padding: 0px;
+
+    .navbar__items,
+    .navbar__items-inner,
+    .navbar__items-wrapper {
+      gap: 16px;
+    }
+  }
+
+  // banner
+  .banner {
+    .banner__content {
+      padding-left: 120px;
+      p {
+        margin-top: 6px;
+      }
+
+      .banner__thumb {
+        img {
+          max-width: 20vw;
+        }
+      }
+    }
+    .banner__slider-single {
+      .thumb {
+        a,
+        img {
+          max-height: 700px;
+        }
+      }
+    }
+  }
+
+  .tournaments {
+    .torunaments__filter-right {
+      justify-content: flex-start;
+    }
+
+    .tournaments-item__single {
+      flex-direction: column;
+      align-items: center;
+
+      .content {
+        text-align: center;
+        width: 100%;
+        .platform,
+        .time-schedule {
+          justify-content: center;
+        }
+      }
+    }
+  }
+
+  .tournament-details {
+    .tournament-bracket {
+      .tournament-bracket-first {
+        &::after {
+          right: 10px;
+          width: 30px;
+        }
+      }
+      .tournament-bracket-second {
+        &::after {
+          right: 10px;
+          width: 30px;
+        }
+        .tournament-bracket__group-wrapper {
+          &::before {
+            right: calc(100% + 5px);
+            width: 30px;
+          }
+        }
+      }
+      .tournament-bracket__final {
+        .tournament-bracket__group-wrapper {
+          &::before {
+            right: calc(100% + 5px);
+            width: 30px;
+          }
+        }
+      }
+    }
+  }
+
+  // countdown
+  .countdown {
+    .count-wrapper {
+      padding: 120px 80px;
+    }
+  }
+
+  // cta section
+  .cta {
+    .cta__inner {
+      padding: 160px 120px;
+    }
+  }
+
+  // footer
+  .footer {
+    padding: 0px;
+  }
+}
+
+@media only screen and (max-width: 1199.98px) {
+  // typography
+  .text-xxl {
+    font-size: 20px;
+    line-height: 30px;
+  }
+
+  .text-xl {
+    font-size: 18px;
+    line-height: 28px;
+  }
+
+  h1 {
+    font-size: 56px;
+    line-height: 66px;
+  }
+
+  h2 {
+    font-size: 40px;
+    line-height: 50px;
+  }
+
+  h3 {
+    font-size: 30px;
+    line-height: 40px;
+  }
+
+  h4 {
+    font-size: 24px;
+    line-height: 34px;
+  }
+
+  h5 {
+    font-size: 20px;
+    line-height: 30px;
+  }
+
+  .title-xxl {
+    font-size: 56px;
+    line-height: 66px;
+  }
+
+  .title-xl {
+    font-size: 40px;
+    line-height: 50px;
+  }
+
+  .title-lg {
+    font-size: 36px;
+    line-height: 46px;
+  }
+
+  .title-md {
+    font-size: 30px;
+    line-height: 40px;
+  }
+
+  .title-sm {
+    font-size: 24px;
+    line-height: 34px;
+  }
+
+  // nftg layout two
+  .nftg-app-alt {
+    .nftg-thumb {
+      display: none;
+    }
+    .nftg-layout-two {
+      width: 100%;
+      margin-left: 0px;
+    }
+
+    .nftg-content-two {
+      padding: 0px;
+    }
+  }
+
+  // header
+  .header {
+    padding: 18px 0px 17px;
+    .navbar {
+      gap: 20px;
+    }
+    .navbar__items-wrapper {
+      justify-content: flex-end;
+    }
+
+    .navbar__item {
+      .dot-menu {
+        i {
+          display: none;
+        }
+      }
+    }
+  }
+
+  .header-two {
+    padding-left: 0px;
+    padding-right: 0px;
+  }
+
+  // mobile menu
+  .mobile-menu {
+    position: fixed;
+    inset: 0px;
+    overflow: hidden;
+    transition: var(--transition);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(100%);
+    transition: var(--transition);
+    z-index: 9999;
+    transition: all 0.6s ease-in-out;
+    max-width: 400px;
+    background-color: var(--black);
+
+    .mobile-menu__header {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      flex-wrap: wrap;
+      padding-left: 40px;
+      justify-content: space-between;
+    }
+
+    .close-mobile-menu {
+      font-size: 36px;
+      i {
+        width: 60px;
+      }
+    }
+
+    .mobile-menu__wrapper {
+      position: fixed;
+      inset: 0px;
+      max-width: 400px;
+      background-color: var(--black);
+      z-index: 9999;
+      padding: 60px 0px;
+      height: 100vh;
+      overflow-y: auto;
+      overflow-x: clip;
+      display: flex;
+      flex-direction: column;
+      transition: 0.6s ease-in-out;
+      transition-delay: 0.6s;
+      gap: 60px;
+      transform: translateY(100%);
+      opacity: 1;
+      visibility: visible;
+      &::-webkit-scrollbar {
+        width: 0px;
+      }
+    }
+
+    .navbar__list {
+      flex-direction: column;
+      border: 0px !important;
+      & > li {
+        & > a,
+        button {
+          border-bottom: 1px solid #414141;
+        }
+
+        &:nth-of-type(1) {
+          border-top: 1px solid #414141;
+        }
+      }
+    }
+
+    .navbar__item {
+      width: 100%;
+      transition: var(--transition);
+
+      a,
+      button {
+        color: var(--white);
+        padding: 24px 80px 24px 40px;
+        line-height: 1;
+        letter-spacing: 1px;
+        &:hover {
+          color: var(--quaternary-color);
+        }
+        &::after {
+          transition: none;
+        }
+      }
+    }
+
+    .nav-fade {
+      transform: translateY(30px);
+      opacity: 0;
+      transition: all 0.7s ease-in-out !important;
+    }
+
+    .navbar__item--has-children {
+      .navbar__dropdown-label {
+        &::after {
+          content: "\eb0b";
+          font-family: "tabler-icons";
+          font-weight: 400;
+          position: absolute;
+          top: 0px;
+          right: 0px;
+          bottom: 0px;
+          height: 100%;
+          width: 60px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          transform: rotate(0deg);
+          border-left: 1px solid #414141;
+          font-size: 20px;
+          margin-top: -4px;
+        }
+      }
+      &:hover {
+        .navbar__dropdown-label {
+          &::after {
+            transform: rotate(0deg);
+          }
+        }
+
+        & > .navbar__dropdown-label-sub {
+          color: var(--quaternary-color) !important;
+        }
+      }
+    }
+
+    .navbar__item-active {
+      color: var(--quaternary-color) !important;
+      &::after {
+        content: "\eaf2" !important;
+        font-family: "tabler-icons" !important;
+        font-weight: 500;
+      }
+    }
+
+    .navbar__sub-menu {
+      position: static;
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0px);
+      width: 100%;
+      max-width: 100%;
+      padding: 0px;
+      display: none;
+      transition: none;
+      background-color: transparent;
+      border-radius: 0px;
+
+      &::before {
+        content: none;
+      }
+
+      a,
+      button {
+        color: var(--white);
+        padding: 20px 40px;
+        font-size: 15px;
+        border-bottom: 1px solid #414141;
+        &::before {
+          content: none;
+        }
+      }
+
+      li {
+        &:nth-last-of-type(1) {
+          a,
+          button {
+            border-bottom: 1px solid #414141;
+          }
+        }
+      }
+    }
+
+    .nftg-modal-body {
+      display: none;
+      pointer-events: all;
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0px);
+      transition: none;
+      .navbar__sub-menu {
+        display: block !important;
+        pointer-events: all;
+        opacity: 1;
+        visibility: visible;
+      }
+    }
+
+    .mobile-menu__options {
+      padding: 0px 40px;
+      a,
+      button {
+        width: 100%;
+        justify-content: center;
+        padding: 18px 24px 14px;
+        font-size: 18px;
+        letter-spacing: 0.5px;
+        clip-path: polygon(0% 0%, 100% 0%, 100% 70%, 90% 100%, 0% 100%);
+      }
+
+      .btn--primary {
+        background-color: var(--quaternary-color);
+        color: var(--secondary-color);
+        font-weight: 700;
+        padding: 18px 24px 18px;
+        font-size: 16px;
+        &::before {
+          border-bottom-color: var(--primary-color);
+        }
+        &::after {
+          border-top-color: var(--primary-color);
+        }
+      }
+    }
+
+    .mobile-menu__social {
+      transition: var(--transition);
+      padding: 0px 20px;
+      justify-content: center;
+    }
+  }
+
+  .mobile-menu__backdrop {
+    background-color: #302d2b;
+    position: fixed;
+    inset: 0px;
+    width: 100%;
+    height: 100%;
+    z-index: 999;
+    transform: translateY(-100%);
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.6s ease-in-out;
+    cursor: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABUAAAAVBAMAAABbObilAAAAMFBMVEVMaXH////////////////////////////////////////////////////////////6w4mEAAAAD3RSTlMAlAX+BKLcA5+b6hJ7foD4ZP1OAAAAkUlEQVR4XkWPoQ3CUBQAL4SktoKAbCUjgAKLJZ2ABYosngTJCHSD6joUI6BZgqSoB/+Shqde7sS9x3OGk81fdO+texMtRVTia+TsQtHEUJLdohJfgNNPJHyEJPZTsWLoxShqsWITazEwqePAn69Sw2TUxk1+euPis3EwaXy8RMHSZBIlRcKKnC5hRctjMf57/wJbBlAIs9k1BAAAAABJRU5ErkJggg==),
+      progress;
+  }
+
+  .mobile-menu__backdrop-active {
+    transform: translateY(0px);
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .show-menu {
+    transform: translateX(0px);
+    opacity: 1;
+    visibility: visible;
+
+    .mobile-menu__wrapper {
+      transform: translateY(0px);
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .nav-fade {
+      animation: navLinkFade 0.5s ease forwards;
+      transition: all 0.7s ease-in-out !important;
+    }
+  }
+
+  .nav-fade-active {
+    animation: navLinkFade 1s ease reverse !important;
+  }
+
+  // banner
+  .banner {
+    .banner__slider-single {
+      .thumb {
+        a,
+        img {
+          max-height: 600px;
+        }
+      }
+    }
+
+    .banner__content {
+      p {
+        margin-top: 18px;
+      }
+    }
+
+    .breadcrumb {
+      margin-bottom: 30px;
+    }
+  }
+
+  .banner-two {
+    .banner__content {
+      p {
+        margin-top: 18px;
+      }
+    }
+
+    .breadcrumb {
+      margin-bottom: 30px;
+    }
+  }
+
+  // tournament details
+  .tournament-details {
+    .tournament-bracket {
+      .tournament-bracket-first {
+        &::after {
+          content: none;
+        }
+      }
+      .tournament-bracket-second {
+        &::after {
+          content: none;
+        }
+        .tournament-bracket__group-wrapper {
+          &::before {
+            content: none;
+          }
+        }
+      }
+      .tournament-bracket__final {
+        .tournament-bracket__group-wrapper {
+          &::before {
+            content: none;
+          }
+        }
+      }
+    }
+  }
+
+  .private-profile {
+    .private-profile__sidebar-inner {
+      .private-sidebar-tab-btn {
+        clip-path: polygon(0% 0%, 100% 0%, 100% 65%, 95% 100%, 0% 100%);
+      }
+    }
+  }
+
+  // countdown
+  .countdown {
+    .counter__single {
+      .odometer {
+        margin-bottom: -3px;
+      }
+    }
+  }
+
+  // cta section
+  .cta {
+    .cta__inner {
+      padding: 120px 80px;
+    }
+
+    .cta__content {
+      max-width: 680px;
+    }
+  }
+
+  // footer
+  .footer {
+    .footer__widget-logo.mt-30 {
+      margin-top: 30px;
+    }
+
+    .mt-55 {
+      margin-top: 35px;
+    }
+
+    .footer__widget--alt {
+      padding: 0px;
+      border: 0px;
+      .text-center {
+        text-align: left !important;
+      }
+
+      .footer__widget-text--alt {
+        margin-left: 0px;
+      }
+    }
+
+    p {
+      a {
+        max-width: 300px;
+      }
+    }
+  }
+
+  // chatbox
+  .chatbox {
+    .chatbox__inner {
+      position: relative;
+      overflow: hidden;
+      min-height: 550px;
+      height: 70vh;
+    }
+
+    .chatbox__sidebar {
+      width: 100%;
+      max-width: 400px;
+      position: absolute;
+      left: 0px;
+      top: 0px;
+      bottom: 0px;
+      z-index: 9;
+      transition: var(--transition);
+      transform: translateX(-100%);
+      transition-delay: 0.3s;
+
+      .chatbox__sidebar-wrapper {
+        padding: 50px 20px 0px;
+      }
+
+      .chatbox__list {
+        height: calc(100% - 207px);
+        margin-top: 207px;
+        padding: 0px 10px 15px;
+      }
+
+      .chatbox__list-single {
+        padding: 15px 10px;
+
+        .hexagon-wrapper {
+          @include box(54px);
+        }
+
+        .single-intro {
+          p {
+            font-size: 16px;
+          }
+        }
+      }
+
+      .chatbox__sidebar-search {
+        margin-top: 20px;
+      }
+    }
+
+    .chatbox__sidebar-active {
+      transform: translateX(0px);
+    }
+
+    .chatbox__content {
+      width: 100%;
+    }
+
+    .chat-box {
+      height: calc(100% - 206px);
+      padding: 30px 20px 0px;
+    }
+
+    .chatbox__content-header,
+    .chatbox__content-footer {
+      padding: 20px;
+    }
+  }
+}
+
+@media only screen and (max-width: 991.98px) {
+  // typography
+  h1 {
+    font-size: 40px;
+    line-height: 50px;
+  }
+
+  h2 {
+    font-size: 36px;
+    line-height: 46px;
+  }
+
+  .title-xxl {
+    font-size: 40px;
+    line-height: 50px;
+  }
+
+  .title-xl {
+    font-size: 36px;
+    line-height: 46px;
+  }
+
+  .title-md {
+    font-size: 24px;
+    line-height: 34px;
+  }
+
+  // global styles
+  .cursor-inner,
+  .cursor-outer {
+    display: none;
+  }
+
+  .unset {
+    max-width: 100%;
+  }
+
+  .dir-rtl {
+    direction: ltr;
+  }
+
+  .pt-120 {
+    padding-top: 100px;
+  }
+
+  .pb-120 {
+    padding-bottom: 100px;
+  }
+
+  .mt-120 {
+    margin-top: 100px;
+  }
+
+  .mt-60 {
+    margin-top: 50px;
+  }
+
+  .mt-50 {
+    margin-top: 40px;
+  }
+
+  .mb-60 {
+    margin-bottom: 50px;
+  }
+
+  .mb-55 {
+    margin-bottom: 45px;
+  }
+
+  .mb-50 {
+    margin-bottom: 40px;
+  }
+
+  .progress-wrap {
+    bottom: 10px;
+    right: 15px;
+  }
+
+  .btn--secondary {
+    font-size: 18px;
+  }
+
+  .slider-footer {
+    gap: 24px;
+    .slider-navigation {
+      gap: 12px;
+    }
+  }
+
+  // banner
+  .banner {
+    .banner__content {
+      padding: 100px 80px;
+
+      .banner__content-inner {
+        max-width: 400px;
+      }
+
+      .sword {
+        display: none;
+      }
+
+      .banner__thumb {
+        img {
+          max-width: 38vw;
+        }
+      }
+    }
+
+    .banner__slider-single {
+      .thumb {
+        img,
+        a {
+          max-height: 500px;
+        }
+      }
+      .content {
+        max-width: 600px;
+      }
+    }
+  }
+
+  // feature
+  .feature {
+    .content {
+      padding: 40px 20px;
+    }
+
+    .thumb {
+      .price-tag {
+        left: 20px;
+        top: 20px;
+      }
+    }
+  }
+
+  // trending
+  .trending {
+    .info {
+      padding-left: 20px;
+      padding-right: 20px;
+    }
+    .trending__single-footer {
+      padding: 30px 20px;
+    }
+  }
+
+  .package-items {
+    .trending__single {
+      .info {
+        padding-left: 20px;
+        padding-right: 20px;
+      }
+      .trending__single-footer {
+        padding: 30px 20px;
+      }
+    }
+  }
+
+  // nft details
+  .nft-details {
+    .nft-details__thumb-wrapper {
+      display: block;
+    }
+
+    .nft-details__controller {
+      width: auto;
+      .swiper {
+        width: auto;
+        height: auto;
+      }
+    }
+
+    .nft-details__thumb {
+      width: 100%;
+      height: auto;
+      max-height: 100%;
+      margin-top: 30px;
+    }
+
+    .thumb-single {
+      height: auto;
+    }
+  }
+
+  // countdown
+  .countdown {
+    .count-inner {
+      clip-path: none;
+    }
+
+    .mt-55 {
+      margin-top: 45px;
+    }
+
+    .count-wrapper {
+      padding: 100px 80px;
+      clip-path: none;
+      border: 1px solid var(--quaternary-color);
+    }
+  }
+
+  // tournament details
+  .tournament-details {
+    .tournament-meta__left,
+    .tournament-meta__right,
+    .tournament-meta__center,
+    .time-schedule {
+      width: 100%;
+      text-align: center;
+      justify-content: center;
+    }
+  }
+
+  .tournament-details {
+    .tournament-match {
+      .tournament-match__single {
+        gap: 16px;
+        padding-left: 0px;
+        padding-right: 20px;
+        .open-match-popup {
+          right: -8px;
+        }
+        .admin__header-profile {
+          .admin-info {
+            display: none;
+          }
+        }
+        .hexagon-wrapper {
+          @include box(44px);
+        }
+        .tournament-match__center {
+          gap: 12px;
+          .tournament-status {
+            span {
+              padding: 3px 8px;
+            }
+          }
+        }
+      }
+    }
+
+    .tournament-bracket {
+      .tournament-bracket__single {
+        max-width: 100%;
+      }
+
+      .tournament-bracket__group-wrapper {
+        gap: 20px;
+      }
+
+      .tournament-bracket__inner {
+        gap: 40px;
+        justify-content: flex-start;
+        margin-top: 24px;
+      }
+    }
+  }
+
+  // profile tab
+  .profile-tab {
+    .profit-wrapper {
+      .profit-item-single {
+        flex-direction: column;
+        align-items: flex-start;
+        .chart-wrapper {
+          margin-top: 0px;
+          margin-bottom: -10px;
+        }
+
+        .game-list,
+        .game-graph {
+          width: 100%;
+        }
+      }
+    }
+  }
+
+  // streamer
+  .streamer {
+    .streamer-group {
+      top: -120px;
+      margin-bottom: -120px;
+    }
+
+    .streamer-thumb {
+      top: -121px;
+      margin-bottom: -51px;
+
+      a {
+        width: 102px;
+        height: 102px;
+      }
+
+      .text-sm {
+        bottom: 0px;
+      }
+
+      .ratings {
+        @include box(40px);
+        bottom: 0px;
+      }
+    }
+
+    .streamer-meta {
+      padding-top: 90px;
+    }
+
+    .streamer-overview {
+      padding: 40px 20px;
+    }
+  }
+
+  // platform
+  .platform {
+    .platform-single {
+      padding: 40px 20px;
+      .thumb {
+        height: 260px;
+      }
+    }
+  }
+
+  // seccure
+  .secure {
+    .secure__content {
+      padding-top: 100px;
+
+      .btn-wrapper {
+        top: -140px;
+        margin-bottom: -140px;
+      }
+    }
+  }
+
+  // choose
+  .choose-area {
+    .choose__single {
+      padding: 40px 20px;
+      p {
+        font-size: 16px;
+        line-height: 26px;
+      }
+    }
+  }
+
+  // about poster
+  .about-poster {
+    .about-poster__content {
+      right: 12px;
+      width: calc(100% - 24px);
+    }
+  }
+
+  // cta section
+  .cta {
+    .cta__inner {
+      clip-path: none;
+      padding: 100px 20px;
+      border: 1px solid var(--quaternary-color);
+      .cta-stroke {
+        display: none;
+      }
+    }
+  }
+
+  // contact section
+  .contact {
+    .contact__form {
+      .ic-group {
+        clip-path: unset;
+        .cmn-shape {
+          display: none;
+        }
+      }
+
+      input,
+      textarea {
+        border: 1px solid #505d6a70;
+        padding-left: 20px;
+        padding-right: 20px;
+        &:focus {
+          border-color: var(--quaternary-color) !important;
+        }
+      }
+    }
+  }
+
+  // authentication
+  .authentication {
+    .authentication__wrapper {
+      padding: 100px 40px;
+    }
+
+    .oauth-btns {
+      .btn--tertiary {
+        clip-path: unset;
+        border: 1px solid #505d6a70;
+        &:hover {
+          border-color: var(--quaternary-color);
+        }
+        svg {
+          display: none;
+        }
+      }
+    }
+
+    .wallet-authentication,
+    .custom-tab {
+      .btn-wrapper {
+        .btn--secondary {
+          clip-path: unset;
+        }
+      }
+    }
+
+    .ic-group {
+      clip-path: unset;
+
+      input {
+        border: 1px solid #505d6a70;
+        &:focus {
+          border-color: var(--quaternary-color);
+        }
+      }
+      svg {
+        display: none;
+      }
+    }
+
+    .text-xl {
+      font-size: 16px;
+      line-height: 26px;
+    }
+  }
+
+  // footer
+  .footer {
+    .footer__widget--alt {
+      padding: 0px;
+      max-width: 432px;
+      margin-left: 0px;
+      margin-right: 0px;
+
+      .footer__widget-text--alt {
+        max-width: 100%;
+        margin-left: 0px;
+        margin-right: 0px;
+      }
+    }
+  }
+}
+
+@media only screen and (max-width: 767.98px) {
+  // offcanvas cart
+  .sidebar-cart {
+    width: 100%;
+    max-width: 380px;
+  }
+
+  // countdown
+  .countdown {
+    .count-wrapper {
+      flex-direction: column;
+      padding: 100px 20px;
+    }
+
+    .count-items-wrapper {
+      justify-content: center;
+    }
+
+    .count-single {
+      gap: 12px;
+    }
+
+    .count-content {
+      text-align: center;
+    }
+
+    .count-footer {
+      justify-content: center;
+    }
+  }
+
+  .tournaments,
+  .tournament-details,
+  .badges {
+    .tournament-wrapper-border {
+      padding: 0px;
+      border: 0px;
+    }
+  }
+
+  .checkout-m {
+    form {
+      .input-group {
+        flex-direction: column;
+        .input-single {
+          width: 100%;
+        }
+      }
+
+      .input-single {
+        input,
+        textarea {
+          max-height: 180px;
+        }
+      }
+    }
+
+    .checkout-m__content {
+      padding: 30px 20px;
+    }
+  }
+
+  // authentication
+  .authentication {
+    .authentication__wrapper {
+      padding: 100px 20px;
+    }
+
+    .btn--secondary,
+    .btn--tertiary {
+      padding-left: 16px;
+      padding-right: 16px;
+      font-size: 16px;
+    }
+
+    .wallet-authentication,
+    .c-email {
+      .btn--secondary,
+      .btn--tertiary,
+      .change-action {
+        padding-left: 16px;
+        padding-right: 16px;
+        font-size: 16px;
+      }
+    }
+
+    .wallet-modal-body {
+      button {
+        font-size: 16px;
+      }
+    }
+  }
+
+  // trending nft
+  .trending-nft {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  // about overview
+  .about-overview {
+    .spin {
+      left: 30px;
+    }
+
+    .plane {
+      right: 20px;
+    }
+
+    .mt-40 {
+      margin-top: 20px;
+    }
+  }
+
+  .browse-game {
+    .browse-game__content {
+      padding: 60px 20px;
+    }
+  }
+
+  // game details
+  .game-details {
+    .game-details-nft-wrapper {
+      padding: 60px 20px;
+    }
+  }
+
+  .game-details__sidebar {
+    .game-details__widget {
+      padding: 40px 20px;
+    }
+  }
+
+  // tournament details
+  .tournaments {
+    .tournaments__filter {
+      padding: 40px 20px;
+    }
+  }
+
+  .tournament-details {
+    .tournament-prize {
+      .table-responsive {
+        overflow-x: scroll;
+        table {
+          width: 768px;
+        }
+      }
+    }
+
+    .tournament-bracket {
+      padding: 60px 20px;
+    }
+  }
+
+  .profile-tab {
+    .table-responsive {
+      overflow-x: scroll;
+      table {
+        width: 768px;
+      }
+    }
+  }
+
+  .private-profile {
+    .private-transaction {
+      .table-responsive {
+        overflow-x: scroll;
+        table {
+          width: 576px;
+        }
+
+        tr {
+          padding: 14px 20px 12px;
+        }
+      }
+    }
+  }
+
+  // leaderboard
+  .leaderboard {
+    .leaderboard__inner {
+      padding: 60px 20px;
+    }
+
+    .leaderboard__tab-btns {
+      ul {
+        button {
+          font-size: 16px;
+        }
+      }
+    }
+  }
+
+  // nft details
+  .nft-details {
+    .details__single {
+      padding: 40px 20px;
+    }
+
+    .nft-details__content {
+      .details-action {
+        padding: 24px 20px;
+        .details-action__right {
+          .btn--secondary {
+            letter-spacing: 0px;
+          }
+        }
+      }
+    }
+  }
+
+  // profile banner
+  .profile-banner {
+    .profile-meta-group {
+      .hexagon-wrapper {
+        padding: 3px;
+        @include box(80px);
+      }
+    }
+  }
+
+  .private-profile {
+    .private-content {
+      padding: 40px 20px;
+    }
+  }
+
+  .profile-tab {
+    .profile-single {
+      padding: 40px 20px;
+    }
+  }
+
+  // blog area
+  .blog-area {
+    .blog-area__content {
+      padding: 20px;
+    }
+
+    .blog-details {
+      .details__content {
+        .quote-wrapper {
+          padding: 60px 30px;
+          clip-path: polygon(20% 0%, 100% 0%, 100% 90%, 80% 100%, 0% 100%, 0% 10%);
+          q {
+            font-size: 18px;
+          }
+        }
+
+        .group-wrapper {
+          .img-group {
+            flex-direction: column;
+            .thumb {
+              width: 100%;
+            }
+          }
+        }
+      }
+    }
+
+    .blog-comment {
+      .comment-single {
+        padding: 40px 20px;
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .comment__form {
+        .form-group {
+          flex-direction: column;
+          .input-single {
+            width: 100%;
+          }
+        }
+      }
+    }
+  }
+
+  .blog-area__sidebar {
+    .sidebar__widget {
+      padding: 40px 20px;
+    }
+  }
+
+  .pagination {
+    gap: 8px;
+    a,
+    button {
+      @include box(40px);
+    }
+  }
+
+  .match-popup {
+    padding: 60px 20px;
+
+    .tournament-match__single {
+      gap: 16px;
+      padding-left: 0px;
+      padding-right: 0px;
+      .admin__header-profile {
+        .admin-info {
+          display: none;
+        }
+      }
+      .hexagon-wrapper {
+        @include box(44px);
+      }
+      .tournament-match__center {
+        gap: 12px;
+        .tournament-status {
+          span {
+            padding: 3px 8px;
+          }
+        }
+      }
+    }
+  }
+}
+
+@media only screen and (max-width: 575.98px) {
+  // typography
+  h1 {
+    font-size: 36px;
+    line-height: 46px;
+  }
+
+  h2 {
+    font-size: 30px;
+    line-height: 40px;
+  }
+
+  h3 {
+    font-size: 24px;
+    line-height: 34px;
+  }
+
+  h4 {
+    font-size: 20px;
+    line-height: 30px;
+  }
+
+  h5 {
+    font-size: 18px;
+    line-height: 28px;
+  }
+
+  h6 {
+    font-size: 18px;
+    line-height: 28px;
+  }
+
+  .title-xxl {
+    font-size: 34px;
+    line-height: 44px;
+  }
+
+  .title-xl {
+    font-size: 30px;
+    line-height: 40px;
+  }
+
+  .title-lg {
+    font-size: 30px;
+    line-height: 40px;
+  }
+
+  .title-md {
+    font-size: 20px;
+    line-height: 30px;
+  }
+
+  // global styles
+  .social {
+    gap: 16px;
+    a {
+      font-size: 20px;
+      @include box(48px);
+    }
+  }
+
+  // header
+  .header {
+    padding: 23px 0px 22px;
+    .navbar {
+      gap: 8px;
+    }
+
+    .navbar__logo {
+      img {
+        max-width: 30px;
+      }
+    }
+
+    .navbar__items-wrapper,
+    .navbar__items,
+    .navbar__items-inner {
+      gap: 12px;
+    }
+
+    .open-search {
+      font-size: 24px;
+    }
+
+    .cart-ic {
+      display: none !important;
+      span {
+        @include box(20px);
+        font-size: 12px;
+      }
+    }
+
+    .open-offcanvas-nav {
+      .top-bar {
+        width: 24px;
+      }
+
+      .middle-bar {
+        width: 30px;
+      }
+    }
+
+    .icon-drop {
+      @include box(36px);
+      font-size: 18px;
+      &::before {
+        width: 12px;
+        height: 12px;
+        top: -3px;
+      }
+    }
+
+    .modal-wrapper {
+      max-width: 275px;
+      right: -90px;
+      max-height: 406px;
+      top: calc(100% + 6px);
+
+      .modal__header {
+        padding: 14px 20px 14px;
+      }
+
+      .modal-dropdown__header {
+        padding: 15px 14px 11px;
+      }
+
+      .modal-dropdown__body {
+        padding: 10px 6px 12px 6px;
+        height: calc(100% - 100px);
+      }
+      .modal-dropdown__single {
+        padding: 10px 6px;
+      }
+
+      .modal-dropdown__footer {
+        a {
+          padding: 12px 20px;
+        }
+      }
+    }
+
+    .message-dropdown {
+      .modal-wrapper {
+        right: -140px;
+      }
+    }
+
+    .profile-dropdown {
+      .hexagon-wrapper {
+        width: 54px;
+        height: 54px;
+        min-width: 54px;
+      }
+      .profile-dropdown-btn {
+        display: none;
+      }
+
+      .profile-dropdown__modal {
+        width: 240px;
+      }
+
+      .profile-dropdown__widget {
+        .text-md {
+          font-size: 14px;
+        }
+        a {
+          font-size: 14px;
+        }
+      }
+    }
+  }
+
+  .checkout-m {
+    .checkout-m__content {
+      .item-signle {
+        .item-thumb {
+          gap: 12px;
+          .thumb {
+            @include box(60px);
+          }
+        }
+      }
+
+      .item-qty {
+        @include box(30px);
+        border-radius: 0px;
+        span {
+          font-size: 12px;
+        }
+      }
+    }
+  }
+
+  // mobile menu
+  .mobile-menu {
+    max-width: 320px;
+    .mobile-menu__wrapper {
+      max-width: 320px;
+    }
+
+    .mobile-menu__header,
+    .mobile-menu__options,
+    .mobile-menu__social {
+      padding: 0px 24px;
+    }
+
+    .mobile-menu__header {
+      padding-right: 0px;
+    }
+
+    .navbar__item {
+      a,
+      button {
+        padding: 20px 70px 20px 24px;
+      }
+    }
+  }
+
+  // banner
+  .banner {
+    h2 {
+      font-size: 30px;
+      line-height: 40px;
+    }
+
+    .banner__content {
+      padding: 100px 20px;
+    }
+  }
+
+  .banner-two {
+    padding-left: 20px;
+  }
+
+  // tournaments
+  .tournaments {
+    .tournaments-item__single {
+      padding: 30px 20px;
+      .thumb {
+        min-width: auto;
+      }
+
+      .time-schedule {
+        flex-direction: column;
+      }
+
+      .skill-wrapper {
+        .skill-single {
+          @include box(110px);
+        }
+      }
+
+      .cta {
+        width: 100%;
+      }
+    }
+  }
+
+  // tournament details
+  .tournament-details {
+    .tournament-meta__wrapper {
+      padding: 30px 20px;
+
+      .count-items-wrapper {
+        gap: 10px;
+      }
+    }
+
+    .time-schedule {
+      flex-direction: column;
+    }
+
+    .tournament-meta__center {
+      flex-direction: column;
+    }
+
+    .tournaments__tab-btn-wrapper {
+      button {
+        font-size: 16px;
+      }
+    }
+
+    .common-space {
+      padding: 40px 20px;
+    }
+  }
+
+  // countdown
+  .countdown {
+    .counter-wrapper {
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 40px;
+    }
+
+    .counter__single {
+      padding: 0px;
+      border: 0px;
+      text-align: center;
+
+      &::before {
+        content: none;
+      }
+
+      h2 {
+        justify-content: center;
+      }
+    }
+  }
+
+  // profile tab
+  .profile-tab {
+    .profile-achievement-badge-wrapper {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(calc(50% - 12px), 1fr));
+    }
+
+    .achieve-single {
+      align-items: flex-start;
+      flex-direction: column;
+      .achieve-single__right {
+        width: 100%;
+      }
+    }
+  }
+
+  .private-profile {
+    .table-responsive {
+      overflow-x: scroll;
+      table {
+        width: 576px;
+      }
+
+      tr {
+        padding: 14px 20px 12px;
+      }
+    }
+  }
+
+  // faq
+  .faq {
+    .accordion-item {
+      h5 {
+        font-size: 17px;
+      }
+    }
+    .accordion-body {
+      p {
+        font-size: 15px;
+      }
+    }
+  }
+
+  // authentication
+  .authentication {
+    .wallet-modal-intro {
+      h6 {
+        font-size: 15px;
+      }
+    }
+
+    .oauth-btns {
+      gap: 12px;
+      .btn--tertiary {
+        width: 100%;
+      }
+    }
+
+    .input-single {
+      input {
+        padding: 24px 16px 20px 54px;
+      }
+    }
+
+    .pass {
+      input {
+        padding-right: 54px;
+      }
+    }
+
+    .ic-group {
+      i {
+        left: 16px;
+      }
+
+      .show-pass {
+        right: 16px;
+      }
+    }
+  }
+
+  // chatbox
+  .chatbox {
+    .chatbox__content-header,
+    .chatbox__content-footer {
+      flex-wrap: wrap;
+      .c-a {
+        @include box(40px);
+        font-size: 18px;
+      }
+    }
+
+    .chatbox__content-footer {
+      row-gap: 16px;
+      form {
+        order: 5;
+        width: 100%;
+      }
+
+      .input-single {
+        input {
+          padding-left: 16px;
+          padding-right: 48px;
+        }
+
+        button {
+          font-size: 20px;
+          right: 16px;
+        }
+      }
+    }
+
+    .chatbox__sidebar-search {
+      .input-single {
+        input {
+          padding-left: 16px;
+          padding-right: 48px;
+        }
+
+        button {
+          font-size: 20px;
+          right: 16px;
+        }
+      }
+    }
+
+    .chat-box {
+      height: calc(100% - 260px);
+    }
+
+    .chatbox__list-single {
+      .single-intro {
+        .incoming-amount {
+          @include box(24px);
+          font-size: 14px;
+        }
+      }
+    }
+  }
+
+  // footer
+  .footer {
+    .footer__widget-header {
+      h4 {
+        font-size: 26px;
+        line-height: 36px;
+      }
+    }
+
+    .divider {
+      display: none;
+    }
+
+    .footer-thumb {
+      img {
+        min-width: 100px;
+      }
+    }
+  }
+
+  .blog-area__sidebar {
+    .recent-item-single {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+}
+
+@media only screen and (max-width: 475.98px) {
+  // streamer
+  .streamer {
+    .streamer-overview {
+      .overview-single {
+        &::after,
+        &::before {
+          content: none;
+        }
+
+        p {
+          font-size: 13px;
+          line-height: 23px;
+        }
+      }
+    }
+  }
+}
+
+@media only screen and (max-width: 424.98px) {
+  // trending nft
+  .trending-nft {
+    .trending__single-footer {
+      padding: 30px 16px;
+    }
+
+    .info {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+
+    .author-meta {
+      span,
+      p {
+        font-size: 12px;
+      }
+    }
+    .price-footer {
+      .price-inner {
+        p,
+        a {
+          font-size: 12px;
+        }
+      }
+
+      .btn--primary {
+        i {
+          font-size: 16px;
+        }
+      }
+    }
+  }
+}
+
+@media only screen and (min-width: 992px) {
+  .tournament-details {
+    .tournament-match {
+      .tournament-match__left,
+      .tournament-match__right {
+        min-width: 250px;
+      }
+
+      .tournament-match__left {
+        .admin__header-profile {
+          justify-content: flex-end;
+        }
+      }
+    }
+  }
+}
+
+/* ==== 
+ --------- (6.0) responsive styles end ---------
+ ==== */

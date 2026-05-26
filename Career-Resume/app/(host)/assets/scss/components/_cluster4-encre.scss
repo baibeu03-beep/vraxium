@@ -1,0 +1,867 @@
+// =============================================================
+// Encre (EC) cluster-4 family override.
+// 적용 대상: /cluster-4-ec, /cluster-4-1-ec, /cluster-4-card-ec (+[weekId])
+//
+// base files :
+//   _cluster4-week.scss   #ffec8f 12건 — 카드 타이틀, 라벨, 배지
+//   _cluster4-season.scss #ffec8f 1건 — 시즌 카드 호버 배지
+//
+// 모두 _theme-tokens.scss 의 --ec-* 토큰만 참조.
+// .encre-theme 하위에서만 매칭 → /cluster-4 / -px 등 다른 라우트엔 영향 0.
+//
+// 구조: _cluster4-px.scss 와 1:1 mirror — 같은 selector / 같은 의도, 토큰만 다름.
+// 톤: dark / premium / cinematic pink (neon pink 아님).
+//
+// 사용자 정책 준수:
+//   - PNG 전체 hue-rotate 금지 → 단색 yellow PNG 4종 한정 (남발 아님).
+//   - generic `svg path` 금지 → 모든 SVG override 는 .badge-outline path 등 실제 chain.
+//   - body tint 금지.
+//   - semantic 색 (.status-text fail/rest-personal/rest-official/in-progress/counting,
+//     .badge-status.yellow/orange palette, .stars/.modal-star gold, character image,
+//     warrior <img>, ahho 캐릭터) 미터치.
+// =============================================================
+
+.encre-theme {
+  // ─────────────────────────────────────────────
+  // _cluster4-week.scss line 356 + _cluster4-season.scss line 266
+  //   호버 시 펼쳐지는 배지 배경
+  // ─────────────────────────────────────────────
+  .cluster4-card-content,
+  .cluster4-content {
+    .badge-hover,
+    [class*="hover-badge"] {
+      background: var(--ec-accent-soft);
+    }
+
+    // _cluster4-week.scss 12건의 .card-title 류 color
+    .card-title,
+    .week-title,
+    .season-title,
+    .badge-title {
+      color: var(--ec-accent-soft);
+    }
+
+    // 강조 숫자 / 카운터
+    .week-count,
+    .season-count,
+    .accent-num {
+      color: var(--ec-accent-soft);
+    }
+
+    // 활성 탭/필터 강조
+    .active,
+    .is-active {
+      &.tab,
+      &.filter,
+      &.btn {
+        color: var(--ec-accent);
+        border-color: var(--ec-accent);
+      }
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // 광범위 fallback — _cluster4-week.scss 의 #ffec8f hardcoded 색을
+  // attribute selector 로 추가 매칭.
+  // ─────────────────────────────────────────────
+  [style*="#ffec8f"],
+  [style*="#FFEC8F"] {
+    color: var(--ec-accent-soft) !important;
+  }
+
+  // ─────────────────────────────────────────────
+  // 추가 brand accent overrides — /cluster-4-px 실측 기준
+  //   1) top-tabs 활성 탭 배경 (.tab:first-child #faab07 + TSX 인라인 동일색)
+  //   2) top-tabs hover popup .tab-badge 배경 (#ffec8f)
+  //   3) section1 quote-highlight 텍스트 그라데이션 (#fed402 → #fff1aa)
+  //   4) season-growth-card .season-badge SVG fill/stroke (TSX 인라인 #FAAB07)
+  // semantic 색은 미변경.
+  // ─────────────────────────────────────────────
+  .cluster4-content {
+    // 1) top-tabs 활성 탭 — _cluster4-week.scss L85 의 부모 scope
+    //    `.cluster4-content--week` 안에서만 `.tab:first-child` 가 yellow 로 칠해진다.
+    //    PX 파일은 `--week` qualifier 없이 .cluster4-content 직속으로 매칭해서
+    //    /cluster-4-1-px (Cluster4Content, `--week` 미부착) 의 첫 탭(inactive dark
+    //    `#161816`)이 green 으로 잘못 덮인다. EC 는 이 pre-existing regression 을
+    //    피하기 위해 `--week` qualifier 를 명시 — Cluster41Content (/cluster-4-ec)
+    //    에만 적용되고 Cluster4Content (/cluster-4-1-ec) 의 dark 첫 탭은 보존된다.
+    //    Cluster4Content 의 active 두번째 탭 yellow 는 JSX inline 3-way 분기로 처리.
+    &.cluster4-content--week .top-tabs .tab:first-child {
+      background: var(--ec-accent) !important;
+    }
+
+    // 2) top-tabs hover popup — _cluster4-week.scss line 356 .tab-badge
+    .top-tabs .tab .tab-badge {
+      background: var(--ec-accent-soft);
+    }
+
+    // 3) section1 quote-highlight — _cluster4-season.scss line 403
+    .section1-description .quote-highlight {
+      background: linear-gradient(90deg, var(--ec-accent), var(--ec-accent-soft));
+      -webkit-background-clip: text;
+      background-clip: text;
+    }
+
+    // 4) season-badge SVG — TSX 인라인 attr(fill/stroke)="#FAAB07".
+    //    실제 selector chain 사용 (generic 'svg path' 미사용).
+    .season-growth-card .season-badge {
+      .badge-outline path {
+        stroke: var(--ec-accent) !important;
+      }
+      .badge-border path {
+        fill: var(--ec-accent) !important;
+        stroke: var(--ec-accent) !important;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 5) Details 카드 우측 패널 — number+orange 두 단계 매핑
+    //    .white-text("개 주차") 는 white 유지(미변경).
+    // ─────────────────────────────────────────────
+    .details-card .details-content .detail-row .detail-value {
+      color: var(--ec-accent-soft) !important;
+
+      .number {
+        color: var(--ec-accent-soft) !important;
+      }
+
+      .orange-highlight {
+        color: var(--ec-accent) !important;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 6) Weekly filter bar
+    //   PNG 필터 아이콘은 단색 yellow 라 hue-rotate(-51deg) 로 EC pink 변환.
+    //   white glyph 손상 없음 (saturate 0 인 white 영역 영향 없음).
+    // ─────────────────────────────────────────────
+    .weekly-filter-bar {
+      .filter-card {
+        &:hover {
+          border-color: var(--ec-accent);
+        }
+
+        &.filter-card-large {
+          background: var(--ec-accent-soft);
+          border-color: var(--ec-accent-soft);
+          // soft pink bg 위 dark wine 글자 — Reset 카드 가독성.
+          span { color: #3a0f1a; }
+        }
+      }
+
+      // PNG 필터 아이콘 노란→pink 색상 회전 (이미지 파일은 변경 없음).
+      .filter-icon,
+      .card-icon {
+        filter: hue-rotate(-51deg) saturate(0.92);
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 7) WEEKLY GROWTH 카드 외곽 gold parallelogram frame
+    //    bg border.png 는 단색 gold PNG → pseudo 한정 hue-rotate.
+    //    캐릭터·불/얼음 artwork 영향 0.
+    // ─────────────────────────────────────────────
+    .cluster4-section2 .season-growth-card::after {
+      filter: hue-rotate(-51deg) saturate(0.92);
+    }
+
+    // ─────────────────────────────────────────────
+    // 8) Section1 / Section3 / Weekly-list horizontal pseudo divider lines.
+    //    section3 상단의 visible 가로 yellow 라인은 TSX inline-styled <div> 이므로
+    //    JSX 에서 isEC 조건 분기 처리 (본 SCSS 안전망).
+    // ─────────────────────────────────────────────
+    .cluster4-section1::after,
+    .cluster4-section3::before,
+    .cluster4-weekly-list::before {
+      background: var(--ec-accent) !important;
+    }
+
+    // 8-ter) reputation/section bottom divider yellow tint → EC pink tint.
+    .season-reputation-bottom-divider,
+    .reputation-bottom-divider {
+      background: rgba(255, 75, 112, 0.2) !important;
+    }
+    .reputation-bottom-section {
+      border-top-color: rgba(255, 75, 112, 0.2) !important;
+    }
+
+    // 8-quater) /cluster-4-card-ec work section 하단 1023px gold horizontal line.
+    .work-exp-section .section-bottom-divider,
+    .work-career-section .section-bottom-divider {
+      background: var(--ec-accent) !important;
+    }
+
+    // ─────────────────────────────────────────────
+    // 9) WEEKLY GROWTH 타이틀 shadow text-stroke gold
+    // ─────────────────────────────────────────────
+    .cluster4-section2 .season-growth-card .card-left .season-title-shadow {
+      -webkit-text-stroke: 1px var(--ec-accent);
+      text-stroke: 1px var(--ec-accent);
+    }
+
+    // ─────────────────────────────────────────────
+    // 11) Weekly card 리스트 — brand accent yellow → EC pink
+    //    semantic 상태 color (.status-text fail/rest-personal/.../.in-progress/
+    //    .counting, .badge-tag.*, .highlight.*, --divider-color 인라인) 미터치.
+    //    PNG 캐릭터 아이콘 (단감/인절미/어흥) identity color 미적용.
+    // ─────────────────────────────────────────────
+    .weekly-cards .weekly-card {
+      .weekly-card-header .weekly-card-week .week-number {
+        color: var(--ec-accent-soft);
+      }
+
+      .weekly-card-main-progress .progress-label .dot,
+      .weekly-card-stats .stat .dot,
+      .weekly-card-extra-stats .stat .dot {
+        color: var(--ec-accent-soft);
+      }
+
+      .weekly-card-main-progress .progress-label strong {
+        color: var(--ec-accent-soft);
+      }
+
+      .weekly-card-main-progress .progress-bar-wrapper .progress-bar .progress-fill {
+        background: var(--ec-accent);
+      }
+
+      .weekly-card-main-progress .total-count strong {
+        color: var(--ec-accent-soft);
+      }
+
+      .weekly-card-stats .stat strong {
+        color: var(--ec-accent-soft);
+      }
+      .weekly-card-stats .stat .gray .num {
+        color: var(--ec-accent-soft);
+      }
+
+      .weekly-card-extra-stats .stat .num {
+        color: var(--ec-accent-soft);
+      }
+
+      // FM 옆 RSS wifi PNG 아이콘 (yellow PNG → pink hue-rotate)
+      .weekly-card-extra-stats .stat.fm-badge .wifi-icon {
+        filter: hue-rotate(-51deg) saturate(0.92);
+      }
+
+      // ───────────────────────────────────────────
+      // "정보/역량/경험/경력" 라벨 (.highlight) state alignment
+      //   PX 와 동일 결정 — in-progress/counting badge 상태 동기화.
+      // ───────────────────────────────────────────
+      &:has(.weekly-card-status-badge.in-progress) .weekly-card-stats .stat .highlight {
+        color: #9b59b6;
+      }
+      &:has(.weekly-card-status-badge.counting) .weekly-card-stats .stat .highlight {
+        color: #ff1493;
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // 10) WEEKLY GROWTH 카드 backdrop yellow/gold tint → dark cinematic pink tint.
+    //    PNG 자체는 미수정 — background-image 스택 위에 deep-wine→EC-accent 그라데이션
+    //    을 얹고 blend-mode multiply 로 노란 톤이 dark pink 로 전환.
+    //    warrior <img> 와 ahho 캐릭터 <img> 는 별도 자식이라 영향 없음.
+    // ─────────────────────────────────────────────
+    .cluster4-section2 .season-growth-card {
+      &::before {
+        background-image:
+          linear-gradient(135deg, rgba(18, 8, 12, 0.72), rgba(255, 75, 112, 0.45)),
+          url("/images/0/cluster4/4-1/bg image.png");
+        background-blend-mode: multiply, normal;
+        background-size:
+          100% 100%,
+          140% 140%;
+        background-position:
+          center,
+          75% center;
+        background-repeat: no-repeat, no-repeat;
+      }
+
+      .card-background {
+        background-image:
+          linear-gradient(135deg, rgba(18, 8, 12, 0.72), rgba(255, 75, 112, 0.45)),
+          url("/images/0/cluster4/4-1/bg image.png");
+        background-blend-mode: multiply, normal;
+        background-size:
+          100% 100%,
+          cover;
+        background-position:
+          center,
+          center;
+        background-repeat: no-repeat, no-repeat;
+      }
+    }
+  }
+
+  // =============================================================
+  // 12) /cluster-4-card-ec — 카드 내부 brand accent (specificity 보강).
+  //
+  // KEEP (semantic — 미터치):
+  //   .verified-icon / .verified-text             — Verified semantic
+  //   .status-badge (강화 성공/대기/실패/해당없음)  — 상태 색
+  //   .failed-text #ff0d0d / .not-applicable-text #dc2626 — 실패/해당없음
+  //   .tag.tag--red/yellow/purple/dark/green/cyan/mint  — 카테고리 palette
+  //   .stars / .modal-star / .star-half-filled    — 별점 yellow/gold 유지
+  //   .grade (S/A/B/C/D 비활성) #bebebe            — 기본 등급 색
+  //   .rest-personal/.rest-official/.in-progress/.counting badge — 상태 색
+  //   pink/blue/purple ribbon 상태색
+  //   .web-badge #4caf50, .university #4fc3f7     — 출처 palette
+  //   fruit/character image / user avatar         — 이미지 asset
+  // =============================================================
+  .cluster4-card-content {
+    // 12-1) work-info-section
+    .section2-layout .work-info-section {
+      .section-header-row {
+        .section-count {
+          color: var(--ec-accent-soft);
+        }
+        .section-count .highlight,
+        .section-title-right .rate-value .highlight {
+          color: var(--ec-accent);
+        }
+      }
+      .work-info-cards .work-info-card .card-content-area .card-title-row .card-title {
+        color: var(--ec-accent-soft);
+      }
+    }
+
+    // 12-2) work-exp-section
+    .work-exp-section {
+      .section-header-row {
+        .section-count {
+          color: var(--ec-accent-soft);
+        }
+        .section-count .highlight,
+        .section-title-right .rate-value .highlight {
+          color: var(--ec-accent);
+        }
+      }
+      .work-exp-cards .work-exp-card {
+        .card-top-row .card-header-area {
+          .card-header-row {
+            .code-tag {
+              color: var(--ec-accent-soft);
+            }
+            .badge-tag {
+              color: var(--ec-accent);
+              background: rgba(255, 75, 112, 0.1);
+            }
+          }
+          .card-rating-row .rating-count {
+            color: var(--ec-accent);
+          }
+        }
+        .card-bottom-area {
+          .card-title-row .card-title {
+            color: var(--ec-accent-soft);
+          }
+          .sub-title-row .sub-label {
+            color: var(--ec-accent-soft);
+          }
+        }
+      }
+    }
+
+    // 12-3) work-ability-section
+    .section3-layout .work-ability-section {
+      .section-header-row {
+        .section-count {
+          color: var(--ec-accent-soft);
+        }
+        .section-count .highlight,
+        .section-title-right .rate-value .highlight {
+          color: var(--ec-accent);
+        }
+      }
+      .work-ability-card .card-content-area {
+        .card-title-row {
+          .card-title {
+            color: var(--ec-accent-soft);
+          }
+          .code-tag {
+            color: var(--ec-accent-soft);
+          }
+          .info-tag {
+            color: var(--ec-accent);
+            background: rgba(255, 75, 112, 0.1);
+          }
+        }
+        .sub-title-row .sub-label {
+          color: var(--ec-accent-soft);
+        }
+      }
+    }
+
+    // 12-4) work-career-section
+    .section3-layout .work-career-section {
+      .section-header-row {
+        .section-count {
+          color: var(--ec-accent-soft);
+        }
+        .section-count .highlight,
+        .section-title-right .rate-value .highlight {
+          color: var(--ec-accent);
+        }
+      }
+      .work-career-cards .work-career-card {
+        .card-top-row .card-header-area {
+          .card-header-row .code-tag {
+            color: var(--ec-accent-soft);
+          }
+          // grade.active (활성 등급 원형 badge — 비활성은 #bebebe 유지)
+          .grade-row .grade.active {
+            background: var(--ec-accent);
+            box-shadow:
+              0 0 15px rgba(255, 152, 166, 0.6),
+              inset 0 4px 4px rgba(255, 255, 255, 0.5),
+              inset -2px -5px 4px rgba(0, 0, 0, 0.2);
+          }
+        }
+        .card-bottom-area {
+          .category-text {
+            color: var(--ec-accent);
+            background: rgba(255, 75, 112, 0.1);
+          }
+          .card-title-row .card-title {
+            color: var(--ec-accent-soft);
+          }
+          .sub-title-row .sub-label {
+            color: var(--ec-accent-soft);
+          }
+        }
+      }
+    }
+
+    // 12-5) 주차 성장률 (section2-layout > growth-rate-header)
+    .section2-layout .growth-rate-header {
+      .growth-left .progress-bar-container .progress-bar {
+        background: var(--ec-accent);
+      }
+      .growth-left .progress-header .growth-count .highlight {
+        color: var(--ec-accent);
+      }
+      .growth-center .progress-percent .number {
+        color: var(--ec-accent);
+      }
+    }
+
+    // 12-6) 카드 우측 더보기 화살표 PNG — white glyph 보존 + pink BG.
+    //   /icon - 더보기.png 구조: yellow/orange BG + WHITE arrow glyph.
+    //   hue-rotate 단독은 saturation 0 인 white 에 영향 0 → glyph 그대로.
+    .work-info-card .card-arrow,
+    .work-ability-card .card-arrow,
+    .work-exp-card .card-arrow,
+    .work-career-card .card-arrow,
+    .reputation-card .more-icon,
+    .colleague-card .more-icon {
+      filter: hue-rotate(-51deg) saturate(1.1);
+    }
+
+    // 12-7) 폴더/3-star decorative PNG — pure yellow → 강한 재착색 OK.
+    //   대상은 .title-icon / .sub-icon / .star-icon (3-star decorative, 별점 아님).
+    //   KEEP (semantic — 미터치): .verified-icon, .section-icon, .status-badge img,
+    //                             .legend-icon, .stars img.star.filled / .modal-star.
+    //   브라이트니스 0 으로 흑백화 후 sepia/saturate/hue-rotate 체인으로 EC tone 매핑.
+    .work-info-card .title-icon,
+    .work-ability-card .title-icon,
+    .work-exp-card .title-icon,
+    .work-career-card .title-icon,
+    .work-info-card .sub-icon,
+    .work-ability-card .sub-icon,
+    .work-exp-card .sub-icon,
+    .work-career-card .sub-icon,
+    .growth-rate-header .growth-count .star-icon {
+      // #ff4b70 = hsl(348, 100%, 65%) → invert(36%) sepia(58%) saturate(2300%) hue-rotate(-11deg)
+      filter: brightness(0) saturate(100%) invert(45%) sepia(63%) saturate(2000%) hue-rotate(-11deg) brightness(101%) contrast(101%);
+    }
+
+    // 12-8) 인라인 cream-yellow #fef9c3 fallback.
+    [style*="#fef9c3"],
+    [style*="#FEF9C3"] {
+      color: var(--ec-accent-soft);
+    }
+  }
+
+  // =============================================================
+  // 13) /cluster-4-1-ec — section1/3 의 잔여 yellow/gold accent EC pink sweep.
+  //
+  //   PX 파일 13-X 와 1:1 mirror.
+  //   KEEP (semantic — 미변경) :
+  //     - .star / .star-icon / .star-half / .star-full-fill — 별점 gold 유지
+  //     - .area-1-title .date-status .status-badge — 시즌 상태 (active/pause/end)
+  //     - .status-badges .badge-status.yellow / .orange — 상태 의미색
+  //     - .tag-yellow / .tag-pink / .tag-keyword / .tag-role — palette
+  //     - .circle.pink / .yellow / .green .fill — 차트 색 코드
+  //     - .profile-card teal 데코 (#00ffbe)
+  //     - .area-2-qualified .tooltip — 흑백 툴팁
+  //     - .qualified-icon / .qualified-tags img — 메달/트로피
+  // =============================================================
+  .cluster4-content {
+    // 13-0) 시즌 로딩/empty 문구 — neutral text 복원.
+    .collection-text {
+      color: rgba(255, 255, 255, 0.72) !important;
+      text-shadow: none !important;
+      background: none !important;
+      -webkit-text-fill-color: currentColor !important;
+    }
+
+    // 13-1) section1 / section3-banner / section9 reputation-header floating edit/search 동그라미 버튼.
+    > section > .floating-icons .edit-icon,
+    .cluster4-section3 .section3-banner .floating-icons .edit-icon,
+    .area-9-season-reputation .season-reputation-header .edit-icon {
+      background: var(--ec-accent) !important;
+
+      &:hover {
+        background: var(--ec-accent-soft) !important;
+      }
+    }
+
+    // 13-2) section3 시즌 타이틀 강조 텍스트.
+    .cluster4-section3 .season-main-title {
+      .year-orange,
+      .season-highlight {
+        color: var(--ec-accent) !important;
+      }
+    }
+
+    // 13-3) section3 date-range 우측 2px 데코 도트.
+    .cluster4-section3 .date-status .date-range::after {
+      background: var(--ec-accent) !important;
+    }
+
+    // 13-4) section3 Qualified items — 라벨 텍스트 + 하단 underline.
+    .cluster4-section3 .area-2-qualified .qualified-items .item-group .item {
+      color: var(--ec-accent-soft) !important;
+      border-bottom-color: rgba(255, 75, 112, 0.5) !important;
+    }
+
+    // 13-5) section3 area-4 stats 좌측 2px 도트.
+    .cluster4-section3 .area-4-stats .stat::before {
+      background: var(--ec-accent) !important;
+    }
+
+    // 13-6) section3 area-5 rating 영역 — 리뷰 라벨 + edit 동그라미.
+    //   라벨 텍스트 색 #161616 (검정) 유지 — soft pink 배경 위 가독 OK.
+    .cluster4-section3 .area-5-rating .review-label-group {
+      .review-label {
+        background: var(--ec-accent-soft) !important;
+      }
+
+      .edit-icon {
+        background: rgba(255, 75, 112, 0.2) !important;
+        border-color: var(--ec-accent) !important;
+
+        &:hover {
+          background: rgba(255, 75, 112, 0.4) !important;
+        }
+      }
+    }
+
+    // 13-7) section3 area-6 원형 차트 — 우상단 highlight 카운트.
+    //   .circle.pink/.yellow/.green .fill 색은 KEEP (차트 의미색).
+    .cluster4-section3 .area-6-circles .circle-item .label-sub .highlight {
+      color: var(--ec-accent) !important;
+    }
+
+    // 13-8) section3 area-7 progress 4종.
+    //   bar wrapper (border + #333532) 은 KEEP (gauge well).
+    .cluster4-section3 .area-7-progress .progress-item {
+      .progress-header {
+        .name .rate-number {
+          color: var(--ec-accent) !important;
+        }
+        .value .highlight {
+          color: var(--ec-accent) !important;
+        }
+      }
+
+      .bar .fill.yellow {
+        background: var(--ec-accent) !important;
+      }
+    }
+
+    // 13-9) section3 area-8 시즌 상태 badge 카드.
+    //   .badge-status.yellow / .orange 는 상태 의미색이므로 KEEP.
+    .cluster4-section3 .area-8-season-status .status-badges .badge-item {
+      border-color: var(--ec-accent-soft) !important;
+
+      .badge-icon {
+        border-color: var(--ec-accent) !important;
+      }
+    }
+
+    // 13-10) section3 area-9 평판 카드.
+    //   .profile-card teal 데코 (#00ffbe) / tag-yellow (#ebf748 palette) 는 KEEP.
+    .cluster4-section3 .area-9-season-reputation {
+      .season-reputation-header .section-count .count-num {
+        color: var(--ec-accent) !important;
+      }
+
+      .profile-cards .card-top .avatar {
+        border-color: var(--ec-accent) !important;
+      }
+    }
+
+    // 13-11) section3 pagination current indicator.
+    .cluster4-section3 .section3-pagination .page-num {
+      &:hover,
+      &.active {
+        color: var(--ec-accent-soft) !important;
+      }
+
+      &.active::after,
+      &.last.active::before {
+        background: var(--ec-accent-soft) !important;
+      }
+    }
+
+    // 13-12) section3 "시즌 진행 중" status pill (.status-badge).
+    //   text-shadow outline / 글자색 #fff 보존, bg 만 치환.
+    .cluster4-section3 .area-1-title .date-status .status-badge {
+      background: var(--ec-accent) !important;
+    }
+
+    // 13-13) section3 영역 1 우측 "bullet-dot" — JSX 인라인 background:#FAAB07.
+    .cluster4-section3 .area-1-title .bullet-dot {
+      background: var(--ec-accent) !important;
+    }
+
+    // 13-14) section3 area-3 image-card gold frame gradient.
+    .cluster4-section3 .area-3-image {
+      .season-image-stack .image-card .card-frame,
+      .season-image-stack .image-card.card-back .card-frame,
+      .season-image-stack .image-card.card-middle .card-frame,
+      .season-image-single .image-card .card-frame {
+        background: linear-gradient(135deg, var(--ec-accent) 0%, var(--ec-accent-soft) 100%) !important;
+      }
+    }
+
+    // 13-15) area-9 평판 헤더 FM 옆 wifi/RSS 아이콘 (orange PNG → pink tint).
+    //   wifi-icon 은 4 위치 모두 동일 PNG. 일관 적용.
+    .cluster4-section3 .wifi-icon,
+    .cluster4-section3 .area-9-season-reputation .wifi-icon,
+    .cluster4-section3 .profile-cards .wifi-icon {
+      filter: hue-rotate(-51deg) saturate(1.1);
+    }
+
+    // 13-16) section3 area-8 우측 리스트 role badge (.badge-status.yellow).
+    //   JSX 가 모든 badge 에 'yellow' 클래스 고정 — multi-state palette 아님.
+    //   .badge-status.orange (#ff8c00) 는 별도 강조 상태 → KEEP.
+    //   글자색 #111111 (검정) 보존 — soft pink 배경 위 가독 OK.
+    .cluster4-section3 .area-8-season-status .status-badges .badge-item .badge-status.yellow {
+      background: var(--ec-accent-soft) !important;
+    }
+  }
+}
+
+// =================================================================
+// Phase D2 — cluster-4-1 subclass modal deep override (Encre).
+// _cluster4-px.scss 의 Phase D2 블록 1:1 mirror, rgba 만 EC.
+// =================================================================
+
+.encre-theme {
+  .section-modal.section-modal-season-reputation-form {
+    .modal-header-top h3,
+    [class*="modal-header"] h3 {
+      color: var(--org-accent-soft) !important;
+    }
+    .modal-close-btn:hover {
+      color: var(--org-accent) !important;
+    }
+    input:focus,
+    textarea:focus,
+    select:focus {
+      border-color: var(--org-accent) !important;
+    }
+    input[type="range"],
+    input[type="checkbox"],
+    input[type="radio"] {
+      accent-color: var(--org-accent) !important;
+    }
+    .colleague-card.selected,
+    .keyword-card.selected,
+    .reputation-keyword-card.selected {
+      border-color: var(--org-accent) !important;
+    }
+    .modal-save-btn,
+    .modal-edit-btn,
+    button[type="submit"]:not(.cancel-btn):not(.modal-cancel-btn) {
+      background: var(--org-accent) !important;
+      border-color: var(--org-accent) !important;
+
+      &:hover {
+        background: var(--org-accent-soft) !important;
+      }
+    }
+    .modal-cancel-btn,
+    .modal-reset-btn {
+      border-color: var(--org-accent) !important;
+      color: var(--org-accent) !important;
+    }
+  }
+
+  .keyword-select-modal,
+  .section-modal.keyword-select-modal {
+    border-color: rgba(255, 75, 112, 0.45) !important;
+
+    .modal-header-top h3,
+    [class*="modal-header"] h3 {
+      color: var(--org-accent-soft) !important;
+    }
+    .modal-close-btn:hover {
+      color: var(--org-accent) !important;
+    }
+    .keyword-option.selected,
+    .keyword-tag.selected,
+    .option.selected {
+      background: rgba(255, 75, 112, 0.2) !important;
+      border: 2px solid var(--org-accent) !important;
+      color: var(--org-accent) !important;
+    }
+    .keyword-option:hover,
+    .option:hover {
+      background: var(--org-accent) !important;
+      color: #111 !important;
+    }
+    .modal-save-btn,
+    button[type="submit"]:not(.cancel-btn) {
+      background: var(--org-accent) !important;
+      border-color: var(--org-accent) !important;
+
+      &:hover {
+        background: var(--org-accent-soft) !important;
+      }
+    }
+  }
+  .keyword-select-overlay .keyword-select-modal {
+    border-color: rgba(255, 75, 112, 0.45) !important;
+  }
+
+  .section-modal.section-modal-season-reputation-view {
+    .modal-header-top h3,
+    [class*="modal-header"] h3 {
+      color: var(--org-accent-soft) !important;
+    }
+    .modal-close-btn:hover {
+      color: var(--org-accent) !important;
+    }
+    .reputation-detail-highlight,
+    .view-content-highlight,
+    .reputation-content-box.highlighted {
+      background: rgba(255, 75, 112, 0.15) !important;
+      color: var(--org-accent) !important;
+      border-color: rgba(255, 75, 112, 0.3) !important;
+    }
+    .reputation-progress .progress-fill {
+      background: linear-gradient(90deg, var(--org-accent) 50%, rgba(255, 255, 255, 0.3) 50%) !important;
+    }
+  }
+
+  .section-modal.section-modal-season-review {
+    .modal-header-top h3,
+    [class*="modal-header"] h3 {
+      color: var(--org-accent-soft) !important;
+    }
+    .modal-close-btn:hover {
+      color: var(--org-accent) !important;
+    }
+    textarea:focus,
+    input:focus {
+      border-color: rgba(255, 75, 112, 0.5) !important;
+    }
+    .modal-save-btn,
+    .modal-edit-btn,
+    button[type="submit"]:not(.cancel-btn):not(.modal-cancel-btn) {
+      background: var(--org-accent) !important;
+      border-color: var(--org-accent) !important;
+
+      &:hover {
+        background: var(--org-accent-soft) !important;
+      }
+    }
+    .modal-cancel-btn,
+    .modal-reset-btn {
+      border-color: var(--org-accent) !important;
+      color: var(--org-accent) !important;
+    }
+  }
+
+  // =================================================================
+  // Phase D4-B — cluster-4-1 modal body inner accents (Encre, reconciled).
+  // _cluster4-px.scss Phase D4-B 블록 1:1 mirror, rgba 만 EC.
+  // =================================================================
+  .section-modal.section-modal-season-reputation-form,
+  .section-modal.section-modal-season-reputation-view,
+  .section-modal.section-modal-season-review {
+    .field-label,
+    label.required {
+      color: var(--org-accent) !important;
+    }
+    .field-value {
+      &.accent,
+      &.themed {
+        color: var(--org-accent) !important;
+      }
+    }
+    .keyword-input-wrapper:focus-within,
+    .keyword-input:focus {
+      border-color: var(--org-accent) !important;
+    }
+    .keyword-hash {
+      color: var(--org-accent) !important;
+    }
+    .keyword-mode-select {
+      border-color: rgba(255, 75, 112, 0.4) !important;
+
+      &:focus,
+      &.open {
+        border-color: var(--org-accent) !important;
+      }
+    }
+    .char-count:not(.over-limit):not(.error),
+    .limit-hint {
+      color: var(--org-accent-soft) !important;
+    }
+    .season-keyword-loading {
+      color: var(--org-accent) !important;
+    }
+    .season-reputation-bottom-divider {
+      background: rgba(255, 75, 112, 0.3) !important;
+      border-color: rgba(255, 75, 112, 0.3) !important;
+    }
+    .group-title,
+    .btn-select-header {
+      &.accent,
+      &.active {
+        color: var(--org-accent) !important;
+      }
+    }
+    .fm-value {
+      &.accent {
+        color: var(--org-accent) !important;
+      }
+    }
+  }
+
+  .help-modal {
+    border-color: var(--org-accent) !important;
+    box-shadow: 0px 0px 60px 0px rgba(255, 75, 112, 0.15) !important;
+
+    &::before,
+    &::after {
+      border-color: var(--org-accent) !important;
+    }
+    .help-modal-header {
+      border-bottom-color: rgba(255, 75, 112, 0.2) !important;
+
+      h3 {
+        color: var(--org-accent-soft) !important;
+      }
+    }
+    .help-modal-close:hover,
+    .modal-close-btn:hover {
+      color: var(--org-accent) !important;
+    }
+  }
+}
+

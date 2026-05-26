@@ -1,0 +1,34 @@
+/* ==== 
+ --------- (1.02) variables start ---------
+ ==== */
+
+// khula google font source
+// @import url("https://fonts.googleapis.com/css2?family=Khula:wght@300;400;600;700;800&display=swap");
+
+:root {
+  // template default
+  --template-font: var(--khula);
+  --template-bg: #0c0f14;
+  --template-color: #ffffff;
+
+  // colors
+  --white: #ffffff;
+  --black: #000000;
+  --primary-color: #faab07;
+  --secondary-color: #1c242f;
+  --tertiary-color: #505d6a;
+  --quaternary-color: #45f882;
+  --quinary-color: #e6162d;
+  --septenary-color: #1d2329;
+  --senary-color: #141a23;
+
+  // transitions
+  --transition: all 0.5s ease 0s;
+
+  // box shadow
+  --shadow: 0px 2px 4px -1px rgba(0, 0, 0, 0.2), 0px 4px 5px 0px rgba(0, 0, 0, 0.14), 0px 1px 10px 0px rgba(0, 0, 0, 0.12);
+  --shadow-secondary: 0px 16px 24px 0px rgba(242, 195, 53, 0.2);
+}
+/* ==== 
+ --------- (1.02) variables end ---------
+ ==== */

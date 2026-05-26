@@ -1,0 +1,363 @@
+// =============================================
+// 고정 너비 레이아웃 시스템
+// - 100% zoom(1920×1080)에서 좌우 여백 없음
+// - 축소 시에만 좌우 여백 생성
+// - 확대/창 축소 시 가로 스크롤
+// =============================================
+
+// ===== CSS 변수 정의 =====
+:root {
+  // 레이아웃 크기 (고정)
+  --content-max-width: 1900px;
+  --sidebar-width: 497px;
+  --sidebar-left-offset: 110px;
+  --header-height: 66px;
+
+  // 간격
+  --spacing-xs: 8px;
+  --spacing-sm: 16px;
+  --spacing-md: 24px;
+  --spacing-lg: 40px;
+  --spacing-xl: 60px;
+
+  // 폰트 크기
+  --font-title-xl: 72px;
+  --font-title-lg: 48px;
+  --font-title-md: 36px;
+  --font-title-sm: 24px;
+  --font-body-lg: 18px;
+  --font-body: 16px;
+  --font-body-sm: 14px;
+  --font-caption: 12px;
+
+  // 탭 버튼 크기
+  --tab-width: 250px;
+  --tab-height: 48px;
+  --tab-font-size: 14px;
+}
+
+// ===== 초기 로딩 표시 안정화 =====
+// 기본값을 visible로 두어 클라이언트 초기화가 실패해도
+// 전체 앱이 검정 화면처럼 영구히 숨겨지지 않게 한다.
+.nftg-app {
+  opacity: 0;
+}
+.nftg-app.app-ready {
+  opacity: 1;
+  transition: opacity 0.12s ease-in;
+}
+
+// ===== 공통 레이아웃 스타일 =====
+
+html {
+  background-color: #0a0a0a;
+  overflow-x: auto;
+}
+
+body {
+  width: var(--content-max-width);
+  min-width: var(--content-max-width);
+  max-width: var(--content-max-width);
+  margin: 0 auto !important;
+  position: relative;
+}
+
+.nftg-content,
+.nftg-content-home {
+  width: 100%;
+  max-width: var(--content-max-width);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+// 전체 너비 섹션 (배경만 확장, 콘텐츠는 중앙 고정)
+.full-width-section {
+  width: 100%;
+  position: relative;
+
+  // 배경용 가상 요소
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100vw;
+    height: 100%;
+    z-index: -1;
+  }
+
+  // 콘텐츠는 중앙 고정
+  .section-inner {
+    max-width: var(--content-max-width);
+    margin: 0 auto;
+    padding: 0 var(--spacing-md);
+  }
+}
+
+// 메인 콘텐츠 영역
+.main-content {
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  width: 100%;
+}
+
+// 사이드바 컨테이너
+.sidebar-container {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  flex-shrink: 0;
+}
+
+// 콘텐츠 그리드
+.content-grid {
+  display: flex;
+  gap: var(--spacing-md);
+
+  .content-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .content-sidebar {
+    width: var(--sidebar-width);
+    flex-shrink: 0;
+  }
+}
+
+
+// ===== Cluster2 전용 =====
+
+.cluster2-content,
+.cluster3-content,
+.cluster4-content,
+.home-two-content {
+  max-width: var(--content-max-width);
+
+  // ★ 모든 자식 요소 잘림 방지
+  & > *,
+  .c2-section,
+  .cluster3-section,
+  .cluster4-section,
+  .club-review,
+  .self-introduction,
+  .resume-section,
+  [class*="section"] {
+    max-width: 100% !important;
+    overflow-x: hidden;
+    box-sizing: border-box;
+  }
+
+  // 섹션 제목
+  .section-title,
+  .c2-title {
+    font-size: var(--font-title-lg);
+  }
+
+  // 섹션 간격
+  .section-gap {
+    margin-bottom: var(--spacing-xl);
+  }
+}
+
+// ★★★ 섹션 간 간격 넓히기 ★★★
+.cluster2-wrapper {
+  // 모든 직접 자식 섹션에 하단 마진 추가
+  & > * {
+    margin-bottom: 80px;
+  }
+
+  // 마지막 섹션은 마진 제거
+  & > *:last-child {
+    margin-bottom: 0;
+  }
+}
+
+// 개별 섹션 간격 조정
+.cluster2-section1,
+.c2-section1 {
+  margin-bottom: 100px !important;
+}
+
+// ★ Profile 섹션 (소크라테스 문구) 스크롤 제거
+.cluster2-title-wrapper {
+  overflow: visible !important;
+  max-width: 100% !important;
+}
+
+.cluster2-section2,
+.c2-section2 {
+  margin-bottom: 100px !important;
+}
+
+.cluster2-section3,
+.c2-section3,
+.cluster2-edu {
+  margin-bottom: 100px !important;
+}
+
+.cluster2-section4,
+.c2-section4 {
+  margin-bottom: 120px !important;
+}
+
+.cluster2-intro {
+  margin-bottom: 100px !important;
+}
+
+.cluster2-review-banner {
+  margin-bottom: 100px !important;
+}
+
+// ★ 콘텐츠 영역 전체 잘림 방지
+.home-two-content-col {
+  max-width: calc(100% - var(--sidebar-width, 474px)) !important;
+  overflow-x: visible;
+}
+
+// ★★★ Club Review (Section4) 잘림 방지 ★★★
+.cluster2-section4 {
+  max-width: 100% !important;
+  width: 100% !important;
+  padding-left: 0 !important;
+  padding-right: 40px !important;
+  box-sizing: border-box;
+  overflow: visible !important;
+
+  .section4-left {
+    flex-shrink: 0;
+    max-width: 100%;
+
+    .quote-card-item {
+      max-width: 100%;
+      width: 100%;
+      min-width: unset !important;
+    }
+  }
+
+  .section4-right {
+    flex: 1;
+    min-width: 0;
+    max-width: 100%;
+    overflow: visible !important;
+    padding-right: 10px;
+
+    .total-complete-box {
+      max-width: 100%;
+    }
+
+    .review-grid-9 {
+      max-width: 100%;
+      overflow: visible !important;
+    }
+  }
+}
+
+// ★★★ 자기소개서 (Intro) 잘림 방지 ★★★
+.cluster2-intro {
+  max-width: 100% !important;
+  width: 100% !important;
+  box-sizing: border-box;
+  padding-left: 20px;
+  padding-right: 20px;
+  height: auto !important;
+  min-height: 933px;
+  overflow: visible !important;
+
+  .intro-cards {
+    max-width: 100%;
+    overflow: visible !important;
+
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    grid-template-rows: repeat(2, auto) !important;
+    gap: 70px !important;
+
+    .intro-row {
+      display: contents !important;
+    }
+
+    .intro-card {
+      width: 317px !important;
+      min-width: 317px !important;
+      max-width: 317px !important;
+      height: 244px !important;
+      overflow: hidden !important;
+      flex-shrink: 0 !important;
+      justify-self: center;
+    }
+  }
+}
+
+// 탭 메뉴 — Figma 2-row layout
+// Grid 사용: 줌 비율 변경 시 서브픽셀 반올림을 grid track 레벨에서 처리하여
+// 탭 잘림/여백 없이 부모 너비를 정확히 채움
+.cluster-tabs {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+
+  .cluster-tabs-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 18px;
+    width: 100%;
+  }
+
+  .cluster-tab {
+    min-width: 0;
+    height: 56px;
+    font-size: 14px;
+    box-sizing: border-box;
+  }
+}
+
+// ===== Zone A (<1920) 대응 =====
+// 정책: 축소/zoom 없음. 1920×1080 baseline 그대로 표시 + 가로 스크롤로 자연 노출.
+// (Zone B/C는 본 미디어쿼리에 매칭되지 않으므로 영향 없음.)
+@media (max-width: 1919px), (min-width: 1920px) and (max-width: 2559px) and (min-height: 1200px) {
+  html {
+    overflow-x: auto !important;  // 가로 스크롤 허용
+    min-width: 1920px;            // viewport보다 작아도 최소 1920px 보장
+  }
+
+  body {
+    min-width: 1920px;
+    width: 1920px;
+    max-width: 1920px;            // base의 --content-max-width(1900) override
+    transform: none !important;   // 축소 transform 잔여 제거 (방어)
+    zoom: 1 !important;           // 축소 zoom 잔여 제거 (방어)
+  }
+}
+
+// ===== 2560px 이상 대응 =====
+@media (min-width: 1921px) {
+  :root {
+    --sidebar-width: 651px;
+  }
+
+  body {
+    max-width: 2072px !important;
+    width: 2072px !important;
+    margin: 0 auto !important;
+  }
+
+  .nftg-app {
+    max-width: 2072px !important;
+    width: 2072px !important;
+    margin: 0 auto !important;
+  }
+
+  .nftg-content {
+    max-width: 2072px !important;
+  }
+
+  .home-two-sidebar-col {
+    min-height: 100vh !important;
+    background-color: #0c0f14;
+  }
+
+  .header {
+    max-width: 100% !important;
+  }
+}

@@ -1,0 +1,176 @@
+/* ==== 
+ --------- (2.02) typography styles start ---------
+ ==== */
+
+// paragraph styles
+p,
+th,
+td,
+li,
+input,
+textarea,
+select,
+label,
+blockquote,
+span {
+  font-size: 16px;
+  line-height: 26px;
+  font-weight: 400;
+  color: var(--template-color);
+}
+
+.text-xxl {
+  font-size: 24px;
+  line-height: 34px;
+}
+
+.text-xl {
+  font-size: 20px;
+  line-height: 30px;
+}
+
+.text-lg {
+  font-size: 18px;
+  line-height: 28px;
+}
+
+.text-md {
+  font-size: 16px;
+  line-height: 26px;
+}
+
+.text-sm {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.text-xs {
+  font-size: 12px;
+  line-height: 20px;
+}
+
+// link styles
+a,
+button {
+  font-size: 16px;
+  line-height: 24px;
+}
+
+// heading styles
+h1 {
+  font-size: 72px;
+  line-height: 82px;
+}
+
+h2 {
+  font-size: 56px;
+  line-height: 66px;
+}
+
+h3 {
+  font-size: 40px;
+  line-height: 50px;
+}
+
+h4 {
+  font-size: 32px;
+  line-height: 42px;
+}
+
+h5 {
+  font-size: 24px;
+  line-height: 34px;
+}
+
+h6 {
+  font-size: 20px;
+  line-height: 30px;
+}
+
+.title-xxl {
+  font-size: 120px;
+  line-height: 130px;
+}
+
+.title-xl {
+  font-size: 80px;
+  line-height: 90px;
+}
+
+.title-lg {
+  font-size: 72px;
+  line-height: 82px;
+}
+
+.title-md {
+  font-size: 64px;
+  line-height: 74px;
+}
+
+.title-sm {
+  font-size: 56px;
+  line-height: 66px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  a,
+  span {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    font-weight: inherit;
+    color: inherit;
+  }
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--khula);
+}
+
+/* ==========================================
+   Meaningful wrapping (device-robust)
+   - 완전 동일한 줄바꿈은 불가하지만, 의미 단위 줄바꿈 품질을 크게 개선
+   - 최신 브라우저에서 text-wrap 지원 시 더 자연스럽게 동작 (미지원 시 무시)
+========================================== */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+// 본문 계열: 한글은 단어(공백) 단위 우선, 긴 문자열만 예외적으로 끊기
+p,
+li,
+blockquote,
+td,
+th {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  line-break: strict;
+  hyphens: auto;
+  text-wrap: pretty;
+}
+
+// 제목 계열: 균형 잡힌 줄바꿈
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  text-wrap: balance;
+}
+
+/* ==== 
+ --------- (2.02) typography styles end ---------
+ ==== */

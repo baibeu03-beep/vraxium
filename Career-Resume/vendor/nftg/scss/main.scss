@@ -1,0 +1,124 @@
+/* ==============
+ ========= css table of contents =========
+
+ * template name: NFTG
+ * version: 1.0
+ * description: eSports and Gaming NFT HTML5 Template
+ * author: pixelaxis
+ * author-url: https://themeforest.net/user/pixelaxis
+
+ 01. abstracts
+     1.01 --> mixins
+     1.02 --> variables
+    
+ 02. base
+     2.01 --> reset
+     2.02 --> typography
+     2.03 --> global
+
+ 03. components
+     3.01 --> buttons
+     3.02 --> forms
+     3.03 --> preloader
+
+ 04. layout
+     4.01 --> header
+     4.02 --> sidebar
+     4.03 --> banner
+     4.04 --> footer
+
+ 05. sections
+     5.01 --> featured games section styles start
+     5.02 --> trending games section styles start
+     5.03 --> trending nft section styles start
+     5.04 --> countdown section styles start
+     5.05 --> streamer section styles start
+     5.06 --> last stream section styles start
+     5.07 --> platform section styles start
+     5.08 --> secure section styles start
+     5.09 --> choose section styles start
+     5.10 --> cta section styles start
+     5.11 --> faq section styles start
+     5.12 --> contact section styles start
+     5.13 --> about overview section styles start
+     5.14 --> about poster section styles start
+     5.15 --> community section styles start
+     5.16 --> team section styles start
+     5.17 --> community two section styles start
+     5.18 --> game slider section styles start
+     5.19 --> browse game section styles start
+     5.20 --> game details
+     5.21 --> tournaments section styles start
+     5.22 --> tournament details section styles start
+     5.23 --> leaderboard section styles start
+     5.24 --> badges section styles  start
+     5.25 --> marketplace section styles start
+     5.26 --> build experience section styles start
+     5.27 --> partner section styles start
+     5.28 --> packages section styles start
+     5.29 --> package banner section styles start
+     5.30 --> package items section style start
+     5.31 --> nft details section styles start
+     5.32 --> profile section styles start
+     5.33 --> prfoile tab section styles start
+     5.34 --> private profile section styles start
+     5.35 --> blog section styles start
+     5.36 --> chatbox section styles start
+     5.37 --> authentication section styles start
+     5.38 --> error section styles start
+     5.39 --> template options
+
+ 06. responsive
+
+    ==================================
+============== */
+
+// bootstrap five css
+@import "bootstrap/scss/bootstrap.scss";
+
+// Swiper css
+@import "swiper/swiper-bundle.css";
+
+// tabler icons
+@import "@tabler/icons-webfont/dist/tabler-icons.min.css";
+
+// ui range slider
+@import "@yaireo/ui-range/ui-range.css";
+// nice select
+@import "~nice-select2/dist/css/nice-select2.css";
+// @import url("../css/bootstrap.min.css");
+// // tabler icons css
+// // nice select css
+// @import url("../css/nice-select.css");
+// // magnific popup css
+// @import url("../css/magnific-popup.css");
+// // swiper slider css
+// @import url("../css/swiper-bundle.min.css");
+// // odometer css
+// @import url("../css/odometer.css");
+
+// abstract styles
+@import "./abstracts/mixins";
+@import "./abstracts/variables";
+
+// base styles
+@import "./base/reset";
+@import "./base/typography";
+@import "./base/global";
+
+// component styles
+@import "./components/buttons";
+@import "./components/forms";
+@import "./components/preloader";
+
+// layout styles
+@import "./layout/header";
+@import "./layout/sidebar";
+@import "./layout/banner";
+@import "./layout/footer";
+
+// section styles
+@import "./sections/all-sections";
+
+// responsive styles
+@import "./responsive";

@@ -1,0 +1,374 @@
+/* ==== 
+ --------- (3.02) forms styles start ---------
+ ==== */
+
+// input style
+input {
+  background-color: transparent;
+  &::placeholder {
+    color: var(--white);
+  }
+  &:focus {
+    border-color: var(--primary-color) !important;
+  }
+}
+
+// search popup
+.search-popup__group {
+  clip-path: polygon(-2% -2%, 101% -2%, 100% 76%, 92% 101%, -2% 101%);
+  position: relative;
+
+  input {
+    border: 0px;
+    background-color: var(--septenary-color);
+  }
+
+  .cmn-shape {
+    position: absolute;
+    z-index: 1;
+    inset: 0px;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    path {
+      stroke-width: 1.5px;
+      stroke: var(--tertiary-color);
+      transition: all 1.6s ease-out 0s;
+      stroke-opacity: 1;
+    }
+  }
+
+  input:focus + .cmn-shape path {
+    stroke-dasharray: 820px;
+    stroke-dashoffset: -820px;
+    animation: animate-input 1.6s linear forwards;
+    animation-delay: 1.6s;
+  }
+}
+
+// input single
+.input-single {
+  label {
+    width: 100%;
+  }
+  input,
+  textarea {
+    background-color: #ebebec;
+    padding: 16px;
+    border: 1px solid #ebebec;
+    width: 100%;
+    border-radius: 12px;
+    max-height: 220px;
+    &::placeholder {
+      color: #c7b4b4;
+    }
+  }
+
+  a {
+    justify-content: flex-end;
+    font-size: 16px;
+    margin-top: 10px;
+    color: var(--template-color);
+    text-decoration: underline;
+    &:hover {
+      color: var(--tertiary-color);
+    }
+  }
+
+  .check-group-single {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin-right: 24px;
+    &:nth-last-of-type(1) {
+      margin-right: 0px;
+    }
+    input {
+      appearance: none;
+      width: 16px;
+      min-width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #86858f;
+      border-radius: 50%;
+      position: relative;
+      overflow: hidden;
+      padding: 0px !important;
+      cursor: pointer;
+      &:checked {
+        background-color: var(--secondary-color);
+      }
+    }
+
+    label {
+      cursor: pointer;
+    }
+  }
+}
+
+// newsletter form
+.newsletter-form {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  .newsletter-form-group {
+    clip-path: polygon(-2% -2%, 101% -2%, 100% 76%, 92% 101%, -2% 101%);
+    position: relative;
+    max-width: 360px;
+    width: 100%;
+  }
+
+  input {
+    border: 0px;
+    padding: 15px 20px;
+    width: 100%;
+    background-color: var(--septenary-color);
+    &::placeholder {
+      color: #ffffff80;
+    }
+  }
+
+  .cmn-shape {
+    position: absolute;
+    z-index: 1;
+    inset: 0px;
+    width: 100%;
+    height: 100%;
+    path {
+      stroke-width: 1.3px;
+      stroke: var(--tertiary-color);
+      transition: all 1.6s ease-out 0s;
+    }
+  }
+
+  input:focus + .cmn-shape path {
+    stroke-dasharray: 820px;
+    stroke-dashoffset: -820px;
+    animation: animate-input 1.6s linear forwards;
+    animation-delay: 1.6s;
+  }
+
+  .btn--primary {
+    background-color: var(--quaternary-color);
+    color: var(--secondary-color);
+    font-weight: 700;
+    clip-path: polygon(0% 0%, 100% 0%, 100% 60%, 75% 100%, 0% 100%);
+    padding: 16px 20px 16px 16px;
+    i {
+      font-size: 24px;
+    }
+    &::before {
+      border-bottom-color: var(--primary-color);
+    }
+    &::after {
+      border-top-color: var(--primary-color);
+    }
+  }
+}
+
+// authentication form
+.authentication {
+  .input-single {
+    width: 100%;
+    margin-bottom: 30px;
+    &:nth-last-of-type(1) {
+      margin-bottom: 0px;
+    }
+    label {
+      display: block;
+      color: #ffffffb3;
+      margin-bottom: 16px;
+      text-align: left;
+    }
+    a {
+      margin-top: 20px;
+      font-size: 18px;
+      color: #ffffffb3;
+      font-weight: 400;
+      text-decoration: none;
+      &:hover {
+        color: var(--quaternary-color);
+      }
+    }
+    input {
+      border-radius: 0px;
+      border: 0px;
+      background: #141a23;
+      padding: 24px 20px 24px 60px;
+      width: 100%;
+      color: white;
+      &::placeholder {
+        color: #a3a3a3;
+      }
+    }
+  }
+
+  .pass {
+    input {
+      padding-right: 60px;
+    }
+  }
+
+  .ic-group {
+    position: relative;
+    clip-path: polygon(0% 0%, 100% 0%, 100% 75%, 92% 100%, 0% 100%);
+    i {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      left: 20px;
+      font-size: 24px;
+      color: var(--quaternary-color);
+    }
+
+    .show-pass {
+      right: 20px;
+      position: absolute;
+      left: unset;
+      z-index: 2;
+      cursor: pointer;
+    }
+
+    .cmn-shape {
+      position: absolute;
+      z-index: 3;
+      inset: 0px;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      path {
+        stroke-width: 3px;
+        stroke: #505d6a70;
+        transition: all 2s ease-out 0s;
+      }
+    }
+
+    input:focus + .cmn-shape path {
+      stroke-dasharray: 2000px;
+      stroke-dashoffset: -2000px;
+      animation: animate-stroke-two 1.6s linear forwards;
+      animation-delay: 1.6s;
+    }
+  }
+
+  input {
+    &::placeholder {
+      color: #ffffff80;
+    }
+  }
+}
+
+@keyframes animate-stroke-two {
+  0% {
+    stroke-dasharray: 2000px;
+    stroke-dashoffset: 2000px;
+    stroke: var(--quaternary-color);
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    stroke: var(--quaternary-color);
+  }
+}
+
+// contact form
+.contact__form,
+.comment__form {
+  .input-single {
+    width: 100%;
+    margin-bottom: 30px;
+    &:nth-last-of-type(1) {
+      margin-bottom: 0px;
+    }
+    input,
+    textarea {
+      border-radius: 0px;
+      border: 0px;
+      background: #141a23;
+      padding: 24px 24px;
+      width: 100%;
+      color: white;
+      &::placeholder {
+        color: #ffffff80;
+      }
+    }
+  }
+
+  .ic-group {
+    position: relative;
+    clip-path: polygon(0% 0%, 100% 0%, 100% 79%, 96% 100%, 0% 100%);
+
+    .cmn-shape {
+      position: absolute;
+      z-index: 3;
+      inset: 0px;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      path {
+        stroke-width: 3px;
+        stroke: #505d6a70;
+        transition: all 2s ease-out 0s;
+      }
+    }
+
+    input:focus + .cmn-shape path {
+      stroke-dasharray: 2000px;
+      stroke-dashoffset: -2000px;
+      animation: animate-stroke-four 1.6s linear forwards;
+      animation-delay: 1.6s;
+    }
+
+    textarea:focus + .cmn-shape path {
+      stroke-dasharray: 2000px;
+      stroke-dashoffset: -2000px;
+      animation: animate-stroke-four 1.6s linear forwards;
+      animation-delay: 1.6s;
+    }
+  }
+}
+
+@keyframes animate-stroke-three {
+  0% {
+    stroke-dasharray: 1330px;
+    stroke-dashoffset: 1030px;
+    stroke: var(--quaternary-color);
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    stroke: var(--quaternary-color);
+  }
+}
+
+@keyframes animate-stroke-four {
+  0% {
+    stroke-dasharray: 2000px;
+    stroke-dashoffset: 2000px;
+    stroke: var(--quaternary-color);
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    stroke: var(--quaternary-color);
+  }
+}
+
+@keyframes animate-input {
+  0% {
+    stroke-dasharray: 820px;
+    stroke-dashoffset: 820px;
+    stroke: var(--quaternary-color);
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    stroke: var(--quaternary-color);
+  }
+}
+
+/* ==== 
+ --------- (3.02) forms styles end ---------
+ ==== */

@@ -1,0 +1,73 @@
+/* ==== 
+ --------- (1.01) mixins start ---------
+ ==== */
+
+// background image shortcut
+@mixin background($color, $repeat, $size, $position) {
+  background-color: $color;
+  background-repeat: $repeat;
+  background-size: $size;
+  background-position: $position;
+}
+
+// center element with width
+@mixin center($width) {
+  max-width: $width;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+}
+
+// center element with width and alignment
+@mixin box($value) {
+  width: $value;
+  min-width: $value;
+  height: $value;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+// ==========================================
+// Stacked title safety (Shadow + Main overlap)
+// - 폰트 로딩/대체폰트/OS 렌더링 차이에도 타이틀이 깨지지 않게
+// - 개별 섹션에서 top/left/transform은 기존 디자인 유지, 여기서는 텍스트 안정성만 보강
+// ==========================================
+@mixin stacked-title-layer($lineHeight: 1.08, $nowrap: true) {
+  line-height: $lineHeight;
+  text-wrap: balance;
+
+  @if $nowrap {
+    white-space: nowrap;
+  }
+}
+
+@mixin stacked-title-wrapper($gapAfter: null, $align: center) {
+  position: relative;
+  z-index: 1;
+  text-align: $align;
+  width: 100%;
+  overflow: visible;
+
+  @if $gapAfter != null {
+    margin: 0 0 $gapAfter 0;
+  }
+}
+
+@mixin stacked-title-sub($marginTop: null, $marginBottom: null, $lineHeight: 1.15) {
+  line-height: $lineHeight;
+  text-wrap: balance;
+
+  @if ($marginTop != null) and ($marginBottom != null) {
+    margin: $marginTop 0 $marginBottom 0;
+  } @else if ($marginTop != null) {
+    margin-top: $marginTop;
+  } @else if ($marginBottom != null) {
+    margin-bottom: $marginBottom;
+  }
+}
+
+/* ====
+ --------- (1.01) mixins end ---------
+ ==== */

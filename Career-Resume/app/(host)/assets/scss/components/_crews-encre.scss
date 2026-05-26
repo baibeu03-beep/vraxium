@@ -1,0 +1,199 @@
+// =============================================================
+// Encre (엥크레) — /crews?org=encre scoped theme override.
+//
+// Wrapper class .encre-theme 는 page.tsx 의 <main> 에 부착됨.
+// /crews 원본(default gold) 및 .phalanx-theme(green) 영향 0.
+//
+// palette
+//   main accent      #FF4B70   — strong (action / focus / border)
+//   soft accent      #FF98A6   — soft  (highlight / background tint)
+//   glow             rgba(255, 75, 112, 0.32)
+//   soft glow        rgba(255, 152, 166, 0.22)
+//   gradient         linear-gradient(135deg, #FF98A6 0%, #FF4B70 100%)
+//
+// 톤은 dark / premium / cinematic — neon pink 가 아님.
+// =============================================================
+.encre-theme {
+  --crews-accent-soft: #ff98a6;
+  --crews-accent-soft-rgb: 255, 152, 166;
+  --crews-accent-strong: #ff4b70;
+  --crews-accent-strong-rgb: 255, 75, 112;
+
+  // page.tsx 가 var() 로 읽는 inline-style hook — 자동 치환.
+  --crews-filter-accent: var(--crews-accent-strong);
+  --crews-filter-accent-bg: rgba(var(--crews-accent-strong-rgb), 0.12);
+  --crews-primary-accent: var(--crews-accent-strong);
+  --crews-primary-accent-bg: rgba(var(--crews-accent-strong-rgb), 0.15);
+  --crews-primary-accent-contrast: #ffffff;
+
+  // crews-grid badge / school dot
+  --crews-team-badge-bg: var(--crews-accent-strong);
+  --crews-team-badge-text: #ffffff;
+  --crews-school-dot-bg: var(--crews-accent-soft);
+
+  // /cluster-4 base palette 가 한정된 selector 로 새어 들어오는 경우 대비.
+  // (.phalanx-theme 는 --quaternary-color / --primary-color 도 덮어쓰지만
+  //  Encre 는 더 보수적으로 두고 핵심 surface 만 매핑.)
+  --quaternary-color: var(--crews-accent-soft);
+  --quaternary-hover: #ff7c95;
+  --primary-color: var(--crews-accent-strong);
+
+  // ─────────────────────────────────────────────
+  // weekly-filter-bar
+  // ─────────────────────────────────────────────
+  .weekly-filter-bar .filter-card:hover {
+    border-color: var(--crews-accent-strong);
+    box-shadow: 0 0 0 1px rgba(var(--crews-accent-strong-rgb), 0.18);
+  }
+
+  .weekly-filter-bar .filter-card.filter-card-large {
+    background: var(--crews-accent-soft);
+    border-color: var(--crews-accent-soft);
+    box-shadow: 0 0 24px rgba(var(--crews-accent-soft-rgb), 0.22);
+
+    // Reset 라벨/아이콘 contrast (soft pink 위에서 가독성).
+    span { color: #3a0f1a; }
+  }
+
+  .weekly-filter-bar .filter-card.filter-dropdown .dropdown-menu .dropdown-item:hover {
+    background: rgba(var(--crews-accent-strong-rgb), 0.12);
+  }
+
+  .weekly-filter-bar .filter-card.filter-dropdown .dropdown-menu .dropdown-item.selected {
+    background: rgba(var(--crews-accent-strong-rgb), 0.22);
+    color: var(--crews-accent-strong);
+  }
+
+  // 모바일 트리거 카운트 칩
+  .weekly-filter-bar--mobile .filter-mobile-btn .filter-mobile-count {
+    background: rgba(var(--crews-accent-strong-rgb), 0.22);
+    border-color: rgba(var(--crews-accent-strong-rgb), 0.35);
+    color: var(--crews-accent-strong);
+  }
+
+  // 모바일 바텀시트 primary 버튼 / focus ring
+  .filter-sheet .filter-sheet-btn.primary {
+    background: var(--crews-accent-strong);
+    border-color: var(--crews-accent-strong);
+  }
+
+  .filter-sheet .filter-sheet-select:focus {
+    border-color: var(--crews-accent-strong);
+    box-shadow: 0 0 0 2px rgba(var(--crews-accent-strong-rgb), 0.22);
+  }
+
+  // ─────────────────────────────────────────────
+  // 카드 hover glow / divider — gold 흔적 sweep.
+  // ─────────────────────────────────────────────
+  .trending__single:hover {
+    box-shadow: 0 0 34px rgba(var(--crews-accent-soft-rgb), 0.20);
+  }
+
+  .trending__single .author-title {
+    border-left-color: rgba(var(--crews-accent-soft-rgb), 0.38);
+  }
+
+  .trending__single .price-footer .price-inner {
+    box-shadow: 0 0 18px rgba(var(--crews-accent-soft-rgb), 0.10);
+  }
+
+  // ─────────────────────────────────────────────
+  // filter PNG 아이콘.
+  //
+  // 사양:
+  //   - PNG 전체 hue-rotate 금지.
+  //   - white glyph 유지.
+  // 접근:
+  //   원본 yellow PNG 를 brightness(0) → invert(1) 두 단계로
+  //   순수 white silhouette 으로 변환 (hue-rotate 없음, 색상 회전 없음).
+  //   결과적으로 Encre theme 에서 아이콘은 white glyph 로 통일.
+  // 적용 범위:
+  //   .filter-card-large 의 .filter-icon (Reset) +
+  //   그 외 카드의 .card-icon.
+  //   icon - cluv.png / icon - book.png 는 phalanx 와 동일하게
+  //   원본 색상 유지(흑백 변환 제외).
+  // ─────────────────────────────────────────────
+  .weekly-filter-bar .filter-card {
+    .filter-icon,
+    .card-icon {
+      filter: brightness(0) invert(1);
+    }
+  }
+
+  .weekly-filter-bar {
+    img.card-icon[src*="icon - cluv.png"],
+    img.card-icon[src*="icon - book.png"] {
+      filter: none !important;
+    }
+
+    // Reset 카드(filter-card-large) 위 아이콘은 soft pink 배경 — white 보다
+    // 짙은 wine tone 으로 contrast 확보. 다른 카드는 dark surface 위 white 유지.
+    .filter-card.filter-card-large {
+      .filter-icon,
+      .card-icon {
+        filter: brightness(0) invert(0.12);
+      }
+    }
+  }
+}
+
+// =============================================================
+// .crew-club-badge 상태 강제 override (Encre)
+// =============================================================
+// _all-sections.scss L157 의 base (gold #ffc300 + #000 글씨) 를 덮어쓴다.
+// hover 도중 background/color 가 동일 톤이 되어 글자가 사라지지 않도록
+// base / hover / focus / active / visited 와 내부 children 까지 명시.
+// =============================================================
+.encre-theme {
+  .crews-grid {
+    .crew-club-badge,
+    .crew-club-badge:visited {
+      color: #ffffff !important;
+      background: rgba(255, 75, 112, 0.20) !important;
+      border-color: rgba(255, 152, 166, 0.45) !important;
+    }
+
+    .crew-club-badge:hover,
+    .crew-club-badge:hover:visited,
+    .crew-club-badge:focus,
+    .crew-club-badge:active {
+      color: #3a0f1a !important;
+      background: #ff98a6 !important;
+      border-color: #ff4b70 !important;
+    }
+
+    .crew-club-badge:hover *,
+    .crew-club-badge:focus *,
+    .crew-club-badge:active * {
+      color: #3a0f1a !important;
+    }
+  }
+}
+
+// =============================================================
+// scroll-to-top (.progress-wrap) — Encre tone.
+//
+// <Progress> 는 root layout 에 마운트되어 .encre-theme(<main>) 의 sibling.
+// CSS custom property 가 cascade 되지 않으므로 hex 직접 사용 + body:has() 로
+// 라우트 진입 여부를 잡는다. (cluster-px-theme 패턴 동일.)
+//
+// 보존: span (흰색 inner circle) · arrow(검정) · position · scroll·hover
+//       animation · SVG 구조 · 8px ring 두께.
+// =============================================================
+body:has(.encre-theme) {
+  .progress-wrap {
+    background: #ff4b70 !important;
+    box-shadow:
+      inset 0 0 0 8px #ff4b70,
+      0 0 12px rgba(255, 75, 112, 0.35),
+      0 0 20px rgba(255, 152, 166, 0.20) !important;
+  }
+
+  .progress-wrap span {
+    background: #ffffff !important;
+  }
+
+  .progress-wrap .progress-circle path {
+    stroke: #ff98a6 !important;
+  }
+}

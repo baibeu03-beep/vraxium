@@ -1,0 +1,223 @@
+diff --git a/utils/documentZoom.ts b/utils/documentZoom.ts
+new file mode 100644
+index 0000000..0cd6c12
+--- /dev/null
++++ b/utils/documentZoom.ts
+@@ -0,0 +1,20 @@
++export const getDocumentZoom = (): number => {
++  if (typeof window === "undefined") return 1;
++
++  const zoomValue = getComputedStyle(document.documentElement).zoom;
++  if (!zoomValue || zoomValue === "1" || zoomValue === "normal") return 1;
++
++  const parsedZoom = parseFloat(zoomValue);
++  return Number.isFinite(parsedZoom) && parsedZoom > 0 ? parsedZoom : 1;
++};
++
++export const getFixedDropdownPosition = (
++  rect: Pick<DOMRect, "bottom" | "left" | "width">,
++  topOffset: number = 0,
++) => {
++  const zoom = getDocumentZoom();
++  const top = rect.bottom + topOffset;
++  const left = rect.left;
++  const width = rect.width;
++
++  return zoom === 1 ? { top, left, width } : { top: top / zoom, left: left / zoom, width: width / zoom };
++};
+diff --git a/components/cluster-3/Cluster3Content.tsx b/components/cluster-3/Cluster3Content.tsx
+index e3fd3f1..0000000 100644
+--- a/components/cluster-3/Cluster3Content.tsx
++++ b/components/cluster-3/Cluster3Content.tsx
+@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
+ import { createPortal } from "react-dom";
+ import { useSession } from "next-auth/react";
+ import { useSearchParams } from "next/navigation";
++import { getDocumentZoom, getFixedDropdownPosition } from "@/utils/documentZoom";
+ import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
+ import { useModalScroll } from "@/utils/useModalScroll";
+ import {
+@@ -26,13 +27,6 @@ import { DETAIL_CARD_1_DEFAULT, createInitialDetailCardsWithDefault } from "@/c
+ // Zone C(>1920px, ResponsiveScale.tsx에서 documentElement에 zoom:1.08 적용) 대응.
+ // getBoundingClientRect는 zoom 적용 후 좌표를 반환하지만 position:fixed의 top/left는 CSS 픽셀 기준이라 좌표가 어긋난다.
+ // zoom이 적용되지 않은 Zone A/B에서는 1을 반환해 기존 동작을 유지한다.
+-const getDocumentZoom = (): number => {
+-  if (typeof window === "undefined") return 1;
+-  const z = getComputedStyle(document.documentElement).zoom;
+-  if (!z || z === "1" || z === "normal") return 1;
+-  const num = parseFloat(z);
+-  return Number.isFinite(num) && num > 0 ? num : 1;
+-};
+ 
+ // 커스텀 드롭다운 (네이티브 <option>은 cursor 스타일 미지원)
+ const CustomSelect = ({ value, onChange, options, className, style }: { value: string; onChange: (val: string) => void; options: { value: string; label: string }[]; className?: string; style?: React.CSSProperties }) => {
+@@ -1146,9 +1140,8 @@ const Cluster3Content = () => {
+       setDropdownPosition(null);
+     } else {
+       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+-      const zoom = getDocumentZoom();
+       setOpenDropdownId(id);
+-      setDropdownPosition(zoom === 1 ? { top: rect.bottom, left: rect.left, width: rect.width } : { top: rect.bottom / zoom, left: rect.left / zoom, width: rect.width / zoom });
++      setDropdownPosition(getFixedDropdownPosition(rect));
+     }
+   };
+diff --git a/components/cluster-4/Cluster4Content.tsx b/components/cluster-4/Cluster4Content.tsx
+index d72dd9d..0000000 100644
+--- a/components/cluster-4/Cluster4Content.tsx
++++ b/components/cluster-4/Cluster4Content.tsx
+@@ -6,6 +6,7 @@ import Link from "next/link";
+ import { useRouter } from "next/navigation";
+ import { useSession } from "next-auth/react";
+ import { useSearchParams } from "next/navigation";
++import { getFixedDropdownPosition } from "@/utils/documentZoom";
+ import { useModalScroll } from "@/utils/useModalScroll";
+ import { supabase } from "@/lib/supabase";
+ import { useDataMasking } from "@/hooks/useDataMasking";
+@@ -663,7 +664,7 @@ const Cluster4Content = () => {
+     const trigger = seasonRatingDropdownTriggerRef.current;
+     if (!trigger) return;
+     const rect = trigger.getBoundingClientRect();
+-    setSeasonRatingDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
++    setSeasonRatingDropdownPos(getFixedDropdownPosition(rect, 4));
+     setSeasonRatingDropdownOpen(true);
+   };
+@@ -2189,7 +2190,7 @@ const Cluster4Content = () => {
+     const trigger = seasonReviewRatingDropdownTriggerRef.current;
+     if (!trigger) return;
+     const rect = trigger.getBoundingClientRect();
+-    setSeasonReviewRatingDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
++    setSeasonReviewRatingDropdownPos(getFixedDropdownPosition(rect, 4));
+     setSeasonReviewRatingDropdownOpen(true);
+   };
+diff --git a/components/cluster-4-card/Cluster4CardContent.tsx b/components/cluster-4-card/Cluster4CardContent.tsx
+index c04d4e7..0000000 100644
+--- a/components/cluster-4-card/Cluster4CardContent.tsx
++++ b/components/cluster-4-card/Cluster4CardContent.tsx
+@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
+ import { useSearchParams } from "next/navigation";
+ import { useModalScroll } from "@/utils/useModalScroll";
+ import { supabase } from "@/lib/supabase";
++import { getFixedDropdownPosition } from "@/utils/documentZoom";
+ import { useDataMasking } from "@/hooks/useDataMasking";
+ import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
+ import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
+@@ -3145,7 +3146,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
+     const trigger = ratingDropdownTriggerRef.current;
+     if (!trigger) return;
+     const rect = trigger.getBoundingClientRect();
+-    setRatingDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
++    setRatingDropdownPos(getFixedDropdownPosition(rect, 4));
+     setRatingDropdownOpen(true);
+   };
+@@ -3161,7 +3162,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
+     const trigger = reviewRatingDropdownTriggerRef.current;
+     if (!trigger) return;
+     const rect = trigger.getBoundingClientRect();
+-    setReviewRatingDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
++    setReviewRatingDropdownPos(getFixedDropdownPosition(rect, 4));
+     setReviewRatingDropdownOpen(true);
+   };
+diff --git a/components/cluster-4-1/Cluster41Content.tsx b/components/cluster-4-1/Cluster41Content.tsx
+index 8baf903..7ddc03e 100644
+--- a/components/cluster-4-1/Cluster41Content.tsx
++++ b/components/cluster-4-1/Cluster41Content.tsx
+@@ -3,6 +3,7 @@
+ import React, { useState, useRef, useEffect } from "react";
+ import Link from "next/link";
+ import { useRouter, useSearchParams } from "next/navigation";
++import { getFixedDropdownPosition } from "@/utils/documentZoom";
+ import { supabase } from "@/lib/supabase";
+ import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
+ import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA } from "@/constants/dummyData";
+@@ -1215,14 +1216,16 @@ const Cluster41Content = () => {
+   const updateSeasonPos = () => {
+     if (seasonBtnRef.current) {
+       const rect = seasonBtnRef.current.getBoundingClientRect();
+-      setSeasonBtnPos({ top: rect.bottom + 8, left: rect.left });
++      const { top, left } = getFixedDropdownPosition(rect, 8);
++      setSeasonBtnPos({ top, left });
+     }
+   };
+ 
+   const updateResultPos = () => {
+     if (resultBtnRef.current) {
+       const rect = resultBtnRef.current.getBoundingClientRect();
+-      setResultBtnPos({ top: rect.bottom + 8, left: rect.left });
++      const { top, left } = getFixedDropdownPosition(rect, 8);
++      setResultBtnPos({ top, left });
+     }
+   };
+@@ -1741,6 +1744,7 @@ const Cluster41Content = () => {
+                 position: 'relative'
+               }}
+               onClick={() => {
++                updateSeasonPos();
+                 setSeasonDropdownOpen(!seasonDropdownOpen);
+                 setResultDropdownOpen(false);
+               }}
+@@ -1753,10 +1757,9 @@ const Cluster41Content = () => {
+               {seasonDropdownOpen && (
+                 <div
+                   style={{
+-                    position: 'absolute',
+-                    top: '100%',
+-                    left: 0,
+-                    marginTop: 8,
++                    position: 'fixed',
++                    top: seasonBtnPos.top,
++                    left: seasonBtnPos.left,
+                     width: '200px',
+                     background: '#1a1a1a',
+                     border: '1px solid rgba(255,255,255,0.12)',
+@@ -1808,6 +1811,7 @@ const Cluster41Content = () => {
+                 position: 'relative'
+               }}
+               onClick={() => {
++                updateResultPos();
+                 setResultDropdownOpen(!resultDropdownOpen);
+                 setSeasonDropdownOpen(false);
+               }}
+@@ -1820,10 +1824,9 @@ const Cluster41Content = () => {
+               {resultDropdownOpen && (
+                 <div
+                   style={{
+-                    position: 'absolute',
+-                    top: '100%',
+-                    left: 0,
+-                    marginTop: 8,
++                    position: 'fixed',
++                    top: resultBtnPos.top,
++                    left: resultBtnPos.left,
+                     width: '200px',
+                     background: '#1a1a1a',
+                     border: '1px solid rgba(255,255,255,0.12)',
+diff --git a/components/cluster-4-ranking/Cluster4RankingContent.tsx b/components/cluster-4-ranking/Cluster4RankingContent.tsx
+index ee95d60..3231ac7 100644
+--- a/components/cluster-4-ranking/Cluster4RankingContent.tsx
++++ b/components/cluster-4-ranking/Cluster4RankingContent.tsx
+@@ -3,6 +3,7 @@
+ import React, { useState, useRef, useEffect, useMemo } from "react";
+ import Link from "next/link";
+ import Image from "next/image";
++import { getFixedDropdownPosition } from "@/utils/documentZoom";
+ import { Swiper, SwiperSlide } from 'swiper/react';
+ import { Navigation, Pagination, EffectCoverflow } from 'swiper/modules';
+ import 'swiper/css';
+@@ -205,14 +206,16 @@ const Cluster4RankingContent = () => {
+   const updateSeasonPos = () => {
+     if (seasonBtnRef.current) {
+       const rect = seasonBtnRef.current.getBoundingClientRect();
+-      setSeasonBtnPos({ top: rect.bottom + 8, left: rect.left });
++      const { top, left } = getFixedDropdownPosition(rect, 8);
++      setSeasonBtnPos({ top, left });
+     }
+   };
+ 
+   const updateWeekPos = () => {
+     if (weekBtnRef.current) {
+       const rect = weekBtnRef.current.getBoundingClientRect();
+-      setWeekBtnPos({ top: rect.bottom + 8, left: rect.left });
++      const { top, left } = getFixedDropdownPosition(rect, 8);
++      setWeekBtnPos({ top, left });
+     }
+   };

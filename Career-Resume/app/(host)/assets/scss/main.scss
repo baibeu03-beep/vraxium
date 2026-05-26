@@ -1,0 +1,203 @@
+/* ==============
+ ========= css table of contents =========
+
+ * template name: NFTG
+ * version: 1.0
+ * description: eSports and Gaming NFT HTML5 Template
+ * author: pixelaxis
+ * author-url: https://themeforest.net/user/pixelaxis
+
+ 01. abstracts
+     1.01 --> mixins
+     1.02 --> variables
+    
+ 02. base
+     2.01 --> reset
+     2.02 --> typography
+     2.03 --> global
+     2.04 --> zoom-stable-layout (반응형 CSS 변수)
+
+ 03. components
+     3.01 --> buttons
+     3.02 --> forms
+     3.03 --> preloader
+
+ 04. layout
+     4.01 --> header
+     4.02 --> sidebar
+     4.03 --> banner
+     4.04 --> footer
+
+ 05. sections
+     5.01 --> featured games section styles start
+     5.02 --> trending games section styles start
+     5.03 --> trending nft section styles start
+     5.04 --> countdown section styles start
+     5.05 --> streamer section styles start
+     5.06 --> last stream section styles start
+     5.07 --> platform section styles start
+     5.08 --> secure section styles start
+     5.09 --> choose section styles start
+     5.10 --> cta section styles start
+     5.11 --> faq section styles start
+     5.12 --> contact section styles start
+     5.13 --> about overview section styles start
+     5.14 --> about poster section styles start
+     5.15 --> community section styles start
+     5.16 --> team section styles start
+     5.17 --> community two section styles start
+     5.18 --> game slider section styles start
+     5.19 --> browse game section styles start
+     5.20 --> game details
+     5.21 --> tournaments section styles start
+     5.22 --> tournament details section styles start
+     5.23 --> leaderboard section styles start
+     5.24 --> badges section styles  start
+     5.25 --> marketplace section styles start
+     5.26 --> build experience section styles start
+     5.27 --> partner section styles start
+     5.28 --> packages section styles start
+     5.29 --> package banner section styles start
+     5.30 --> package items section style start
+     5.31 --> nft details section styles start
+     5.32 --> profile section styles start
+     5.33 --> prfoile tab section styles start
+     5.34 --> private profile section styles start
+     5.35 --> blog section styles start
+     5.36 --> chatbox section styles start
+     5.37 --> authentication section styles start
+     5.38 --> error section styles start
+     5.39 --> template options
+
+ 06. responsive
+
+    ==================================
+============== */
+
+// (moved) mobile-responsive는 가장 마지막에 로드 (오버라이드)
+
+// Google Fonts
+@import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&display=block');
+
+// bootstrap five css
+@import "bootstrap/scss/bootstrap.scss";
+
+// Swiper css
+@import "swiper/swiper-bundle.css";
+
+// tabler icons
+@import "@tabler/icons-webfont/dist/tabler-icons.min.css";
+
+// tabler icons font-display 오버라이드 — 로딩 전 'X' 깜빡임(FOMI) 방지
+@font-face {
+  font-family: "tabler-icons";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("~@tabler/icons-webfont/dist/fonts/tabler-icons.woff2") format("woff2"),
+       url("~@tabler/icons-webfont/dist/fonts/tabler-icons.woff") format("woff");
+}
+
+// ui range slider
+@import "@yaireo/ui-range/ui-range.css";
+// nice select
+@import "~nice-select2/dist/css/nice-select2.css";
+// @import url("../css/bootstrap.min.css");
+// // tabler icons css
+// // nice select css
+// @import url("../css/nice-select.css");
+// // magnific popup css
+// @import url("../css/magnific-popup.css");
+// // swiper slider css
+// @import url("../css/swiper-bundle.min.css");
+// // odometer css
+// @import url("../css/odometer.css");
+
+// abstract styles
+@import "./abstracts/mixins";
+@import "./abstracts/variables";
+
+// base styles
+@import "./base/reset";
+@import "./base/typography";
+@import "./base/global";
+@import "./base/zoom-stable-layout"; // ★ 반응형 CSS 변수 시스템 추가
+
+// component styles
+@import "./components/buttons";
+@import "./components/forms";
+@import "./components/preloader";
+@import "./components/resume-card";
+@import "./components/cluster1";
+@import "./components/cluster2";
+@import "./components/cluster-zone-a"; // cluster3/4/4-1/4-card Zone A 폭 확장
+@import "./components/cluster3";
+// phalanx 전용 토큰 정의 (--px-accent / --px-accent-soft / --px-gradient 등).
+// 모든 _*-px.scss 파일이 본 토큰만 참조하므로 가장 먼저 로드.
+@import "./components/px-tokens";
+// Encre (EC) 전용 토큰 — _px-tokens.scss 와 동등한 구조, 본 파일에 격리.
+// `.encre-theme` 와 `.resume-card.ec-theme` 양쪽 selector 모두 활성.
+@import "./components/theme-tokens";
+// phalanx 전용 override 묶음 — 반드시 base 파일들 뒤에 와야 cascade 로 이긴다.
+// .cluster-px-theme 하위에서만 매칭되므로 non-px 라우트엔 영향 0.
+@import "./components/cluster2-px";
+// Encre 전용 cluster-2 override — _cluster2-px.scss 와 1:1 mirror,
+// .encre-theme 하위에서만 활성. /cluster-2 본체 및 /cluster-2-px 영향 0.
+@import "./components/cluster2-encre";
+@import "./components/cluster3-px";
+// Encre 전용 cluster-3 override — _cluster3-px.scss 와 1:1 mirror.
+// .encre-theme 하위에서만 활성. /cluster-3 본체 및 /cluster-3-px 영향 0.
+@import "./components/cluster3-encre";
+@import "./components/cluster-tabs-px";
+// Encre 전용 cluster-tabs override — _cluster-tabs-px.scss 와 1:1 mirror.
+// .encre-theme 하위에서만 활성. -ec 라우트 외에는 영향 0.
+@import "./components/cluster-tabs-encre";
+@import "./components/resume-card-px";
+// Encre 전용 resume-card override — base ec-theme 블록(_resume-card.scss
+// L1408-1553) 이 누락한 영역만 보충. .resume-card.ec-theme +
+// .encre-theme .resume-card 양쪽 selector.
+@import "./components/resume-card-encre";
+@import "./components/cluster4-season"; // 시즌 카드용
+@import "./components/cluster4-week";   // 주차 카드용
+@import "./components/cluster4-px";
+// Encre 전용 cluster-4 override — _cluster4-px.scss 와 1:1 mirror.
+// .encre-theme 하위에서만 활성. /cluster-4 본체 및 /cluster-4-px 영향 0.
+@import "./components/cluster4-encre";
+@import "./components/cluster4-card-px"; // /cluster-4-card-px 전용 — 반드시 cluster4-week 뒤
+// Encre 전용 /cluster-4-card override — _cluster4-card-px.scss 와 1:1 mirror.
+// .encre-theme 하위에서만 활성. /cluster-4-card 본체 및 /cluster-4-card-px 영향 0.
+// more-icon/card-arrow PNG 의 white glyph 보존을 위해 단일 hue-rotate 만 사용.
+@import "./components/cluster4-card-encre";
+@import "./components/crews-phalanx";
+@import "./components/crews-encre";
+@import "./components/weekly-ranking";  // Weekly League 페이지 전용
+@import "./components/weekly-card";     // Weekly League 주차 카드
+
+// Phase B — Portal modal/popup theme override (CustomPopup, DetailLogModal).
+// 결합 selector(.section-modal-overlay.cluster-px-theme 등)로 portal root 에
+// 직접 매칭. 반드시 _global.scss 의 generic [class*="modal-close"]:hover
+// (위쪽 이미 import) 뒤에 와야 cascade 로 이긴다 — 본 파일은 base 블록
+// 모두 import 된 후이므로 순서 OK.
+@import "./components/popup-portal-theme";
+
+// layout styles
+@import "./layout/header";
+@import "./layout/sidebar";
+@import "./layout/banner";
+@import "./layout/footer";
+
+// section styles
+@import "./sections/all-sections";
+
+// responsive styles
+@import "./responsive";
+
+// ★ Cluster 반응형 패치 (responsive 뒤, mobile-responsive 앞)
+@import "./components/cluster2-responsive";
+@import "./components/cluster3-responsive";
+@import "./components/cluster4-season-responsive";
+@import "./components/cluster4-week-responsive";
+
+// 모바일/태블릿 오버라이드(반드시 마지막)
+// Desktop-fixed project: keep mobile responsive overrides opt-in only.
+// @import "./components/mobile-responsive";

@@ -1,0 +1,41 @@
+{
+  "count": 3,
+  "hits": [
+    {
+      "tag": "span",
+      "cls": "highlight",
+      "path": "div.header-info-row > div.week-info-wrapper > div.info-badge.week > span > span.highlight",
+      "inlineStyle": "",
+      "matched": {
+        "color": "rgb(250, 171, 7)",
+        "outlineColor": "rgb(250, 171, 7)",
+        "caretColor": "rgb(250, 171, 7)",
+        "textDecorationColor": "rgb(250, 171, 7)"
+      }
+    },
+    {
+      "tag": "span",
+      "cls": "count-num",
+      "path": "div.section1-right > div.reputation-section > div.section-title-row > span.section-count > span.count-num",
+      "inlineStyle": "",
+      "matched": {
+        "color": "rgb(250, 171, 7)",
+        "outlineColor": "rgb(250, 171, 7)",
+        "caretColor": "rgb(250, 171, 7)",
+        "textDecorationColor": "rgb(250, 171, 7)"
+      }
+    },
+    {
+      "tag": "span",
+      "cls": "count-num",
+      "path": "div.section1-right > div.colleague-section > div.section-title-row > span.section-count > span.count-num",
+      "inlineStyle": "",
+      "matched": {
+        "color": "rgb(250, 171, 7)",
+        "outlineColor": "rgb(250, 171, 7)",
+        "caretColor": "rgb(250, 171, 7)",
+        "textDecorationColor": "rgb(250, 171, 7)"
+      }
+    }
+  ]
+}

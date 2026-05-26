@@ -1,0 +1,9 @@
+nftg/
+test/
+nul
+# .vercelignore
+
+# vendor 전체를 무시하는 규칙이 있다면 유지하더라도 아래 예외 추가
+!vendor/
+!vendor/nftg/
+!vendor/nftg/**

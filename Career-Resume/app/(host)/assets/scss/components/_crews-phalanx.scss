@@ -1,0 +1,121 @@
+.phalanx-theme {
+  --crews-accent-soft: #b2ff8f;
+  --crews-accent-soft-rgb: 178, 255, 143;
+  --crews-accent-strong: #1e9503;
+  --crews-accent-strong-rgb: 30, 149, 3;
+  --quaternary-color: var(--crews-accent-soft);
+  --quaternary-hover: #8fe96a;
+  --primary-color: var(--crews-accent-strong);
+  --crews-filter-accent: var(--crews-accent-strong);
+  --crews-filter-accent-bg: rgba(var(--crews-accent-strong-rgb), 0.1);
+  --crews-primary-accent: var(--crews-accent-strong);
+  --crews-primary-accent-bg: rgba(var(--crews-accent-strong-rgb), 0.15);
+  --crews-primary-accent-contrast: #fff;
+  --crews-team-badge-bg: var(--crews-accent-strong);
+  --crews-team-badge-text: #fff;
+  --crews-school-dot-bg: var(--crews-accent-soft);
+
+  .weekly-filter-bar .filter-card:hover {
+    border-color: var(--crews-accent-strong);
+    box-shadow: 0 0 0 1px rgba(var(--crews-accent-strong-rgb), 0.16);
+  }
+
+  .weekly-filter-bar .filter-card.filter-card-large {
+    background: var(--crews-accent-soft);
+    border-color: var(--crews-accent-soft);
+    box-shadow: 0 0 24px rgba(var(--crews-accent-soft-rgb), 0.14);
+  }
+
+  .weekly-filter-bar .filter-card.filter-dropdown .dropdown-menu .dropdown-item:hover {
+    background: rgba(var(--crews-accent-strong-rgb), 0.1);
+  }
+
+  .weekly-filter-bar .filter-card.filter-dropdown .dropdown-menu .dropdown-item.selected {
+    background: rgba(var(--crews-accent-strong-rgb), 0.2);
+    color: var(--crews-accent-strong);
+  }
+
+  .weekly-filter-bar--mobile .filter-mobile-btn .filter-mobile-count {
+    background: rgba(var(--crews-accent-strong-rgb), 0.2);
+    border-color: rgba(var(--crews-accent-strong-rgb), 0.35);
+    color: var(--crews-accent-strong);
+  }
+
+  .filter-sheet .filter-sheet-btn.primary {
+    background: var(--crews-accent-strong);
+    border-color: var(--crews-accent-strong);
+  }
+
+  .filter-sheet .filter-sheet-select:focus {
+    border-color: var(--crews-accent-strong);
+    box-shadow: 0 0 0 2px rgba(var(--crews-accent-strong-rgb), 0.2);
+  }
+
+  .trending__single:hover {
+    box-shadow: 0 0 34px rgba(var(--crews-accent-soft-rgb), 0.18);
+  }
+
+  .trending__single .author-title {
+    border-left-color: rgba(var(--crews-accent-soft-rgb), 0.35);
+  }
+
+  .trending__single .price-footer .price-inner {
+    box-shadow: 0 0 18px rgba(var(--crews-accent-soft-rgb), 0.08);
+  }
+
+  // weekly-filter-bar 아이콘을 PX Green(strong)으로 통일.
+  // .filter-icon 은 Reset 카드(filter-card-large) 전용, .card-icon 은 그 외 카드.
+  // filter chain 은 흑백 → invert → sepia → hue-rotate 표준 패턴으로 #1E9503 톤 근사.
+  .weekly-filter-bar .filter-card {
+    .filter-icon,
+    .card-icon {
+      filter: brightness(0) saturate(100%) invert(43%) sepia(89%) saturate(1473%)
+        hue-rotate(72deg) brightness(85%) contrast(102%);
+    }
+  }
+
+  // "클럽 전체" / "학교명 검색" 카드 아이콘은 원본 색상 유지 (PX Green tint 제외).
+  .weekly-filter-bar {
+    img.card-icon[src*="icon - cluv.png"],
+    img.card-icon[src*="icon - book.png"] {
+      filter: none !important;
+    }
+  }
+
+}
+
+// =============================================================
+// .crew-club-badge 상태 강제 override
+// =============================================================
+// 이전 hover 단일 룰은 base→hover 전환 중 background/color 가 순간적으로
+// 동일 톤(둘 다 짙은 녹색)이 되어 글자가 사라지는 구간이 있었음.
+// → base/visited 와 hover/focus/active/visited 를 모두 명시하고,
+//   내부 span/a 까지 동일 톤으로 강제해 어떤 상태에서도 contrast 유지.
+// _all-sections.scss line 157 의 `.crews-grid .crew-club-badge` base
+// (--crews-team-badge-bg = #1E9503 + 흰 글씨) 를 의도적으로 덮어씀.
+.phalanx-theme {
+  .crews-grid {
+
+    .crew-club-badge,
+    .crew-club-badge:visited {
+      color: #ffffff !important;
+      background: rgba(30, 149, 3, 0.18) !important;
+      border-color: rgba(178, 255, 143, 0.45) !important;
+    }
+
+    .crew-club-badge:hover,
+    .crew-club-badge:hover:visited,
+    .crew-club-badge:focus,
+    .crew-club-badge:active {
+      color: #0F4F02 !important;
+      background: #B2FF8F !important;
+      border-color: #1E9503 !important;
+    }
+
+    .crew-club-badge:hover *,
+    .crew-club-badge:focus *,
+    .crew-club-badge:active * {
+      color: #0F4F02 !important;
+    }
+  }
+}

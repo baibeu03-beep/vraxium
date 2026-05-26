@@ -1,0 +1,136 @@
+// =============================================================
+// Org theme tokens — Encre (EC) variant single source of truth.
+//
+// 활성 조건 (둘 중 하나라도 매칭되면 활성):
+//   `.encre-theme`          — wrapper class (e.g. /crews?org=encre main).
+//   `.resume-card.ec-theme` — Sidebar.tsx 가 pathname segment 중 하나라도
+//                             `-ec` 로 끝날 때 .resume-card 에 직접 부착.
+//
+// 본 파일은 PX 의 `_px-tokens.scss` 와 동등한 구조(=일반화)지만
+// _px-tokens.scss 원본은 보존하며, Encre 토큰만 본 파일에 격리한다.
+//
+// 명명 규칙 (PX 명명과 1:1):
+//   --ec-accent           : 진한 Encre 강조 (CTA·active·strong 텍스트)
+//   --ec-accent-soft      : 라이트 Encre 강조 (label·secondary 텍스트·border)
+//   --ec-accent-glow      : 진한 강조의 그림자/글로우 alpha
+//   --ec-accent-soft-glow : 라이트 강조의 그림자/글로우 alpha
+//   --ec-gradient         : soft → strong 대각 그라데이션
+//
+// 톤: dark / premium / cinematic pink (절대 neon pink 아님).
+// =============================================================
+
+.encre-theme,
+.resume-card.ec-theme {
+  // Theme-agnostic canonical (Phase A 추가) — 신규 popup/modal/공통 override
+  // 는 본 --org-* 변수만 참조한다. PX wrapper(_px-tokens.scss) 와 동일
+  // 이름·역할로 노출되므로 var(--org-accent) 한 줄이 PX/EC 양쪽에서 자동
+  // 매칭된다.
+  --org-accent: #ff4b70;
+  --org-accent-soft: #ff98a6;
+  --org-accent-glow: rgba(255, 75, 112, 0.32);
+  --org-accent-soft-glow: rgba(255, 152, 166, 0.22);
+  --org-gradient: linear-gradient(135deg, #ff98a6 0%, #ff4b70 100%);
+
+  // Back-compat alias — 기존 --ec-* 참조 코드는 그대로 동작.
+  // 값은 위 --org-* 를 가리키므로 computed value 가 종전과 동일 (regression 0).
+  --ec-accent: var(--org-accent);
+  --ec-accent-soft: var(--org-accent-soft);
+  --ec-accent-glow: var(--org-accent-glow);
+  --ec-accent-soft-glow: var(--org-accent-soft-glow);
+  --ec-gradient: var(--org-gradient);
+
+  // Phase C — modal chrome 토큰. _global.scss 의 [class*="modal-header"] /
+  // close 버튼 hover / footer divider / scrollbar 가 본 변수를 참조한다.
+  // 본 스코프(.encre-theme)에선 org accent 톤, theme wrapper 가 없는 원본
+  // 라우트에선 fallback (yellow) 유지.
+  // - --modal-title-color   : header h3 글자 (light tone — soft accent)
+  // - --modal-divider-color : header/footer 보더 (alpha)
+  // - --modal-close-hover-color : close 버튼 hover 텍스트/보더
+  // - --modal-scrollbar-thumb   : modal body scrollbar thumb
+  --modal-title-color: var(--org-accent-soft);
+  --modal-divider-color: rgba(255, 75, 112, 0.25);
+  --modal-close-hover-color: var(--org-accent);
+  --modal-scrollbar-thumb: var(--org-accent);
+
+  // Phase D5-D — resume-card Identity-Core 탭 우측 그라데이션 stop (EC mirror).
+  // _resume-card.scss:111 cascade 대응. 원본 yellow alpha 0.75 와 동등한 EC rgba.
+  --identity-tab-accent: rgba(255, 75, 112, 0.75);
+}
+
+// =============================================================
+// Encre 라벨 alias 아이콘.
+//
+// orgLabelAlias.ts 의 Encre map :
+//   단감 → 별   / icon-star
+//   인절미 → 방패 / icon-shield
+//   어흥 → 번개 / icon-lightning
+//
+// `.encre-theme .badge-icon` scope 로 두어 resume-card 외에 cluster-4 /
+// cluster-3 / cluster-4-card / cluster-4-1 의 stat-icon / label-icon /
+// item-icon 도 본 background-image 를 자동 매칭.
+//
+// `.resume-card.ec-theme` 변형 selector 는 -ec 라우트에서 Sidebar 가
+// resume-card 에 ec-theme 만 부착(layout 의 .encre-theme 와 별개) 한 경우
+// 대비 — base ec-theme 블록(_resume-card.scss L1418-1433) 의
+// .icon-shield 가 `pX02.png` 로 PX 자산을 잘못 가리키는 부분을 본
+// 스코프에서 `Shield.png` 로 교정.
+//
+// 자산 매핑:
+//   icon-star      → /images/0/cluster 1/Star Badge.png       (별 — premium star)
+//   icon-shield    → /images/0/cluster 1/Shield.png           (방패 — neutral shield)
+//   icon-lightning → /images/0/cluster4/icon/icon - 어흥.png  (번개 — semantic match,
+//                    어흥/lightning 시각자산 재사용. 별도 lightning PNG 가 추가되면 교체.)
+// =============================================================
+.encre-theme,
+.resume-card.ec-theme {
+  .badge-icon {
+    display: inline-block;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+
+    &.icon-star {
+      background-image: url("/images/0/cluster 1/Star Badge.png");
+    }
+    &.icon-shield {
+      background-image: url("/images/0/cluster 1/Shield.png");
+    }
+    &.icon-lightning {
+      background-image: url("/images/0/cluster4/icon/icon - 어흥.png");
+    }
+  }
+}
+
+// =============================================================
+// Encre scope scroll-to-top (.progress-wrap) tone override.
+//
+// <Progress> 는 root layout 에 마운트되어 .encre-theme(<main>) 의 sibling.
+// CSS custom property 가 sibling 으로 cascade 되지 않으므로 hex 직접 사용.
+// (PX 와 동일 사유 — _px-tokens.scss L69-111 의 cluster-px-theme 패턴.)
+//
+// 보존: span(흰색 inner circle) · arrow(검정) · position · scroll·hover
+//       animation · SVG 구조 · 8px ring 두께.
+//
+// 주의: /crews?org=encre 와 -ec 라우트(향후) 양쪽에 동작하도록
+//       `.encre-theme` 만 selector 로 사용. `.resume-card.ec-theme` 만
+//       부착되는 -ec 라우트에선 본 블록이 매칭되지 않으므로 sibling
+//       selector 도 추가.
+// =============================================================
+body:has(.encre-theme),
+body:has(.resume-card.ec-theme) {
+  .progress-wrap {
+    background: #ff4b70 !important;
+    box-shadow:
+      inset 0 0 0 8px #ff4b70,
+      0 0 12px rgba(255, 75, 112, 0.35),
+      0 0 20px rgba(255, 152, 166, 0.20) !important;
+  }
+
+  .progress-wrap span {
+    background: #ffffff !important;
+  }
+
+  .progress-wrap .progress-circle path {
+    stroke: #ff98a6 !important;
+  }
+}

@@ -1,0 +1,1837 @@
+/* ==== 
+ --------- (2.03) global styles start ---------
+ ==== */
+
+// 한글 의미 단위 줄바꿈 (폰트 크기 조절 시 단어 중간 잘림 방지)
+// body {
+//   word-break: keep-all;
+//   overflow-wrap: break-word;
+// }
+
+// 스크롤바는 _reset.scss에서 html/body 모두 전역 숨김 처리됨
+// scrollbar-gutter: stable 제거 — 숨겨진 스크롤바에 대해 공간을 예약하면
+// Mac(오버레이 스크롤바)에서 페이지 전환 시 ~15px 너비 점프 발생
+
+// PageReveal — 진단 중: 검은 화면 원인에서 PageReveal을 완전히 배제하기 위해
+// 애니메이션을 일시 제거. opacity는 항상 1 고정. 이 상태에서도 검은 화면이
+// 재현되면 PageReveal은 원인이 아님이 확정됨 → home-career/Sidebar 또는
+// cluster 페이지의 데이터/마운트 상태 문제로 좁혀짐.
+.page-reveal {
+  opacity: 1;
+}
+// @keyframes pageReveal { from { opacity: 0; } to { opacity: 1; } }
+
+img {
+  max-width: 100%;
+  height: auto;
+  border: 0px;
+  outline: 0px;
+  object-fit: cover;
+}
+
+i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: -3px;
+}
+
+span {
+  display: inline-block;
+}
+
+.unset {
+  max-width: unset;
+}
+
+.dir-rtl {
+  direction: rtl;
+}
+
+.bg-img {
+  @include background(var(--template-color), no-repeat, cover, center center);
+}
+
+// font weights
+.fw-3 {
+  font-weight: 300;
+}
+
+.fw-4 {
+  font-weight: 400;
+}
+
+.fw-5 {
+  font-weight: 500;
+}
+
+.fw-6 {
+  font-weight: 600;
+}
+
+.fw-7 {
+  font-weight: 700;
+}
+
+.fw-8 {
+  font-weight: 800;
+}
+
+.lh-0 {
+  line-height: 0;
+}
+
+// text colors
+.primary-text {
+  color: var(--primary-color);
+}
+
+.secondary-text {
+  color: var(--secondary-color);
+}
+
+.tertiary-text {
+  color: var(--tertiary-color);
+}
+
+.quaternary-text {
+  color: var(--quaternary-color);
+}
+
+.quinary-text {
+  color: var(--quinary-color);
+}
+
+.septenary-text {
+  color: var(--septenary-color);
+}
+
+.senary-text {
+  color: var(--senary-color);
+}
+
+.text-alter {
+  color: #ffffffb3;
+}
+
+// background colors
+.primary-bg {
+  background-color: var(--primary-color);
+}
+
+.secondary-bg {
+  background-color: var(--secondary-color);
+}
+
+.tertiary-bg {
+  background-color: var(--tertiary-color);
+}
+
+.quaternary-bg {
+  background-color: var(--quaternary-color);
+}
+
+.quinary-bg {
+  background-color: var(--quinary-color);
+}
+
+.septenary-bg {
+  background-color: var(--septenary-color);
+}
+
+.senary-bg {
+  background-color: var(--quinary-color);
+}
+
+// spacing
+.vertical-column-gap-lg {
+  row-gap: 60px;
+}
+
+.vertical-column-gap-md {
+  row-gap: 40px;
+}
+
+.vertical-column-gap {
+  row-gap: 24px;
+}
+
+.vertical-column-gap-sm {
+  row-gap: 16px;
+}
+
+.pt-120 {
+  padding-top: 120px;
+}
+
+.pb-120 {
+  padding-bottom: 120px;
+}
+
+.pt-100 {
+  padding-top: 100px;
+}
+
+.pb-100 {
+  padding-bottom: 100px;
+}
+
+.pt-80 {
+  padding-top: 80px;
+}
+
+.pb-80 {
+  padding-bottom: 80px;
+}
+
+.mt-120 {
+  margin-top: 120px;
+}
+
+.mb-120 {
+  margin-bottom: 120px;
+}
+
+.mt-100 {
+  margin-top: 100px;
+}
+
+.mb-100 {
+  margin-bottom: 100px;
+}
+
+.mt-80 {
+  margin-top: 80px;
+}
+
+.mb-80 {
+  margin-bottom: 80px;
+}
+
+.mt-55 {
+  margin-top: 55px;
+}
+
+.mt-50 {
+  margin-top: 50px;
+}
+
+.mb-55 {
+  margin-bottom: 55px;
+}
+
+.mb-50 {
+  margin-bottom: 50px;
+}
+
+.mt-60 {
+  margin-top: 60px;
+}
+
+.mb-60 {
+  margin-bottom: 60px;
+}
+
+.mt-40 {
+  margin-top: 40px;
+}
+
+.mb-40 {
+  margin-bottom: 40px;
+}
+
+.mb-30 {
+  margin-bottom: 30px;
+}
+
+.mt-5 {
+  margin-top: -5px !important;
+}
+
+.mt-8 {
+  margin-top: -5px;
+}
+
+.mt-4 {
+  margin-top: 4px !important;
+}
+
+.mt-6 {
+  margin-top: 6px;
+}
+
+.mt-10 {
+  margin-top: 10px;
+}
+
+.mt-12 {
+  margin-top: 12px;
+}
+
+.ml-12 {
+  margin-left: -12px;
+}
+
+.mr-12 {
+  margin-right: -12px;
+}
+
+.mt-14 {
+  margin-top: 14px;
+}
+
+.mt-16 {
+  margin-top: 16px;
+}
+
+.mt-18 {
+  margin-top: 18px;
+}
+
+.mt-20 {
+  margin-top: 20px;
+}
+
+.mt-24 {
+  margin-top: 24px;
+}
+
+.mb-24 {
+  margin-bottom: 24px;
+}
+
+.mt-30 {
+  margin-top: 30px;
+}
+
+.mt-35 {
+  margin-top: 35px;
+}
+
+.mb-35 {
+  margin-bottom: 35px;
+}
+
+.sticky-wrapper {
+  position: relative;
+}
+
+.sticky-item {
+  position: sticky;
+  top: 120px;
+}
+
+.divider {
+  background-color: #ebebec;
+}
+
+.cta-group {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+// custom cursor
+.a-cursor {
+  .cursor-outer {
+    margin-left: -20px;
+    margin-top: -20px;
+    width: 40px;
+    height: 40px;
+    border: 1px solid #c9f31d;
+    box-sizing: border-box;
+    z-index: 10000000;
+    opacity: 1;
+    transition: all 0.5s ease-out 0s;
+    mix-blend-mode: difference;
+
+    &.cursor-hover {
+      margin-left: -5px;
+      margin-top: -5px;
+      width: 10px;
+      height: 10px;
+      background-color: var(--primary-color);
+      mix-blend-mode: difference;
+      opacity: 1;
+    }
+
+    &.cursor-big {
+      width: 100px;
+      height: 100px;
+      margin-left: -50px;
+      margin-top: -50px;
+      background-color: var(--template-color);
+      mix-blend-mode: difference;
+    }
+
+    &.cursor-big.drag-cursor {
+      opacity: 1;
+      cursor: auto !important;
+    }
+
+    &.cursor-big.view-cursor {
+      opacity: 1;
+    }
+
+    &.cursor-hover.drag-cursor {
+      opacity: 1;
+    }
+
+    &.cursor-hover.view-cursor {
+      opacity: 1;
+    }
+
+    &.drag-cursor {
+      opacity: 0;
+    }
+
+    &.view-cursor {
+      opacity: 0;
+    }
+
+    &.not-cursor-outer {
+      opacity: 0;
+    }
+  }
+
+  .mouseCursor {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    border-radius: 50%;
+    transform: translateZ(0);
+    visibility: hidden;
+    text-align: center;
+  }
+
+  .cursor-inner {
+    margin-left: -5px;
+    margin-top: -5px;
+    width: 10px;
+    height: 10px;
+    z-index: 10000001;
+    background-color: #c9f31d;
+    opacity: 1;
+    transition: all 0.8s ease-out 0s;
+    mix-blend-mode: difference;
+
+    &.cursor-big {
+      opacity: 0;
+    }
+
+    &.cursor-hover {
+      opacity: 0;
+    }
+
+    span {
+      @include box(120px);
+      flex-direction: column;
+      gap: 4px;
+      margin-left: -60px;
+      margin-top: -60px;
+      background-color: #c9f31d;
+      color: var(--secondary-color);
+      line-height: 1;
+      opacity: 0;
+      transform: scale(0);
+      text-transform: uppercase;
+      transition: all 0.4s ease-out 0s;
+      letter-spacing: 1px;
+      mix-blend-mode: normal !important;
+      text-align: center;
+
+      i {
+        font-size: 24px;
+        margin-bottom: -8px;
+      }
+    }
+
+    &.view-cursor {
+      margin-top: -60px;
+    }
+
+    &.not-cursor-outer {
+      opacity: 0;
+    }
+  }
+
+  .draggable-cursor {
+    cursor: grab !important;
+  }
+
+  .viewable-cursor {
+    cursor: pointer !important;
+  }
+
+  .drag-cursor {
+    .drag {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .view-cursor {
+    .view {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .cursor-none .cursor-inner,
+  .cursor-none .cursor-outer {
+    opacity: 0;
+  }
+}
+
+svg {
+  pointer-events: none;
+}
+
+// scroll to top with progress
+.progress-wrap {
+  position: fixed;
+  right: 30px;
+  bottom: 30px;
+  height: 50px;
+  width: 50px;
+  padding: 6px;
+  cursor: pointer;
+  display: block;
+  border-radius: 50px;
+  background-color: var(--primary-color);
+  box-shadow: inset 0 0 0 8px var(--primary-color);
+  z-index: 10000;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(15px);
+  transition: all 200ms linear;
+  z-index: 99;
+  overflow: hidden;
+
+  span {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 34px;
+    height: 34px;
+    background-color: var(--white);
+    border-radius: 50%;
+    overflow: hidden;
+    &::after {
+      content: "\f60e";
+      font-family: "tabler-icons";
+      position: absolute;
+      text-align: center;
+      line-height: 34px;
+      font-size: 32px;
+      border-radius: 50%;
+      color: var(--black);
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, 200%);
+      height: 34px;
+      width: 34px;
+      cursor: pointer;
+      display: block;
+      z-index: 1;
+      transition: all 200ms linear;
+      margin-top: -2px;
+    }
+
+    &::before {
+      position: absolute;
+      content: "\f60e";
+      font-family: "tabler-icons";
+      text-align: center;
+      line-height: 34px;
+      font-size: 32px;
+      border-radius: 50%;
+      color: var(--black);
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      height: 34px;
+      width: 34px;
+      cursor: pointer;
+      display: block;
+      margin-top: -2px;
+      z-index: 2;
+      transition: all 200ms linear;
+    }
+  }
+
+  &:hover {
+    span {
+      &::before {
+        transform: translate(-50%, -200%);
+      }
+      &::after {
+        transform: translate(-50%, -50%);
+      }
+    }
+  }
+
+  path {
+    fill: none;
+  }
+
+  .progress-circle {
+    path {
+      stroke: var(--secondary-color);
+      stroke-width: 4;
+      box-sizing: content-box;
+      transition: all 200ms linear;
+    }
+  }
+}
+
+.active-progress {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+// offcanvas cart styles start
+.sidebar-cart {
+  background: var(--secondary-color);
+  color: var(--white);
+  padding: 20px 20px 0 20px;
+  position: fixed;
+  display: block;
+  width: 420px;
+  height: 100vh;
+  z-index: 99999;
+  top: 0;
+  right: 0px;
+  transform: translateX(100%);
+  box-shadow: -10px 0 15px rgba(0, 0, 0, 0.1);
+  transition: all 0.5s ease-in-out;
+  border-left: 1px solid #414141;
+
+  .close-cart {
+    height: 16px;
+    width: 16px;
+    margin: 0 0 15px 0;
+    text-decoration: none;
+    position: absolute;
+    font-size: 30px;
+    top: 29px;
+    left: 14px;
+    display: flex;
+    background-color: transparent;
+    border: 0px;
+    outline: 0px;
+    color: white;
+    z-index: 99;
+  }
+
+  h2 {
+    color: var(--white);
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    line-height: 1;
+    margin: 5px 0 25px 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    .count-item {
+      color: var(--secondary-color);
+      background: var(--quaternary-color);
+      margin-left: 6px;
+      padding-top: 2px;
+      position: relative;
+      top: -2px;
+      width: 30px;
+      height: 30px;
+      border-radius: 50px;
+      font-size: 16px;
+      line-height: 0px;
+      letter-spacing: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  }
+
+  .cart-items {
+    margin-top: 30px;
+  }
+
+  .cart-item-single {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 24px 0px;
+    border-bottom: 1px solid #414141;
+    padding-right: 24px;
+    position: relative;
+    .delete-item {
+      position: absolute;
+      top: 50%;
+      right: 0px;
+      transform: translateY(-50%);
+      color: #7c7b77;
+      background-color: transparent;
+      font-size: 24px;
+      &:hover {
+        color: var(--quaternary-color);
+      }
+    }
+
+    .cart-item-thumb {
+      a {
+        width: 80px;
+        height: 100px;
+
+        img {
+          width: 100%;
+          height: 100%;
+          border-radius: 4px;
+          box-shadow: var(--shadow);
+        }
+      }
+    }
+
+    p {
+      max-width: 140px;
+      a {
+        font-weight: 600;
+        color: var(--white);
+
+        &:hover {
+          color: var(--quaternary-color);
+        }
+      }
+    }
+
+    .price {
+      font-weight: 600;
+      font-size: 16px;
+      color: var(--quaternary-color);
+      margin-top: 4px;
+    }
+
+    .measure {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 12px;
+      button {
+        @include box(26px);
+        border-radius: 0px;
+        background-color: var(--template-bg);
+        color: var(--white);
+        font-size: 14px;
+        i {
+          font-weight: 600;
+        }
+      }
+    }
+
+    .item-quantity {
+      min-width: 18px;
+      color: var(--white);
+      font-weight: 700;
+      text-align: center;
+    }
+  }
+
+  .sidebar-cart__inner {
+    height: calc(100% - 140px);
+    overflow-y: auto;
+    &::-webkit-scrollbar {
+      width: 0px;
+    }
+  }
+
+  .totals {
+    position: absolute;
+    bottom: 80px;
+    left: 0;
+    right: 0;
+    height: 56px;
+    background: var(--black);
+    border-bottom: 1px solid #414141;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+
+    .subtotal,
+    .shipping,
+    .tax {
+      padding: 15px;
+      text-align: center;
+      color: var(--black);
+      border-bottom: 1px solid var(--tertiary-color);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-size: 14px;
+      font-weight: 400;
+      display: flex;
+      flex-direction: row;
+      flex-wrap: nowrap;
+      justify-content: space-between;
+
+      .amount,
+      .total-price {
+        color: var(--white);
+        margin-left: 10px;
+        font-weight: 700;
+      }
+
+      .total-price {
+        margin: 0px;
+      }
+
+      .label {
+        color: var(--white);
+        font-weight: 600;
+        font-size: 16px;
+        letter-spacing: 2px;
+      }
+    }
+  }
+
+  .action-buttons {
+    padding: 0;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: 80px;
+    background: var(--black);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    white-space: nowrap;
+    border-top: 1px solid transparent;
+
+    .view-cart-button,
+    .checkout-button {
+      display: inline-block;
+      padding: 10px;
+      margin: 20px 15px;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-size: 14px;
+      border-width: 1px;
+      border-style: solid;
+      border-radius: 4px;
+      transition: all 0.5s linear;
+    }
+
+    .view-cart-button {
+      background: var(--black);
+      border-color: #414141;
+      margin-right: 5px;
+      color: var(--quaternary-color);
+      width: 120px;
+      &:hover {
+        color: var(--white);
+      }
+    }
+
+    .checkout-button {
+      border-color: #414141;
+      background: var(--black);
+      margin-left: 5px;
+      color: var(--white);
+      width: 200px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      &:hover {
+        color: var(--quaternary-color);
+      }
+      i {
+        font-size: 20px;
+        line-height: 0px;
+        display: block;
+        margin-top: -2px;
+      }
+    }
+  }
+
+  .empty-cart {
+    margin-top: 60px;
+    h5,
+    a {
+      color: white;
+    }
+    a {
+      color: var(--quaternary-color);
+      margin-top: 16px;
+      &:hover {
+        color: var(--primary-color);
+      }
+    }
+  }
+}
+
+.sidebar-cart-active {
+  transform: translateX(0px);
+}
+
+.cart-backdrop {
+  position: fixed;
+  top: 0px;
+  left: 0px;
+  right: 0px;
+  bottom: 0px;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.57);
+  z-index: 9999;
+  transform: translateX(-100%);
+  transition: all 0.6s ease-in-out;
+}
+
+.cart-backdrop-active {
+  transform: translateX(0px);
+  cursor: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABUAAAAVBAMAAABbObilAAAAMFBMVEVMaXH////////////////////////////////////////////////////////////6w4mEAAAAD3RSTlMAlAX+BKLcA5+b6hJ7foD4ZP1OAAAAkUlEQVR4XkWPoQ3CUBQAL4SktoKAbCUjgAKLJZ2ABYosngTJCHSD6joUI6BZgqSoB/+Shqde7sS9x3OGk81fdO+texMtRVTia+TsQtHEUJLdohJfgNNPJHyEJPZTsWLoxShqsWITazEwqePAn69Sw2TUxk1+euPis3EwaXy8RMHSZBIlRcKKnC5hRctjMf57/wJbBlAIs9k1BAAAAABJRU5ErkJggg==),
+    progress;
+}
+
+// nftg layout
+.nftg-app {
+  display: flex;
+  .nftg-sidebar {
+    width: 75px;
+
+    // Windows에서 사이드바가 scrollable일 때 스크롤바가 튀어나와 보이지 않게
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    &::-webkit-scrollbar {
+      display: none;
+      width: 0px;
+    }
+  }
+
+  .nftg-layout {
+    flex: 1;
+    min-width: 0;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .nftg-content {
+    padding: 0px 8px;
+    overflow-x: clip;
+
+    // nftg-content-home은 sticky 작동을 위해 overflow: visible 필요
+    &.nftg-content-home {
+      overflow: visible;
+      overflow-x: clip;
+
+      @supports not (overflow-x: clip) {
+        overflow-x: hidden;
+      }
+    }
+  }
+
+  .nftg-content-home {
+    // sticky 헤더이므로 margin-top 불필요 (헤더가 flow에 있음)
+    margin-top: 4px;
+
+    .home-two-sidebar {
+      position: sticky;
+      top: calc(var(--header-divider-y, var(--header-height, 66px)) + 4px);
+    }
+  }
+}
+
+.route-theme {
+  transition: var(--transition);
+}
+
+// 라우트별 강조색 fallback — RouteThemeShell의 inline style이 우선 적용되지만,
+// 어떤 이유로 inline style이 사라져도 클래스 기반으로 색상이 보존되도록 명시.
+// header/sidebar/footer/콘텐츠 모두 var(--quaternary-color)를 사용하므로
+// 이 변수만 라우트별로 바꿔주면 전체에 일괄 반영됨.
+// --quaternary-hover는 호버 시 살짝 진한 톤으로 페이지별 차이를 부여.
+.route-theme--mint   { --quaternary-color: #B2FF8F; --quaternary-hover: #7AE852; }
+.route-theme--pink   { --quaternary-color: #FF98A6; --quaternary-hover: #FF6B7E; }
+.route-theme--yellow { --quaternary-color: #FFEC8F; --quaternary-hover: #FFD24A; }
+
+// 라우트별 --primary-color override (#FAAB07 자리에 페이지 고유색 주입).
+// data-route-path attribute selector를 쓰면 mint를 공유하는 /index-two와
+// /index-two-px가 서로 다른 primary 색을 가질 수 있다.
+// Sweep 대상이 var(--primary-color)로 통일되어 있어야 자동 반영됨
+// (_sidebar.scss / _all-sections.scss의 12곳 hardcoded #faab07 → var(...) 처리됨).
+[data-route-path="/index-two-ec"] { --primary-color: #FF4B70; }
+[data-route-path="/index-two-ok"] { --primary-color: #FFC300; }
+[data-route-path="/index-two-px"] { --primary-color: #1E9503; }
+
+// header navbar / sidebar / footer 안의 a·button 호버 색을 페이지별 hover 변수로
+// override. fallback으로 강조색을 두므로 .route-theme이 없는 라우트(/)는 기존 동작 유지.
+// !important는 _header/_sidebar/_footer SCSS의 기존 :hover { color: var(--quaternary-color) }
+// 룰을 명확히 이기기 위해 사용.
+.route-theme .header :is(a, button):hover,
+.route-theme .nftg-sidebar :is(a, button):hover,
+.route-theme .footer :is(a, button):hover {
+  color: var(--quaternary-hover, var(--quaternary-color)) !important;
+}
+
+.nftg-app.sidebar-remove {
+  display: flex;
+  .nftg-sidebar {
+    width: 0px;
+    display: none;
+  }
+
+  .nftg-layout {
+    flex: 1;
+    min-height: 100vh;
+  }
+
+  .header {
+    padding-left: 12px !important;
+
+    .navbar__logo {
+      display: block !important;
+    }
+  }
+}
+
+// nftg layout two
+.nftg-app-alt {
+  display: flex;
+
+  .nftg-thumb {
+    position: fixed;
+    left: 0px;
+    top: 0px;
+    bottom: 0px;
+    height: 100vh;
+    width: 100%;
+    max-width: 600px;
+    z-index: 99;
+    overflow: hidden;
+    .parallax-image-inner,
+    .parallax-image-wrap,
+    img {
+      height: 100%;
+      width: 100%;
+    }
+  }
+
+  .nftg-layout-two {
+    width: calc(100% - 600px);
+    flex-grow: 1;
+    margin-left: 600px;
+    height: 100%;
+  }
+
+  .nftg-content-two {
+    padding: 0px 12px;
+  }
+}
+
+// stroked text
+.stroked-text {
+  position: relative;
+  display: inline-block;
+
+  &::after {
+    content: attr(data-text);
+    position: absolute;
+    top: -5px;
+    left: -5px;
+    z-index: -1;
+    color: var(--black);
+    -webkit-text-stroke: 1px color-mix(in srgb, var(--quaternary-color) 56%, transparent);
+    transition: var(--transition);
+  }
+
+  &:hover {
+    &::after {
+      top: 5px;
+    }
+  }
+}
+
+// breadcrumb
+.breadcrumb-wrapper {
+  padding: 30px 0px;
+  position: relative;
+  &::after {
+    content: "";
+    position: absolute;
+    bottom: 0px;
+    left: -40px;
+    right: 0px;
+    height: 1px;
+    width: 130%;
+    background-color: #39424c;
+  }
+}
+
+.breadcrumb {
+  margin-bottom: 0px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  .breadcrumb-item,
+  a {
+    font-size: 18px;
+    line-height: 24px;
+    font-weight: 600;
+    color: #ffffffb3;
+  }
+
+  a {
+    &:hover {
+      color: var(--quaternary-color) !important;
+    }
+  }
+
+  .breadcrumb-item + .breadcrumb-item {
+    padding-left: 0px;
+    color: var(--white);
+    &::before {
+      padding-right: 12px;
+      font-size: 20px;
+      content: "\ea65";
+      font-family: "tabler-icons";
+      font-weight: 400;
+      color: #ffffffb3;
+      margin-top: -2px;
+    }
+  }
+
+  .active {
+    color: var(--quaternary-color) !important;
+  }
+}
+
+// social menu
+.social {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+
+  a {
+    @include box(58px);
+    font-size: 24px;
+    color: var(--tertiary-color) !important;
+    position: relative;
+
+    i {
+      font-weight: 100;
+      margin-top: 0px !important;
+    }
+
+    .social-icon-img {
+      position: relative;
+      z-index: 2;
+      object-fit: contain;
+    }
+
+    .social-icon-cafe {
+      filter: brightness(1.5) contrast(1.3);
+    }
+
+    .social-btn-instagram.social-btn-active {
+      color: var(--tertiary-color) !important;
+    }
+
+    .svg-content {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: calc(100% + 18px);
+      height: calc(100% + 18px);
+      z-index: 1;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+
+      path {
+        fill: none;
+        stroke-width: 2px;
+        stroke: none;
+        pointer-events: none;
+      }
+    }
+
+    .svg-content-two {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      z-index: 1;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+
+      path {
+        fill: none;
+        stroke-width: 1.5px;
+        stroke: var(--tertiary-color);
+        pointer-events: none;
+      }
+    }
+
+    .ba,
+    .ba-two {
+      position: absolute;
+      inset: 0px;
+      transition: var(--transition);
+      transition: all 0.5s ease-out 0s;
+      pointer-events: none;
+      &::before,
+      &::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        left: 0px;
+        width: 10px;
+        height: 1px;
+        background-color: var(--tertiary-color);
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.5s ease-out 0s;
+      }
+      &::after {
+        left: unset;
+        right: 0px;
+      }
+    }
+
+    .ba-two {
+      transition-delay: 0.5s;
+      &::before {
+        top: 2px;
+        left: 50%;
+        width: 1px;
+        height: 10px;
+        transform: translate(-50%, 0%);
+        transition-delay: 0.5s;
+      }
+
+      &::after {
+        top: unset;
+        bottom: 2px;
+        right: 50%;
+        width: 1px;
+        height: 10px;
+        transform: translate(-50%, 0%);
+        transition-delay: 0.5s;
+      }
+    }
+
+    &:hover {
+      color: var(--quaternary-color) !important;
+      .svg-content {
+        path {
+          stroke-dasharray: 550px;
+          stroke-dashoffset: -550px;
+          animation: animate-stroke-two 0.5s linear forwards;
+        }
+      }
+
+      .svg-content-two {
+        path {
+          stroke-dasharray: 800px;
+          stroke-dashoffset: -400px;
+          animation: animate-stroke-two-reverse 0.5s linear forwards;
+        }
+      }
+
+      .ba,
+      .ba-two {
+        transform: rotate(90deg);
+        &::before,
+        &::after {
+          opacity: 1;
+          visibility: visible;
+          background-color: var(--quaternary-color);
+        }
+      }
+
+      .ba {
+        &::before {
+          left: 2px;
+        }
+
+        &::after {
+          right: 2px;
+        }
+      }
+    }
+  }
+
+  .social-btn-active {
+    color: var(--quaternary-color) !important;
+    .svg-content {
+      path {
+        stroke-dasharray: 550px;
+        stroke-dashoffset: -550px;
+        animation: animate-stroke-two 0.5s linear forwards;
+      }
+    }
+
+    .svg-content-two {
+      path {
+        stroke-dasharray: 800px;
+        stroke-dashoffset: -400px;
+        animation: animate-stroke-two-reverse 0.5s linear forwards;
+      }
+    }
+
+    .ba,
+    .ba-two {
+      transform: rotate(90deg);
+      &::before,
+      &::after {
+        opacity: 1;
+        visibility: visible;
+        background-color: var(--quaternary-color);
+      }
+    }
+
+    .ba {
+      &::before {
+        left: 2px;
+      }
+
+      &::after {
+        right: 2px;
+      }
+    }
+  }
+}
+
+@keyframes animate-stroke-two {
+  0% {
+    stroke-dasharray: 550px;
+    stroke-dashoffset: 550px;
+    stroke: var(--quaternary-color);
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    stroke: var(--quaternary-color);
+  }
+}
+
+@keyframes animate-stroke-two-reverse {
+  0% {
+    stroke-dasharray: 400px;
+    stroke-dashoffset: -400px;
+    stroke: var(--quaternary-color);
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    stroke: var(--quaternary-color);
+  }
+}
+
+// swiper pagination one
+.pagination-one {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  .swiper-pagination-bullet {
+    width: 12px;
+    height: 12px;
+    border-radius: 12px;
+    background-color: var(--white);
+    opacity: 1;
+  }
+
+  .swiper-pagination-bullet-active {
+    width: 48px;
+    height: 12px;
+    background-color: var(--quaternary-color);
+    border-radius: 12px;
+  }
+}
+
+// swiper pagination two
+.pagination-two {
+  position: relative;
+  background-color: #505d6a50;
+
+  .swiper-pagination-progressbar-fill {
+    background-color: var(--primary-color);
+  }
+}
+
+// blog pagination
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 60px;
+
+  button,
+  a {
+    @include box(48px);
+    background-color: var(--secondary-color);
+    color: var(--white);
+    transition: var(--transition);
+    padding-top: 2px;
+    font-weight: 600;
+
+    &:hover {
+      background-color: var(--quaternary-color);
+      color: var(--black);
+    }
+  }
+
+  .active {
+    background-color: var(--quaternary-color);
+    color: var(--black);
+  }
+
+  button {
+    i {
+      font-size: 20px !important;
+    }
+  }
+}
+
+.appear-down {
+  transform: scale(1);
+}
+
+// slider footer
+.slider-footer {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+
+  .slider-navigation {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .slider-btn {
+    @include box(50px);
+    border: 1px solid var(--white);
+    font-size: 24px;
+    color: var(--white);
+    &:hover {
+      background-color: var(--primary-color);
+      color: var(--black);
+      border-color: var(--primary-color);
+    }
+  }
+
+  .pagination-two {
+    flex-grow: 1;
+  }
+}
+
+// parallax effect
+.parallax-image {
+  transform: scale(1.3);
+  transform-origin: 50% 100%;
+}
+
+// title animation
+// .title-animation {
+//   text-transform: lowercase !important;
+// }
+
+.title-animation > div > div {
+  &:nth-of-type(1) {
+    text-transform: uppercase !important;
+  }
+}
+
+.transform-none {
+  text-transform: uppercase !important;
+}
+
+@keyframes spinAnimation {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* ====
+ --------- (2.04) Global Modal Style Unification ---------
+ Based on section1-modal reference (cluster2)
+ ==== */
+
+// 0. 전역 모달 배경 공식 (intro-modal 기준)
+.intro-modal,
+.section1-modal,
+.section2-modal,
+.section21-modal,
+.section3-modal,
+.section4-modal,
+.edu-modal,
+.delete-confirm-modal,
+.help-modal,
+.section-modal,
+.season-reputation-edit-modal,
+.season-reputation-view-modal,
+.season-review-modal,
+.edit-modal-content {
+  background-color: rgba(0, 0, 0, 0) !important;
+  background-image: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%) !important;
+}
+
+// 1. Modal Container — border-radius: 0 (sharp corners)
+.section1-modal,
+.section-modal,
+.edu-modal,
+.section4-modal,
+.intro-modal,
+.section21-modal,
+.section2-modal,
+.section3-modal,
+.delete-confirm-modal,
+.modal-content,
+.edit-modal-content {
+  border-radius: 0 !important;
+}
+
+// 2. Modal Header — divider + title/subtitle styles
+//    Phase C: yellow/gold legacy 톤을 CSS 변수로 토큰화. 변수 미정의 시 (=
+//    원본 라우트, theme wrapper 없음) fallback 으로 종전 yellow 가 그대로
+//    유지된다. .cluster-px-theme / .encre-theme 스코프에서 변수가 덮여쓰여
+//    각 org accent 로 분기. 변수 정의 위치: _px-tokens.scss / _theme-tokens.scss.
+[class*="modal-header"] {
+  border-bottom: 1px solid var(--modal-divider-color, rgba(255, 165, 0, 0.2)) !important;
+
+  h3 {
+    color: var(--modal-title-color, #FAAB07) !important;
+    font-family: 'Pretendard', sans-serif !important;
+    font-size: 21px !important;
+    font-weight: 800 !important;
+    line-height: 34px !important;
+    word-wrap: break-word;
+  }
+
+  .modal-subtitle {
+    color: #fff !important;
+    font-family: 'Pretendard', sans-serif !important;
+    font-size: 15px !important;
+    font-weight: 400 !important;
+    line-height: 30px !important;
+    word-wrap: break-word;
+  }
+}
+
+// 3. Modal Close Button — square bordered box (section1-modal style)
+[class*="modal-close"] {
+  width: 32px !important;
+  height: 32px !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  border-radius: 0 !important;
+  background: none !important;
+  color: #999 !important;
+  font-size: 1.125rem !important;
+  cursor: pointer;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.3s ease;
+
+  &:hover {
+    color: var(--modal-close-hover-color, #ffa500) !important;
+    border-color: var(--modal-close-hover-color, #ffa500) !important;
+  }
+}
+
+// 4. Modal Footer — divider + button fonts
+[class*="modal-footer"] {
+  border-top: 1px solid var(--modal-divider-color, rgba(255, 165, 0, 0.2)) !important;
+
+  button,
+  .cancel-btn,
+  .save-btn {
+    font-family: 'Pretendard', sans-serif !important;
+  }
+}
+
+// 4-1. 전역 속성 셀렉터가 내부 자식에 border를 적용하는 것 방지
+.modal-header-top { border-bottom: none !important; }
+.modal-footer-left { border-top: none !important; }
+.modal-footer-right { border-top: none !important; }
+.modal-footer-notice { border-top: none !important; }
+
+// 4-2. 연락 가능 시간대 모달 — 미드-푸터 경계 + 푸터 내부(1행-2행) 구분선 제거
+.edit-modal-content[data-modal="phone-comment"] {
+  .edit-modal-footer { border-top: none !important; }
+  .modal-footer-top { border-top: none !important; border-bottom: none !important; }
+  .modal-footer-bottom { border-top: none !important; border-bottom: none !important; }
+}
+
+// 5. Edit Modal (.resume-card) — 헤더/푸터 고정 + 본문 스크롤 레이아웃
+.edit-modal-content {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  font-family: 'Pretendard', sans-serif;
+
+  .edit-modal-header {
+    flex-shrink: 0;
+  }
+
+  form {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .edit-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .edit-modal-footer {
+    flex-shrink: 0;
+  }
+}
+
+// 6. Modal Dropdown (select) — hover cursor + background
+.edit-modal-content select,
+.section-modal select {
+  cursor: pointer !important;
+
+  &:hover {
+    background: #2a2f3e !important;
+  }
+
+  option {
+    cursor: pointer;
+    background: #1a1f2e;
+
+    &:hover {
+      background: #2a2f3e;
+    }
+  }
+}
+
+// 7. 모달 본문 스크롤바 — cluster4-1 스타일 복사 + thumb 색상 교체
+//    Phase C: thumb/track scrollbar-color 도 CSS 변수로 토큰화. fallback 으로
+//    종전 yellow 유지. theme wrapper 스코프 내에선 org accent 로 분기.
+.section1-modal-body,
+.section2-modal-body,
+.section21-modal-body,
+.section3-modal-body,
+.section4-modal-body,
+.section5-modal-body,
+.section6-modal-body,
+.section-modal-body,
+.output-modal-body,
+.intro-modal-body,
+.edit-modal-body,
+.modal-body {
+  scrollbar-width: thin !important;
+  scrollbar-color: var(--modal-scrollbar-thumb, rgba(250, 171, 7, 1)) #252836 !important;
+
+  &::-webkit-scrollbar {
+    width: 3px !important;
+  }
+  &::-webkit-scrollbar-track {
+    background: #252836 !important;
+    border-radius: 2px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: var(--modal-scrollbar-thumb, rgba(250, 171, 7, 1)) !important;
+    border-radius: 2px;
+  }
+  &::-webkit-scrollbar-button {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+}
+
+// 8. 모달 오버레이 투명도 통일 (Sidebar edit-modal 기준: rgba(0,0,0,0.7), blur 없음)
+// 정렬 정책(wide/non-wide 통일): viewport보다 작은 모달은 grid+safe center로 항상 화면 정중앙,
+// viewport보다 큰 경우(드물게 발생)에는 overflow:auto + safe center로 시작점이 잘리지 않도록.
+// cluster2/3/4 모든 모달이 width: min(value, calc(100vw - 48px)) + max-height: min(value, calc(100dvh - 80px))로
+// viewport-aware 축소되므로 가로 스크롤용 Zone A(display:block) 패치는 더 이상 필요 없음.
+[class*="modal-overlay"] {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(0, 0, 0, 0.7) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  overflow: auto !important;
+  padding: 40px 24px !important;
+  box-sizing: border-box !important;
+  display: grid !important;
+  place-items: safe center !important;
+  overscroll-behavior: contain;
+}
+
+// .modal-scroll-content (cluster2/3 wide 모달의 JSX 래퍼) — layout에서 제거해
+// overlay의 grid centering이 모달을 직접 정렬하도록 함. 모든 viewport에 동일 적용.
+[class*="modal-overlay"] > .modal-scroll-content {
+  display: contents;
+}
+
+.section-modal,
+.section-modal-wide {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.section-modal-header,
+.section-modal-footer {
+  flex-shrink: 0;
+}
+
+.section-modal-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+@media (max-width: 1919px), (min-width: 1920px) and (max-width: 2559px) and (min-height: 1200px) {
+  [class*="modal-overlay"] {
+    position: fixed !important;
+    inset: 0 !important;
+    overflow: auto !important;
+    padding: 40px 24px !important;
+    box-sizing: border-box !important;
+    display: grid !important;
+    place-items: safe center !important;
+    overscroll-behavior: contain;
+  }
+
+  .section-modal,
+  .section-modal-wide,
+  .output-modal,
+  .help-modal,
+  .edu-modal,
+  .intro-modal,
+  .section1-modal,
+  .section2-modal,
+  .section21-modal,
+  .section3-modal,
+  .section4-modal,
+  .edit-modal-content {
+    max-width: calc(100vw - 48px) !important;
+    max-height: calc(100dvh - 80px) !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .section-modal-body,
+  .output-modal-body,
+  .help-modal-body,
+  .intro-modal-body,
+  .section1-modal-body,
+  .section2-modal-body,
+  .section21-modal-body,
+  .section3-modal-body,
+  .section4-modal-body,
+  .edit-modal-body,
+  .modal-body {
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: auto !important;
+  }
+
+  .section-modal-body > .modal-top-row,
+  .output-modal-body > .output-upper-section,
+  .output-modal-body > .output-role-links-row,
+  .output-modal-body > .output-bottom-row,
+  .section1-modal-body > .photo-grid,
+  .section2-modal-body > .slogan-edit-item,
+  .section21-modal-body > .video-edit-item,
+  .section3-modal-body > .edu-edit-card,
+  .section4-modal-body > .link-edit-item,
+  .intro-modal-body > .subtitle-section,
+  .intro-modal-body > .content-section,
+  .section-modal-body > .reputation-form-top,
+  .section-modal-body > .weekly-review-row-1,
+  .section-modal-body > .weekly-review-row-2,
+  .section-modal-body > .weekly-review-row-3,
+  .section-modal-body > .season-review-row-1,
+  .section-modal-body > .workinfo-content-layout {
+    flex-shrink: 0 !important;
+  }
+
+  .section-modal-body > .modal-top-row,
+  .output-modal-body > .output-upper-section,
+  .output-modal-body > .output-role-links-row,
+  .output-modal-body > .output-bottom-row {
+    min-width: 1180px !important;
+  }
+
+  .section1-modal-body > .photo-grid {
+    min-width: 920px !important;
+  }
+
+  .section2-modal-body > .slogan-edit-item,
+  .section3-modal-body > .edu-edit-card,
+  .intro-modal-body > .subtitle-section,
+  .intro-modal-body > .content-section,
+  .section-modal-body > .reputation-form-top,
+  .section-modal-body > .weekly-review-row-1,
+  .section-modal-body > .weekly-review-row-2,
+  .section-modal-body > .weekly-review-row-3,
+  .section-modal-body > .season-review-row-1 {
+    min-width: 620px !important;
+  }
+
+  .section4-modal-body > .link-edit-item {
+    min-width: 360px !important;
+  }
+
+  .section21-modal-body {
+    display: grid !important;
+    grid-auto-flow: column !important;
+    grid-auto-columns: 440px !important;
+    grid-template-columns: none !important;
+    justify-content: start !important;
+  }
+
+  .section-modal-body > .workinfo-content-layout {
+    min-width: 1388px !important;
+  }
+
+  .section-modal:has(> .section-modal-body > .workinfo-content-layout) > .section-modal-body {
+    display: block !important;
+    width: auto !important;
+  }
+}
+
+/* ====
+ --------- (2.04) global modal styles end ---------
+ ==== */
+
+/* ====
+ --------- (2.05) Floating Icons — edit/search 아이콘 y좌표 정렬 ---------
+ ==== */
+.floating-icons .edit-icon i {
+  line-height: 1;
+}
+/* ====
+ --------- (2.05) floating icon alignment end ---------
+ ==== */
+
+/* ====
+ --------- (2.03) global styles end ---------
+ ==== */

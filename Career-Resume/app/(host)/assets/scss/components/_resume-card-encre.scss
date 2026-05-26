@@ -1,0 +1,141 @@
+// =============================================================
+// Encre (엥크레) resume-card override.
+//
+// 적용 범위 (fallback selector 패턴 — PX 와 동일하게 둘 중 하나라도 매칭):
+//   `.resume-card.ec-theme`     — Sidebar.tsx 가 debugPanelType="EC" 일 때
+//                                 (pathname segment 중 하나라도 -ec 로 끝남)
+//                                 .resume-card 에 직접 부착.
+//   `.encre-theme .resume-card` — wrapper 가 ancestor 에 부착됐을 때
+//                                 (e.g. /crews?org=encre main).
+//
+// 색상 source : _theme-tokens.scss 의 --ec-accent / --ec-accent-soft /
+//               --ec-accent-glow / --ec-accent-soft-glow / --ec-gradient.
+//
+// base `_resume-card.scss` 의 `.resume-card.ec-theme` 블록(L1408-1553) 은
+// 이미 stats / badges / medals / activities / skills / notices / bottom 을
+// 커버한다. 본 파일은 _그_ 블록이 누락한 영역만 보충 + scoped selector 추가:
+//   - 상단 Identity-Core ::before 그라데이션
+//   - .resume-details 의 .detail-icon yellow tint 해제
+//   - .major-text / .sub-text / SVG arrow 색상
+//   - .stat-dot · .medal-week-num · medal complete glow
+//   - .crews-grid 외부 진입(.encre-theme) 시 동일 톤 적용
+//
+// 원본 _resume-card.scss 미수정. main.scss 에서 본 파일이 base 보다 뒤에
+// import 되므로 같은 selector 라도 cascade 로 이긴다.
+// =============================================================
+
+// ─────────────────────────────────────────────
+// 1) Identity-Core 상단 그라데이션 (L103-114 of _resume-card.scss)
+//    base : linear-gradient(to right, rgba(0,0,0,..), rgba(250, 171, 7, 0.75))
+//    ec   : 같은 alpha 유지, hue 만 strong Encre 로.
+// ─────────────────────────────────────────────
+.encre-theme .resume-card::before,
+.resume-card.ec-theme::before {
+  background:
+    linear-gradient(to right, rgba(0, 0, 0, var(--identity-tab-overlay, 0.45)), rgba(255, 75, 112, 0.75)),
+    var(--identity-tab-bg) center 42% / cover no-repeat !important;
+}
+
+// ─────────────────────────────────────────────
+// 2) base ec-theme 블록이 안 잡는 detail-row 보충 + accent token 일관성.
+//    PNG 자산은 Sidebar.tsx 가 이미 *-ec.png 로 swap 했으므로 filter 자체
+//    가 불필요 → none 강제 (white glyph/detail 손상 없음).
+// ─────────────────────────────────────────────
+.encre-theme .resume-card,
+.resume-card.ec-theme {
+  // _resume-card.scss L761 (작은 stat dot)
+  .stat-row .stat-dot {
+    background: var(--ec-accent-soft, #ff98a6);
+  }
+
+  // _resume-card.scss L935 (메달 위 큰 "12")
+  .resume-medal .medal-week-num {
+    color: var(--ec-accent-soft, #ff98a6);
+  }
+
+  // Sidebar.tsx L2303 의 inline SVG path stroke (major-text 화살표)
+  .resume-details path[stroke="#FFEC8F"],
+  .resume-details path[stroke="#ffec8f"] {
+    stroke: var(--ec-accent-soft, #ff98a6);
+  }
+
+  // detail-row 잔여 yellow/gold 강제 override
+  // _resume-card.scss base rules :
+  //   - .detail-icon { filter: brightness(0) invert(0.77) sepia(1) saturate(1.79); }  ← yellow tint
+  //   - .major-text  { color: #ffec8f; }
+  //   - .text .sub-text { color: #999; }  ← 회색이라 변경 안함 (semantic neutral)
+  .resume-details {
+    .detail-icon {
+      // PNG 이 이미 *-ec.png 자산으로 swap (Sidebar.tsx) → tint 제거.
+      // hue-rotate 미사용. white glyph/원본 디테일 그대로.
+      filter: none !important;
+    }
+
+    .major-text {
+      color: var(--ec-accent-soft, #ff98a6) !important;
+    }
+
+    .major-text svg path {
+      stroke: var(--ec-accent-soft, #ff98a6) !important;
+    }
+    // .sub-text 는 base 가 #999 (semantic neutral) — 미변경.
+    // (PX 는 본인 톤으로 끌어올렸으나 Encre 는 dark/premium 톤 유지를 위해
+    //  중성 회색 그대로 두는 편이 cinematic.)
+  }
+
+  // ─────────────────────────────────────────────
+  // 3) Medal complete glow — base ec-theme 블록의 .medal-text color
+  //    위에 부드러운 dual drop-shadow 추가 (PX 의 medal-text glow 와 동등).
+  //    semantic medal-running / medal-onrest / medal-recharging 의
+  //    base filter(hue-rotate/saturate) 는 미터치 — 상태색 보존.
+  // ─────────────────────────────────────────────
+  .resume-medal.no-overlay .medal-text {
+    filter:
+      drop-shadow(0 0 8px var(--ec-accent-soft-glow, rgba(255, 152, 166, 0.5)))
+      drop-shadow(0 0 16px var(--ec-accent-glow, rgba(255, 75, 112, 0.4)));
+  }
+
+  // ─────────────────────────────────────────────
+  // 4) Stats progress fill — soft glow (cinematic premium feel).
+  //    base ec-theme 블록이 background 만 #ff98a6 로 설정 — 본 블록은
+  //    drop-shadow 만 더해 dark dimensional 느낌. 색 자체 미변경.
+  // ─────────────────────────────────────────────
+  .resume-stats .stat-item .progress-bar .progress-fill {
+    box-shadow: 0 0 6px var(--ec-accent-soft-glow, rgba(255, 152, 166, 0.45));
+  }
+
+  // ─────────────────────────────────────────────
+  // 5) Badge / count hover outline (action outline).
+  //    semantic badge color 자체는 base ec-theme 블록의 #ff98a6 유지.
+  //    hover 시 outline만 strong accent 로 — text/background 동시 동일색
+  //    되는 사라짐 버그 회피 (text 는 그대로 #ff98a6 유지).
+  // ─────────────────────────────────────────────
+  .resume-badges .badge-group {
+    transition: outline-color 0.2s ease;
+
+    &:hover {
+      outline: 1px solid var(--ec-accent-glow, rgba(255, 75, 112, 0.32));
+      outline-offset: 2px;
+    }
+  }
+}
+
+// =============================================================
+// 6) Activities scrollbar — base ec-theme 블록의 scrollbar-color 보강.
+//    WebKit scrollbar thumb hover 색상까지 strong accent 로.
+//    base block (L1723-1734) 이 thumb/track 만 다루고 thumb:hover 는
+//    PX 처럼 일관 적용되지 않아 본 블록에서 보충.
+// =============================================================
+.encre-theme .resume-card .resume-activities,
+.resume-card.ec-theme .resume-activities {
+  scrollbar-color: var(--ec-accent-soft, #ff98a6) #2a2a2a !important;
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--ec-accent-soft, #ff98a6) !important;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--ec-accent, #ff4b70) !important;
+  }
+}
+

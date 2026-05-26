@@ -1,0 +1,410 @@
+"use client";
+
+import React, { useState, useEffect, useRef } from "react";
+
+const Cluster4Content = () => {
+  // 스크롤 애니메이션을 위한 ref
+  const seasonCardRef = useRef<HTMLDivElement>(null);
+  const [seasonCardVisible, setSeasonCardVisible] = useState(false);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setSeasonCardVisible(true);
+          }
+        });
+      },
+      { threshold: 0.2 }
+    );
+
+    if (seasonCardRef.current) {
+      observer.observe(seasonCardRef.current);
+    }
+
+    return () => {
+      if (seasonCardRef.current) {
+        observer.unobserve(seasonCardRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <div className="cluster4-content">
+      {/* Section 1: CLUB CHALLENGE GROWTH */}
+      <section className="cluster4-section1">
+        {/* 타이틀 */}
+        <div className="section1-title-wrapper">
+          <div className="title-inner">
+            <h2 className="section1-title-shadow">CLUB CHALLENGE GROWTH</h2>
+            <h2 className="section1-title">CLUB CHALLENGE GROWTH</h2>
+          </div>
+        </div>
+
+        {/* 설명 텍스트 */}
+        <div className="section1-description">
+          <p>이 페이지에서는 주차별로(weekly), 시즌별로(season) 차곡차곡 성장한 클럽의 내역이 나옵니다.</p>
+          <p>잠깐의 열정과 객기는 누구나 가질 수 있지만, 역경과 부침, 짜증나는 고난과 요동치는 감정을 이겨내며 꾸준하게 성장할 수 있는 사람은 생각보다 적습니다.😊</p>
+          <p className="small-text">1주, 1개월, 1분기, 1반기, 1년.. 세상에서 평가하는 나의 신뢰성은 어떠한가요?</p>
+          <p className="quote-text">
+            There is no magic to achievement. It's really about hard work, choices and persistence.<br />
+            무언가를 성취하기 위해 부릴 수 있는 마법은 없다. 필요한 것은 오직 노력, 선택 그리고 꾸준함일 뿐이다.<br />
+            -Michelle Obama-
+          </p>
+        </div>
+      </section>
+
+      {/* Section 2: SEASON GROWTH 카드 */}
+      <section className="cluster4-section2" ref={seasonCardRef}>
+        <div className={`season-growth-card ${seasonCardVisible ? 'visible' : ''}`}>
+          {/* 왼쪽 콘텐츠 */}
+          <div className="card-left">
+            {/* 타이틀과 배지를 한 줄로 */}
+            <div className="season-header-row">
+              <div className="season-title-wrapper">
+                <h3 className="season-title-shadow">SEASON GROWTH</h3>
+                <h3 className="season-title">SEASON GROWTH</h3>
+              </div>
+              <div className="season-badge">
+                <img src="/images/0/cluster4/Vector.png" alt="Badge Border" className="badge-border" />
+                <div className="badge-fill">
+                  <span className="badge-text">성장 진행 중</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Add new collection 카드 */}
+            <div className="collection-card">
+              <div className="collection-icon">
+                <img src="/images/0/cluster4/icon/profile.png" alt="Profile Icon" />
+              </div>
+              <div className="collection-content">
+                <div className="collection-header">
+                  <span className="add-icon">⊕</span>
+                  <span className="collection-label">Add new collection</span>
+                </div>
+                <p className="collection-text">
+                  현재 클럽은, <strong>2025년 여름 시즌</strong>을 준비 중인 전환 과정에 있습니다.
+                </p>
+              </div>
+            </div>
+
+            {/* Details 카드 */}
+            <div className="details-card">
+              <div className="details-header">
+                <span className="toggle-icon">📋</span>
+                <span className="toggle-text">Details</span>
+              </div>
+
+              <div className="details-content">
+                <div className="detail-row">
+                  <span className="detail-label">성장 시작 시즌</span>
+                  <span className="detail-value">2024년, 가을 시즌, 14주차</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">성장 기준 시즌</span>
+                  <span className="detail-value">5 개 시즌</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">성장 성숙 시즌</span>
+                  <span className="detail-value">4 개 시즌</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">성장 휴식 시즌</span>
+                  <span className="detail-value">1 개 시즌</span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">성장 종료 시즌</span>
+                  <span className="detail-value">2024년, 가을 시즌, 14주차 (성장 전환)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 오른쪽 캐릭터 이미지 */}
+          <div className="card-right">
+            <img src="/images/0/cluster4/bg cha.png" alt="Character" />
+          </div>
+        </div>
+      </section>
+
+      {/* Section 3: SEASON CHALLENGE 배너 */}
+      <section className="cluster4-section3-banner">
+        <div className="banner-content">
+          <h2 className="banner-title">SEASON CHALLENGE</h2>
+          <p className="banner-description">
+            성장한 모든 '시즌'의 종합 결과치가, 각개의 카드로 하나씩 보여집니다.<br />
+            당신의 특별한 시즌은 언제였나요?
+          </p>
+          <p className="banner-info">
+            *모든 시즌들이 누적된 결과는 위 탭 [Club Final Index]에서 확인하실 수 있습니다. 😊
+          </p>
+        </div>
+      </section>
+
+      {/* Section 4: 2025년도_여름 시즌 카드 */}
+      <section className="cluster4-section4">
+        <div className="season-card-wrapper">
+          {/* 상단 라인 (Area 2 + Area 3) */}
+          <div className="top-row">
+            {/* 영역 2: 타이틀 + 날짜 + 버튼 */}
+            <div className="area-2-title">
+              <h3 className="season-title">
+                <span className="year-orange">2025</span>년도_여름 시즌
+              </h3>
+              <div className="date-status">
+                <span className="date">2025-03-23 (일) ~ 2025-08-22 (일)</span>
+                <button className="status-btn">시즌진행중</button>
+              </div>
+            </div>
+
+            {/* 영역 3: Qualified */}
+            <div className="area-3-qualified">
+              <span className="qualified-label">Qualified</span>
+              <div className="qualified-items">
+                <span className="item">IND</span>
+                <span className="item">Team</span>
+                <span className="item">Div</span>
+                <span className="item">Evangelist</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 하단 영역: 이미지 + 정보 그리드 */}
+          <div className="content-row">
+            {/* 영역 1: 왼쪽 이미지 스택 */}
+            <div className="area-1-image-stack">
+              <div className="season-image-stack">
+                <div className="image-card card-back">
+                  <div className="card-frame">
+                    <img src="/images/0/cluster4/Image background.png" alt="Season Card 3" />
+                  </div>
+                </div>
+                <div className="image-card card-middle">
+                  <div className="card-frame">
+                    <img src="/images/0/cluster4/Image background.png" alt="Season Card 2" />
+                  </div>
+                </div>
+                <div className="image-card card-front">
+                  <div className="card-frame">
+                    <img src="/images/0/cluster4/Image background.png" alt="Season Card 1" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 오른쪽: 전체 정보 영역 */}
+            <div className="season-info-wrapper">
+
+            {/* 중앙 그리드 (3열) */}
+            <div className="main-grid">
+              {/* 왼쪽 열 */}
+              <div className="grid-left">
+                {/* 영역 4: 통계 + 별점 */}
+                <div className="area-4-stats">
+                  <div className="stats-row">
+                    <span className="stat">단장 ⚡ <strong>25 건</strong></span>
+                    <span className="stat">인원씨 ⬇️ <strong>30 명</strong></span>
+                    <span className="stat">어들 👊 <strong>-2 건</strong></span>
+                  </div>
+                  <div className="rating-box">
+                    <div className="stars">⭐⭐⭐⭐⭐ 4 / 5</div>
+                    <button className="review-btn">Season Review</button>
+                    <p className="comment">아이시스 30차 물품 때내라는다. 어디까지 할 수 있나~</p>
+                  </div>
+                </div>
+
+                {/* 영역 5: 원형 차트 3개 */}
+                <div className="area-5-circles">
+                  <div className="circle-item">
+                    <div className="circle pink">
+                      <svg viewBox="0 0 120 120">
+                        <circle cx="60" cy="60" r="50" className="bg" />
+                        <circle cx="60" cy="60" r="50" className="fill" strokeDasharray="314" strokeDashoffset="62.8" />
+                      </svg>
+                      <span className="percent">80%</span>
+                    </div>
+                    <div className="label">
+                      <div className="main">주차 활동률</div>
+                      <div className="sub">만 10주 중 8주</div>
+                    </div>
+                  </div>
+
+                  <div className="circle-item">
+                    <div className="circle pink">
+                      <svg viewBox="0 0 120 120">
+                        <circle cx="60" cy="60" r="50" className="bg" />
+                        <circle cx="60" cy="60" r="50" className="fill" strokeDasharray="314" strokeDashoffset="31.4" />
+                      </svg>
+                      <span className="percent">90%</span>
+                    </div>
+                    <div className="label">
+                      <div className="main">일정 신뢰도</div>
+                      <div className="sub">만 10주 중 9주</div>
+                    </div>
+                  </div>
+
+                  <div className="circle-item">
+                    <div className="circle pink">
+                      <svg viewBox="0 0 120 120">
+                        <circle cx="60" cy="60" r="50" className="bg" />
+                        <circle cx="60" cy="60" r="50" className="fill" strokeDasharray="314" strokeDashoffset="94.2" />
+                      </svg>
+                      <span className="percent">70%</span>
+                    </div>
+                    <div className="label">
+                      <div className="main">시즌 성장률</div>
+                      <div className="sub">만 120개 중 75개</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 중앙 열 */}
+              <div className="grid-middle">
+                {/* 영역 6: 프로그레스 바 4개 */}
+                <div className="area-6-progress">
+                  <div className="progress-item">
+                    <div className="header">
+                      <span className="name">💪 실무 전반 성장률 (50%)</span>
+                      <span className="value">👊 동 40 개 중 20 개</span>
+                    </div>
+                    <div className="bar">
+                      <div className="fill yellow" style={{ width: '50%' }}></div>
+                    </div>
+                  </div>
+
+                  <div className="progress-item">
+                    <div className="header">
+                      <span className="name">💪 실무 역량 성장률 (80%)</span>
+                      <span className="value">👊 동 40 개 중 30 개</span>
+                    </div>
+                    <div className="bar">
+                      <div className="fill yellow" style={{ width: '80%' }}></div>
+                    </div>
+                  </div>
+
+                  <div className="progress-item">
+                    <div className="header">
+                      <span className="name">💪 실무 경험 성장률 (100%)</span>
+                      <span className="value">👊 동 40 개 중 40 개</span>
+                    </div>
+                    <div className="bar">
+                      <div className="fill green" style={{ width: '100%' }}></div>
+                    </div>
+                  </div>
+
+                  <div className="progress-item">
+                    <div className="header">
+                      <span className="name">💪 실무 전략 성장률 (10%)</span>
+                      <span className="value">👊 동 40 개 중 4 개</span>
+                    </div>
+                    <div className="bar">
+                      <div className="fill yellow" style={{ width: '10%' }}></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 오른쪽 열 */}
+              <div className="grid-right">
+                {/* 영역 7: 시즌 상태 헤더 */}
+                <div className="area-7-header">
+                  <span className="icon">●</span>
+                  <span className="text">시즌 상태</span>
+                  <span className="line">-----------------------------</span>
+                </div>
+
+                {/* 영역 8: 상단 배지 카드 2개 */}
+                <div className="area-8-badges">
+                  <div className="badge-card">
+                    <span className="badge green">레디시민센터</span>
+                    <span className="badge orange">내전자부 차원</span>
+                    <span className="badge yellow">수리대여전리센대지</span>
+                  </div>
+                  <div className="badge-card">
+                    <span className="badge green">우성경기자(갑)</span>
+                    <span className="badge orange">볼팬 마카</span>
+                    <span className="badge yellow">출재이수대영소지</span>
+                  </div>
+                  <div className="badge-card">
+                    <span className="badge green">프모카이자(기)</span>
+                    <span className="badge orange">볼팬 마카</span>
+                  </div>
+                </div>
+
+                {/* 영역 9: 프로필 카드 3개 */}
+                <div className="area-9-profiles">
+                  <div className="profile-card">
+                    <div className="avatar">👤</div>
+                    <div className="info">
+                      <div className="row1">
+                        <span className="name">강의-(2)4 | 시어님자 | 마이크리에서누누조적대화</span>
+                        <span className="deadline">내일까지 완료 ⚡ <span className="verified">Verified</span></span>
+                      </div>
+                      <div className="row2">경기기발 기콜/년 대표: 현대표자</div>
+                      <div className="row3">
+                        <span className="green-tag">우성취업자격</span>
+                        <span className="yellow-tag">수업이수대업자</span>
+                      </div>
+                      <div className="row4">□ 일정 담당자 이 시즌일정태우대도 시시콜이모양... 😊</div>
+                      <div className="row5">
+                        <span>RM_PM : -0건</span>
+                        <span className="rating">⭐⭐⭐⭐☆ 6 / 10</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="profile-card">
+                    <div className="avatar">👤</div>
+                    <div className="info">
+                      <div className="row1">
+                        <span className="name">강의-(2)4 | 시어님자 | 마이크리에서누누조적대화</span>
+                        <span className="deadline">내일까지 완료 ⚡ <span className="verified">Verified</span></span>
+                      </div>
+                      <div className="row2">경기기발 기콜/년 대표: 현대표자</div>
+                      <div className="row3">
+                        <span className="green-tag">우성취업자격</span>
+                        <span className="yellow-tag">수업이수대업자</span>
+                      </div>
+                      <div className="row4">□ 일정 담당자 이 시즌일정태우대도 시시콜이모양... 😊</div>
+                      <div className="row5">
+                        <span>RM_PM : -0건</span>
+                        <span className="rating">⭐⭐⭐⭐☆ 6 / 10</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="profile-card">
+                    <div className="avatar">👤</div>
+                    <div className="info">
+                      <div className="row1">
+                        <span className="name">강의-교육팀 강사님(2반)</span>
+                        <span className="deadline">1.5일까지 완료 ⚡ <span className="adjust">조정대훈(마일)</span></span>
+                      </div>
+                      <div className="row2">경기기발 기콜/년 대표: 현대표자</div>
+                      <div className="row3">
+                        <span className="green-tag">우성취업자격</span>
+                        <span className="yellow-tag">수업이수대업자</span>
+                      </div>
+                      <div className="row4">□ 일정 담당자 이 시즌일정태우대도 시시콜이모양... 😊</div>
+                      <div className="row5">
+                        <span>RM_PM : -0건</span>
+                        <span className="rating">⭐⭐⭐⭐☆ 6 / 10</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+};
+
+export default Cluster4Content;

@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --BUTTON-font-family: "DM Sans", Helvetica;
+  --BUTTON-font-size: 14px;
+  --BUTTON-font-style: normal;
+  --BUTTON-font-weight: 700;
+  --BUTTON-letter-spacing: 0.42px;
+  --BUTTON-line-height: 14px;
+  --preview-themeforest-net-azeret-mono-regular-font-family: "Azeret Mono", Helvetica;
+  --preview-themeforest-net-azeret-mono-regular-font-size: 12px;
+  --preview-themeforest-net-azeret-mono-regular-font-style: normal;
+  --preview-themeforest-net-azeret-mono-regular-font-weight: 400;
+  --preview-themeforest-net-azeret-mono-regular-letter-spacing: 0px;
+  --preview-themeforest-net-azeret-mono-regular-line-height: 19px;
+  --preview-themeforest-net-manrope-extrabold-font-family: "Manrope", Helvetica;
+  --preview-themeforest-net-manrope-extrabold-font-size: 18px;
+  --preview-themeforest-net-manrope-extrabold-font-style: normal;
+  --preview-themeforest-net-manrope-extrabold-font-weight: 800;
+  --preview-themeforest-net-manrope-extrabold-letter-spacing: 0px;
+  --preview-themeforest-net-manrope-extrabold-line-height: 25px;
+}

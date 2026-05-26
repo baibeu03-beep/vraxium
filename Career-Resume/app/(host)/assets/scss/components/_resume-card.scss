@@ -1,0 +1,1928 @@
+// Font imports
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
+
+@font-face {
+  font-family: "Cafe24Anemone";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2001@1.1/Cafe24Ohsquare.woff") format("woff");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Cafe24AnemoneAir";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2202@1.0/Cafe24Ohsquareair.woff") format("woff");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "HakgyoansimTuho";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2402_keris@1.0/TTHakgyoansimTuhoR.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Tenada";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2210-2@1.0/Tenada.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Eutman";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2206-02@1.0/OKCHAN.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "GanaChocolate";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_20-04@1.0/ghanachoco.woff") format("woff");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Jeongmeokbawi";
+  src: url("https://gcore.jsdelivr.net/gh/projectnoonnu/noonfonts_2001@1.1/SangSangRockOTF.woff") format("woff");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+// Main content width adjustment
+.col-xxl-9 {
+  max-width: calc(100% - var(--sidebar-width, 497px)) !important;
+  padding-left: 70px !important;
+  padding-right: 0 !important;
+}
+
+.col-xxl-3 {
+  padding-right: 20px !important;
+}
+
+// Resume Card - Exact Design Match
+// 489px x 848px 고정 (데스크탑용, 모바일에서는 유연하게)
+// 848 = 818 + 30 (padding-top 30px 추가분)
+.resume-card {
+  width: 489px !important;
+  min-width: 489px !important;
+  max-width: 489px !important;
+  height: 855px !important;
+  min-height: 855px !important;
+  max-height: 855px !important;
+  will-change: transform;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  background: #0c0f14;
+  border: 1px solid #313f11 !important;
+  box-shadow: none;
+  border-radius: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto;
+  font-family:
+    "Pretendard",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  margin: 0;
+  padding: 0;
+  padding-top: 35px !important;
+  position: relative;
+  box-sizing: border-box !important;
+
+  // 상단 프로필 영역 배경 (도시 야경 이미지 + 그라데이션 오버레이)
+  &::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 35px;
+    background:
+      linear-gradient(to right, rgba(0, 0, 0, var(--identity-tab-overlay, 0.45)), var(--identity-tab-accent, rgba(250, 171, 7, 0.75))),
+      var(--identity-tab-bg) center 42% / cover no-repeat;
+    z-index: 1;
+  }
+
+  // 상단 주황 탭 "Identity - Core" 라벨
+  &::after {
+    content: "Identity - Core";
+    position: absolute;
+    top: 0;
+    left: 14px;
+    height: 35px;
+    display: flex;
+    align-items: center;
+    color: #fff;
+    font-size: 17px;
+    font-family: "HakgyoansimTuho", sans-serif;
+    font-weight: 400;
+    line-height: 17px;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  /* ===== 모바일에서 고정 너비 해제 (1199px 이하) =====
+  @media only screen and (max-width: 1199px) {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    padding: 12px !important;
+    overflow: hidden !important;
+
+    // 내부 고정 너비 요소들 모두 100%로 변경
+    .resume-header,
+    .resume-intro,
+    .resume-three-column,
+    .resume-stats,
+    .resume-badges,
+    .resume-medal,
+    .resume-activities,
+    .resume-bottom-section,
+    .resume-skills,
+    .resume-notices,
+    .activity-row,
+    .stat-row,
+    .progress-bar {
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+    }
+
+    .resume-header {
+      gap: 10px !important;
+      margin: 0 0 10px 0 !important;
+      overflow: visible !important;
+    }
+
+    // ★ 사진 축소 + mask 해제
+    .resume-photo {
+      width: 90px !important;
+      height: 113px !important;
+      min-width: 90px !important;
+      max-width: 90px !important;
+      min-height: 113px !important;
+      max-height: 113px !important;
+      margin: 0 !important;
+      overflow: hidden !important;
+      border-radius: 4px !important;
+      -webkit-mask-image: none !important;
+      mask-image: none !important;
+
+      img {
+        width: 90px !important;
+        height: 113px !important;
+        object-fit: cover !important;
+      }
+    }
+
+    // ★ 정보 영역 폰트 축소
+    .resume-info {
+      padding: 0 !important;
+      margin: 0 !important;
+      margin-top: 0 !important;
+      overflow: visible !important;
+
+      .resume-name {
+        font-size: 1rem !important;
+        line-height: 1.3 !important;
+        margin: 0 0 6px 0 !important;
+        padding: 0 !important;
+        padding-right: 0 !important;
+        white-space: nowrap !important;
+        overflow: visible !important;
+        display: flex !important;
+        align-items: center !important;
+
+        .name-eng {
+          font-size: 0.6875rem !important;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .resume-edit-btn {
+          flex-shrink: 0 !important;
+        }
+      }
+
+      .resume-details .detail-row {
+        font-size: 0.6875rem !important;
+        gap: 4px !important;
+
+        .detail-icon {
+          width: 12px !important;
+          height: 12px !important;
+        }
+      }
+    }
+
+    // 소개글 — 원본 크기에 가깝게
+    .resume-intro {
+      font-size: 1.125rem !important;
+      line-height: 1.5 !important;
+      padding: 14px 20px !important;
+      margin: 0 0 10px 0 !important;
+      height: auto !important;
+      min-height: 80px;
+      word-break: keep-all !important;
+    }
+
+    // 모바일 skill 축소
+    .resume-skills {
+      gap: 6px !important;
+
+      .skill-card {
+        .skill-icon {
+          width: 20px !important;
+          height: 20px !important;
+          top: -5px !important;
+          left: -5px !important;
+        }
+        .skill-num {
+          font-size: 1rem !important;
+        }
+        .skill-unit {
+          font-size: 0.5rem !important;
+        }
+        .skill-label {
+          font-size: 0.5625rem !important;
+        }
+      }
+    }
+
+    // ★ 인라인 width:474px override
+    > div[style*="474"] {
+      width: 100% !important;
+      max-width: 100% !important;
+    }
+  } */
+
+  // ===== mobile-layout 클래스 기반 반응형 (미디어쿼리와 독립) =====
+  body:has(.mobile-layout) & {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    padding: 12px !important;
+    overflow: hidden !important;
+
+    .resume-header,
+    .resume-intro,
+    .resume-three-column,
+    .resume-stats,
+    .resume-badges,
+    .resume-medal,
+    .resume-activities,
+    .resume-bottom-section,
+    .resume-skills,
+    .resume-notices,
+    .activity-row,
+    .stat-row,
+    .progress-bar {
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+    }
+
+    .resume-header {
+      gap: 10px !important;
+      margin: 0 0 10px 0 !important;
+      overflow: visible !important;
+    }
+
+    .resume-photo {
+      width: 90px !important;
+      height: 113px !important;
+      min-width: 90px !important;
+      max-width: 90px !important;
+      min-height: 113px !important;
+      max-height: 113px !important;
+      margin: 0 !important;
+      overflow: hidden !important;
+      border-radius: 4px !important;
+      -webkit-mask-image: none !important;
+      mask-image: none !important;
+
+      img {
+        width: 90px !important;
+        height: 113px !important;
+        object-fit: cover !important;
+      }
+    }
+
+    .resume-info {
+      padding: 0 !important;
+      margin: 0 !important;
+      overflow: visible !important;
+
+      .resume-name {
+        font-size: 1rem !important;
+        line-height: 1.3 !important;
+        white-space: nowrap !important;
+        overflow: visible !important;
+      }
+
+      .resume-details .detail-row {
+        font-size: 0.6875rem !important;
+        gap: 4px !important;
+      }
+    }
+
+    .resume-intro {
+      font-size: 1.125rem !important;
+      line-height: 1.5 !important;
+      padding: 14px 20px !important;
+      height: auto !important;
+    }
+
+    // skill-card 축소
+    .resume-skills {
+      gap: 8px !important;
+
+      .skill-card {
+        .skill-icon {
+          width: 22px !important;
+          height: 22px !important;
+          top: -6px !important;
+          left: -6px !important;
+        }
+        .skill-num {
+          font-size: 1.25rem !important;
+        }
+        .skill-unit {
+          font-size: 0.5625rem !important;
+        }
+        .skill-label {
+          font-size: 0.5625rem !important;
+        }
+      }
+    }
+
+    > div[style*="474"] {
+      width: 100% !important;
+      max-width: 100% !important;
+    }
+
+    // 인라인 width:489px 강제 해제 (활동 영역 등)
+    div[style*="width: 489px"],
+    div[style*="width:489px"] {
+      width: 100% !important;
+      max-width: 100% !important;
+    }
+
+    // activity-line 기본 (375px~)
+    .activity-line {
+      flex-wrap: nowrap !important;
+      gap: 0 !important;
+      font-size: 0.5625rem !important;
+      overflow: hidden !important;
+      max-width: 100% !important;
+
+      .activity-season,
+      .activity-period,
+      .activity-role {
+        width: auto !important;
+        min-width: 0 !important;
+        padding: 0 2px !important;
+      }
+      .activity-badge,
+      .activity-check {
+        width: auto !important;
+        min-width: 0 !important;
+        padding: 0 3px !important;
+        font-size: 0.5rem !important;
+      }
+    }
+
+    /* 768px 이상: 여유 있으므로 폰트 키움
+    @media (min-width: 768px) {
+      .activity-line {
+        font-size: 0.6875rem !important;
+
+        .activity-season,
+        .activity-period,
+        .activity-role {
+          padding: 0 4px !important;
+        }
+        .activity-badge,
+        .activity-check {
+          font-size: 0.625rem !important;
+          padding: 1px 5px !important;
+        }
+      }
+
+      .resume-skills {
+        gap: 16px !important;
+
+        .skill-card {
+          .skill-icon {
+            width: 26px !important;
+            height: 26px !important;
+          }
+          .skill-num {
+            font-size: 1.5rem !important;
+          }
+          .skill-unit {
+            font-size: 0.625rem !important;
+          }
+          .skill-label {
+            font-size: 0.6875rem !important;
+          }
+        }
+      }
+    } */
+
+    /* 1024px 이상: 더 여유
+    @media (min-width: 1024px) {
+      .activity-line {
+        font-size: 0.75rem !important;
+
+        .activity-badge,
+        .activity-check {
+          font-size: 0.6875rem !important;
+          padding: 2px 6px !important;
+        }
+      }
+
+      .resume-skills .skill-card {
+        .skill-icon {
+          width: 30px !important;
+          height: 30px !important;
+        }
+        .skill-num {
+          font-size: 1.75rem !important;
+        }
+        .skill-unit {
+          font-size: 0.6875rem !important;
+        }
+        .skill-label {
+          font-size: 0.75rem !important;
+        }
+      }
+    } */
+
+    // hexagon 버튼 숨기기
+    button[aria-label*="hexagon"] {
+      display: none !important;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  // Header
+  .resume-header {
+    display: flex;
+    padding: 0;
+    margin: 0;
+    margin-bottom: -20px;
+    gap: 0;
+
+    .resume-photo {
+      flex-shrink: 0;
+      width: 242px; // +2px: 서브픽셀 렌더링 틈 방지
+      height: 275px; // +2px: 서브픽셀 렌더링 틈 방지
+      border-radius: 0;
+      overflow: visible;
+      background: transparent;
+      margin: -21px 0 0 -16px; // -1px 추가: border 위로 겹침
+      padding: 0;
+      position: relative;
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
+      -webkit-mask-image: url("/images/0/cluster 1/shape.png");
+      -webkit-mask-size: cover;
+      -webkit-mask-position: center;
+      mask-image: url("/images/0/cluster 1/shape.png");
+      mask-size: cover;
+      mask-position: center;
+
+      img,
+      & > * {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        margin: 0;
+        padding: 0;
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
+        -webkit-appearance: none;
+      }
+    }
+
+    .resume-info {
+      flex: 1;
+      display: flex;
+      padding: 0 25px 0 10px;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 5px;
+      margin: 0;
+      margin-top: -2px;
+      position: relative;
+
+      .resume-icons {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+        justify-content: flex-end;
+
+        .icon-item {
+          font-size: 1.25rem;
+          cursor: pointer;
+        }
+      }
+
+      .resume-name {
+        color: #fff;
+        font-family: "Cafe24Anemone", sans-serif;
+        font-size: 1.625rem;
+        font-style: normal;
+        font-weight: 400;
+        line-height: 34px;
+        margin-top: -6px;
+        margin-bottom: 2px;
+        margin-left: -5px;
+        padding-right: 35px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        white-space: nowrap;
+
+        .back-arrow {
+          font-size: 1.125rem;
+          cursor: pointer;
+        }
+
+        .name-eng {
+          font-family: "Cafe24AnemoneAir", sans-serif;
+          font-size: 13px;
+          font-weight: 300;
+          color: #999;
+        }
+      }
+
+      .resume-details {
+        display: flex;
+        flex-direction: column;
+        gap: 5.5px;
+        margin-top: 3px;
+
+        .detail-row {
+          display: flex;
+          gap: 10px;
+          font-size: 0.875rem;
+          line-height: 20px;
+          color: #ffffff;
+          align-items: center;
+
+          .detail-spacer {
+            width: 16px !important;
+            min-width: 16px !important;
+            display: inline-block !important;
+            flex-shrink: 0 !important;
+          }
+
+          .major-text {
+            color: #ffec8f;
+            font-size: 14px;
+            font-family: "Pretendard", sans-serif;
+            font-weight: 400;
+            line-height: 24px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0;
+            overflow: hidden;
+            white-space: nowrap;
+            max-width: 180px;
+
+            > span:first-child {
+              margin-right: 4px;
+              flex-shrink: 0;
+            }
+
+            > svg {
+              margin-left: 5px;
+              flex-shrink: 0;
+            }
+          }
+
+          .detail-icon {
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+            filter: brightness(0) invert(0.77) sepia(1) saturate(1.79);
+            flex-shrink: 0;
+          }
+
+          .icon {
+            flex-shrink: 0;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+          }
+
+          .text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            line-height: 1.5;
+
+            .sub-text {
+              font-size: 0.8125rem;
+              color: #999;
+            }
+          }
+
+          > span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
+          }
+        }
+      }
+    }
+  }
+
+  // Introduction
+  .resume-intro {
+    margin-top: 40px;
+    width: 487px;
+    height: 118px;
+    background-image: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url("/images/0/cluster 1/bg image/17.png");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    border: none;
+    outline: none;
+    box-shadow: none;
+    font-family: "HakgyoansimTuho", sans-serif;
+    font-size: 1.4rem;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 1.2;
+    color: #fff;
+    margin: 0;
+    margin-bottom: -1px;
+    padding: 0 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    word-break: break-all;
+    overflow-wrap: break-word;
+    position: relative;
+
+    // 왼쪽 금색 바 - 시안 Vector 9.svg (75px, round cap)
+    // Phase D5-D: var(--org-accent-soft) cascade — PX 라우트에선 #B2FF8F,
+    // EC 라우트에선 #FF98A6, 원본/non-themed 라우트에선 fallback #ffc300 유지.
+    &::before {
+      content: "";
+      position: absolute;
+      left: 4px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 2px;
+      height: 75px;
+      background: var(--org-accent-soft, #ffc300);
+      border-radius: 1px;
+    }
+
+    .intro-icon {
+      position: absolute;
+      top: -8px;
+      right: 12px;
+    }
+
+    &::after {
+      content: "";
+      position: absolute;
+      bottom: -2px;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: #0c0f14;
+      z-index: 1;
+    }
+  }
+
+  // Three Column Container - 영역 4, 5, 6
+  .resume-three-column {
+    display: flex;
+    gap: 39px; // 피그마: stats→badges, badges→medal 모두 39px 간격
+    padding: 12px 20px; // 상하 축소
+    align-items: center; // stats↔badges↔medal 세로 중앙 정렬
+    border-top: none !important;
+  }
+
+  // Stats - 영역 4
+  .resume-stats {
+    flex-shrink: 0;
+    width: 138px;
+    margin-left: 8px; // 컨테이너 padding 20px + 8px = 살짝 왼쪽으로 이동
+
+    .stat-item {
+      margin-bottom: 25px; // 피그마 시안 gap: 25px
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 3px;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+    }
+
+    .stat-row {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 4px;
+      width: 138px;
+
+      .stat-label {
+        font-size: 17px;
+        color: #999999;
+        white-space: nowrap;
+        line-height: 15px;
+
+        .stat-dot {
+          display: inline-block;
+          width: 2px;
+          height: 2px;
+          background: #ffec8f;
+          border-radius: 9999px;
+          vertical-align: middle;
+          font-size: 0;
+          line-height: 0;
+          color: transparent;
+          overflow: hidden;
+        }
+      }
+
+      .stat-value {
+        font-family: var(--black-ops-one), cursive;
+        font-size: 23px;
+        font-weight: 400;
+        color: #ffec8f;
+        white-space: nowrap;
+        line-height: 22px;
+        margin-left: auto;
+
+        .stat-unit {
+          font-family: "Pretendard", sans-serif;
+          font-size: 11px;
+          font-weight: 400;
+          color: #ffec8f;
+          line-height: 12px;
+        }
+      }
+    }
+
+    .progress-bar {
+      width: 138px;
+      height: 3px;
+      background: #555555;
+      border: none;
+      border-radius: 5px;
+      overflow: hidden;
+      position: relative;
+
+      .progress-fill {
+        height: 100%;
+        background: #ffec8f;
+        border-radius: 5px;
+        transition: width 0.3s ease;
+        display: block;
+      }
+    }
+  }
+
+  // Badges - 영역 5
+  .resume-badges {
+    flex-shrink: 0;
+    width: 86px;
+    margin-left: 8px !important;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+
+    .badge-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+
+      .badge-icon {
+        width: 29px;
+        height: 30px;
+        flex-shrink: 0;
+        margin-left: -6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-size: contain;
+        background-repeat: no-repeat;
+        background-position: center;
+
+        &.icon-graphic10 {
+          background-image: url("/images/0/cluster 1/Ok01.png");
+        }
+
+        &.icon-shield {
+          background-image: url("/images/0/cluster 1/OK02.png");
+        }
+
+        &.icon-graphic13 {
+          background-image: url("/images/0/cluster 1/Ok03.png");
+        }
+      }
+
+      .badge-num {
+        font-family: var(--black-ops-one), cursive;
+        font-size: 20px;
+        font-weight: 400;
+        color: #ffec8f;
+        flex: none;
+        margin-left: 8px;
+        text-align: left;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+
+        &.red {
+          color: #ffec8f;
+        }
+      }
+    }
+  }
+
+  // Medal - 영역 6
+  .resume-medal {
+    flex-shrink: 0;
+    width: 88px;
+    transform: translateX(20px);
+    height: 108px; // three-column 높이 유지 (메달 커져도 박스 불변)
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    top: 7px;
+    font-size: 0.875rem;
+    overflow: visible;
+    margin-left: 10px;
+
+    // Complete일 때 오버레이 제거 + 금장 glow 효과
+    &.no-overlay {
+      .medal-image-wrapper {
+        &::before {
+          display: none;
+        }
+
+        img {
+          box-shadow: none;
+        }
+      }
+
+      // 리본 박스(배경 PNG)에 금장 glow
+      .medal-text {
+        filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.9)) drop-shadow(0 0 16px rgba(255, 165, 0, 0.6));
+      }
+    }
+
+    .medal-image-wrapper {
+      position: relative;
+      width: 121px;
+      height: 121px;
+      border-radius: 512px;
+      overflow: visible !important;
+
+      // 오버레이 제거 — 피그마 시안 원본 밝기 유지
+      &::before {
+        display: none;
+      }
+
+      img {
+        width: 121px;
+        height: 121px;
+        display: block;
+        object-fit: contain;
+        box-shadow: 0px 10px 5px rgba(0, 0, 0, 0.03);
+        border-radius: 512px;
+        overflow: hidden;
+        position: relative;
+        z-index: 0;
+      }
+
+      .medal-week-num {
+        position: absolute;
+        top: 14px;
+        right: -5px;
+        z-index: 3;
+        font-family: var(--black-ops-one), cursive;
+        font-size: 32px;
+        font-weight: 400;
+        color: #ffec8f;
+        line-height: 25px;
+      }
+    }
+
+    .medal-text {
+      position: absolute;
+      bottom: -6px;
+      right: -42px;
+      z-index: 2;
+      width: fit-content !important;
+      min-width: 80px;
+      max-width: 150px;
+      height: 64px;
+      padding: 0 22px !important;
+      font-family: "Cafe24Ohsquare", sans-serif;
+      font-size: 14px;
+      color: #ffec8f;
+      font-weight: 400;
+      word-wrap: break-word;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-image: url("/images/0/cluster 1/ribon box.png");
+      background-size: 100% 100%;
+      background-repeat: no-repeat;
+      background-position: center;
+      background-color: transparent;
+      transition: width 0.3s ease;
+
+      .medal-text-inner {
+        transform: rotate(-13.5deg);
+        display: inline-block;
+        white-space: nowrap;
+      }
+
+      // 짧은-중간 길이 (Complete)
+      &.short-medium {
+        width: 90px;
+        font-size: 0.8125rem;
+      }
+
+      // 중간 길이 (Recharging)
+      &.medium {
+        width: 110px;
+        font-size: 0.6875rem;
+        font-weight: 300;
+        letter-spacing: -0.02em;
+      }
+
+      // 긴 길이 (Next Challenge)
+      &.long {
+        width: 180px;
+        font-size: 0.75rem;
+        padding-left: 30px !important;
+        padding-right: 30px !important;
+      }
+
+      // 텍스트별 색상 분기 — CSS filter로 리본 PNG + 텍스트 동시 변경
+      &.medal-complete {
+        // 원본 금색 유지 — filter 없음
+      }
+
+      &.medal-running {
+        filter: hue-rotate(-10deg) saturate(2) !important;
+      }
+
+      &.medal-onrest {
+        filter: hue-rotate(120deg) saturate(1.5) !important;
+      }
+
+      &.medal-recharging {
+        filter: hue-rotate(-30deg) saturate(3) brightness(0.8) !important;
+
+        .medal-text-inner {
+          position: relative;
+          top: 0px;
+          font-size: 14px !important;
+        }
+      }
+
+      &.medal-next {
+        filter: grayscale(1) brightness(0.6) !important;
+
+        .medal-text-inner {
+          position: relative;
+          top: 0px;
+          font-size: 15px !important;
+        }
+      }
+    }
+
+    // NOTE: running-glow keyframes는 고정 글로우로 전환되어 미사용
+  }
+
+  // Activities
+  .resume-activities {
+    border-top: 1px solid #555555;
+    width: 487px;
+    // 내부 스크롤을 없애면, 카드(부모)의 고정 레이아웃 특성상 아래 내용이
+    // "날아간 것처럼" 보일 수 있음(실제로는 클리핑).
+    // → 스크롤은 유지하되 스크롤바만 숨겨 OS/모니터별 표시 편차를 제거.
+    height: 95px;
+    max-height: 95px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0;
+    margin: 0;
+    display: block;
+    scrollbar-width: none; // Firefox
+    -ms-overflow-style: none; // IE/Edge legacy
+
+    // Hide scrollbar (Chromium/Safari)
+    &::-webkit-scrollbar {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
+
+    // (스크롤바 커스텀/색상 지정은 제거: 숨김 처리와 충돌 방지)
+
+    .activity-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0;
+      border-bottom: 1px solid #313131;
+      width: 485px;
+      height: 36px;
+      background-color: #1c242f;
+      margin-bottom: 0;
+
+      &:last-child {
+        border-bottom: none;
+      }
+
+      .activity-avatar {
+        flex-shrink: 0;
+        width: 36px;
+        height: 36px;
+        border-radius: 0;
+        overflow: hidden;
+        transform: translateY(-4px);
+
+        img {
+          display: block;
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+      }
+
+      .activity-content {
+        flex: 1;
+        padding-left: 0;
+        transform: translateY(-4px);
+
+        .activity-line {
+          display: flex;
+          flex-wrap: nowrap;
+          gap: 22px;
+          align-items: center;
+          justify-content: flex-start;
+          font-size: 0.9375rem;
+
+          .activity-season {
+            color: #fff;
+            font-weight: 600;
+            width: 82px;
+            flex-shrink: 0;
+            white-space: nowrap;
+            text-align: center;
+            padding-left: 8px;
+          }
+
+          .activity-period {
+            color: #fff;
+            font-weight: 600;
+            width: 72px;
+            flex-shrink: 0;
+            white-space: nowrap;
+            text-align: center;
+          }
+
+          .activity-role {
+            color: #fff;
+            font-weight: 500;
+            width: 70px;
+            flex-shrink: 0;
+            white-space: nowrap;
+            text-align: center;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+
+          .activity-badge {
+            font-size: 0.9375rem;
+            font-weight: 500;
+            width: 60px;
+            flex-shrink: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-align: center;
+
+            &.active {
+              color: #ffec8f;
+            }
+
+            &.complete {
+              color: #ffec8f;
+            }
+          }
+
+          .activity-check {
+            font-weight: 500;
+            width: 60px;
+            flex-shrink: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-align: center;
+
+            &.pending {
+              color: #9dfa07;
+            }
+
+            &.approved {
+              color: #65e3ff;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Bottom section wrapper with background
+  .resume-bottom-section {
+    position: relative;
+    width: 487px;
+    padding-bottom: 8px;
+
+    &::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: -18px;
+      background-image: url("/images/0/cluster 1/bg image/OK 섹션89.png");
+      background-size: cover;
+      background-position: center -80px;
+      background-repeat: no-repeat;
+      z-index: 1;
+    }
+
+    &::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: -18px;
+      background-color: rgba(0, 0, 0, 0.8);
+      z-index: 2;
+    }
+  }
+
+  // Skills
+  // Skills — 피그마: 4열 가로 배치, 각 카드는 세로(아이콘→숫자+단위→라벨)
+  .resume-skills {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    align-items: flex-start;
+    padding: 30px 17px 0 28px;
+    margin: 0;
+    width: 100%;
+    position: relative;
+    z-index: 3;
+    box-sizing: border-box;
+
+    .skill-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-self: center;
+      position: relative;
+      background: transparent;
+      border: none;
+      padding: 0;
+
+      &:first-child {
+        justify-self: start;
+      }
+
+      &:last-child {
+        justify-self: end;
+      }
+
+      .skill-icon {
+        width: 34px;
+        height: 34px;
+        object-fit: contain;
+        position: absolute;
+        top: -8px;
+        left: -4px;
+        z-index: 1;
+      }
+
+      .skill-num-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: center;
+        gap: 2px;
+        position: relative;
+        z-index: 2;
+        width: 100%;
+        padding-left: 16px;
+      }
+
+      .skill-num {
+        font-family: var(--black-ops-one), cursive;
+        font-size: 32px;
+        font-weight: 400;
+        color: #ffec8f;
+        line-height: 25px;
+      }
+
+      .skill-unit {
+        font-size: 13px;
+        font-family: "Pretendard", sans-serif;
+        font-weight: 400;
+        color: #fff;
+        line-height: 18px;
+      }
+
+      .skill-label {
+        font-size: 14px;
+        font-family: "Pretendard", sans-serif;
+        font-weight: 500;
+        color: #fff;
+        line-height: 18px;
+        white-space: nowrap;
+        margin-top: 2px;
+      }
+    }
+  }
+
+  // Notices
+  .resume-notices {
+    padding: 10px 20px 8px 0;
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    position: relative;
+    z-index: 3;
+    gap: 10px;
+
+    .notice-box {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 0;
+      border-radius: 0;
+      margin-bottom: 0;
+      font-size: 0.6875rem;
+      background: transparent;
+      border: none;
+      text-align: right;
+
+      &:first-child {
+        margin-top: 2px;
+        margin-right: 10px;
+        transform: translateX(25px);
+      }
+
+      &:last-child {
+        margin-bottom: 2px;
+        margin-right: 10px;
+        transform: translateX(25px);
+      }
+
+      .notice-icon-img {
+        flex-shrink: 0;
+        width: 25px;
+        height: 25px;
+        order: 1;
+        position: relative;
+        z-index: 10;
+        margin-right: -5px;
+      }
+
+      .notice-text {
+        flex: 1;
+        line-height: 1.4;
+        order: 2;
+        text-align: left;
+        font-size: 16px;
+        position: relative;
+        z-index: 10;
+        color: #dddddd;
+
+        &.notice-text-top {
+          font-family: "Eutman", sans-serif;
+          margin-right: -15px;
+        }
+      }
+
+      &.green .notice-text {
+        font-family: "GanaChocolate", sans-serif;
+        margin-right: -15px;
+        white-space: nowrap;
+        font-size: 16px;
+      }
+
+      .notice-stamp {
+        flex-shrink: 0;
+        order: 3;
+        width: 46px;
+        height: 46px;
+        position: relative;
+        z-index: 10;
+        margin-left: -5px;
+        overflow: visible;
+
+        img {
+          width: 69px !important;
+          height: 69px !important;
+        }
+      }
+
+      .notice-stamp-wrapper {
+        flex-shrink: 0;
+        order: 3;
+        position: relative;
+        z-index: 10;
+        margin-left: 24px;
+        left: -10px;
+        width: 46px;
+        height: 46px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.6);
+        overflow: visible;
+
+        img {
+          width: 69px !important;
+          height: 69px !important;
+        }
+
+        // 도장이 찍혀도 배경 사각형 유지
+        &.stamped {
+          // background 그대로 유지
+        }
+      }
+
+      &.yellow {
+        background: transparent;
+        border: none;
+        color: #ffd700;
+      }
+
+      &.green {
+        background: transparent;
+        border: none;
+        color: #21e786;
+      }
+    }
+  }
+}
+
+// EC Theme - Pink Color Scheme
+.resume-card.ec-theme {
+  // Resume intro border
+  .resume-intro {
+    border-left: none !important;
+    &::before {
+      background: #ff4b70 !important;
+    }
+  }
+
+  // Badges - 영역 5 아이콘
+  .resume-badges {
+    .badge-group {
+      .badge-icon {
+        &.icon-graphic10 {
+          background-image: url("/images/0/cluster 1/Graphic10.png") !important;
+        }
+        &.icon-shield {
+          background-image: url("/images/0/cluster 1/pX02.png") !important;
+        }
+        &.icon-graphic13 {
+          background-image: url("/images/0/cluster 1/Graphic13.png") !important;
+        }
+      }
+    }
+  }
+
+  // Stats - 영역 4
+  .resume-stats {
+    .stat-item {
+      .stat-row {
+        .stat-value {
+          color: #ff98a6 !important;
+
+          .stat-unit {
+            color: #ff98a6 !important;
+          }
+        }
+      }
+
+      .progress-bar {
+        .progress-fill {
+          background: #ff98a6 !important;
+        }
+      }
+    }
+  }
+
+  // Badges - 영역 5
+  .resume-badges {
+    .badge-group {
+      .badge-num {
+        color: #ff98a6 !important;
+
+        &.red {
+          color: #ff98a6 !important;
+        }
+      }
+    }
+  }
+
+  // Medal text - 진행중 텍스트
+  .resume-medal {
+    .medal-text {
+      color: #ff98a6 !important;
+    }
+  }
+
+  // Activity badge colors
+  .resume-activities {
+    scrollbar-color: #ff98a6 #2a2a2a !important;
+
+    .activity-row {
+      .activity-content {
+        .activity-line {
+          .activity-season {
+            color: #fff !important;
+          }
+
+          .activity-period {
+            color: #fff !important;
+          }
+
+          .activity-role {
+            color: #fff !important;
+          }
+
+          .activity-badge {
+            &.active {
+              color: #ff98a6 !important;
+            }
+
+            &.complete {
+              color: #ff98a6 !important;
+            }
+          }
+
+          .activity-check {
+            &.pending {
+              color: #999 !important;
+            }
+
+            &.approved {
+              color: #fff !important;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Skill numbers
+  .resume-skills {
+    .skill-card {
+      .skill-num {
+        color: #ff98a6 !important;
+      }
+    }
+  }
+
+  // Notice box yellow - Section 7
+  .resume-notices {
+    .notice-box {
+      &.yellow {
+        color: #ff98a6 !important;
+
+        .notice-text {
+          &.notice-text-top {
+            font-family: "Tenada", sans-serif !important;
+            font-size: 0.9375rem !important;
+            position: relative;
+            top: 2px;
+          }
+        }
+      }
+    }
+  }
+
+  // Bottom section background - Section 8, 9
+  .resume-bottom-section {
+    &::before {
+      background-image: url("/images/0/cluster 1/bg image/EC02 (2).png") !important;
+      background-position: center -80px !important;
+    }
+  }
+}
+
+// ★ Zone A 정책 변경(1920 baseline + 가로 스크롤): 강제 shell 583px floor 제거.
+//   Sidebar.tsx가 cardScale을 자연 계산(Zone B와 동일 로직)하여 inline width로 적용하므로
+//   여기서 별도의 min-width를 강제하지 않는다. (Zone B/C는 영향 없음)
+
+// PX Theme - Green color scheme
+.resume-card.px-theme {
+  // Section 3 - intro border
+  .resume-intro {
+    border-left: none !important;
+    &::before {
+      background: #36da60 !important;
+    }
+  }
+
+  // Section 4 - stats
+  .resume-stats {
+    .stat-item {
+      .stat-row {
+        .stat-value {
+          color: #b2ff8f !important;
+
+          .stat-unit {
+            color: #b2ff8f !important;
+          }
+        }
+      }
+    }
+
+    .progress-bar {
+      .progress-fill {
+        background: #b2ff8f !important;
+      }
+    }
+  }
+
+  // Section 5 - badges
+  .resume-badges {
+    .badge-group {
+      .badge-icon {
+        &.icon-graphic10 {
+          background-image: url("/images/0/cluster 1/PX01.png") !important;
+        }
+        &.icon-shield {
+          background-image: url("/images/0/cluster 1/pX02.png") !important;
+        }
+        &.icon-graphic13 {
+          background-image: url("/images/0/cluster 1/PX03.png") !important;
+        }
+      }
+
+      .badge-num {
+        color: #b2ff8f !important;
+
+        &.red {
+          color: #b2ff8f !important;
+        }
+      }
+    }
+  }
+
+  // Section 7 - activities
+  .resume-activities {
+    .activity-row {
+      .activity-season,
+      .activity-period,
+      .activity-role {
+        color: #fff !important;
+      }
+
+      .activity-badge {
+        &.active,
+        &.complete {
+          color: #b2ff8f !important;
+        }
+      }
+
+      .activity-check {
+        &.pending {
+          color: #999 !important;
+        }
+        &.approved {
+          color: #fff !important;
+        }
+      }
+    }
+  }
+
+  // Section 8 - skills
+  .resume-skills {
+    .skill-card {
+      .skill-num {
+        color: #b2ff8f !important;
+      }
+    }
+  }
+
+  // Section 6 - medal
+  .resume-medal {
+    .medal-text {
+      color: #b2ff8f !important;
+    }
+  }
+
+  // Section 9 - notices (yellow box)
+  .resume-notices {
+    .notice-box {
+      &.yellow {
+        color: #b2ff8f !important;
+
+        .notice-text.notice-text-top {
+          font-family: "Jeongmeokbawi", sans-serif !important;
+          font-size: 1rem !important;
+          position: relative;
+          top: 1px;
+        }
+      }
+    }
+  }
+
+  // Section 7 - activities scroll
+  .resume-activities {
+    scrollbar-color: #b2ff8f #2a2a2a !important;
+
+    &::-webkit-scrollbar-thumb {
+      background: #b2ff8f !important;
+    }
+    &::-webkit-scrollbar-thumb:hover {
+      background: #90ee90 !important;
+    }
+  }
+
+  // Bottom section background - Section 8, 9
+  .resume-bottom-section {
+    &::before {
+      background-image: url("/images/0/cluster 1/bg image/PX05.jpg") !important;
+      background-position: center -80px !important;
+    }
+  }
+}
+
+// OK theme scrollbar (default)
+.resume-card .resume-activities::-webkit-scrollbar {
+  width: 2px !important;
+}
+.resume-card .resume-activities::-webkit-scrollbar-button {
+  display: none !important;
+  height: 0 !important;
+  width: 0 !important;
+}
+
+// PX theme scrollbar - must be outside nested rules
+.resume-card.px-theme .resume-activities::-webkit-scrollbar {
+  width: 2px !important;
+}
+.resume-card.px-theme .resume-activities::-webkit-scrollbar-thumb {
+  background: #b2ff8f !important;
+  border-radius: 2px !important;
+}
+.resume-card.px-theme .resume-activities::-webkit-scrollbar-thumb:hover {
+  background: #90ee90 !important;
+}
+.resume-card.px-theme .resume-activities::-webkit-scrollbar-button {
+  display: none !important;
+  height: 0 !important;
+  width: 0 !important;
+}
+
+// EC theme scrollbar
+.resume-card.ec-theme .resume-activities::-webkit-scrollbar {
+  width: 2px !important;
+}
+.resume-card.ec-theme .resume-activities::-webkit-scrollbar-thumb {
+  background: #ff98a6 !important;
+  border-radius: 2px !important;
+}
+.resume-card.ec-theme .resume-activities::-webkit-scrollbar-thumb:hover {
+  background: #ff6b8a !important;
+}
+.resume-card.ec-theme .resume-activities::-webkit-scrollbar-button {
+  display: none !important;
+  height: 0 !important;
+  width: 0 !important;
+}
+
+// Cluster Tabs Navigation — Figma(Group 2121454060) 2-row layout
+.cluster-tabs {
+  width: 100%;
+  padding: 0;
+  margin-top: 0;
+  margin-bottom: 15px;
+  position: relative;
+  z-index: 50;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+
+  .cluster-tabs-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    align-items: center;
+    gap: 18px;
+  }
+
+  .cluster-tab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    height: 56px;
+    min-width: 0;
+    padding: 23px 20px;
+    border-radius: 0;
+    font-family: var(--chakra-petch), "Chakra Petch", sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+    color: #fed402;
+    // Figma: #1c1f18 opacity 0.6
+    background: rgba(28, 31, 24, 0.6);
+    // Figma: individualStrokeWeights top:1 right:0 bottom:1 left:0
+    border: none;
+    border-top: 1px solid #ffffff;
+    border-bottom: 1px solid #ffffff;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+    cursor: pointer;
+    // Figma: BACKGROUND_BLUR radius 12
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-sizing: border-box;
+
+    .tab-text {
+      font-family: var(--chakra-petch), "Chakra Petch", sans-serif;
+      font-weight: 700;
+      line-height: 26px;
+      // Figma: diagonal gradient #FED402 → #FFF1AA
+      background: linear-gradient(145deg, #fed402, #fff1aa);
+      background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    &:hover {
+      background: rgba(254, 212, 2, 0.15);
+    }
+
+    &.active {
+      // Figma: diagonal gradient background
+      background: linear-gradient(145deg, #fed402, #fff1aa) !important;
+      // Figma: stroke #000 top:1 right:0 bottom:1 left:0
+      border-top: 1px solid #000000 !important;
+      border-bottom: 1px solid #000000 !important;
+
+      .tab-text {
+        font-family: var(--chakra-petch), "Chakra Petch", sans-serif;
+        font-weight: 700;
+        background: none !important;
+        -webkit-text-fill-color: #000 !important;
+        -webkit-background-clip: unset !important;
+        background-clip: unset !important;
+      }
+    }
+
+    &.placeholder {
+      cursor: default;
+      pointer-events: none;
+      opacity: 1;
+    }
+  }
+
+  // Diamond separator (Figma: Group 131423 / 131422)
+  // Positioned absolutely within the active .cluster-tab
+  .cluster-tabs-diamond {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    width: 7px;
+    height: 44px;
+    z-index: 10;
+
+    // Figma: 5px from tab left edge, vertically centered
+    &.diamond-left {
+      left: 5px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+
+    // Figma: 5px from tab right edge (259 - 7 - 5 = 247), vertically centered
+    &.diamond-right {
+      right: 5px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+
+    .diamond-line {
+      width: 1px;
+      height: 25px;
+      background: #000;
+      flex-shrink: 0;
+    }
+
+    .diamond-shapes {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+
+      .diamond-filled {
+        width: 7px;
+        height: 7px;
+        background: #000;
+        flex-shrink: 0;
+      }
+
+      .diamond-outline {
+        width: 7px;
+        height: 7px;
+        border: 1px solid #000;
+        box-sizing: border-box;
+        flex-shrink: 0;
+      }
+    }
+  }
+}
+
+.edit-icon.search-icon {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+
+  svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .tooltip {
+    display: none;
+    position: absolute;
+    top: -30px;
+    right: 0;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    z-index: 30;
+  }
+
+  &:hover .tooltip {
+    display: block;
+  }
+}

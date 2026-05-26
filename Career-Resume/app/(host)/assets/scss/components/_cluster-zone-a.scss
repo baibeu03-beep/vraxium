@@ -1,0 +1,38 @@
+/* ============================================
+   Cluster Pages — Zone A 폭 확장
+
+   목적: Zone A 뷰포트(< 1920px)에서 클러스터 페이지가
+        Zone B(1920px)와 동일한 시각적 결과를 가로 스크롤로 보여주도록 함
+
+   적용 대상:
+   - /cluster-3 (.cluster3-content)
+   - /cluster-4 (.cluster4-content)
+   - /cluster-4-1 (.cluster4-content - cluster4와 클래스 공유)
+   - /cluster-4-card/* (.cluster4-card-content)
+
+   참고: /cluster-2는 _cluster2.scss에서 별도 처리됨 (이미 push 완료)
+
+   메커니즘 (cluster2에서 검증 완료):
+   - 부모 .nftg-app: 1920 → 1995 (= 1920 + nftg-sidebar 75px) 확장
+     → nftg-sidebar(75px sticky)의 자리를 확보
+   - 자식 .nftg-layout: flex: 1 1 0% → flex: 0 0 1920px 강제
+     → 메인 콘텐츠 영역이 1920px 전체를 받음
+   - .home-two-content-col은 flex 메커니즘에 의해 자동으로 75px 확장 (1238→1293)
+   - .nftg-sidebar는 변경 없음 (sticky 유지, 햄버거 메뉴 정상 표시)
+
+   Zone B(1920px) 절대 보호: @media (max-width: 1919px), (min-width: 1920px) and (max-width: 2559px) and (min-height: 1200px) 안에서만 동작
+   ============================================ */
+@media (max-width: 1919px), (min-width: 1920px) and (max-width: 2559px) and (min-height: 1200px) {
+  .nftg-app:has(.cluster3-content),
+  .nftg-app:has(.cluster4-content),
+  .nftg-app:has(.cluster4-card-content) {
+    width: 1995px !important;
+    min-width: 1995px !important;
+
+    > .nftg-layout {
+      flex: 0 0 1920px !important;
+      width: 1920px !important;
+      min-width: 1920px !important;
+    }
+  }
+}

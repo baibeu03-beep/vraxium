@@ -1,0 +1,182 @@
+// =============================================================
+// PX (Phalanx) resume-card override.
+//
+// 적용 범위 :
+//   `.resume-card.px-theme`           — Sidebar.tsx 가 debugPanelType="PX" 일 때 부착.
+//   `.cluster-px-theme .resume-card`  — (cluster-pages)/layout.tsx 가 -px 라우트일 때
+//                                       <main> 에 cluster-px-theme 부착 → 그 하위.
+//   두 selector 를 OR 로 묶어 둘 중 하나라도 맞으면 PX 톤 적용.
+//
+// 색상 source : _px-tokens.scss 의 --px-accent / --px-accent-soft / -glow / -gradient.
+//
+// 본 파일은 _resume-card.scss 의 .resume-card.px-theme 블록(loose 한 #36da60 사용)
+// 보다 main.scss 에서 더 뒤에 import 되므로 cascade 우선순위로 이긴다.
+//
+// 사용자 mapping :
+//   #FFEC8F / #FED402 / #FFF1AA / #FFD700  → --px-accent-soft (#B2FF8F)
+//   #FFC300 / #FAAB07 / #FFA500 / #FFC919  → --px-accent       (#1E9503)
+//   rgba glow 는 alpha 보존, hue 만 green 으로 교체.
+// =============================================================
+
+// ─────────────────────────────────────────────
+// 1) Identity-Core 상단 그라데이션 — _resume-card.scss line 111
+//    base : linear-gradient(to right, rgba(0,0,0,..), rgba(250, 171, 7, 0.75))
+//    px   : 같은 alpha 유지, hue 만 strong PX 로.
+// ─────────────────────────────────────────────
+.cluster-px-theme .resume-card::before,
+.resume-card.px-theme::before {
+  background:
+    linear-gradient(to right, rgba(0, 0, 0, var(--identity-tab-overlay, 0.45)), rgba(30, 149, 3, 0.75)),
+    var(--identity-tab-bg) center 42% / cover no-repeat !important;
+}
+
+// ─────────────────────────────────────────────
+// 2) 누락된 3 selector + SVG stroke 보충
+//    (.resume-card.px-theme 블록이 안 잡는 곳)
+// ─────────────────────────────────────────────
+.cluster-px-theme .resume-card,
+.resume-card.px-theme {
+  // .major-text 의 색 처리는 아래 3b) 블록에서 처리(본문 #fff + 화살표만 PX green).
+
+  // _resume-card.scss line 761 (작은 dot)
+  .stat-row .stat-dot {
+    background: var(--px-accent-soft, #B2FF8F);
+  }
+
+  // _resume-card.scss line 935 (메달 위 큰 "12")
+  .resume-medal .medal-week-num {
+    color: var(--px-accent-soft, #B2FF8F);
+  }
+
+  // Sidebar.tsx line 2119 의 inline SVG path stroke
+  .resume-details path[stroke="#FFEC8F"],
+  .resume-details path[stroke="#ffec8f"] {
+    stroke: var(--px-accent-soft, #B2FF8F);
+  }
+}
+
+// ─────────────────────────────────────────────
+// 3) 사용자 strict mapping 강제 — base .resume-card.px-theme 블록의
+//    loose #36da60 / #b2ff8f 를 토큰 기반으로 일관 처리.
+//    base 와 같은 selector 를 다시 쓰되 본 파일이 cascade 뒤이므로 이긴다.
+// ─────────────────────────────────────────────
+.cluster-px-theme .resume-card,
+.resume-card.px-theme {
+  // 3-1) Section 3 — intro 좌측 세로 bar (#FFC300 → strong PX)
+  //      _resume-card.scss line 695 + base px-theme line 1556 을 모두 override.
+  .resume-intro::before {
+    background: var(--px-accent, #1E9503) !important;
+  }
+
+  // 3-2) Section 4 — stats values
+  //      _resume-card.scss line 775, 784, 801
+  .resume-stats {
+    .stat-item .stat-row .stat-value {
+      color: var(--px-accent-soft, #B2FF8F) !important;
+      .stat-unit {
+        color: var(--px-accent-soft, #B2FF8F) !important;
+      }
+    }
+    .progress-bar .progress-fill {
+      background: var(--px-accent-soft, #B2FF8F) !important;
+    }
+  }
+
+  // 3-3) Section 5 — badges
+  //      _resume-card.scss line 854, 863
+  .resume-badges {
+    .badge-group .badge-num {
+      color: var(--px-accent-soft, #B2FF8F) !important;
+      &.red {
+        color: var(--px-accent-soft, #B2FF8F) !important;
+      }
+    }
+  }
+
+  // 3-4) Section 6 — medal text + complete glow
+  //      _resume-card.scss line 899 (drop-shadow gold/orange) + 952 (color)
+  .resume-medal {
+    .medal-text {
+      color: var(--px-accent-soft, #B2FF8F) !important;
+    }
+    &.no-overlay .medal-text {
+      filter:
+        drop-shadow(0 0 8px var(--px-accent-soft-glow, rgba(178, 255, 143, 0.9)))
+        drop-shadow(0 0 16px var(--px-accent-glow, rgba(30, 149, 3, 0.6)));
+    }
+  }
+
+  // 3-5) Section 7 — activity badges
+  //      _resume-card.scss line 1140, 1144
+  .resume-activities {
+    .activity-row .activity-line {
+      .activity-badge {
+        &.active,
+        &.complete {
+          color: var(--px-accent-soft, #B2FF8F) !important;
+        }
+      }
+    }
+  }
+
+  // 3-6) Section 8 — skill numbers (실무 정보/경험/역량/경력)
+  //      _resume-card.scss line 1249
+  .resume-skills .skill-card .skill-num {
+    color: var(--px-accent-soft, #B2FF8F) !important;
+  }
+
+  // 3-7) Section 9 — notice yellow box color
+  //      _resume-card.scss line 1387
+  .resume-notices .notice-box.yellow {
+    color: var(--px-accent-soft, #B2FF8F) !important;
+  }
+}
+
+// ─────────────────────────────────────────────
+// 4) WebKit 스크롤바 (px-theme 블록이 이미 처리하지만 토큰화)
+// ─────────────────────────────────────────────
+.cluster-px-theme .resume-card .resume-activities,
+.resume-card.px-theme .resume-activities {
+  scrollbar-color: var(--px-accent-soft, #B2FF8F) #2a2a2a !important;
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--px-accent-soft, #B2FF8F) !important;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--px-accent, #1E9503) !important;
+  }
+}
+
+// =============================================================
+// 5) resume-details 잔여 yellow/gold 강제 override
+// =============================================================
+// _resume-card.scss 의 base 규칙
+//   - .detail-icon { filter: brightness(0) invert(0.77) sepia(1) saturate(1.79); } (yellow tint)
+//   - .major-text  { color: #ffec8f; }
+//   - .text .sub-text { color: #999; }
+// 이 PX scope 에서 다시 노란/회색 톤으로 끌어내려 학과명·아이콘이 보정되지 않음.
+// 이미 PNG 가 `*-px.png` (green-tinted) 로 교체되어 있으므로 filter 자체가
+// 불필요 → none 강제. 텍스트/화살표 stroke 도 동일 강도(!important)로 PX green 고정.
+// 본 블록은 의도적으로 파일 최하단에 위치 (cascade 우선순위 확보).
+.cluster-px-theme {
+  .resume-card {
+    .resume-details {
+
+      .detail-icon {
+        filter: none !important;
+      }
+
+      .major-text {
+        color: #B2FF8F !important;
+      }
+
+      .major-text svg path {
+        stroke: #B2FF8F !important;
+      }
+
+      .sub-text {
+        color: #B2FF8F !important;
+      }
+    }
+  }
+}

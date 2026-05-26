@@ -1,0 +1,653 @@
+/* =========================================
+ * Weekly Ranking Page
+ * Scope: .weekly-ranking-page 하위로만 한정. 다른 페이지 영향 금지.
+ * ========================================= */
+
+// [수정 1] Khula 400/600/800 — cluster-2/cluster4-season에서 800만 로드되어 있어 600 weight 보장 위해 명시 import
+@import url('https://fonts.googleapis.com/css2?family=Khula:wght@400;600;800&display=swap');
+
+/* ============================================================
+   Weekly Hero — Animation Keyframes
+   진입 4종 + 무한 4종. transform/opacity만 사용 (GPU 가속).
+   ============================================================ */
+
+// 진입 애니메이션
+@keyframes weekly-hero-fade-scale {
+  from { opacity: 0; transform: scale(1.05); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes weekly-hero-slide-from-right {
+  from { opacity: 0; transform: translateX(30px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+// .weekly-hero__desc 전용 — 정적 translateY(-37px) 위치 보존
+// (범용 slide-up을 적용하면 both fill로 위치가 0으로 덮여 37px 아래로 밀리는 문제 회피)
+@keyframes weekly-hero-slide-up-desc {
+  from { opacity: 0; transform: translateY(-13px); } // -37 + 24
+  to   { opacity: 1; transform: translateY(-37px); }
+}
+
+@keyframes weekly-hero-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+// 무한 모션
+@keyframes weekly-hero-shadow-drift {
+  // 정적 transform: translate(4px, 0) 시작점과 일치
+  0%, 100% { transform: translate(4px, 0); }
+  50%      { transform: translate(7px, 1px); }
+}
+
+@keyframes weekly-hero-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-5px); }
+}
+
+@keyframes weekly-hero-border-pulse {
+  0%, 100% { border-left-color: rgba(240, 196, 25, 0.7); }
+  50%      { border-left-color: rgba(240, 196, 25, 1); }
+}
+
+@keyframes weekly-hero-image-sway {
+  0%, 100% { transform: rotate(-2deg); }
+  50%      { transform: rotate(2deg); }
+}
+
+/* ============================================================
+   [시네마틱 회차] 추가 키프레임 — 진입 + 무한 강화
+   ============================================================ */
+
+// 배경 진입: scale 1.1 → 1.0 (1.5초)
+@keyframes weekly-hero-bg-zoomin {
+  from { transform: scale(1.1); }
+  to   { transform: scale(1); }
+}
+
+// 배경 무한: Ken Burns (12초, 1.0 ↔ 1.03)
+@keyframes weekly-hero-bg-ken-burns {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.03); }
+}
+
+// 타이틀 글자: stagger drop (overshoot 곡선)
+@keyframes weekly-hero-char-drop {
+  from { opacity: 0; transform: translateY(-20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+// 타이틀 무한: text-shadow 빛남 (8초)
+@keyframes weekly-hero-title-glow {
+  0%, 100% {
+    text-shadow:
+      0 0 0 transparent,
+      0 0 20px rgba(255, 255, 255, 0);
+  }
+  50% {
+    text-shadow:
+      0 0 8px rgba(255, 255, 255, 0.3),
+      0 0 24px rgba(255, 255, 255, 0.1);
+  }
+}
+
+// 격언 한국어 무한: 그라디언트 좌→우 흐름
+@keyframes weekly-hero-quote-shimmer {
+  from { background-position: 0% 0%; }
+  to   { background-position: 200% 0%; }
+}
+
+// 격언 영역 진입: fade + 미세 scale, 단 정적 translateY(-76px) 위치 보존
+@keyframes weekly-hero-quote-fade-scale {
+  from { opacity: 0; transform: translateY(-76px) scale(1.05); }
+  to   { opacity: 1; transform: translateY(-76px) scale(1); }
+}
+
+/* ============================================================
+   [스파클 회차] 슬로건 박스 4모서리 스파클
+   6초 주기 — 첫 25%(1.5초)만 활성, 나머지 정지
+   4개가 1.5초씩 시차 → 항상 1개만 활성 (시선 분산 0)
+   ============================================================ */
+@keyframes weekly-hero-sparkle {
+  0% {
+    opacity: 0;
+    transform: scale(0) rotate(0deg);
+  }
+  12.5% {
+    opacity: 1;
+    transform: scale(1.2) rotate(180deg);
+  }
+  25%, 100% {
+    opacity: 0;
+    transform: scale(0) rotate(360deg);
+  }
+}
+
+.weekly-ranking-page {
+  width: 100%;
+  padding: 24px 0;            // [수정 2] 좌우 패딩 0 — Hero가 wrapper 풀폭
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+
+  .weekly-filter-wrap,
+  .weekly-team-stats-placeholder,
+  .weekly-list-placeholder {
+    width: 100%;
+    max-width: 1400px;
+    margin-left: auto;
+    margin-right: auto;
+    box-sizing: border-box;
+  }
+
+  /* ---------- [1] Hero ---------- */
+  .weekly-hero {
+    position: relative;
+    width: 100%;                 // [v4] wrapper가 풀폭(/crews 패턴)이므로 width 100%로 자연스러운 풀폭
+    margin-left: 0;              // [v4] 음수 마진 제거 — wrapper 자체가 이미 풀폭
+    margin-right: 0;
+    height: 700px;               // [v5] aspect-ratio 1456/816 → 고정 700px (Q1 B / Q2 추천)
+    border-radius: 16px;
+    overflow: hidden;
+    background: #cfeafe;
+    isolation: isolate;
+
+    &__bg {
+      position: absolute;
+      inset: 0;
+      background-image: url("/images/0/weekly.png");
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      opacity: 1;               // [수정 1] 0.85 → 1 (오버레이로 톤 조절)
+      z-index: 0;
+      // [시네마틱] 진입 zoom-in (1.5s, 1.1 → 1.0) + 진입 끝나는 시점에 무한 Ken Burns 시작
+      // 둘 다 transform: scale 사용 → 다중 적용 시 마지막이 우선이므로 1.5s에서 자연 전환
+      transform-origin: center center;
+      animation:
+        weekly-hero-bg-zoomin 1.5s ease-out 0s both,
+        weekly-hero-bg-ken-burns 12s ease-in-out 1.5s infinite;
+    }
+
+    // [수정 1] 신규 — 그라디언트 오버레이
+    &__overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        180deg,
+        rgba(0, 0, 0, 0.55) 0%,
+        rgba(0, 0, 0, 0.65) 100%
+      );
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    &__inner {
+      position: relative;
+      z-index: 2;
+      height: 100%;
+      padding: 24px 64px;          // [v8] 56 → 24 (콘텐츠 그룹 전체 위로 32px 이동)
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+      justify-content: flex-start;
+    }
+
+    &__top {
+      display: flex;
+      align-items: flex-start;   // [v6] flex-end → flex-start: 타이틀과 슬로건 박스를 같은 top 좌표에서 시작
+      justify-content: space-between;
+      gap: 32px;
+      flex-wrap: wrap;
+    }
+
+    // [수정 4 v3] cluster-2 PROFILE 그림자 효과 — wrapper + shadow + title 2층
+    &__title-wrap {
+      position: relative;
+      display: inline-block;
+      margin: 0;
+      // [시네마틱] wrap 자체 진입 애니메이션 제거 — 자식 글자 span이 각자 stagger로 등장
+    }
+
+    &__title-shadow {
+      position: absolute;
+      top: 3px;                  // cluster-2와 동일
+      left: 0;
+      margin: 0;
+      font-family: 'Khula', 'Pretendard', sans-serif;
+      font-weight: 800;
+      font-size: 72px;
+      line-height: 75.6px;       // cluster-2 .cluster2-title 실측
+      text-transform: uppercase;
+      letter-spacing: 0;
+      color: #111;               // 어두운 그림자 색
+      z-index: 0;
+      transform: translate(4px, 0);  // cluster-2의 -157px 절대값 대신 길이무관 4px offset
+      pointer-events: none;
+      user-select: none;
+      white-space: nowrap;
+      // 무한: 그림자 4px ⇄ 7px 어긋남 (진입 완료 후 1.4s부터)
+      animation: weekly-hero-shadow-drift 3s ease-in-out 1.4s infinite;
+    }
+
+    &__title {
+      position: relative;
+      z-index: 1;
+      font-family: 'Khula', 'Pretendard', sans-serif;
+      font-weight: 800;
+      font-size: 72px;
+      line-height: 75.6px;       // cluster-2 .cluster2-title 실측
+      text-transform: uppercase;
+      letter-spacing: 0;
+      color: #fff;
+      margin: 0;
+      white-space: nowrap;
+      // [시네마틱] 무한: 간헐적 빛남 (text-shadow 강도, 8초, 진입 완료 후 2s부터)
+      animation: weekly-hero-title-glow 8s ease-in-out 2s infinite;
+    }
+
+    // [시네마틱] 타이틀 글자별 stagger 등장 (animation-delay는 TSX inline style)
+    &__title-char {
+      display: inline-block;     // span에 transform 적용 위해 필수
+      opacity: 0;                // 진입 전 안 보임
+      transform: translateY(-20px);
+      // cubic-bezier(0.34, 1.56, 0.64, 1) — overshoot 곡선 (살짝 튕김)
+      animation: weekly-hero-char-drop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+
+    &__slogan {
+      position: relative;         // [스파클 회차] 4모서리 스파클 absolute 배치 기준
+      max-width: 1200px;          // [v8] 800 → 1200 (48px 폰트 줄바꿈 방지)
+      padding: 17px 22px;
+      background: rgba(110, 192, 107, 0.18);
+      border: 1.5px solid rgba(110, 192, 107, 0.55);
+      border-radius: 8px;
+      font-family: 'HakgyoansimTuho', sans-serif;
+      font-size: 24px;            // 유지
+      font-weight: 400;
+      line-height: 36px;          // [v13] 28 → 36 (행간 +8)
+      letter-spacing: normal;
+      color: #fff;
+      // [시네마틱] 진입(1.0s 지연 우→좌) + 무한 floating 제거 (정지 유지)
+      // 시네마틱 시퀀스에 맞춰 지연 0.2 → 1.0s (타이틀 글자 stagger 끝나갈 때 슬라이드)
+      animation: weekly-hero-slide-from-right 0.8s ease-out 1.0s both;
+
+      p {
+        margin: 0;
+        font-family: 'HakgyoansimTuho', sans-serif;
+        font-size: 24px;          // 유지
+        line-height: 36px;        // [v13] 28 → 36
+      }
+      &-strong {
+        margin-top: 4px !important;
+        color: #d8f5d6;
+        font-size: 28px !important;   // 유지
+        line-height: 40px !important; // [v13] 32 → 40
+        font-weight: 500 !important;  // 유지
+      }
+    }
+
+    /* ----- [스파클 회차] 슬로건 박스 4모서리 스파클 ----- */
+    // 부모 .weekly-hero가 overflow: hidden이지만 슬로건 박스가 내부 padding 영역에
+    // 위치 → 모서리 -12px 좌표도 .weekly-hero 영역 내에서 보임. 별도 overflow 처리 불필요.
+    &__sparkle {
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      color: #fff8a8;             // 슬로건 노란 강조 톤과 어울리는 따뜻한 노란 흰색
+      opacity: 0;                 // 정지 상태 (animation으로 12.5%에서만 1)
+      pointer-events: none;       // 클릭/호버 영역 침범 방지
+      z-index: 2;
+      transform-origin: center center;
+
+      svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+        // SVG 모양 그대로 빛 번짐 (box-shadow는 사각 박스, drop-shadow는 모양 따라감)
+        filter: drop-shadow(0 0 6px rgba(255, 248, 168, 0.8));
+      }
+
+      // 4모서리 — 박스 모서리에서 -12px (반쪽 바깥), 6초 주기 1.5초씩 시차
+      &--tr { top: -12px;    right: -12px; animation: weekly-hero-sparkle 6s ease-in-out 0s   infinite; }
+      &--bl { bottom: -12px; left:  -12px; animation: weekly-hero-sparkle 6s ease-in-out 1.5s infinite; }
+      &--tl { top: -12px;    left:  -12px; animation: weekly-hero-sparkle 6s ease-in-out 3s   infinite; }
+      &--br { bottom: -12px; right: -12px; animation: weekly-hero-sparkle 6s ease-in-out 4.5s infinite; }
+    }
+
+    &__desc {
+      transform: translateY(-37px);   // [v11] -113 → -37 (이전보다 2cm 약 76px 아래로)
+      max-width: 1500px;          // [v8] 1100 → 1500 (48px 폰트 줄바꿈 방지)
+      padding-left: 20px;
+      border-left: 5px solid #f0c419;
+      font-family: 'HakgyoansimTuho', sans-serif;
+      font-size: 24px;            // 유지
+      font-weight: 400;
+      line-height: 36px;          // [v13] 28 → 36 (행간 +8)
+      letter-spacing: normal;
+      color: #fff;
+      // [시네마틱] 진입 0.4s → 1.2s, 무한 1.4s → 2s (시네마틱 시퀀스 맞춤)
+      // slide-up-desc는 -37px 위치 보존, border-pulse는 다른 속성이라 충돌 없음
+      animation:
+        weekly-hero-slide-up-desc 0.8s ease-out 1.2s both,
+        weekly-hero-border-pulse 2.5s ease-in-out 2s infinite;
+
+      p {
+        margin: 0;
+        font-family: 'HakgyoansimTuho', sans-serif;
+        font-size: 24px;          // 유지
+        line-height: 36px;        // [v13] 28 → 36
+      }
+      &-strong {
+        color: #ffe16a;
+        font-size: 28px !important;   // 유지
+        line-height: 40px !important; // [v13] 32 → 40
+        font-weight: 500 !important;  // 유지
+      }
+    }
+
+    &__quote {
+      display: flex;
+      align-items: center;
+      justify-content: center;  // [정렬] 이미지+텍스트 묶음을 flex축 중앙으로
+      gap: 24px;                // [v6] 28 → 24 원복
+      // [중앙정렬] width: fit-content + 좌우 margin auto 로 block 자체를 hero 중앙에 위치.
+      // margin-top: auto 는 hero 하단으로 push 하는 v7 의도를 그대로 유지.
+      width: fit-content;
+      max-width: 100%;
+      margin: auto auto 0;
+      transform: translateY(-76px);  // [v12] 사용자 요청 — 현재보다 2cm(약 76px @ 96DPI) 위로 (수직 보정, 수평 영향 없음)
+      // [정렬] 좌측 편향의 원인이던 padding-left: 80px 제거
+      // [시네마틱] 진입 0.6s → 1.5s, fade-in → fade + 미세 scale 1.05→1.0
+      // 전용 키프레임이 translateY(-76px)를 from/to 양쪽에 명시 → 위치 보존
+      animation: weekly-hero-quote-fade-scale 0.8s ease-out 1.5s both;
+
+      &-image {
+        flex-shrink: 0;
+        width: 180px;           // [v8] 120 → 180 (1.5배)
+        height: 180px;          // [v8] 120 → 180 (1.5배)
+        border-radius: 50%;
+        object-fit: cover;
+        object-position: center;
+        border: 3px solid rgba(255, 255, 255, 0.15);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        // [시네마틱] 무한: 미세 회전 -2° ⇄ +2° — 시작 1.4s → 2s
+        transform-origin: center center;
+        animation: weekly-hero-image-sway 5s ease-in-out 2s infinite;
+      }
+
+      &-body {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        font-family: 'HakgyoansimTuho', sans-serif;
+        color: #fff;
+      }
+
+      // cluster-2 .quote-highlight 패턴 (노란 그라디언트 라인)
+      // [시네마틱] 2-stop → 5-stop 반복 패턴 + background-size 200%로 shimmer 흐름 구현
+      // 색상 코드는 원본과 100% 동일 (#fed402, #fff1aa) — 반복만 추가
+      &-ko {
+        font-family: 'HakgyoansimTuho', sans-serif;
+        font-size: 32px;        // [v6] 48 → 32 원복
+        font-style: italic;
+        font-weight: 400;
+        line-height: 44.8px;    // [v6] 58 → 44.8 원복
+        margin: 0;
+        background: linear-gradient(
+          90deg,
+          #fed402 0%,
+          #fff1aa 25%,
+          #fed402 50%,
+          #fff1aa 75%,
+          #fed402 100%
+        );
+        background-size: 200% 100%;     // shimmer를 위한 패턴 확장 (시각적 색상은 동일)
+        background-position: 0% 0%;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        color: transparent;
+        // 무한: 좌→우 흐름 (4초, linear로 매끄럽게, 진입 완료 후 2s부터)
+        animation: weekly-hero-quote-shimmer 4s linear 2s infinite;
+      }
+      // cluster-2 .quote-text 패턴
+      &-en {
+        font-family: 'HakgyoansimTuho', sans-serif;
+        font-size: 24px;        // [v6] 29 → 24 원복
+        font-style: italic;
+        font-weight: 400;
+        line-height: 33.6px;    // [v6] 40 → 33.6 원복
+        margin: 0;
+        color: rgba(255, 255, 255, 0.85);
+      }
+      // cluster-2 .quote-author 패턴
+      &-author {
+        font-family: 'HakgyoansimTuho', sans-serif;
+        font-size: 24px;        // [v6] 29 → 24 원복
+        font-style: italic;
+        font-weight: 400;
+        line-height: 33.6px;    // [v6] 40 → 33.6 원복
+        margin: 8px 0 0;
+        text-align: right;
+        padding-right: 32px;
+        color: rgba(255, 255, 255, 0.7);
+      }
+    }
+  }
+
+  /* ---------- [2] Filter Bar — tournaments 패턴 차용 ---------- */
+  // 외곽(.tournaments__filter), nice-select 스타일은 sections/_all-sections.scss L2370 그대로 cascade
+  // 본 영역은 weekly 고유 요소(RESET 버튼 + 전체 수/검색 결과 read-only)만 정의
+
+  // [재수정 v3] _all-sections.scss(line 2370~)가 main.scss에서 본 파일보다 늦게 import되어
+  // .tournaments .tournaments__filter { gap: 120px; flex-wrap: wrap; padding: 40px;
+  // justify-content: space-between; } 가 cascade로 이김. 따라서 !important로 override.
+  // [gap 72px 확대] 사용자 요청 — 요소 간 간격을 18px → 72px로 확대.
+  // 한 줄 유지는 select width와 max-width(1400px)로 보장 (총 width ≈ 1180px < 1400px).
+  .tournaments__filter {
+    width: 100% !important;
+    display: flex !important;
+    flex-flow: row nowrap !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 72px !important;
+    column-gap: 72px !important;
+    row-gap: 0 !important;
+    padding: 18px 20px !important;
+    flex-wrap: nowrap !important;
+
+    > * {
+      flex: 0 0 auto !important;
+      margin-left: 0 !important;
+      margin-right: 0 !important;
+      white-space: nowrap;
+    }
+
+    .nice-select {
+      flex-shrink: 0;
+    }
+  }
+
+  // [React select 교체] 공용 nice-select2 라이브러리의 DOM 조작과 React state 충돌로 인한
+  // 1회 클릭 적용 실패를 해결하기 위해 weekly-ranking 필터 select 3개를 순수 React 컴포넌트
+  // (.weekly-react-select) 로 교체. width는 inline style로 전달, CSS var 불필요.
+  // 시각 스타일은 `.nice-select` cosmetic 규칙(_all-sections.scss L2370~)을 그대로 cascade.
+  .weekly-react-select {
+    position: relative;
+    flex: 0 0 auto !important;
+    box-sizing: border-box;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .tournaments__filter .nice-select {
+    position: relative;
+
+    .current {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      padding-right: 28px;
+      white-space: nowrap !important;
+      word-break: keep-all;
+    }
+
+    // [arrow centering] nice-select2 default의 `transform-origin: 66% 66%` 와
+    // _all-sections.scss(L2401)의 8×8 size override + default `margin-top: -4px` 가
+    // 합쳐져 화살표가 시각적으로 아래로 치우쳐 보임.
+    // top:50% + translateY(-50%) + transform-origin:center 로 강제 수직 중앙 정렬.
+    // 추가 -4px(≈0.1cm @ 96dpi): 사용자 요청 — 화살표만 y좌표 0.1cm 위로 nudge.
+    &::after {
+      position: absolute !important;
+      top: 50% !important;
+      right: 16px !important;
+      transform: translateY(calc(-50% - 4px)) rotate(45deg) !important;
+      transform-origin: center center !important;
+      margin: 0 !important;
+    }
+  }
+
+  // [React select] 드롭다운 옵션 줄바꿈 방지 — .nice-select-dropdown은 position: absolute라
+  // 부모 select 너비를 벗어나 커질 수 있음. width:max-content로 가장 긴 옵션에 맞게 자연 확장.
+  .weekly-react-select {
+    .nice-select-dropdown,
+    .nice-select-dropdown .list {
+      width: max-content !important;
+      min-width: 100%;
+    }
+
+    .nice-select-dropdown .option {
+      width: auto !important;
+      min-width: 100%;
+      box-sizing: border-box;
+      cursor: pointer;
+      white-space: nowrap !important;
+      word-break: keep-all !important;
+      overflow: visible;
+    }
+  }
+
+  .weekly-filter-reset-btn {
+    flex: 0 0 auto !important;
+    padding: 8px 18px;
+    background: var(--quaternary-color);
+    border: none;
+    border-radius: 6px;
+    font-weight: 800;
+    font-size: 13px;
+    color: #1a1a1a;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    white-space: nowrap !important;
+    transition: var(--transition);
+
+    &:hover { opacity: 0.9; }
+    &:active { transform: translateY(1px); }
+  }
+
+  .weekly-filter-group {
+    flex: 0 0 auto !important;
+    display: inline-flex !important;
+    align-items: center;
+    white-space: nowrap;
+  }
+
+  .weekly-filter-group-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-right: 8px;
+    flex: 0 0 auto;
+    color: #fff;
+    font-size: 14px;
+    white-space: nowrap;
+
+    .weekly-filter-dot {
+      color: var(--quaternary-color);
+      font-size: 10px;
+      line-height: 1;
+    }
+
+    .weekly-filter-group-text {
+      color: #999;
+      font-weight: 500;
+    }
+  }
+
+  .weekly-filter-readonly {
+    flex: 0 0 auto !important;
+    display: inline-flex !important;
+    align-items: center;
+    gap: 4px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #fff;
+    font-size: 14px;
+    white-space: nowrap !important;
+
+    .weekly-filter-dot {
+      color: var(--quaternary-color);
+      font-size: 10px;
+      line-height: 1;
+    }
+    .weekly-filter-label {
+      color: #999;
+      font-weight: 500;
+      margin-right: 8px;       // [미세조정] 라벨↔숫자 사이 한 칸 정도 더 띄움 (4 → 8)
+    }
+    .weekly-filter-value {
+      color: var(--quaternary-color);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      font-size: 18px;          // [미세조정] +2 (16 → 18) — 숫자 강조
+      line-height: 1;           // 행 높이 영향 없도록 기존 유지
+    }
+  }
+
+  /* ---------- Placeholders (다음 회차 교체) ---------- */
+  .weekly-team-stats-placeholder,
+  .weekly-list-placeholder {
+    min-height: 160px;
+    padding: 32px;
+    border: 2px dashed rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 14px;
+  }
+
+  .weekly-list-placeholder {
+    min-height: 240px;
+  }
+}
+
+/* ============================================================
+   접근성: prefers-reduced-motion 환경에서 Hero 애니메이션 비활성화
+   (어지럼증/전정 장애 사용자 보호 — 표준 접근성 가이드)
+   [시네마틱] 무한 모션이 늘어 영향 큼 — 강화 처리
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  // 모든 자손 + .weekly-hero 자체 일괄 비활성화
+  .weekly-ranking-page .weekly-hero,
+  .weekly-ranking-page .weekly-hero * {
+    animation: none !important;
+  }
+
+  // 정적 가시 상태 보장 (진입 전 opacity 0/translateY인 요소들)
+  .weekly-ranking-page .weekly-hero__title-char {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .weekly-ranking-page .weekly-hero__quote-ko {
+    background-position: 0% 0% !important;
+  }
+  // [스파클 회차] animation 멈춰도 정지 상태에서 사라진 채 유지 (기본 opacity 0 보장)
+  .weekly-ranking-page .weekly-hero__sparkle {
+    opacity: 0 !important;
+    transform: scale(0) !important;
+  }
+}

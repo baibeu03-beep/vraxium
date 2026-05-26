@@ -1,0 +1,2643 @@
+// 고정 너비 레이아웃 전환: 모바일 반응형 전체 비활성화
+/*
+/ * =====
+ --------- 모바일/태블릿 반응형 스타일 v3 ---------
+
+ 브레이크포인트:
+ - 데스크탑: 1200px 이상
+ - 태블릿: 768px ~ 1199px
+ - 모바일: 480px ~ 767px
+ - 작은 모바일: 479px 이하
+
+ 일관성 원칙:
+ - CSS 변수로 유연한 크기 조절
+ - clamp() 함수로 부드러운 스케일링
+ - 모든 기기에서 동일한 비율 유지
+ ===== * /
+
+// ===== 1. CSS 변수 - 반응형 크기 시스템 =====
+:root {
+  --mobile-padding: 16px;
+  --mobile-gap: 12px;
+  --mobile-radius: 0;
+  
+  // 프로필 카드 크기 변수
+  --profile-photo-width: 110px;
+  --profile-photo-height: 138px;
+  --profile-name-size: 22px;
+  --profile-detail-size: 13px;
+  --profile-intro-size: 15px;
+  
+  // 콘텐츠 크기 변수
+  --content-title-size: 28px;
+  --content-text-size: 15px;
+}
+
+// 767px 이하에서 변수 조정
+@media only screen and (max-width: 767.98px) {
+  :root {
+    --profile-photo-width: 95px;
+    --profile-photo-height: 119px;
+    --profile-name-size: 20px;
+    --profile-detail-size: 12px;
+    --profile-intro-size: 14px;
+    --content-title-size: 24px;
+    --content-text-size: 14px;
+  }
+}
+
+// 480px 이하에서 변수 조정
+@media only screen and (max-width: 479.98px) {
+  :root {
+    --profile-photo-width: 85px;
+    --profile-photo-height: 106px;
+    --profile-name-size: 18px;
+    --profile-detail-size: 11px;
+    --profile-intro-size: 13px;
+    --content-title-size: 20px;
+    --content-text-size: 13px;
+  }
+}
+
+// ===== 2. 태블릿/모바일 공통 (1199px 이하) =====
+@media only screen and (max-width: 1199.98px) {
+  // 스크롤 허용
+  html, body {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    height: auto !important;
+    min-height: 100vh !important;
+  }
+  
+  // ===== 헤더 수정 =====
+  .header {
+    padding: 8px 12px !important;
+    height: 56px !important;
+    min-height: 56px !important;
+    max-height: 56px !important;
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    display: flex !important;
+    align-items: center !important;
+    background: var(--secondary-color, #1a1d24) !important;
+    
+    > .container-fluid,
+    > .container {
+      width: 100%;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+    
+    .navbar {
+      min-height: auto !important;
+      height: auto !important;
+      gap: 12px !important;
+      padding: 0 !important;
+      display: flex !important;
+      align-items: center !important;
+    }
+    
+    .navbar__logo {
+      display: flex !important;
+      align-items: center !important;
+      
+      img {
+        max-width: 32px !important;
+        height: auto !important;
+      }
+    }
+    
+    // 데스크탑 메뉴 숨김
+    .navbar__menu {
+      display: none !important;
+    }
+    
+    .navbar__items-wrapper {
+      gap: 8px !important;
+      flex-wrap: nowrap !important;
+      margin-left: auto !important;
+      display: flex !important;
+      align-items: center !important;
+    }
+    
+    .navbar__items {
+      gap: 6px !important;
+      display: flex !important;
+      align-items: center !important;
+      
+      &:nth-of-type(1) {
+        margin-right: 0 !important;
+      }
+    }
+    
+    .navbar__items-inner {
+      gap: 6px !important;
+      display: flex !important;
+      align-items: center !important;
+    }
+    
+    // 검색, 로그인 버튼 숨김 (모바일에서)
+    .open-search,
+    .btn--primary {
+      display: none !important;
+    }
+    
+    // 장바구니/알림 아이콘
+    .cart-ic {
+      display: none !important;
+    }
+    
+    // 아이콘 크기 조정
+    .icon-drop {
+      width: 36px !important;
+      height: 36px !important;
+      min-width: 36px !important;
+      font-size: 1.125rem !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+    
+    // 메시지, 알림 드롭다운
+    .message-dropdown,
+    .notification-dropdown {
+      .modal-wrapper {
+        position: fixed !important;
+        top: 56px !important;
+        right: 8px !important;
+        left: 8px !important;
+        width: auto !important;
+        max-width: calc(100vw - 16px) !important;
+        max-height: calc(100vh - 70px) !important;
+      }
+    }
+    
+    // 프로필 드롭다운
+    .profile-dropdown {
+      display: flex !important;
+      align-items: center !important;
+      
+      .open-profile {
+        display: flex !important;
+        align-items: center !important;
+        gap: 4px !important;
+      }
+      
+      .hexagon-wrapper {
+        width: 36px !important;
+        height: 36px !important;
+        min-width: 36px !important;
+      }
+      
+      // 이름, 화살표 숨김
+      > button > span:not(.hexagon-wrapper) {
+        display: none !important;
+      }
+      
+      .profile-dropdown__modal {
+        position: fixed !important;
+        top: 56px !important;
+        right: 8px !important;
+        width: 200px !important;
+        max-width: calc(100vw - 16px) !important;
+      }
+    }
+    
+    // 햄버거 버튼
+    .open-offcanvas-nav {
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: center !important;
+      align-items: center !important;
+      gap: 4px !important;
+      width: 36px !important;
+      height: 36px !important;
+      padding: 8px !important;
+      background: none !important;
+      border: none !important;
+      cursor: pointer !important;
+      
+      .icon-bar {
+        width: 20px;
+        height: 2px;
+        background: #fff;
+        transition: all 0.3s;
+      }
+    }
+  }
+  
+  // ===== 모바일 메뉴 (햄버거) 수정 =====
+  .mobile-menu {
+    position: fixed !important;
+    top: 0 !important;
+    right: -320px !important;
+    width: 300px !important;
+    max-width: 85vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    background: var(--secondary-color, #1a1d24) !important;
+    z-index: 10000 !important;
+    transition: right 0.3s ease !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    
+    &.show-menu {
+      right: 0 !important;
+    }
+    
+    .mobile-menu__wrapper {
+      width: 100% !important;
+      max-width: 100% !important;
+      padding: 0 !important;
+      min-height: 100%;
+    }
+    
+    .mobile-menu__header {
+      display: flex !important;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px !important;
+      border-bottom: 1px solid #39424c;
+      position: sticky;
+      top: 0;
+      background: inherit;
+      z-index: 10;
+      
+      .logo {
+        img {
+          width: 50px !important;
+          height: auto !important;
+        }
+      }
+      
+      .close-mobile-menu {
+        font-size: 1.5rem;
+        color: #fff;
+        cursor: pointer;
+        background: none;
+        border: none;
+        padding: 8px;
+      }
+    }
+    
+    .mobile-menu__list {
+      padding: 0 !important;
+      
+      .navbar__list {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        list-style: none !important;
+      }
+      
+      .navbar__item {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        
+        > a {
+          display: block !important;
+          width: 100% !important;
+          padding: 16px 20px !important;
+          text-align: left !important;
+          font-size: 0.875rem !important;
+          color: #fff !important;
+          text-decoration: none !important;
+        }
+        
+        // 서브메뉴가 있는 항목
+        &.navbar__item--has-children {
+          > .navbar__dropdown-label {
+            display: flex !important;
+            justify-content: space-between !important;
+            align-items: center !important;
+            width: 100% !important;
+            padding: 16px 20px !important;
+            text-align: left !important;
+            font-size: 0.875rem !important;
+            color: #fff !important;
+            background: none !important;
+            border: none !important;
+            cursor: pointer !important;
+            
+            &::after {
+              content: '\ea5f';
+              font-family: 'tabler-icons';
+              font-size: 1rem;
+              transition: transform 0.3s;
+            }
+          }
+          
+          // 서브메뉴 - 항상 block, opacity로 토글 안함
+          > .navbar__sub-menu {
+            display: block !important;
+            position: static !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            transform: none !important;
+            background: rgba(0, 0, 0, 0.3) !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+            width: 100% !important;
+            
+            &::before,
+            &::after {
+              display: none !important;
+            }
+            
+            li {
+              border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+              
+              &:last-child {
+                border-bottom: none;
+              }
+              
+              a {
+                display: block !important;
+                padding: 12px 20px 12px 40px !important;
+                font-size: 0.8125rem !important;
+                color: #ccc !important;
+                text-decoration: none !important;
+                
+                &:hover {
+                  color: #fff !important;
+                  background: rgba(255, 255, 255, 0.05) !important;
+                }
+              }
+              
+              // 중첩 서브메뉴
+              &.navbar__item--has-children {
+                > .navbar__dropdown-label-sub {
+                  display: flex !important;
+                  justify-content: space-between !important;
+                  align-items: center !important;
+                  width: 100% !important;
+                  padding: 12px 20px 12px 40px !important;
+                  font-size: 0.8125rem !important;
+                  color: #ccc !important;
+                  background: none !important;
+                  border: none !important;
+                  cursor: pointer !important;
+                  text-align: left !important;
+                  
+                  &::after {
+                    content: '\ea5f';
+                    font-family: 'tabler-icons';
+                    font-size: 0.875rem;
+                  }
+                }
+                
+                > .navbar__sub-menu__nested {
+                  display: block !important;
+                  position: static !important;
+                  opacity: 1 !important;
+                  visibility: visible !important;
+                  background: rgba(0, 0, 0, 0.2) !important;
+                  padding: 0 !important;
+                  
+                  li a {
+                    padding-left: 60px !important;
+                    font-size: 0.75rem !important;
+                  }
+                }
+              }
+            }
+          }
+        }
+        
+        &.active > a,
+        &.active > .navbar__dropdown-label {
+          color: var(--primary-color, #FFA500) !important;
+        }
+      }
+    }
+    
+    .mobile-menu__options {
+      padding: 20px !important;
+      
+      .btn--primary {
+        width: 100% !important;
+        text-align: center !important;
+        display: block !important;
+      }
+    }
+    
+    .mobile-menu__social {
+      padding: 20px !important;
+      display: flex !important;
+      justify-content: center !important;
+      gap: 12px !important;
+      
+      li {
+        list-style: none !important;
+      }
+      
+      .social-btn {
+        width: 40px !important;
+        height: 40px !important;
+      }
+    }
+  }
+  
+  // 모바일 메뉴 백드롭
+  .mobile-menu__backdrop {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    background: rgba(0, 0, 0, 0.6) !important;
+    z-index: 9999 !important;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+    
+    &.mobile-menu__backdrop-active {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+  }
+  
+  // 왼쪽 고정 네비게이션 숨김
+  .nftg-sidebar {
+    display: none !important;
+  }
+
+  // ===== desktop-layout이 남아있을 때도 1단 전환 =====
+  // 모바일 분기가 없는 페이지(cluster-4-card, cluster-5~10 등)에서도 동작
+  .nftg-content-home.desktop-layout,
+  .nftg-content-home {
+    // 모바일 분기 없는 페이지: margin-top 보정
+    &:not(.mobile-layout) {
+      margin-top: 56px !important;
+    }
+
+    .desktop-layout {
+      display: flex !important;
+      flex-direction: column !important;
+      width: 100% !important;
+      gap: 0 !important;
+
+      .sidebar-sticky-wrapper {
+        position: relative !important;
+        top: auto !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        display: flex !important;
+        justify-content: center !important;
+        z-index: auto !important;
+        flex-shrink: 1 !important;
+
+        // sidebar inner도 fixed 해제
+        > div {
+          position: relative !important;
+          top: auto !important;
+          left: auto !important;
+          width: auto !important;
+          z-index: auto !important;
+        }
+      }
+
+      .home-two-content-col {
+        width: 100% !important;
+        margin-left: 0 !important;
+      }
+    }
+
+    // container-fluid 방식 (cluster-4-card 등 구형 레이아웃)
+    > .container-fluid,
+    > .container-fluid > .row {
+      display: flex !important;
+      flex-direction: column !important;
+      flex-wrap: wrap !important;
+      width: 100% !important;
+
+      // 사이드바 공간 확보용 빈 div 숨김
+      > div[style*="sidebar-width"],
+      > div[style*="497px"] {
+        display: none !important;
+      }
+
+      .home-two-sidebar-col {
+        flex: none !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        display: flex !important;
+        justify-content: center !important;
+      }
+
+      .home-two-content-col {
+        flex: none !important;
+        width: 100% !important;
+        margin-left: 0 !important;
+      }
+    }
+
+    // 구형 fixed sidebar inline style override (cluster-4-card 등)
+    > div[style*="position: fixed"],
+    > div[style*="position:fixed"],
+    > div[style*="left: 110px"] {
+      position: relative !important;
+      left: auto !important;
+      top: auto !important;
+      width: 100% !important;
+      display: flex !important;
+      justify-content: center !important;
+      z-index: auto !important;
+    }
+  }
+  
+  // ===== 모바일 레이아웃 =====
+  .nftg-content-home.mobile-layout {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 100vh !important;
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+    padding: 0 !important;
+    margin-top: 56px !important; // 헤더 높이만큼
+    
+    .mobile-container {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      min-height: calc(100vh - 60px);
+      padding: 0;
+    }
+    
+    // ===== 1. 프로필 섹션 =====
+    // iPhone 12 Pro (390px) 기준으로 모든 기기에서 동일하게 보이도록 설정
+    .mobile-sidebar-section {
+      // ★ 모바일에서 sidebar 영역은 차지 공간 없음 (Portal로 body에 렌더링됨)
+      width: 0 !important;
+      height: 0 !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      overflow: visible !important;
+      
+      // 프로필 카드 - 모바일 반응형 (specificity 극대화)
+      .resume-card.resume-card {
+        display: block !important;
+        width: min(366px, calc(100vw - 24px)) !important;
+        max-width: calc(100vw - 24px) !important;
+        min-width: 0 !important;
+        height: auto !important;
+        min-height: auto !important;
+        max-height: none !important;
+        margin: 0 auto !important;
+        padding: 12px !important;
+        box-sizing: border-box !important;
+        overflow: hidden !important;
+        border: 1px solid #666 !important;
+        border-radius: 8px !important;
+        background-color: var(--template-bg, #0a0a0a) !important;
+        position: relative !important;
+        left: 0 !important;
+        right: 0 !important;
+        transform: none !important;
+
+        // 인라인 width:474px (activities wrapper) override
+        > div[style*="474"] {
+          width: 100% !important;
+          max-width: 100% !important;
+        }
+
+        // 헤더 (사진 + 정보)
+        .resume-header.resume-header {
+          display: flex !important;
+          flex-direction: row !important;
+          align-items: flex-start !important;
+          gap: 10px !important; // 원본 0 해제
+          width: 100% !important;
+          margin: 0 0 10px 0 !important; // 원본 -20px 해제
+          padding: 0 !important;
+          overflow: hidden !important;
+
+          // ★ 사진 크기 강제 축소 — 원본 mask/margin 포함 override
+          .resume-photo {
+            width: 90px !important;
+            height: 113px !important;
+            min-width: 90px !important;
+            max-width: 90px !important;
+            min-height: 113px !important;
+            max-height: 113px !important;
+            margin: 0 !important; // 원본 -20px 0 0 -15px 해제
+            flex-shrink: 0 !important;
+            overflow: hidden !important;
+            border-radius: 4px !important;
+            // 원본 mask 해제 — 모바일에서는 사각형으로
+            -webkit-mask-image: none !important;
+            mask-image: none !important;
+
+            // ★ <img width="240" height="273"> HTML 속성 override
+            img,
+            img[width],
+            img[width="240"],
+            img[height="273"] {
+              width: 90px !important;
+              height: 113px !important;
+              min-width: 90px !important;
+              max-width: 90px !important;
+              object-fit: cover !important;
+              display: block !important;
+            }
+
+            .resume-edit-btn {
+              width: 22px !important;
+              height: 22px !important;
+              bottom: 4px !important;
+              right: 4px !important;
+
+              i { font-size: 0.6875rem !important; }
+            }
+          }
+
+          // ★ hexagon 버튼: 인라인 left:213px override
+          > div[style*="213"] {
+            left: auto !important;
+            right: 4px !important;
+            top: 4px !important;
+            gap: 4px !important;
+
+            button {
+              width: 18px !important;
+              height: 18px !important;
+
+              img { width: 18px !important; height: 18px !important; }
+              img:not(.hexagon-border) { width: 9px !important; height: 9px !important; }
+            }
+          }
+
+          // ★ 정보 영역 — 폰트 축소 + overflow
+          .resume-info {
+            flex: 1 !important;
+            min-width: 0 !important;
+            max-width: calc(100% - 100px) !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            overflow: hidden !important;
+
+            .resume-icons {
+              justify-content: flex-start !important;
+              margin-bottom: 4px !important;
+            }
+
+            .resume-name {
+              font-size: 1rem !important;
+              line-height: 1.3 !important;
+              margin: 0 0 6px 0 !important;
+              padding: 0 !important;
+              white-space: nowrap !important;
+              overflow: visible !important;
+              max-width: 100% !important;
+              display: flex !important;
+              align-items: center !important;
+
+              .back-arrow img { width: 14px !important; height: 14px !important; }
+              .name-eng {
+                font-size: 0.6875rem !important;
+                overflow: hidden;
+                text-overflow: ellipsis;
+              }
+
+              .resume-edit-btn {
+                flex-shrink: 0 !important;
+              }
+            }
+
+            .resume-details {
+              gap: 2px !important;
+              width: 100% !important;
+              max-width: 100% !important;
+              overflow: hidden !important;
+
+              .detail-row {
+                font-size: 0.6875rem !important;
+                gap: 4px !important;
+                line-height: 1.4 !important;
+                max-width: 100% !important;
+                overflow: hidden !important;
+                display: flex !important;
+                align-items: center !important;
+
+                .detail-icon,
+                img.detail-icon {
+                  width: 12px !important;
+                  height: 12px !important;
+                  min-width: 12px !important;
+                  flex-shrink: 0 !important;
+                }
+
+                // 인라인 이미지 아이콘 (span 안 img)
+                img[width="13"] {
+                  width: 10px !important;
+                  height: 10px !important;
+                }
+
+                span {
+                  overflow: hidden !important;
+                  text-overflow: ellipsis !important;
+                  white-space: nowrap !important;
+                  max-width: 100% !important;
+                  font-size: 0.6875rem !important;
+                }
+
+                // 인라인 max-width:180px → 100%
+                span[style*="max-width"] {
+                  max-width: 100% !important;
+                }
+
+                // 인라인 font-size: 0.875rem → 11px
+                span[style*="font-size: 0.875rem"],
+                span[style*="font-size: 0.875rem"] {
+                  font-size: 0.6875rem !important;
+                }
+
+                // 인라인 width:16px spacer → 12px
+                span[style*="width: 16px"],
+                span[style*="width:16px"] {
+                  width: 12px !important;
+                  min-width: 12px !important;
+                }
+              }
+            }
+          }
+        }
+
+        // 소개글 — 원본 크기에 가깝게 유지
+        .resume-intro {
+          width: 100% !important;
+          height: auto !important;
+          min-height: 80px;
+          font-size: 1.125rem !important; // 원본 22px → 모바일 18px
+          line-height: 1.5 !important;
+          padding: 14px 20px !important;
+          margin: 0 0 10px 0 !important;
+          box-sizing: border-box !important;
+          word-break: keep-all !important;
+          overflow-wrap: break-word !important;
+
+          .intro-icon {
+            width: 22px !important;
+            height: 22px !important;
+          }
+        }
+        
+        // 3단 영역 - 그리드로 균등 배치 (모든 기기에서 일관)
+        .resume-three-column {
+          display: grid !important;
+          grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+          gap: 10px !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          overflow: hidden !important;
+          padding: 10px 0 !important;
+          box-sizing: border-box !important;
+        }
+        
+        .resume-stats,
+        .resume-badges,
+        .resume-medal {
+          width: 100% !important;
+          min-width: 0 !important;
+          max-width: 100% !important;
+          overflow: hidden !important;
+        }
+        
+        .resume-stats {
+          .stat-row {
+            width: 100% !important;
+          }
+          
+          .progress-bar {
+            width: 100% !important;
+          }
+        }
+        
+        // 활동 내역 - 높이 여유있게
+        .resume-activities {
+          width: 100% !important;
+          height: 80px !important;
+          max-height: 80px !important;
+          overflow-y: auto !important;
+        }
+        
+        // 하단 섹션 (실무 역량 등) - 일관된 정렬
+        .resume-bottom-section {
+          width: 100% !important;
+          max-width: 100% !important;
+          overflow: hidden !important;
+          
+          &::before,
+          &::after {
+            max-width: 100% !important;
+            background-size: cover !important;
+          }
+          
+          // 실무 역량 - 균등 배치 (기기 상관없이 동일)
+          .resume-skills {
+            display: grid !important;
+            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+            gap: 8px !important;
+            padding: 12px 8px !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+            
+            .skill-card {
+              width: 100% !important;
+              min-width: 0 !important;
+              max-width: 100% !important;
+              padding: 6px 4px !important;
+              text-align: center !important;
+              display: flex !important;
+              flex-direction: column !important;
+              align-items: center !important;
+              
+              .skill-num {
+                font-size: 0.875rem !important;
+              }
+              
+              .skill-label {
+                font-size: 0.625rem !important;
+                white-space: normal !important; // nowrap 해제
+                word-break: keep-all !important; // 의미 단위 줄바꿈
+                overflow-wrap: break-word !important;
+                overflow: visible !important;
+                text-overflow: unset !important;
+                max-width: 100%;
+                line-height: 1.3 !important;
+                text-align: center !important;
+              }
+            }
+          }
+          
+          // 공지 영역 - 왼쪽 정렬 (일관성)
+          .resume-notices {
+            width: 100% !important;
+            max-width: 100% !important;
+            padding: 8px 10px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            box-sizing: border-box !important;
+            
+            .notice-box {
+              width: 100% !important;
+              max-width: 100% !important;
+              padding: 8px !important;
+              font-size: 0.6875rem !important;
+              display: flex !important;
+              align-items: center !important;
+              justify-content: flex-start !important;
+              gap: 8px !important;
+              
+              .notice-icon-img {
+                width: 20px !important;
+                height: 20px !important;
+                flex-shrink: 0 !important;
+              }
+              
+              .notice-text {
+                flex: 1 !important;
+                min-width: 0 !important;
+                text-align: left !important;
+                font-size: 0.6875rem !important;
+                overflow: hidden;
+                text-overflow: ellipsis;
+              }
+              
+              .notice-stamp {
+                width: 24px !important;
+                height: 24px !important;
+                flex-shrink: 0 !important;
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // ===== 2. 탭 섹션 =====
+    .mobile-tabs-section {
+      width: 100%;
+      padding: 0 !important;
+      box-sizing: border-box;
+      
+      .cluster-tabs {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+
+        .cluster-tabs-row {
+          display: flex !important;
+          flex-direction: row !important;
+          flex-wrap: nowrap !important;
+          overflow-x: auto !important;
+          -webkit-overflow-scrolling: touch;
+          gap: 6px !important;
+          padding: 4px 12px;
+          max-width: none !important;
+          width: 100% !important;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+
+          &::-webkit-scrollbar {
+            display: none;
+          }
+        }
+
+        .cluster-tabs-diamond {
+          display: none !important;
+        }
+        
+        .cluster-tab {
+          width: auto !important;
+          min-width: 130px !important;
+          height: 38px !important;
+          padding: 0 12px !important;
+          font-size: 0.625rem !important;
+          flex-shrink: 0;
+        }
+      }
+    }
+    
+    // ===== 3. 메인 콘텐츠 섹션 - 가독성 향상 =====
+    .mobile-content-section {
+      width: 100%;
+      padding: 0;
+      box-sizing: border-box;
+      overflow-x: hidden;
+      
+      // 모든 클러스터 콘텐츠 공통 스타일
+      .cluster1-content,
+      .cluster2-content,
+      .cluster3-content,
+      .cluster4-content {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0 !important;
+        overflow-x: hidden !important;
+
+        // ★ 문제 3: 모든 *-shadow DOM 요소 모바일에서 숨김 (들쭉날쭉 방지)
+        [class*="-shadow"],
+        [class*="_shadow"] {
+          display: none !important;
+        }
+
+        // ★ 문제 5: 첫 섹션 텍스트 크기 UP (모든 클러스터 공통)
+        [class*="-section1"],
+        [class*="_section1"] {
+          .section-title,
+          [class*="-title"]:not([class*="-shadow"]) {
+            font-size: clamp(22px, 6vw, 36px) !important;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8) !important;
+          }
+        }
+
+        // ★ 문제 1: "이 페이지는~" 텍스트 크기 — 모든 클러스터 통일
+        .section1-description {
+          padding-top: 8px !important;
+          padding-bottom: 0 !important;
+          max-width: 100% !important;
+
+          p, .quote-text, .small-text {
+            font-size: clamp(16px, 4.2vw, 20px) !important;
+            line-height: 1.65 !important;
+          }
+
+          .quote-highlight {
+            font-size: clamp(19px, 5.2vw, 24px) !important;
+          }
+        }
+
+        // cluster4/4-1: 제목과 설명 사이 간격 축소
+        .section1-title-wrapper {
+          margin-bottom: 10px !important; // 37px → 10px
+          padding-top: 24px !important;   // 48px → 24px
+        }
+        
+        // 타이틀 섹션 - 여유있게
+        .cluster2-title-wrapper {
+          width: 100% !important;
+          max-width: 100% !important;
+          padding: 24px 20px !important;
+          height: auto !important;
+          min-height: 200px;
+          // 데스크톱에서 섹션이 겹치던 구조를 모바일에서는 완화
+          // ("너 자신을 알라" 섹션과 Adventure 섹션이 너무 붙어 보이는 문제 해결)
+          margin-bottom: 16px !important;
+          
+          &::before {
+            width: 100% !important;
+          }
+          
+          .cluster2-title,
+          .cluster2-title-shadow {
+            font-size: clamp(22px, 6vw, 32px) !important;
+            letter-spacing: 1px !important;
+          }
+          
+          // text-shadow 요소 숨김 (별도 DOM shadow 제거)
+          .cluster2-title-shadow {
+            display: none !important;
+          }
+          
+          // section1-description → 공통 규칙에 위임 (위에서 .section1-description으로 통일)
+        }
+        
+        // 상단 프레임
+        .cluster2-top-frame {
+          width: 100% !important;
+          max-width: 100% !important;
+          height: auto !important;
+          min-height: auto !important;
+          padding: 16px !important;
+          margin-top: 12px !important;
+          flex-direction: column !important;
+          align-items: center !important;
+          background-size: cover !important;
+          
+          .floating-icons {
+            top: 10px !important;
+            right: 10px !important;
+          }
+          
+          .frame-left {
+            width: 100% !important;
+            margin-bottom: 16px !important;
+            
+            .adventure-title {
+              position: static !important;
+              text-align: center !important;
+              font-size: 1.25rem !important;
+              margin-bottom: 16px !important;
+            }
+            
+            .hexagon-large-row {
+              position: static !important;
+              width: 100% !important;
+              justify-content: center !important;
+              gap: 16px !important;
+              
+              .hexagon-large-item {
+                .hex-large {
+                  width: 50px !important;
+                  height: 50px !important;
+                }
+                
+                .hex-label {
+                  font-size: 0.625rem !important;
+                }
+              }
+            }
+          }
+          
+          .frame-center {
+            margin: 16px auto !important;
+            // 데스크톱 absolute 배치 해제 (모바일/태블릿에서 한 번에 보이게)
+            position: static !important;
+            left: auto !important;
+            top: auto !important;
+            transform: none !important;
+            width: min(320px, 100%) !important;
+            height: auto !important;
+            // 데스크톱(Figma) 컨테이너 비율: 422 x 603
+            aspect-ratio: 422 / 603;
+          }
+          
+          .frame-right {
+            width: 100% !important;
+            align-items: center !important;
+            // 데스크톱 absolute 배치 해제 + 섹션 내부 스크롤 방지
+            position: static !important;
+            right: auto !important;
+            top: auto !important;
+            transform: none !important;
+            overflow: visible !important;
+
+            .mascot-icon {
+              width: 110px !important;
+              height: 90px !important;
+            }
+
+            .progress-label {
+              margin-top: 4px !important;
+              font-size: 0.8125rem !important;
+            }
+
+            .progress-value {
+              font-size: 1.5rem !important;
+            }
+          }
+
+          // 작은 모바일에서는 상단 프레임을 한 화면에 담기 위해 좌측 정보 축소
+          @media only screen and (max-width: 767.98px) {
+            .frame-left {
+              margin-bottom: 8px !important;
+
+              .hexagon-large-row,
+              .avatar-row {
+                display: none !important;
+              }
+
+              .adventure-title {
+                margin-bottom: 8px !important;
+              }
+            }
+          }
+        }
+        
+        // 비디오 섹션
+        .cluster2-videos {
+          width: 100% !important;
+          max-width: 100% !important;
+          padding: 16px !important;
+          
+          .videos-header {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 12px !important;
+            
+            h2 {
+              font-size: 1.125rem !important;
+            }
+          }
+          
+          .videos-grid {
+            grid-template-columns: 1fr !important;
+            gap: 16px !important;
+          }
+        }
+        
+        // 인용문 섹션
+        .cluster2-quotes {
+          width: 100% !important;
+          max-width: 100% !important;
+          padding: 16px !important;
+          
+          .quotes-cards {
+            flex-direction: column !important;
+            gap: 16px !important;
+          }
+          
+          .quote-card {
+            width: 100% !important;
+          }
+        }
+        
+        // 학력 섹션
+        .cluster2-education {
+          width: 100% !important;
+          max-width: 100% !important;
+          padding: 16px !important;
+        }
+
+        // ===== Cluster 2: 모바일 섹션 재배치(정보 과밀 완화) =====
+        // 목표: 모바일에서는 정보 과밀을 줄이고, 섹션 흐름을 자연스럽게
+        // - 프로필 카드/상단 섹션 → (영상/학력/리뷰/인용문) → 자기소개(맨 아래)
+        .cluster2-title-wrapper { order: 1; }
+        .cluster2-top-frame { order: 2; }
+        .cluster2-videos { order: 3; }
+        .cluster2-education { order: 4; }
+        .cluster2-review-banner { order: 5; }
+        .cluster2-section4 { order: 6; }
+        .cluster2-quotes { order: 7; }
+        .cluster2-intro { order: 8; } // 자기소개서는 모바일에서도 맨 아래
+
+        // 섹션 간 여백(모바일에서 답답함 완화)
+        .cluster2-top-frame,
+        .cluster2-videos,
+        .cluster2-quotes,
+        .cluster2-education,
+        .cluster2-review-banner,
+        .cluster2-section4,
+        .cluster2-intro {
+          margin-bottom: 28px !important;
+        }
+
+        // ===== 자기소개서(Cluster2 Intro) 모바일 그리드 재구성 =====
+        .cluster2-intro {
+          padding: 20px 16px !important;
+
+          .intro-cards {
+            display: grid !important;
+            grid-template-columns: 1fr !important; // 1열 스택(모바일 가독성)
+            gap: 14px !important;
+
+            .intro-row {
+              display: contents !important;
+            }
+
+            .intro-card {
+              width: 100% !important;
+              min-width: 0 !important;
+            }
+          }
+        }
+
+        // ===== Club Review 모바일 재구성(PC 그리드 느낌 제거) =====
+        .cluster2-section4 {
+          padding: 20px 16px !important;
+
+          // 좌/우 2컬럼 → 1컬럼 스택
+          display: flex !important;
+          flex-direction: column !important;
+          gap: 16px !important;
+
+          .section4-left,
+          .section4-right {
+            width: 100% !important;
+            max-width: 100% !important;
+          }
+
+          // 9그리드 → 1열 카드 리스트(터치/가독성 우선)
+          .review-grid-9 {
+            display: grid !important;
+            grid-template-columns: 1fr !important;
+            gap: 12px !important;
+          }
+        }
+
+        // (삭제됨) 모바일 하단 CTA 바 + 그에 따른 하단 여백 보정
+      }
+
+      // ===== Cluster2 전용 반응형 - 좌우 꽉 차게 =====
+      .cluster2-content {
+        max-width: 100% !important;
+        width: 100% !important;
+        padding: 0 !important;
+        overflow-x: hidden !important;
+        box-sizing: border-box !important;
+
+        & > section,
+        .cluster2-title-wrapper,
+        .cluster2-top-frame,
+        .cluster2-videos,
+        .cluster2-quotes,
+        .cluster2-intro,
+        .cluster2-section2,
+        .cluster2-section3,
+        .cluster2-section4 {
+          max-width: 100% !important;
+          width: 100% !important;
+          box-sizing: border-box !important;
+        }
+
+        // 하단 구분선
+        *::after {
+          max-width: 95% !important;
+        }
+      }
+
+      // ===== Cluster3 전용 반응형 - 좌우 꽉 차게 =====
+      .cluster3-content {
+        max-width: 100% !important;
+        width: 100% !important;
+        padding: 0 !important;
+        overflow-x: hidden !important;
+        box-sizing: border-box !important;
+
+        & > section,
+        .cluster3-section1,
+        .cluster3-section2,
+        .cluster3-section3,
+        .cluster3-section4 {
+          max-width: 100% !important;
+          width: 100% !important;
+          box-sizing: border-box !important;
+        }
+
+        // ★ stat-card 카드 제목 줄바꿈 제어
+        .stat-card {
+          .card-header {
+            .card-title {
+              font-size: clamp(16px, 4.5vw, 22px) !important;
+              word-break: keep-all !important;   // 한글 의미 단위 줄바꿈
+              overflow-wrap: break-word !important;
+              line-height: 1.3 !important;       // 줄바꿈 시 글자 겹침 방지
+              white-space: normal !important;
+            }
+          }
+
+          .card-body .info-row {
+            .info-label, .info-value {
+              font-size: clamp(13px, 3.5vw, 16px) !important;
+              word-break: keep-all !important;
+            }
+          }
+        }
+
+        *::after {
+          max-width: 95% !important;
+        }
+      }
+
+      // ===== Cluster4 전용 반응형 (모바일) =====
+      .cluster4-content {
+        // ★ 포괄적 고정폭 해제 - 페이지 좌우 overflow 방지
+        max-width: 100% !important;
+        width: 100% !important;
+        overflow-x: hidden !important;
+        box-sizing: border-box !important;
+
+        // 모든 max-width: 1330px 컨테이너
+        &,
+        & > section,
+        .cluster4-section1,
+        .cluster4-section2,
+        .cluster4-section3,
+        .cluster4-section4,
+        .cluster4-weekly-list,
+        .cluster4-card-content {
+          max-width: 100% !important;
+          width: 100% !important;
+          box-sizing: border-box !important;
+        }
+
+        // 모든 하단 구분선 (width: 1023px)
+        &::after,
+        *::after {
+          max-width: 95% !important;
+        }
+
+        // top-tabs-wrapper (width: 1330px)
+        .top-tabs-wrapper {
+          width: 100% !important;
+          max-width: 100% !important;
+        }
+
+        // Section 1: 겹침 효과 제거
+        .cluster4-section1 {
+          min-height: auto !important;
+          margin-bottom: 0 !important;
+          padding-bottom: 30px !important;
+
+          &::after {
+            width: 95% !important;
+          }
+
+          .section1-title-shadow {
+            display: none !important;
+          }
+
+          .section1-title {
+            font-size: clamp(22px, 6vw, 48px) !important;
+            white-space: normal !important;
+            word-break: keep-all !important;
+            line-height: 1.15 !important;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8) !important; // 깔끔한 그림자로 통일
+          }
+
+          .top-tabs {
+            position: relative !important;
+            flex-direction: row !important;
+            flex-wrap: wrap !important;
+            gap: 4px !important;
+            padding: 8px !important;
+          }
+        }
+
+        // Section 2: sticky 해제 + 겹침 제거 + 캐릭터 숨김
+        .cluster4-section2 {
+          margin-top: 0 !important;
+          position: relative !important;
+
+          .season-growth-card {
+            min-height: auto !important;
+
+            .card-left {
+              width: 100% !important;
+              padding: 30px 16px !important;
+
+              .season-title-shadow {
+                display: none !important;
+              }
+
+              .season-title {
+                font-size: clamp(22px, 5.5vw, 40px) !important;
+                white-space: normal !important;
+                word-break: keep-all !important;
+                text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8) !important;
+              }
+
+              .season-header-row {
+                flex-wrap: wrap !important;
+                gap: 10px !important;
+              }
+
+              .collection-card {
+                flex-wrap: wrap !important;
+                .collection-text { white-space: normal !important; }
+              }
+
+              .details-card {
+                width: 100% !important;
+              }
+            }
+
+            .card-right {
+              display: none !important;
+              visibility: hidden !important;
+              width: 0 !important;
+              height: 0 !important;
+            }
+          }
+        }
+
+        // Section 3 배너
+        .cluster4-section3-banner .banner-content {
+          padding: 30px 16px !important;
+
+          .banner-title {
+            font-size: clamp(22px, 5.5vw, 40px) !important;
+          }
+        }
+
+        // Section 3: 시즌 상세 (season-detail-container) 모바일 최적화
+        .cluster4-section3 {
+          width: 100% !important;
+          max-width: 100% !important;
+          overflow: hidden !important;
+
+          // SEASON CHALLENGE 배너
+          .section3-banner {
+            padding: 24px 16px !important;
+
+            .section3-banner-text-shadow {
+              display: none !important;
+            }
+
+            .section3-banner-text {
+              font-size: clamp(20px, 5vw, 40px) !important;
+              white-space: normal !important;
+              word-break: keep-all !important;
+              text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8) !important;
+            }
+
+            .section3-banner-description {
+              font-size: 1.375rem !important;
+              line-height: 1.7 !important;
+              padding: 0 4px !important;
+
+              p { font-size: 1.375rem !important; }
+            }
+
+            .section3-banner-notice {
+              font-size: 1.125rem !important;
+              line-height: 1.6 !important;
+              padding: 0 4px !important;
+
+              p { font-size: 1.125rem !important; }
+            }
+          }
+
+          // 페이지네이션
+          .section3-pagination {
+            flex-wrap: wrap !important;
+            justify-content: center !important;
+            gap: 6px !important;
+          }
+
+          // ★ 시즌 상세 컨테이너 - 모바일 전면 리셋
+          .season-detail-container {
+            width: 100% !important;
+            max-width: 100vw !important;
+            min-height: auto !important;
+            padding: 20px 12px !important;
+            box-sizing: border-box !important;
+            background-size: cover !important;
+            background-position: center !important;
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 12px !important;
+            overflow-x: hidden !important;
+            overflow-y: visible !important;
+
+            // ★ 핵심: 모든 자식의 고정 width를 해제
+            // 원본 CSS에 width: 490px, 465.572px, 123px 등 고정값이 많음
+            *:not(svg):not(img):not(.circle-icon):not(.stat-icon):not(.progress-icon):not(.stars-icon):not(.badge-icon):not(.rating-avatar):not(.qualified-icon) {
+              max-width: 100% !important;
+              box-sizing: border-box !important;
+            }
+
+            // 배경 오버레이 — 배경 이미지가 은은히 비치도록
+            &::before {
+              background: rgba(18, 18, 18, 0.85) !important;
+            }
+
+            // ★ 상단 헤더: grid → flex 1열 세로 배치
+            .top-header-row {
+              display: flex !important;
+              flex-direction: column !important;
+              grid-template-columns: none !important; // 원본 1fr auto 해제
+              gap: 12px !important;
+              width: 100% !important;
+
+              // 년도_시즌 타이틀
+              .area-1-title {
+                width: 100% !important;
+                display: flex !important;
+                flex-wrap: wrap !important;
+                align-items: center !important;
+                gap: 8px !important;
+
+                .season-main-title {
+                  font-size: clamp(20px, 5.5vw, 36px) !important;
+                  white-space: normal !important;
+                  word-break: keep-all !important;
+                }
+
+                .date-status {
+                  display: flex !important;
+                  flex-wrap: wrap !important;
+                  align-items: center !important;
+                  gap: 8px !important;
+                  width: 100% !important;
+
+                  .date-range { font-size: 0.8125rem !important; }
+                  .status-badge { font-size: 0.75rem !important; padding: 4px 10px !important; }
+                }
+              }
+
+              // Qualified + 뱃지
+              .area-2-qualified {
+                width: 100% !important;
+
+                .qualified-text {
+                  font-size: 1.25rem !important;
+                }
+
+                .qualified-items {
+                  display: flex !important;
+                  flex-wrap: wrap !important;
+                  gap: 10px !important;
+
+                  .item-group {
+                    .item { font-size: 0.8125rem !important; }
+                    .qualified-icon { width: 22px !important; height: 22px !important; }
+
+                    .tooltip {
+                      display: none !important; // 모바일에서 툴팁 숨김
+                    }
+                  }
+                }
+              }
+            }
+
+            // ★ 3열 그리드 → 완전 1열 세로 배치 (float 제거)
+            .main-content-grid {
+              display: flex !important;
+              flex-direction: column !important;
+              grid-template-columns: none !important; // grid 완전 해제
+              gap: 20px !important;
+              width: 100% !important;
+              max-width: 100% !important;
+              overflow: hidden !important;
+
+              // 카드 이미지 — 중앙 배치, float 제거
+              .area-3-image {
+                width: 100% !important;
+                float: none !important;
+                height: auto !important;
+                min-height: auto !important;
+                display: flex !important;
+                justify-content: center !important;
+                position: relative !important;
+                margin: 0 !important;
+                padding: 10px 0 !important;
+
+                .season-image-stack {
+                  width: min(200px, 50vw) !important;
+                  height: auto !important;
+                  aspect-ratio: 200 / 290 !important;
+                  position: relative !important;
+                  margin: 0 auto !important;
+
+                  .image-card {
+                    position: absolute !important;
+                    width: 100% !important;
+                    height: 100% !important;
+
+                    .card-frame {
+                      width: 100% !important;
+                      height: 100% !important;
+
+                      img {
+                        width: 100% !important;
+                        height: 100% !important;
+                        object-fit: cover !important;
+                      }
+                    }
+                  }
+                }
+              }
+
+              // ★ 중앙 열 — 1열 전체 폭
+              .center-column {
+                width: 100% !important;
+                max-width: 100% !important;
+                position: relative !important;
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 16px !important;
+                clear: both !important;
+                margin-left: 0 !important; // 원본 37px 해제
+                margin-right: 0 !important;
+
+                // 통계 바 (단감/인절미/어흥)
+                .area-4-stats {
+                  display: flex !important;
+                  flex-wrap: wrap !important;
+                  justify-content: center !important;
+                  gap: 12px !important;
+                  width: 100% !important;
+                  padding: 8px 0 !important;
+                  clear: both !important;
+
+                  .stat {
+                    white-space: nowrap !important;
+                    font-size: clamp(12px, 3.2vw, 14px) !important;
+
+                    .stat-icon { width: 16px !important; height: 16px !important; }
+                    .number { font-size: clamp(16px, 4vw, 20px) !important; }
+                    .unit { font-size: clamp(12px, 3vw, 14px) !important; }
+                  }
+                }
+
+                // 평점 + 리뷰
+                .area-5-rating {
+                  width: 100% !important; // 원본 490px 해제
+                  max-width: 100% !important;
+                  height: auto !important; // 원본 80px 해제
+                  display: flex !important;
+                  flex-wrap: wrap !important; // nowrap → wrap (넘침 방지)
+                  align-items: center !important;
+                  gap: 10px !important;
+                  padding: 12px !important;
+                  box-sizing: border-box !important;
+                  position: relative !important;
+                  border-radius: 16px !important;
+                  overflow: hidden !important;
+
+                  .rating-avatar {
+                    width: 40px !important;
+                    height: 40px !important;
+                    flex-shrink: 0 !important;
+
+                    img {
+                      width: 100% !important;
+                      height: 100% !important;
+                      border-radius: 50% !important;
+                      object-fit: cover !important;
+                    }
+                  }
+
+                  .rating-content {
+                    flex: 1 !important;
+                    min-width: 0 !important;
+                    overflow: hidden !important;
+
+                    .top-row {
+                      display: flex !important;
+                      flex-wrap: wrap !important;
+                      gap: 6px !important;
+                      align-items: center !important;
+
+                      .stars-row {
+                        .star-icon { width: 10px !important; height: 10px !important; }
+                        .rating-text { font-size: 0.75rem !important; }
+                      }
+
+                      .review-label {
+                        font-size: 0.6875rem !important;
+                        padding: 2px 8px !important;
+                        white-space: nowrap !important;
+                      }
+                    }
+
+                    .review-comment {
+                      font-size: 0.8125rem !important;
+                      word-break: break-word !important;
+                      overflow-wrap: break-word !important;
+                    }
+                  }
+                }
+
+                // ★ 3원형 차트 — 상대 크기
+                .area-6-circles {
+                  display: flex !important;
+                  flex-wrap: nowrap !important;
+                  justify-content: space-around !important;
+                  gap: 4px !important;
+                  width: 100% !important;
+                  position: relative !important;
+                  padding: 12px 0 !important;
+
+                  .circle-item {
+                    flex: 1 !important;
+                    min-width: 0 !important;
+                    max-width: min(120px, 30vw) !important;
+                    width: auto !important; // 원본 123px 해제
+                    text-align: center !important;
+                    position: relative !important;
+                    display: flex !important;
+                    flex-direction: column !important;
+                    align-items: center !important;
+                    gap: 4px !important;
+
+                    .circle {
+                      width: min(90px, 22vw) !important;
+                      height: min(90px, 22vw) !important;
+                      margin: 0 auto !important;
+                      position: relative !important;
+
+                      svg {
+                        width: 100% !important;
+                        height: 100% !important;
+                      }
+
+                      .circle-icon {
+                        position: absolute !important;
+                        top: -4px !important;
+                        left: 50% !important;
+                        transform: translateX(-50%) !important;
+                        width: 22px !important;
+                        height: 22px !important;
+                      }
+
+                      .percent {
+                        position: absolute !important;
+                        top: 26px !important;
+                        left: 50% !important;
+                        transform: translateX(-50%) !important;
+                        font-size: 1.125rem !important;
+                        font-weight: 700 !important;
+                        line-height: 1 !important;
+                      }
+                    }
+
+                    .circle-label {
+                      margin-top: -50px !important;
+                      position: relative !important;
+                      z-index: 20 !important;
+                      width: 100% !important;
+
+                      .label-main {
+                        font-size: clamp(11px, 3vw, 14px) !important;
+                        white-space: normal !important; // nowrap 제거
+                        word-break: keep-all !important;
+                        line-height: 1.2 !important;
+                        margin-bottom: 3px !important;
+                      }
+                      .label-sub {
+                        font-size: clamp(9px, 2.5vw, 11px) !important;
+                        white-space: normal !important; // nowrap 제거
+                        word-break: keep-all !important;
+                        line-height: 1.2 !important;
+
+                        .highlight {
+                          font-size: clamp(11px, 3vw, 14px) !important;
+                        }
+                      }
+                    }
+                  }
+                }
+
+                // 실무 강화율 프로그레스
+                .area-7-progress {
+                  width: 100% !important;
+                  max-width: 100% !important;
+                  position: relative !important;
+                  overflow: hidden !important;
+
+                  .progress-item {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    margin-bottom: 10px !important;
+
+                    .progress-header {
+                      display: flex !important;
+                      justify-content: space-between !important;
+                      flex-wrap: nowrap !important;
+                      gap: 4px !important;
+                      width: 100% !important; // 원본 465.572px 해제
+                      max-width: 100% !important;
+                      overflow: hidden !important;
+
+                      .name {
+                        font-size: clamp(12px, 3.2vw, 14px) !important;
+                        white-space: nowrap !important;
+                        overflow: hidden !important;
+                        text-overflow: ellipsis !important;
+                        flex: 1 !important;
+                        min-width: 0 !important;
+
+                        .progress-icon { width: 16px !important; height: 16px !important; }
+                      }
+
+                      .value {
+                        font-size: clamp(11px, 3vw, 13px) !important;
+                        white-space: nowrap !important;
+                        flex-shrink: 0 !important;
+
+                        .stars-icon { width: 14px !important; height: 14px !important; }
+                      }
+                    }
+
+                    .bar {
+                      width: 100% !important;
+                      height: 8px !important;
+                      border-radius: 4px !important;
+                    }
+                  }
+                }
+              }
+
+              // ★ 우측 열
+              .right-column {
+                width: 100% !important;
+                max-width: 100% !important;
+                position: relative !important;
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 20px !important;
+                overflow: hidden !important;
+
+                // 시즌 상태
+                .area-8-season-status {
+                  width: 100% !important;
+
+                  .section-title {
+                    font-size: 1.125rem !important;
+                  }
+
+                  .status-badges {
+                    .badge-item {
+                      display: flex !important;
+                      flex-wrap: wrap !important;
+                      align-items: center !important;
+                      gap: 10px !important;
+                      font-size: 0.875rem !important;
+
+                      .badge-icon {
+                        width: 36px !important;
+                        height: 36px !important;
+                        flex-shrink: 0 !important;
+
+                        img { width: 100% !important; height: 100% !important; border-radius: 50% !important; }
+                      }
+
+                      .badge-status {
+                        font-size: 0.8125rem !important;
+                        padding: 4px 12px !important;
+                      }
+                    }
+                  }
+                }
+
+                // 시즌 평판
+                .area-9-season-reputation {
+                  width: 100% !important;
+
+                  .section-title {
+                    font-size: 1.125rem !important;
+                  }
+
+                  .profile-cards {
+                    display: flex !important;
+                    flex-direction: column !important;
+                    gap: 14px !important;
+
+                    .profile-card {
+                      width: 100% !important;
+                      max-width: 100% !important;
+                      box-sizing: border-box !important;
+                      position: relative !important;
+                      padding: 14px !important;
+
+                      .card-top {
+                        display: flex !important;
+                        flex-wrap: wrap !important;
+                        gap: 10px !important;
+
+                        .avatar {
+                          width: 40px !important;
+                          height: 40px !important;
+                          flex-shrink: 0 !important;
+                        }
+
+                        .info {
+                          flex: 1 !important;
+                          min-width: 0 !important;
+                          .row1, .row2 { font-size: 0.8125rem !important; word-break: break-word !important; }
+                        }
+                      }
+
+                      .comment { font-size: 0.875rem !important; word-break: break-word !important; }
+                      .stats { font-size: 0.8125rem !important; flex-wrap: wrap !important; }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // Weekly List: 카드 고정폭 해제
+        .cluster4-weekly-list {
+          padding: 30px 0 24px !important;
+
+          .weekly-filter-bar {
+            flex-wrap: wrap !important;
+            gap: 8px !important;
+            .filter-card { width: 100% !important; }
+          }
+
+          .weekly-card {
+            width: 100% !important;
+            height: auto !important;
+            flex-wrap: wrap !important;
+            padding: 14px !important;
+            gap: 14px !important;
+            background: rgba(30, 30, 30, 0.6) !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+            border-radius: 12px !important;
+            margin-bottom: 8px !important;
+
+            .weekly-card-image {
+              width: 110px !important;
+              height: 110px !important;
+              margin: 0 !important;
+              flex-shrink: 0 !important;
+              border-radius: 8px !important;
+              overflow: hidden !important;
+
+              img {
+                width: 100% !important;
+                height: 100% !important;
+                object-fit: cover !important;
+              }
+            }
+
+            .weekly-card-content {
+              flex: 1 !important;
+              min-width: 0 !important;
+              margin-top: 0 !important;
+
+              .weekly-card-header {
+                flex-wrap: wrap !important;
+                gap: 4px !important;
+                margin-bottom: 8px !important;
+                .weekly-card-title { font-size: clamp(14px, 3.8vw, 16px) !important; width: 100% !important; word-break: keep-all !important; }
+                .weekly-card-date, .weekly-card-week { border: none !important; padding: 0 !important; height: auto !important; font-size: 0.75rem !important; opacity: 0.8; }
+              }
+
+              .weekly-card-info { flex-wrap: wrap !important; gap: 4px !important; font-size: 0.75rem !important; }
+              .weekly-card-main-progress { flex-direction: column !important; .progress-bar-wrapper { width: 100% !important; } }
+              .weekly-card-stats, .weekly-card-extra-stats { flex-wrap: wrap !important; .stat { font-size: 0.6875rem !important; white-space: normal !important; } }
+            }
+
+            .weekly-card-status-badge { position: relative !important; }
+            .weekly-card-more-btn { position: relative !important; }
+          }
+        }
+      }
+
+      // Week 뷰 card-right 숨김
+      .cluster4-content.cluster4-content--week .cluster4-section2 .season-growth-card .card-right {
+        display: none !important;
+        visibility: hidden !important;
+        width: 0 !important;
+        height: 0 !important;
+      }
+
+      // Week 뷰 폭 제한
+      .cluster4-content.cluster4-content--week {
+        max-width: 100% !important;
+        width: 100% !important;
+        overflow-x: hidden !important;
+
+        .top-tabs-wrapper {
+          width: 100% !important;
+          max-width: 100% !important;
+
+          &::after {
+            max-width: 95% !important;
+          }
+        }
+
+        .section2-layout::before {
+          max-width: 95% !important;
+        }
+      }
+
+      // Cluster4-1 탭/섹션 반응형
+      .cluster4-card-content {
+        .top-tabs-wrapper {
+          width: 100% !important;
+          height: auto !important;
+          padding: 10px 12px !important;
+          &::after { width: 95% !important; }
+          .nav-buttons { position: relative !important; right: auto !important; top: auto !important; transform: none !important; flex-wrap: wrap !important; margin-top: 8px !important; }
+        }
+        .section1-layout {
+          flex-direction: column !important;
+          gap: 16px !important;
+          .section1-left { flex: none !important; width: 100% !important;
+            .main-image-container { width: 100% !important; height: auto !important; max-height: 400px !important;
+              .main-week-image { height: auto !important; max-height: 400px !important; object-fit: cover !important; }
+            }
+          }
+          .section1-right { margin-top: 0 !important; }
+        }
+        .section2-layout {
+          &::before { width: 95% !important; }
+          .growth-rate-header { flex-direction: column !important; align-items: flex-start !important; gap: 12px !important;
+            .growth-left { margin-left: 0 !important; width: 100% !important;
+              .progress-header, .progress-bar-container { width: 100% !important; }
+            }
+          }
+          .section-header-row { flex-wrap: wrap !important; .section-title-right { margin-left: 0 !important; } .section-count { margin-left: 12px !important; } }
+        }
+        .section3-layout .section-header-row { flex-wrap: wrap !important; .section-title-left .section-count { margin-left: 12px !important; } .section-title-right { margin-left: 0 !important; } }
+      }
+
+      // ===== Cluster 3: 모바일 레이아웃 재구성(그리드/절대배치 그대로 금지) =====
+      .cluster3-content {
+        padding: 0 !important;
+        box-sizing: border-box;
+
+        // Section3: 포트폴리오 아카이빙 Channel → 모바일 1열
+        .cluster3-section3 {
+          height: auto !important;
+          min-height: 0 !important;
+          overflow: visible !important;
+
+          .section3-header {
+            width: 100% !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+            padding: 18px 0 0 !important;
+          }
+
+          .channel-cards {
+            width: 100% !important;
+            grid-template-columns: 1fr !important;
+            gap: 12px !important;
+          }
+
+          .channel-card {
+            width: 100% !important;
+            height: auto !important;
+
+            .card-image {
+              width: 100% !important;
+              height: auto !important;
+              aspect-ratio: 16 / 10;
+            }
+          }
+        }
+
+        // Section2: "클럽 강화 품계" (타이틀/퍼센트/카드) 모바일 재배치
+        .cluster3-section2 {
+          padding: 18px 0 18px !important;
+          height: auto !important;
+          min-height: 0 !important;
+          overflow: hidden !important;
+
+          &::before,
+          &::after {
+            width: 100% !important;
+          }
+
+          .section2-right {
+            padding-right: 0 !important;
+            max-width: 100% !important;
+            align-items: flex-end;
+            gap: 6px;
+          }
+
+          .section2-text .handwriting {
+            font-size: clamp(26px, 7vw, 44px) !important;
+          }
+
+          .section2-progress {
+            width: min(260px, 78vw) !important;
+
+            .progress-info {
+              .progress-label,
+              .progress-unit {
+                font-size: 0.875rem !important;
+              }
+              .progress-percent {
+                font-size: 1.875rem !important;
+              }
+            }
+          }
+
+          // 10개 카드: 모바일에서는 2열 그리드로(가독성 우선)
+          .section2-cards {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 10px !important;
+            align-items: stretch !important;
+
+            position: relative !important;
+            left: auto !important;
+            right: auto !important;
+            bottom: auto !important;
+            margin-top: 14px !important;
+            padding: 0 !important;
+
+            .rank-card {
+              width: 100% !important;
+              flex: initial !important;
+              height: 140px !important;
+              border-radius: 12px !important;
+              overflow: hidden !important;
+            }
+
+            .rank-card.active {
+              width: 100% !important;
+              height: 150px !important;
+            }
+          }
+        }
+
+        // Section4/5: World Of Top Works / The Detail 10 → 모바일 1열(특히 The Detail 10)
+        .cluster3-section4 {
+          padding: 28px 0 !important;
+          overflow: hidden !important;
+
+          .section4-top-header {
+            width: 100% !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+          }
+        }
+
+        .cluster3-section5 {
+          .detail-grid {
+            grid-template-columns: 1fr !important;
+            gap: 12px !important;
+            justify-content: stretch !important;
+
+            .detail-item {
+              width: 100% !important;
+              height: auto !important;
+              aspect-ratio: 16 / 11;
+              border-radius: 14px !important;
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // 푸터
+  .footer {
+    // 데스크탑 고정 height(693px) 때문에 모바일에서 불필요한 검은 여백이 생김
+    // → 모바일/태블릿에서는 콘텐츠 높이에 맞게 자동으로 줄어들도록
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 30px 16px 18px !important;
+
+    // 우하단 장식 이미지는 모바일에서 공간만 차지하므로 숨김
+    .footer-thumb {
+      display: none !important;
+    }
+
+    // 카피라이트 영역 간격 축소(모바일에서는 위젯이 접히거나 스택되기 때문에 과한 여백 제거)
+    .footer__copyright {
+      margin-top: 24px !important;
+      padding: 18px 0 0 !important;
+    }
+
+    // 모바일에서는 nowrap이 오히려 레이아웃을 깨뜨릴 수 있어 완화
+    .footer__widget-text--alt,
+    .footer__widget-contact .footer__widget-content p,
+    .footer__widget-contact .footer__widget-content span,
+    .footer__widget-contact .footer__widget-content li {
+      white-space: normal !important;
+    }
+  }
+}
+
+// ===== 2.5. 태블릿 전용 (768px ~ 1199px) =====
+// iPhone 12 Pro와 동일한 크기로 완벽한 중앙 정렬
+@media only screen and (min-width: 768px) and (max-width: 1199.98px) {
+  .nftg-content-home.mobile-layout {
+    // 태블릿 폭에 따라 카드/탭/콘텐츠 폭이 자연스럽게 커지도록
+    // (고정 366px 때문에 여백이 과해지는 문제 해결)
+    --tablet-shell-width: clamp(360px, 56vw, 520px);
+
+    .mobile-sidebar-section {
+      padding: 20px 0 !important; // 좌우 패딩 제거
+      justify-content: center !important;
+      
+      .resume-card {
+        width: min(390px, calc(100vw - 24px)) !important;
+        max-width: calc(100vw - 24px) !important;
+        min-width: 0 !important;
+        margin: 0 auto !important;
+        padding: 12px !important;
+        border: 1px solid #666 !important;
+        border-radius: 8px !important;
+        left: 0 !important;
+        right: 0 !important;
+        overflow: hidden !important;
+      }
+    }
+    
+    .mobile-tabs-section {
+      display: flex !important;
+      justify-content: center !important;
+      padding: 0 !important;
+      width: 100% !important;
+      
+      .cluster-tabs {
+        max-width: 100% !important;
+        width: 100% !important;
+      }
+      
+      .cluster-tabs .cluster-tab {
+        min-width: 80px !important;
+        height: 38px !important;
+        font-size: 0.625rem !important;
+      }
+    }
+    
+    .mobile-content-section {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      padding: 0 !important;
+      width: 100% !important;
+      
+      // 콘텐츠도 좌우 꽉 차게
+      .cluster1-content,
+      .cluster2-content,
+      .cluster3-content,
+      .cluster4-content {
+        max-width: 100% !important;
+        width: 100% !important;
+        width: 100% !important;
+
+        // 태블릿에서는 정보 밀도를 살짝 올리되, 과밀은 방지
+        .cluster2-intro {
+          .intro-cards {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 14px !important;
+          }
+        }
+
+        .cluster2-section4 {
+          .review-grid-9 {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 12px !important;
+          }
+        }
+      }
+
+      // ===== Cluster3: 태블릿에서는 3열까지 =====
+      .cluster3-content {
+        .cluster3-section2 {
+          .section2-cards {
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+            gap: 12px !important;
+
+            .rank-card {
+              height: 150px !important;
+            }
+            .rank-card.active {
+              height: 160px !important;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// ===== 3. 모바일 전용 (767px 이하) =====
+@media only screen and (max-width: 767.98px) {
+  .header {
+    padding: 8px 12px !important;
+    
+    .navbar__logo img {
+      max-width: 28px;
+    }
+    
+    .icon-drop {
+      width: 32px !important;
+      height: 32px !important;
+      min-width: 32px !important;
+      font-size: 1rem !important;
+    }
+    
+    .profile-dropdown .hexagon-wrapper {
+      width: 36px !important;
+      height: 36px !important;
+      min-width: 36px !important;
+    }
+  }
+  
+  .nftg-content-home.mobile-layout {
+    margin-top: 56px !important;
+    
+    .mobile-sidebar-section {
+      padding: 10px 0 !important; // 좌우 패딩 제거
+      justify-content: center !important;
+      
+      .resume-card {
+        width: min(366px, calc(100vw - 28px)) !important;
+        max-width: calc(100vw - 28px) !important;
+        min-width: 0 !important;
+        padding: 12px !important;
+        margin: 0 auto !important;
+        border: 1px solid #666 !important;
+        border-radius: 8px !important;
+        left: 0 !important;
+        right: 0 !important;
+        overflow: hidden !important;
+        
+        .resume-header {
+          gap: 10px !important;
+        }
+        
+        .resume-intro {
+          padding: 10px !important;
+        }
+        
+        // 실무 역량 - 767px 이하에서도 그리드 유지
+        .resume-bottom-section .resume-skills {
+          gap: 6px !important;
+          padding: 10px 6px !important;
+          
+          .skill-card {
+            padding: 5px 3px !important;
+            
+            .skill-num {
+              font-size: 0.75rem !important;
+            }
+            
+            .skill-label {
+              font-size: 0.4375rem !important;
+            }
+          }
+        }
+        
+        .resume-bottom-section .resume-notices .notice-box {
+          padding: 6px !important;
+          font-size: 0.625rem !important;
+          
+          .notice-text {
+            font-size: 0.625rem !important;
+          }
+        }
+      }
+    }
+    
+    .mobile-tabs-section {
+      padding: 0 !important;
+      
+      .cluster-tabs .cluster-tab {
+        min-width: 110px !important;
+        height: 34px !important;
+        font-size: 0.5625rem !important;
+      }
+    }
+    
+    .mobile-content-section {
+      // 모든 클러스터 공통 스타일
+      .cluster1-content,
+      .cluster2-content,
+      .cluster3-content,
+      .cluster4-content {
+        padding: 0 !important;
+        
+        // 공통 타이틀 스타일
+        [class*="-title-wrapper"],
+        [class*="-section1"] {
+          padding: 16px 12px !important;
+          min-height: auto;
+        }
+        
+        // 공통 텍스트 스타일
+        p, .quote-text, .small-text {
+          font-size: 0.8125rem !important;
+          line-height: 1.5 !important;
+        }
+        
+        h1, h2, .section-title {
+          font-size: 1.25rem !important;
+        }
+        
+        h3, h4 {
+          font-size: 1rem !important;
+        }
+      }
+      
+      .cluster2-content {
+        .cluster2-title-wrapper {
+          padding: 16px 12px !important;
+          min-height: 150px;
+          
+          .cluster2-title {
+            font-size: 1.25rem !important;
+          }
+
+          .cluster2-title-shadow {
+            display: none !important;
+          }
+          
+          .section1-description {
+            p, .quote-text, .small-text {
+              font-size: 0.875rem !important;
+            }
+
+            .quote-highlight {
+              font-size: 1rem !important;
+            }
+          }
+        }
+        
+        .cluster2-top-frame {
+          padding: 12px !important;
+          
+          .frame-left .adventure-title {
+            font-size: 1.125rem !important;
+          }
+          
+          .hexagon-large-item {
+            .hex-large {
+              width: 45px !important;
+              height: 45px !important;
+            }
+            
+            .hex-label {
+              font-size: 0.5625rem !important;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// ===== 4. 작은 모바일 (480px 이하) =====
+// CSS 변수가 자동으로 크기를 조절 (--profile-photo-width: 85px 등)
+@media only screen and (max-width: 479.98px) {
+  .nftg-content-home.mobile-layout {
+    .mobile-sidebar-section {
+      padding: 8px !important;
+    }
+    
+    .mobile-sidebar-section {
+      padding: 8px 0 !important; // 좌우 패딩 제거
+    }
+    
+    .mobile-sidebar-section .resume-card {
+      width: min(366px, calc(100vw - 20px)) !important;
+      max-width: calc(100vw - 20px) !important;
+      min-width: 0 !important;
+      margin: 0 auto !important;
+      padding: 10px !important;
+      border: 1px solid #666 !important;
+      border-radius: 8px !important;
+      left: 0 !important;
+      right: 0 !important;
+      overflow: hidden !important;
+      
+      .resume-header {
+        gap: 10px !important;
+      }
+      
+      .resume-intro {
+        padding: 8px 10px !important;
+      }
+      
+      // 3단 영역 - 작은 화면에서도 3열 그리드 유지 (일관성)
+      .resume-three-column {
+        gap: 6px !important;
+        padding: 8px 0 !important;
+      }
+      
+      // 실무 역량 - 작은 화면용 조정
+      .resume-bottom-section .resume-skills {
+        gap: 4px !important;
+        padding: 8px 4px !important;
+        
+        .skill-card {
+          padding: 4px 2px !important;
+          
+          .skill-num {
+            font-size: 0.6875rem !important;
+          }
+          
+          .skill-label {
+            font-size: 0.375rem !important;
+          }
+        }
+      }
+      
+      .resume-bottom-section .resume-notices .notice-box {
+        padding: 5px !important;
+        font-size: 0.5625rem !important;
+        
+        .notice-text {
+          font-size: 0.5625rem !important;
+        }
+        
+        .notice-stamp {
+          width: 20px !important;
+          height: 20px !important;
+        }
+      }
+    }
+    
+    .mobile-tabs-section .cluster-tabs .cluster-tab {
+      min-width: 110px !important;
+      font-size: 0.5625rem !important;
+      padding: 0 10px !important;
+    }
+    
+    .mobile-content-section {
+      // 모든 클러스터 콘텐츠 공통
+      .cluster1-content,
+      .cluster2-content,
+      .cluster3-content,
+      .cluster4-content {
+        padding: 0 !important;
+        
+        // 공통 텍스트 크기 - 작은 모바일
+        p, .quote-text, .small-text {
+          font-size: 0.8125rem !important;
+        }
+        
+        h1, h2, .section-title {
+          font-size: 1.125rem !important;
+        }
+      }
+      
+      .cluster2-content {
+        .cluster2-title-wrapper {
+          padding: 20px 16px !important;
+          
+          .cluster2-title {
+            font-size: 1.375rem !important;
+          }
+
+          .cluster2-title-shadow {
+            display: none !important;
+          }
+          
+          .section1-description {
+            p, .quote-text, .small-text {
+              font-size: 0.9375rem !important;
+            }
+
+            .quote-highlight {
+              font-size: 1.0625rem !important;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// ===== 5. 터치 디바이스 =====
+@media (hover: none) and (pointer: coarse) {
+  .cluster-tab:active {
+    background: rgba(254, 212, 2, 0.3) !important;
+  }
+  
+  // 스크롤 스냅
+  .cluster-tabs-row,
+  .resume-three-column {
+    scroll-snap-type: x mandatory;
+    
+    > * {
+      scroll-snap-align: start;
+    }
+  }
+}
+
+/ * ===== 모바일/태블릿 반응형 끝 ===== * /
+*/

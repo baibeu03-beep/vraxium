@@ -1,0 +1,501 @@
+// =============================================================
+// Encre (EC) cluster-2 override.
+//
+// 적용 조건:
+//   <main class="nftg-content nftg-content-home encre-theme"> 가
+//   부착된 라우트(/cluster-2-ec)에서만 활성화.
+//   /cluster-2 본체 및 /cluster-2-px 는 무영향.
+//
+// 원칙:
+//   - 절대 _cluster2.scss 본 파일을 건드리지 않는다.
+//   - 모든 selector 는 .encre-theme 하위에서만 매칭.
+//   - rgba/glow 의 alpha 는 유지하고 RGB 만 EC 톤으로 교체.
+//   - inline `style={{ color: "#FAAB07" }}` 같은 JSX 인라인은 CSS 로
+//     못 잡으므로 컴포넌트에서 isEC 분기로 처리(여기선 다루지 않음).
+//   - 톤: dark / premium / cinematic pink — neon pink 아님.
+//
+// 색상 source : _theme-tokens.scss 의
+//   --ec-accent           = #ff4b70   (strong)
+//   --ec-accent-soft      = #ff98a6   (soft)
+//   --ec-accent-glow      = rgba(255, 75, 112, 0.32)
+//   --ec-accent-soft-glow = rgba(255, 152, 166, 0.22)
+//   --ec-gradient         = linear-gradient(135deg, #ff98a6 0%, #ff4b70 100%)
+//
+// 색상 매핑 (요약):
+//   strong yellow/orange (#FFA500 / #FAAB07 / #FFC300 / #FFC919 / #F5A623)
+//     → var(--ec-accent) = #ff4b70
+//   light yellow/gold (#FED402 / #FFF1AA / #FFE89C / #FFD700 / #FFEC8F)
+//     → var(--ec-accent-soft) = #ff98a6
+//   rgba(255,165,0, X) glow → 동일 alpha 의 rgba(255, 75, 112, X)
+//
+// 구조: _cluster2-px.scss 와 1:1 mirror — 같은 selector / 같은 의도,
+//      토큰만 다름. PX 파일이 향후 수정될 때 본 파일도 동일 위치 갱신 필요.
+// =============================================================
+
+.encre-theme {
+
+  // -------------------------------------------------------
+  // 0) inline SVG attribute fill/stroke 일괄 override
+  //    Cluster2Content.tsx 의
+  //      <circle fill="#FFC300" />, <path fill="#F5A623" />,
+  //      <polygon fill="#FFA500" />, <svg stroke="#FFA500" />,
+  //      <path stroke="#FAAB07" />
+  //    를 CSS 만으로 EC 톤으로 변환.
+  //    (CSS fill/stroke 가 SVG attribute 보다 우선순위 높음)
+  //
+  //  주의: 사용자 정책 "generic svg path 금지" — 본 selector 는 fill/
+  //  stroke 의 **특정 hex 값**으로만 매칭하므로 generic 이 아님. semantic
+  //  status color(녹/적/회색 등) 는 영향받지 않는다.
+  // -------------------------------------------------------
+  svg [fill="#FFA500" i],
+  svg [fill="#FAAB07" i],
+  svg [fill="#FFC300" i],
+  svg [fill="#FFC919" i],
+  svg [fill="#F5A623" i] {
+    fill: var(--ec-accent);
+  }
+  svg [fill="#FED402" i],
+  svg [fill="#FFF1AA" i],
+  svg [fill="#FFE89C" i],
+  svg [fill="#FFD700" i],
+  svg [fill="#FFEC8F" i] {
+    fill: var(--ec-accent-soft);
+  }
+  svg [stroke="#FFA500" i],
+  svg [stroke="#FAAB07" i],
+  svg [stroke="#FFC300" i],
+  svg [stroke="#FFC919" i],
+  svg [stroke="#F5A623" i] {
+    stroke: var(--ec-accent);
+  }
+  svg [stroke="#FED402" i],
+  svg [stroke="#FFF1AA" i],
+  svg [stroke="#FFE89C" i],
+  svg [stroke="#FFEC8F" i] {
+    stroke: var(--ec-accent-soft);
+  }
+
+  // -------------------------------------------------------
+  // 1) 공통 — section-edit-btn / floating-icons / edit-icon
+  //    _cluster2.scss line 21~89
+  // -------------------------------------------------------
+  .cluster2-content {
+    .section-edit-btn,
+    .section-edit-btn:hover {
+      background-color: var(--ec-accent);
+    }
+
+    .floating-icons .edit-icon {
+      background: var(--ec-accent);
+      &:hover {
+        background: var(--ec-accent-soft);
+      }
+    }
+
+    // ---------------------------------------------------
+    // 2) cluster2-title-wrapper / quote-highlight gradient
+    //    line 218~228
+    // ---------------------------------------------------
+    .cluster2-title-wrapper .section1-description .quote-highlight {
+      background: var(--ec-gradient);
+      -webkit-background-clip: text;
+      background-clip: text;
+    }
+
+    // ---------------------------------------------------
+    // 3) cluster2-top-frame
+    //   - 메인 프레임 PNG (section 01.png) 노란 톤 → EC pink 리컬러
+    //   - hex-label hover color (387), hex-more bg (455),
+    //     avatar-count color (469), progress-value (725)
+    //   - with-us-btn (728~) : 버튼 배경 PNG 가 노란색이므로 PNG 자체는
+    //     수정 금지 정책으로 filter 사용 — hue-rotate 는 yellow→pink 변환
+    //     1군데에 한정해서 사용 (사용자 정책 "남발 금지" 준수).
+    //   - main hero PNG (px 01.png / ok 01.png / ec 01.png) 는 이미 TSX
+    //     레벨에서 swap 되어 본 SCSS 영향 범위 밖.
+    // ---------------------------------------------------
+    .cluster2-top-frame {
+      // 본 element 의 background-image (section 01.png — 노란 프레임 PNG) 를
+      // 분리된 pseudo-element 로 옮긴 뒤 filter 로 EC pink 으로 recolor.
+      // 자식 노드(텍스트/사진/육각형)는 filter 의 영향을 받지 않도록
+      // isolation 으로 별도 stacking context 안에 격리 + z-index:-1.
+      // 본 element 의 background-image 는 비워서 yellow 원본이 비치지
+      // 않도록 함.
+      isolation: isolate;
+      background-image: none;
+
+      &::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        background-image: url("/images/0/cluster 2/section 01.png");
+        background-size: calc(100% + 12px) calc(100% + 12px);
+        background-repeat: no-repeat;
+        background-position: center;
+        // #FAAB07 (hue ~40°) → #FF4B70 (hue ~349°/-11°) ≈ -51deg.
+        // saturate 살짝 낮춰 dark/cinematic pink 와 톤매칭.
+        // 본 hue-rotate 는 pseudo-element 전용 background — 자식 PNG 미터치.
+        filter: hue-rotate(-51deg) saturate(0.92) brightness(0.95);
+      }
+
+      // 프레임 외곽 EC pink glow — 노란 yellow accent edge 의 대체.
+      box-shadow:
+        0 0 18px rgba(255, 75, 112, 0.18),
+        0 0 36px rgba(255, 152, 166, 0.10);
+
+      .frame-left .hexagon-large-row .hexagon-large-item:hover .hex-label {
+        color: var(--ec-accent);
+      }
+      .frame-left .avatar-row .hexagon-stack .hex-more {
+        background: var(--ec-accent);
+      }
+      .frame-left .avatar-row .avatar-count {
+        color: var(--ec-accent);
+      }
+      .frame-right .progress-value {
+        color: var(--ec-accent);
+      }
+    }
+
+    // ---------------------------------------------------
+    // 3-bis) mascot-icon (cluster2-top-frame .frame-right .mascot-icon)
+    //   - ::before (644~655) : 마스코트 이미지 뒤 rounded rect bg #f5a623
+    //   - speech-bubble border (669) + ::before 꼬리 테두리 (698) #f5a623
+    // ---------------------------------------------------
+    .cluster2-top-frame .frame-right .mascot-icon {
+      &::before {
+        background: var(--ec-accent);
+      }
+
+      .speech-bubble {
+        border-color: var(--ec-accent);
+        &::before {
+          border-left-color: var(--ec-accent);
+        }
+      }
+    }
+
+    // ---------------------------------------------------
+    // 3-ter) with-us-btn (cluster2-top-frame .frame-right .with-us-btn)
+    //   line 728~766: 버튼 자체는 transparent 지만 자식 <img src="button box.png"/>
+    //   가 노란 PNG 라서 EC 톤에서 강한 yellow 가 그대로 노출.
+    //   원본 PNG 수정 금지 정책 유지: filter hue-rotate 로 recolor.
+    //   (단일 element 한정 — sweep 아님, 사용자 정책 "남발 금지" 준수.)
+    // ---------------------------------------------------
+    .cluster2-top-frame .frame-right .with-us-btn img {
+      filter: hue-rotate(-51deg) saturate(0.92) brightness(0.95);
+    }
+
+    // ---------------------------------------------------
+    // 4) cluster2-quotes
+    //   quote-card 내부 yellow accent 가 직접적으론 적고, score-stars /
+    //   dotted-navigation 등에 #dff314(라임) 이 사용됨 → 의미적 navigation
+    //   color 이므로 본 변환 대상 아님. PX 도 동일 결정.
+    // ---------------------------------------------------
+
+    // ---------------------------------------------------
+    // 5) cluster2-videos
+    //   - 상단 1px 라인 rgba(236,187,2,1)
+    //   - btn-wrapper::after SVG stroke '%23FAAB07'
+    //   - view-all-btn bg (1180), hover bg #ffc300 (1191)
+    //   - video-card.has-video:hover .play-button svg circle:nth-child(2)
+    //     #ffc300 (1231)
+    //   - highlight-orange (1359), dot-separator (1386)
+    //   - videos-navigation .nav-btn:hover (1437~1442)
+    //   - progress-fill bg gradient (1456)
+    // ---------------------------------------------------
+    .cluster2-videos {
+      &::before {
+        background-color: var(--ec-accent);
+      }
+
+      .videos-header {
+        // 뒤쪽 offset SVG 테두리(stroke=#FAAB07) 는 data-URL 이라
+        // fill/stroke override 불가. 대신 EC 톤 SVG data-url 로 다시 그려서 덮는다.
+        .btn-wrapper::after {
+          background: url("data:image/svg+xml,%3Csvg width='137' height='51' viewBox='0 0 137 51' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0.8 0.8H135.4V27.3L108.5 49.8H0.8V0.8Z' stroke='%23FF4B70' stroke-width='1.62'/%3E%3C/svg%3E") no-repeat center/contain;
+        }
+
+        .view-all-btn {
+          background: var(--ec-accent);
+          &:hover {
+            background: var(--ec-accent-soft);
+          }
+        }
+      }
+
+      .videos-grid .video-card.has-video:hover .play-button svg {
+        circle:nth-child(2) {
+          fill: var(--ec-accent);
+        }
+      }
+
+      .videos-grid .video-card .video-overlay .video-info-top {
+        .video-info-left .video-title .highlight-orange {
+          color: var(--ec-accent);
+        }
+        .video-info-right .dot-separator {
+          color: var(--ec-accent);
+        }
+      }
+
+      .videos-navigation {
+        .nav-btn:hover {
+          background: rgba(255, 75, 112, 0.16);
+          border-color: var(--ec-accent);
+          svg path {
+            stroke: var(--ec-accent);
+          }
+        }
+        .progress-bar .progress-fill {
+          background: var(--ec-gradient);
+        }
+      }
+    }
+
+    // ---------------------------------------------------
+    // 6) cluster2-education
+    //   - school-circle bg (1831)
+    //   - edu-details .dot color (1874)
+    //   - edu-footer::before bg (1938) - 카드 하단 노란 라인
+    //   - edu-footer:hover bg + arrow (1942~1950)
+    //   - final-badge .final-label bg (2038), :hover box-shadow rgba(255,165,0,*)
+    //   - edu-pagination .pagination-dot.active bg (2103)
+    // ---------------------------------------------------
+    .cluster2-education {
+      .edu-card {
+        .edu-header .edu-school .school-circle {
+          background: var(--ec-accent);
+        }
+
+        .edu-details li .dot {
+          color: var(--ec-accent);
+        }
+
+        .edu-footer {
+          &::before {
+            background: var(--ec-accent);
+          }
+          &:hover {
+            background: rgba(255, 75, 112, 0.13);
+            .arrow svg {
+              color: var(--ec-accent);
+            }
+          }
+        }
+
+        .final-badge {
+          &:hover .final-label {
+            box-shadow: 0 0 30px var(--ec-accent-glow);
+          }
+          .final-label {
+            background: var(--ec-accent);
+          }
+        }
+      }
+
+      .edu-pagination .pagination-dot.active {
+        background: var(--ec-accent);
+      }
+    }
+
+    // ---------------------------------------------------
+    // 7) cluster2-review-banner
+    //   title-shadow text-stroke 가 #21e786(녹색) 이라 의미적 status
+    //   color → 본 변환 대상 아님 (PX 동일 결정).
+    // ---------------------------------------------------
+
+    // ---------------------------------------------------
+    // 8) cluster2-section4 (Cluving Review)
+    //   - quote-card-item border + box-shadow (2218, 2229, 2233)
+    //   - total-complete-box bg gradient + hover (2344, 2362, 2364)
+    //   - .complete-text h2 .highlight (2429), goto-btn:hover (2450)
+    //   - hex-bg-icon 들은 PNG 이므로 변환 불가 — semantic 상태 인디케이터
+    //     로 유지.
+    // ---------------------------------------------------
+    .cluster2-section4 {
+      .section4-left .quote-card-item {
+        border-color: var(--ec-accent);
+        &.card-1 {
+          border-color: var(--ec-accent);
+        }
+        // card-2/card-3 는 #ffe89c/#fffae9 → soft 톤 매핑
+        &.card-2 {
+          border-color: var(--ec-accent-soft);
+        }
+        &:hover {
+          box-shadow: 0 25px 50px -12px var(--ec-accent-glow);
+        }
+      }
+
+      // review-grid-9 .review-week-item — 주차 라벨 + hover glow
+      // line 2466~2562
+      .section4-right .review-grid-9 .review-week-item {
+        .review-weeks {
+          color: var(--ec-accent);
+        }
+        &:hover {
+          border-color: var(--ec-accent-glow);
+          box-shadow:
+            0 10px 25px rgba(0, 0, 0, 0.3),
+            0 0 15px rgba(255, 75, 112, 0.13);
+          .medal-icon {
+            filter: drop-shadow(0 0 8px var(--ec-accent-glow));
+          }
+          .review-weeks {
+            text-shadow: 0 0 10px var(--ec-accent-glow);
+          }
+        }
+        .review-btn:hover {
+          color: var(--ec-accent);
+        }
+      }
+
+      .section4-right .total-complete-box {
+        background: linear-gradient(
+          135deg,
+          rgba(255, 75, 112, 0.13) 0%,
+          rgba(255, 75, 112, 0.05) 100%
+        );
+        &:hover {
+          background: linear-gradient(
+            135deg,
+            rgba(255, 75, 112, 0.22) 0%,
+            rgba(255, 75, 112, 0.11) 100%
+          );
+          box-shadow: 0 8px 25px rgba(255, 75, 112, 0.18);
+        }
+
+        .complete-text h2 .highlight {
+          color: var(--ec-accent);
+        }
+        .complete-text .goto-btn:hover {
+          color: var(--ec-accent);
+        }
+      }
+    }
+
+    // ---------------------------------------------------
+    // 9) cluster2-intro
+    //   - intro-title-shadow text-stroke #ffa500 (2690)
+    //   - intro-sub::after 노란 underline bar #ffa500 (2738)
+    //   - intro-card .card-header h4 color #faab07 (2820)
+    //   - intro-card .card-arrow border + svg stroke #faab07 (2827, 2845)
+    //   - intro-card .card-arrow::after tooltip border + :hover bg/shadow
+    //   - intro-card .card-subtitle::before border-left #faab07 (2924)
+    // ---------------------------------------------------
+    .cluster2-intro {
+      .intro-title-shadow {
+        -webkit-text-stroke: 1px var(--ec-accent);
+        text-stroke: 1px var(--ec-accent);
+      }
+      .intro-sub::after {
+        background: var(--ec-accent);
+      }
+
+      .intro-cards .intro-card {
+        .card-header h4 {
+          color: var(--ec-accent);
+        }
+        .card-header .card-arrow {
+          border: 2px solid var(--ec-accent);
+          svg {
+            stroke: var(--ec-accent);
+          }
+          &::after {
+            border: 1px solid var(--ec-accent);
+          }
+          &:hover {
+            background: var(--ec-accent);
+            box-shadow: 0 0 12px var(--ec-accent-glow);
+            svg {
+              stroke: #fff;
+            }
+          }
+        }
+        .card-subtitle::before {
+          border-left-color: var(--ec-accent);
+        }
+      }
+    }
+  }
+}
+
+// =================================================================
+// Phase C — cluster-2 modal 외곽 chrome (Encre).
+//
+// _cluster2-px.scss 의 modal override 와 1:1 mirror. 헤더 / close / footer /
+// scrollbar 는 _global.scss 의 [class*="modal-..."] 글로벌 룰이 본 토큰 변수
+// (--modal-title-color 등 — _theme-tokens.scss 에서 정의) 로 자동 분기.
+//
+// 보존: dark navy gradient · layout · animation · semantic (별점·required·
+// status flash · photo-preview 검정 배경).
+// =================================================================
+
+.encre-theme {
+  .edu-modal,
+  .section1-modal,
+  .section2-modal,
+  .section21-modal,
+  .section3-modal,
+  .section4-modal,
+  .intro-modal,
+  .help-modal {
+    border-color: var(--org-accent) !important;
+    box-shadow: 0px 0px 60px 0px rgba(255, 75, 112, 0.15) !important;
+
+    &::before,
+    &::after {
+      border-color: var(--org-accent) !important;
+    }
+  }
+
+  .edu-modal,
+  .section1-modal,
+  .section2-modal,
+  .section21-modal,
+  .section3-modal,
+  .section4-modal,
+  .intro-modal {
+    .modal-save-btn,
+    .modal-edit-btn {
+      background: var(--org-accent) !important;
+      border-color: var(--org-accent) !important;
+      box-shadow: 0 4px 15px rgba(255, 75, 112, 0.4) !important;
+
+      &:hover {
+        background: var(--org-accent-soft) !important;
+      }
+    }
+
+    .modal-cancel-btn,
+    .modal-reset-btn {
+      border-color: var(--org-accent) !important;
+      color: var(--org-accent) !important;
+
+      &:hover {
+        background: rgba(255, 75, 112, 0.1) !important;
+      }
+    }
+
+    .modal-help-icon {
+      color: var(--org-accent) !important;
+    }
+  }
+
+  .edu-modal,
+  .section1-modal,
+  .section2-modal,
+  .section21-modal,
+  .section3-modal,
+  .section4-modal,
+  .intro-modal {
+    input:focus,
+    textarea:focus,
+    select:focus {
+      border-color: var(--org-accent) !important;
+    }
+  }
+}
+
