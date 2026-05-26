@@ -143,10 +143,10 @@ const stripFieldLabel = (value: string | null | undefined, labels: string[]) => 
 
 // 기업 로고 클릭 → 기업 홈페이지 1번 링크 새 탭. URL 없으면 동작 안 함.
 const handleCompanyLogoClick = (e: React.MouseEvent, url: string | null | undefined) => {
-  if (!url) return
-  e.stopPropagation()
-  window.open(url, '_blank', 'noopener,noreferrer')
-}
+  if (!url) return;
+  e.stopPropagation();
+  window.open(url, "_blank", "noopener,noreferrer");
+};
 
 const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 세션 및 본인 프로필 여부 확인
@@ -203,10 +203,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     let cancelled = false;
     (async () => {
       try {
-        const [profileRes, eduRes] = await Promise.all([
-          fetch(`/api/profile/?userId=${targetId}`),
-          fetch(`/api/educations?userId=${targetId}`),
-        ]);
+        const [profileRes, eduRes] = await Promise.all([fetch(`/api/profile/?userId=${targetId}`), fetch(`/api/educations?userId=${targetId}`)]);
         const profileJson = await profileRes.json().catch(() => null);
         const eduJson = await eduRes.json().catch(() => null);
         if (cancelled) return;
@@ -303,9 +300,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 주차 결과 결정 시점 (N+1주(목) 12:01 KST) 도달 여부.
   // 라인 카드 '강화 대기 → 강화 성공' 과 주차 카드 '집계 중 → 성장 성공/실패/휴식' 이 동시에 확정.
   // 2차 정보 작성 여부는 강화 판정에 영향을 주지 않는다 (2026 정책).
-  const resultsDecided = !!(
-    weekData?.startDate && Date.now() >= computeResultDecidedMs(weekData.startDate)
-  );
+  const resultsDecided = !!(weekData?.startDate && Date.now() >= computeResultDecidedMs(weekData.startDate));
 
   // 팀/파트/역할/포인트 데이터 상태
   const [teamName, setTeamName] = useState<string | null>(null);
@@ -971,9 +966,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         setIsLoadingWeek(true);
 
         // ========== 1단계: 프로필 API (weekId 번들) + 보조 API 최대 병렬 로드 ==========
-        const profileUrl = urlUserId
-          ? `/api/profile?userId=${urlUserId}&context=card&weekId=${weekId}`
-          : `/api/profile?context=card&weekId=${weekId}`;
+        const profileUrl = urlUserId ? `/api/profile?userId=${urlUserId}&context=card&weekId=${weekId}` : `/api/profile?context=card&weekId=${weekId}`;
         const earlyUserId = urlUserId || null;
 
         // 프로필 API (주차 번들 포함) + 보조 API 동시 시작
@@ -1097,15 +1090,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
         // phase(진행 중/집계 중) 와 무관하게 운영진이 마킹한 휴식 여부.
         // 활동 라인 단위(실무 정보/역량/경험/경력) 판정에서 사용.
-        const userIsOnOfficialRestForWeek = !isCurrentWeekOnboarding && (
-          isBreakSeason
-          || !!weeklyGrowth?.is_club_break
-          || (!weeklyGrowth && !!currentWeek.is_club_break)
-        );
-        const userIsOnPersonalRestForWeek = !isCurrentWeekOnboarding && (
-          !!weeklyGrowth?.is_resting
-          || (!weeklyGrowth && apiRestWeekIds.includes(currentWeek.id))
-        );
+        const userIsOnOfficialRestForWeek = !isCurrentWeekOnboarding && (isBreakSeason || !!weeklyGrowth?.is_club_break || (!weeklyGrowth && !!currentWeek.is_club_break));
+        const userIsOnPersonalRestForWeek = !isCurrentWeekOnboarding && (!!weeklyGrowth?.is_resting || (!weeklyGrowth && apiRestWeekIds.includes(currentWeek.id)));
 
         // 휴식만 phase 우회 — 온보딩 주차도 일반 phase(진행 중 → 집계 중) 거치고 결정 시점에 무조건 성공.
         let growthStatus = "실패";
@@ -1200,11 +1186,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
         // 누적 인절미 계산 (현재 시즌 내, 현재 주차까지의 shield 합계 - lightning 합계)
         const currentSeasonId = seasonData?.id;
-        const seasonWeekIds = new Set(
-          allWeeksForCumulative
-            .filter((w: any) => w.season_id === currentSeasonId)
-            .map((w: any) => w.id)
-        );
+        const seasonWeekIds = new Set(allWeeksForCumulative.filter((w: any) => w.season_id === currentSeasonId).map((w: any) => w.id));
         const seasonPointsData = allPointsData.filter((p: any) => seasonWeekIds.has(p.week_id));
         const totalShields = seasonPointsData.filter((p: any) => p.point_type === "shield").reduce((sum: number, p: any) => sum + p.points, 0);
         const totalLightnings = seasonPointsData.filter((p: any) => p.point_type === "lightning").reduce((sum: number, p: any) => sum + p.points, 0);
@@ -1326,18 +1308,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
           // 실무 역량: 평소 매주 최대 1개. 공식 휴식 주차는 기본 0이지만, 예외적으로 개설된 활동이 있으면 1.
           const hasActiveCompetency = activeActivities.some((a) => competencyTypesList.includes(a.activity_type_id));
-          const competencyTotal = (currentWeek.is_club_break || isBreakSeason)
-            ? (hasActiveCompetency ? 1 : 0)
-            : 1;
+          const competencyTotal = currentWeek.is_club_break || isBreakSeason ? (hasActiveCompetency ? 1 : 0) : 1;
 
           // 실무 경험: 해당 주차에 개설된 experience 활동 중 eligible 조건 체크
           // eligible_min/max 룰 적용 시점: 2026년 봄 시즌 9주차부터
           // 그 이전에는 개설된 모든 실무 경험 활동이 적격 (룰 없이 전부 카운트)
-          const isEligibilityRuleActive = seasonData && (
-            seasonData.year > 2026 ||
-            (seasonData.year === 2026 && seasonData.name !== 'spring') ||
-            (seasonData.year === 2026 && seasonData.name === 'spring' && currentWeek.week_number >= 9)
-          );
+          const isEligibilityRuleActive = seasonData && (seasonData.year > 2026 || (seasonData.year === 2026 && seasonData.name !== "spring") || (seasonData.year === 2026 && seasonData.name === "spring" && currentWeek.week_number >= 9));
           let experienceTotal = 0;
           // 해당 주차에 개설된(is_active) experience 활동만 대상으로 함 (온보딩 주차도 정상 계산)
           const activeExperienceActivities = activeActivities.filter((a) => experienceTypesList.includes(a.activity_type_id));
@@ -1378,9 +1354,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           const weekCompletedActivities = allCompletedActivities.filter((a: CompletedActivity) => a.week_id === weekId);
 
           // 결정 시점 (N+1 목 12:01 KST) 도달 여부 — getEnhancementStatus 와 동일 기준
-          const isResultsDecidedHere = currentWeek?.start_date
-            ? Date.now() >= computeResultDecidedMs(currentWeek.start_date)
-            : false;
+          const isResultsDecidedHere = currentWeek?.start_date ? Date.now() >= computeResultDecidedMs(currentWeek.start_date) : false;
 
           // 강화 성공 여부 판단 헬퍼 (2차 정보 / deadline 무관, 결정 시점만 본다)
           const isEnhancementSuccess = (activityTypeId: string): boolean => {
@@ -2294,11 +2268,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   // 아웃풋 이미지 ↔ 캡션 1:1 페어 검증 — 한쪽만 채워진 첫 슬롯과 종류 반환, 모두 정상이면 null
-  const findImageCaptionMismatch = (
-    images: (string | null)[],
-    captions: string[],
-    startIdx: number = 0,
-  ): { slot: number; type: "missing-caption" | "missing-image" } | null => {
+  const findImageCaptionMismatch = (images: (string | null)[], captions: string[], startIdx: number = 0): { slot: number; type: "missing-caption" | "missing-image" } | null => {
     for (let i = startIdx; i < images.length; i++) {
       const hasImage = !!images[i];
       const hasCaption = !!(captions[i] && captions[i].trim());
@@ -2309,15 +2279,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const captionMismatchMessage = (m: { slot: number; type: "missing-caption" | "missing-image" }) =>
-    m.type === "missing-caption"
-      ? `아웃풋 이미지 ${m.slot}번의 캡션을 입력해주세요.\n이미지와 캡션은 한 쌍이에요. 😊`
-      : `아웃풋 ${m.slot}번에 이미지를 올려주세요.\n캡션만 입력할 수 없어요. 이미지와 캡션은 한 쌍이에요. 😊`;
+    m.type === "missing-caption" ? `아웃풋 이미지 ${m.slot}번의 캡션을 입력해주세요.\n이미지와 캡션은 한 쌍이에요. 😊` : `아웃풋 ${m.slot}번에 이미지를 올려주세요.\n캡션만 입력할 수 없어요. 이미지와 캡션은 한 쌍이에요. 😊`;
 
   // blob: URL 배열을 Supabase Storage로 업로드 → 영구 URL 배열 반환. http(s)/data URL은 그대로 통과.
-  const persistImageUrls = async (
-    images: (string | null)[],
-    activityTypeId: string,
-  ): Promise<(string | null)[]> => {
+  const persistImageUrls = async (images: (string | null)[], activityTypeId: string): Promise<(string | null)[]> => {
     const result: (string | null)[] = [];
     for (let i = 0; i < images.length; i++) {
       const url = images[i];
@@ -4500,7 +4465,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   // 휴식 모드일 때는 휴식 전용 이미지 사용, 아닐 때는 시즌/주차에 맞는 이미지
   const computedWeekPaths = weekData ? getWeekImagePath(weekData) : null;
-  const currentImage = isRestMode ? restImage : (computedWeekPaths ? computedWeekPaths.primary : "/images/0/cluster4/주차 이미지/겨울 1주차 (1월 1주차).png");
+  const currentImage = isRestMode ? restImage : computedWeekPaths ? computedWeekPaths.primary : "/images/0/cluster4/주차 이미지/겨울 1주차 (1월 1주차).png";
   const currentImageStripped = !isRestMode && computedWeekPaths && computedWeekPaths.stripped !== computedWeekPaths.primary ? computedWeekPaths.stripped : null;
   const currentTitle = weekData ? (weekData.isBreakSeason ? `${weekData.seasonYear} ${weekData.toSeasonName} 시즌, 전환 주차` : `${weekData.seasonYear} ${weekData.seasonName} 시즌, ${weekData.weekNumber}주차`) : "로딩 중...";
 
@@ -5272,8 +5237,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const existingSubTitle = existing?.sub_title || null;
       const existingOutputLinks = existing?.output_links && existing.output_links.length > 0 ? existing.output_links : null;
 
-      if (newSubTitle === existingSubTitle &&
-          JSON.stringify(newOutputLinks) === JSON.stringify(existingOutputLinks)) {
+      if (newSubTitle === existingSubTitle && JSON.stringify(newOutputLinks) === JSON.stringify(existingOutputLinks)) {
         setIsSaving(false);
         return; // 변경 없음 — API 호출 스킵
       }
@@ -6106,9 +6070,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     return;
                   }
                   // 이미 작성한 평판이 있는지 확인 (편집 경로 진입)
-                  const myExistingRep = !isDemoMode && session?.user?.id
-                    ? weeklyReputations.find((r: any) => r.reviewer_id === session.user.id)
-                    : null;
+                  const myExistingRep = !isDemoMode && session?.user?.id ? weeklyReputations.find((r: any) => r.reviewer_id === session.user.id) : null;
 
                   setHeaderModalType("타크루");
                   setHeaderModalOpen(true);
@@ -6287,25 +6249,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <span className="highlight">{weekData?.growthStatus === "진행 중" || weekData?.growthStatus === "집계 중" ? "+1" : cumulativeApprovedWeeks}</span> / 25 주차
                   </span>
                 </div>
-                <button
-                  ref={weekConfirmBtnRef}
-                  type="button"
-                  className={`week-confirm-btn status-${weekStatus}${isWeekConfirmed ? " is-confirmed" : ""}`}
-                  onClick={handleWeekConfirmClick}
-                  disabled={weekStatus !== "pending"}
-                  aria-label={isWeekConfirmed ? "주차 확인 완료" : "주차 확인 필요"}
-                >
+                <button ref={weekConfirmBtnRef} type="button" className={`week-confirm-btn status-${weekStatus}${isWeekConfirmed ? " is-confirmed" : ""}`} onClick={handleWeekConfirmClick} disabled={weekStatus !== "pending"} aria-label={isWeekConfirmed ? "주차 확인 완료" : "주차 확인 필요"}>
                   <span className="icon-shift">
                     <i className={isWeekConfirmed ? "ti ti-circle-check-filled" : "ti ti-circle-check"}></i>
                   </span>
                   <span>{isWeekConfirmed ? "확인 완료" : "확인 필요"}</span>
                 </button>
-                <button
-                  type="button"
-                  className="detail-log-btn"
-                  onClick={() => setShowDetailLogModal(true)}
-                  aria-label="Detail Log 열기"
-                >
+                <button type="button" className="detail-log-btn" onClick={() => setShowDetailLogModal(true)} aria-label="Detail Log 열기">
                   <i className="ti ti-list-details"></i>
                   <span>Detail Log</span>
                 </button>
@@ -6949,9 +6899,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </span>
             </div>
             <span className="section-count">
-              총 <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>{(isOnboardingWeek || isRestMode) ? "-" : experienceStatsDisplay.total}</span> 개 중{" "}
+              총{" "}
+              <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>
+                {isOnboardingWeek || isRestMode ? "-" : experienceStatsDisplay.total}
+              </span>{" "}
+              개 중{" "}
               <span className="highlight" style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right" }}>
-                {(isOnboardingWeek || isRestMode) ? "-" : experienceStatsDisplay.success}
+                {isOnboardingWeek || isRestMode ? "-" : experienceStatsDisplay.success}
               </span>{" "}
               개
             </span>
@@ -6959,7 +6913,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <span className="rate-label">파트 강화율</span>
               <span className="rate-value">
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                  {(isOnboardingWeek || isRestMode) ? "-" : experienceStatsDisplay.total > 0 ? Math.ceil((experienceStatsDisplay.success / experienceStatsDisplay.total) * 100) : 0}
+                  {isOnboardingWeek || isRestMode ? "-" : experienceStatsDisplay.total > 0 ? Math.ceil((experienceStatsDisplay.success / experienceStatsDisplay.total) * 100) : 0}
                 </span>
                 %
               </span>
@@ -6972,9 +6926,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               //  - cardIndex 4   : 데이터 유무와 무관하게 '잠금 상태' empty 카드 (lock-overlay 부착)
               //  - cardIndex 5+  : 만들지 않음 (3행 2열 grid 우측 하단 셀은 비워둠)
               const isLocked = cardIndex === 4;
-              const card = isLocked
-                ? buildVoidWorkExpCard(cardIndex)
-                : effectiveWorkExpCards[cardIndex] ?? buildVoidWorkExpCard(cardIndex);
+              const card = isLocked ? buildVoidWorkExpCard(cardIndex) : (effectiveWorkExpCards[cardIndex] ?? buildVoidWorkExpCard(cardIndex));
               const isEmpty = isLocked ? true : card.isEmpty;
               const expActivityType = workExpActivityTypes[cardIndex];
               return (
@@ -7065,11 +7017,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   )}
                   {isLocked && (
                     <div className="lock-overlay" aria-hidden="true">
-                      <img
-                        src="/images/0/cluster4/icon/lock.png"
-                        alt=""
-                        className="lock-overlay-icon"
-                      />
+                      <img src="/images/0/cluster4/icon/lock.png" alt="" className="lock-overlay-icon" />
                       <span className="lock-overlay-label">잠금 중</span>
                     </div>
                   )}
@@ -7110,9 +7058,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </span>
             </div>
             <span className="section-count">
-              총 <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>{(isOnboardingWeek || isRestMode) ? "-" : competencyStats.total}</span> 개 중{" "}
+              총{" "}
+              <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>
+                {isOnboardingWeek || isRestMode ? "-" : competencyStats.total}
+              </span>{" "}
+              개 중{" "}
               <span className="highlight" style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right" }}>
-                {(isOnboardingWeek || isRestMode) ? "-" : competencyStats.success}
+                {isOnboardingWeek || isRestMode ? "-" : competencyStats.success}
               </span>{" "}
               개
             </span>
@@ -7120,7 +7072,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <span className="rate-label">파트 강화율</span>
               <span className="rate-value">
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                  {(isOnboardingWeek || isRestMode) ? "-" : competencyStats.total > 0 ? Math.ceil((competencyStats.success / competencyStats.total) * 100) : 0}
+                  {isOnboardingWeek || isRestMode ? "-" : competencyStats.total > 0 ? Math.ceil((competencyStats.success / competencyStats.total) * 100) : 0}
                 </span>
                 %
               </span>
@@ -7214,9 +7166,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </span>
             </div>
             <span className="section-count">
-              총 <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>{(isOnboardingWeek || isRestMode) ? "-" : careerStats.total}</span> 개 중{" "}
+              총{" "}
+              <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>
+                {isOnboardingWeek || isRestMode ? "-" : careerStats.total}
+              </span>{" "}
+              개 중{" "}
               <span className="highlight" style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right" }}>
-                {(isOnboardingWeek || isRestMode) ? "-" : careerStats.success}
+                {isOnboardingWeek || isRestMode ? "-" : careerStats.success}
               </span>{" "}
               개
             </span>
@@ -7224,7 +7180,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <span className="rate-label">파트 강화율</span>
               <span className="rate-value">
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                  {(isOnboardingWeek || isRestMode) ? "-" : careerStats.total > 0 ? Math.ceil((careerStats.success / careerStats.total) * 100) : 0}
+                  {isOnboardingWeek || isRestMode ? "-" : careerStats.total > 0 ? Math.ceil((careerStats.success / careerStats.total) * 100) : 0}
                 </span>
                 %
               </span>
@@ -8932,13 +8888,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       <div className="personal-photo">
                         {/* TODO: [백엔드 작업 필요] profile API의 photo URL 사용 — 현재는 데모 더미 또는 기본 아이콘 */}
                         <img
-                          src={
-                            isDemoMode
-                              ? "/images/0/crew profile/남 1.webp"
-                              : reviewerProfile.profilePhotoUrl || "/images/0/crew profile/남 1.webp"
-                          }
+                          src={isDemoMode ? "/images/0/crew profile/남 1.webp" : reviewerProfile.profilePhotoUrl || "/images/0/crew profile/남 1.webp"}
                           alt="profile"
-                          onError={(e) => { (e.target as HTMLImageElement).src = "/images/0/crew profile/남 1.webp"; }}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = "/images/0/crew profile/남 1.webp";
+                          }}
                         />
                       </div>
 
@@ -8946,27 +8900,27 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       <div className="personal-info">
                         {/* 1행 — 이름·성별·나이 + 역할/키워드 태그 (태그는 우측 정렬) */}
                         <div className="personal-row-1">
-                          <span className="personal-name">{isDemoMode ? "홍길동" : (reviewerProfile.displayName || session?.user?.name || "—")}</span>
+                          <span className="personal-name">{isDemoMode ? "홍길동" : reviewerProfile.displayName || session?.user?.name || "—"}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{isDemoMode ? "남" : (reviewerProfile.gender || "—")}</span>
+                          <span className="personal-gender">{isDemoMode ? "남" : reviewerProfile.gender || "—"}</span>
                           <span className="personal-separator">|</span>
                           <span className="personal-age">{isDemoMode ? "22" : (reviewerProfile.age ?? "—")} 세</span>
                           <div className="personal-tags">
                             {/* TODO: [백엔드 작업 필요] role 필드 (운영진/앰배서더/일반 등) — profile API에 추가 필요 */}
-                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : (roleLabel || "—"), "—")}</span>
-                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : (reviewerProfile.vision || "-"), "-")}</span>
+                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : roleLabel || "—", "—")}</span>
+                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : reviewerProfile.vision || "-", "-")}</span>
                           </div>
                         </div>
 
                         {/* 2행 — 학교·학과 (필드명/값 분리, 고정폭, 말줄임 없음) */}
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "서울대" : (reviewerProfile.school || "—")}</span>
+                            <span className="field-value">{isDemoMode ? "서울대" : reviewerProfile.school || "—"}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "경영" : (reviewerProfile.major || "—")}</span>
+                            <span className="field-value">{isDemoMode ? "경영" : reviewerProfile.major || "—"}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
@@ -9022,7 +8976,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         {/* 1행: 활동 카테고리 — 기존 매핑 activityTypeConfig[activityType].icon (selectedWorkInfoCard.icon) 사용 */}
                         <div className="line-info-row">
                           {selectedWorkInfoCard.icon ? <img className="line-activity-icon" src={selectedWorkInfoCard.icon} alt={selectedWorkInfoCard.category || "활동"} /> : <span className="line-status-icon">●</span>}
-                          <span className="line-name">{selectedWorkInfoCard.category || "—"}</span>
+                          <span className="line-name" style={{ lineHeight: "26px", height: "26px", overflow: "visible" }}>{"인포데스크 — 데모 확인용 매우 긴 텍스트 두 줄 줄바꿈 테스트입니다 테스트입니다"}</span>
                         </div>
                       </div>
                     </div>
@@ -9037,8 +8991,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           const dotColor = ["#FF6B6B", "#4ECDC4", isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07", "#6BCB77", "#A084DC"][i];
                           const adminCount = selectedWorkInfoCard?.activityType ? getAdminOutputLinksCount(selectedWorkInfoCard.activityType) : 0;
                           const isAdminLink = i < adminCount;
-                          // 보기 모드는 카드 데이터, 편집 모드는 editingOutputLinks
-                          const link = workInfoViewIsEditing ? editingOutputLinks[i] || { desc: "", url: "" } : selectedWorkInfoCard.outputLinks?.[i] || { desc: "", url: "" };
+                          // 데모 데이터 (프론트 전용)
+                          const demoOutputLinks = [
+                            { desc: "성장 시즌 운영 매뉴얼", url: "https://example.com/manual" },
+                            { desc: "실무 역량 강화 자료", url: "https://example.com/ability" },
+                            { desc: "프로젝트 결과 보고서", url: "https://example.com/project-report" },
+                            { desc: "커리어 트랙 로드맵", url: "https://example.com/career-roadmap" },
+                            { desc: "주차별 성장 기록 아카이브", url: "https://example.com/growth-history" },
+                          ];
+                          // 보기 모드는 데모 데이터, 편집 모드는 editingOutputLinks
+                          const link = workInfoViewIsEditing ? editingOutputLinks[i] || { desc: "", url: "" } : demoOutputLinks[i] || { desc: "", url: "" };
                           const hasUrl = !!link.url?.trim();
                           // 순차 입력: 사용자 링크 영역(idx >= adminCount)에서 이전 칸 비어있으면 disabled
                           const prevUserLink = i > adminCount ? editingOutputLinks[i - 1] : null;
@@ -9138,9 +9100,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   <div className="workinfo-image-grid images-grid">
                     {Array.from({ length: WORKINFO_IMAGE_SLOT_COUNT }).map((_, imageIdx) => {
                       // 운영진 이미지 슬롯 분기
-                      const adminImages = selectedWorkInfoCard?.activityType ? getAdminOutputImages(selectedWorkInfoCard.activityType) : []
-                      const adminCount = adminImages.length
-                      const isAdminSlot = imageIdx < 2
+                      const adminImages = selectedWorkInfoCard?.activityType ? getAdminOutputImages(selectedWorkInfoCard.activityType) : [];
+                      const adminCount = adminImages.length;
+                      const isAdminSlot = imageIdx < 2;
                       // 슬롯 idx → 데이터 출처
                       // 0,1: adminImages[0], adminImages[1]
                       // 2,3: 크루 이미지 (image_urls[0], image_urls[1])
@@ -9148,20 +9110,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const viewCaptions = normalizeWorkInfoCaptions(selectedWorkInfoCard?.imageCaptions);
                       const crewImagesForState = workInfoViewIsEditing ? editingImages : viewImages;
                       const crewCaptionsForState = workInfoViewIsEditing ? editingImageCaptions : viewCaptions;
-                      let image: string | null = null
-                      let caption = ""
+                      let image: string | null = null;
+                      let caption = "";
                       if (isAdminSlot) {
-                        const adminImg = adminImages[imageIdx]
-                        image = adminImg?.url || null
-                        caption = adminImg?.caption || ""
+                        const adminImg = adminImages[imageIdx];
+                        image = adminImg?.url || null;
+                        caption = adminImg?.caption || "";
                       } else {
-                        const crewSlotIdx = imageIdx - 2
-                        image = crewImagesForState[crewSlotIdx] || null
-                        caption = crewCaptionsForState[crewSlotIdx] || ""
+                        const crewSlotIdx = imageIdx - 2;
+                        image = crewImagesForState[crewSlotIdx] || null;
+                        caption = crewCaptionsForState[crewSlotIdx] || "";
                       }
                       // 어드민 슬롯은 클릭/편집/삭제 모두 비활성, 크루 슬롯만 편집 가능
-                      const slotIsEditable = workInfoViewIsEditing && !isAdminSlot
-                      const crewSlotIdx = imageIdx - 2 // 슬롯 2,3 → 크루 image_urls[0,1]
+                      const slotIsEditable = workInfoViewIsEditing && !isAdminSlot;
+                      const crewSlotIdx = imageIdx - 2; // 슬롯 2,3 → 크루 image_urls[0,1]
                       return (
                         <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${isAdminSlot && !image ? " disabled" : ""}${isAdminSlot ? " admin-slot" : ""}`} style={{ position: "relative" }}>
                           {image ? (
@@ -9219,9 +9181,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                   </button>
                                 </div>
                               )}
-                              <div className="empty-slot">
-                                {isAdminSlot ? <span style={{ color: "#aaa", fontSize: 12 }}>운영진 미업로드</span> : <i className="ti ti-photo-plus"></i>}
-                              </div>
+                              <div className="empty-slot">{isAdminSlot ? <span style={{ color: "#aaa", fontSize: 12 }}>운영진 미업로드</span> : <i className="ti ti-photo-plus"></i>}</div>
                             </div>
                           )}
                           {!isAdminSlot && (
@@ -9395,37 +9355,35 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <div className="personal-grid">
                       <div className="personal-photo">
                         <img
-                          src={
-                            isDemoMode
-                              ? "/images/0/crew profile/남 1.webp"
-                              : reviewerProfile.profilePhotoUrl || "/images/0/crew profile/남 1.webp"
-                          }
+                          src={isDemoMode ? "/images/0/crew profile/남 1.webp" : reviewerProfile.profilePhotoUrl || "/images/0/crew profile/남 1.webp"}
                           alt="profile"
-                          onError={(e) => { (e.target as HTMLImageElement).src = "/images/0/crew profile/남 1.webp"; }}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = "/images/0/crew profile/남 1.webp";
+                          }}
                         />
                       </div>
 
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{isDemoMode ? "홍길동" : (reviewerProfile.displayName || session?.user?.name || "—")}</span>
+                          <span className="personal-name">{isDemoMode ? "홍길동" : reviewerProfile.displayName || session?.user?.name || "—"}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{isDemoMode ? "남" : (reviewerProfile.gender || "—")}</span>
+                          <span className="personal-gender">{isDemoMode ? "남" : reviewerProfile.gender || "—"}</span>
                           <span className="personal-separator">|</span>
                           <span className="personal-age">{isDemoMode ? "22" : (reviewerProfile.age ?? "—")} 세</span>
                           <div className="personal-tags">
-                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : (roleLabel || "—"), "—")}</span>
-                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : (reviewerProfile.vision || "-"), "-")}</span>
+                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : roleLabel || "—", "—")}</span>
+                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : reviewerProfile.vision || "-", "-")}</span>
                           </div>
                         </div>
 
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "서울대" : (reviewerProfile.school || "—")}</span>
+                            <span className="field-value">{isDemoMode ? "서울대" : reviewerProfile.school || "—"}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "경영" : (reviewerProfile.major || "—")}</span>
+                            <span className="field-value">{isDemoMode ? "경영" : reviewerProfile.major || "—"}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
@@ -9451,7 +9409,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           not_applicable: "해당 없음",
                         };
                         // 카드 status-badge와 동일 우선순위로 평가: isEmpty(보이드) → isRestMode/온보딩 → !hasActivity → enhancementStatus
-                        const statusKey = selectedWorkExpCard.isEmpty ? "empty" : (isRestMode || isOnboardingWeek) ? "not_applicable" : !selectedWorkExpCard.hasActivity ? "failed" : (selectedWorkExpCard.enhancementStatus as string);
+                        const statusKey = selectedWorkExpCard.isEmpty ? "empty" : isRestMode || isOnboardingWeek ? "not_applicable" : !selectedWorkExpCard.hasActivity ? "failed" : (selectedWorkExpCard.enhancementStatus as string);
                         const statusText = enhanceStatusTextMap[statusKey] || "—";
                         const statusImages: Record<string, string> = {
                           success: "/images/0/cluster4/icon/5 강화 성공.png",
@@ -9489,7 +9447,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       <div className="workinfo-line-info">
                         <div className="line-info-row">
                           <img className="line-activity-icon" src={getWorkExpIcon(lookupWorkExpMapping(selectedWorkExpCard.code)?.lineName || selectedWorkExpCard.badge || "")} alt={selectedWorkExpCard.badge || "활동"} />
-                          <span className="line-name">{lookupWorkExpMapping(selectedWorkExpCard.code)?.lineName || selectedWorkExpCard.badge || "—"}</span>
+                          <span className="line-name" style={{ lineHeight: "26px", height: "26px", overflow: "visible" }}>{lookupWorkExpMapping(selectedWorkExpCard.code)?.lineName || selectedWorkExpCard.badge || "—"}</span>
                         </div>
                       </div>
                     </div>
@@ -9927,35 +9885,33 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <div className="personal-grid">
                       <div className="personal-photo">
                         <img
-                          src={
-                            isDemoMode
-                              ? "/images/0/crew profile/남 1.webp"
-                              : reviewerProfile.profilePhotoUrl || "/images/0/crew profile/남 1.webp"
-                          }
+                          src={isDemoMode ? "/images/0/crew profile/남 1.webp" : reviewerProfile.profilePhotoUrl || "/images/0/crew profile/남 1.webp"}
                           alt="profile"
-                          onError={(e) => { (e.target as HTMLImageElement).src = "/images/0/crew profile/남 1.webp"; }}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = "/images/0/crew profile/남 1.webp";
+                          }}
                         />
                       </div>
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{isDemoMode ? "홍길동" : (reviewerProfile.displayName || session?.user?.name || "—")}</span>
+                          <span className="personal-name">{isDemoMode ? "홍길동" : reviewerProfile.displayName || session?.user?.name || "—"}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{isDemoMode ? "남" : (reviewerProfile.gender || "—")}</span>
+                          <span className="personal-gender">{isDemoMode ? "남" : reviewerProfile.gender || "—"}</span>
                           <span className="personal-separator">|</span>
                           <span className="personal-age">{isDemoMode ? "22" : (reviewerProfile.age ?? "—")} 세</span>
                           <div className="personal-tags">
-                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : (roleLabel || "—"), "—")}</span>
-                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : (reviewerProfile.vision || "-"), "-")}</span>
+                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : roleLabel || "—", "—")}</span>
+                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : reviewerProfile.vision || "-", "-")}</span>
                           </div>
                         </div>
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "서울대" : (reviewerProfile.school || "—")}</span>
+                            <span className="field-value">{isDemoMode ? "서울대" : reviewerProfile.school || "—"}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "경영" : (reviewerProfile.major || "—")}</span>
+                            <span className="field-value">{isDemoMode ? "경영" : reviewerProfile.major || "—"}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
@@ -10009,7 +9965,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       <div className="workinfo-line-info">
                         <div className="line-info-row">
                           {selectedWorkAbilityCard.icon ? <img className="line-activity-icon" src={selectedWorkAbilityCard.icon} alt={selectedWorkAbilityCard.lineName || "활동"} /> : <span className="line-status-icon">●</span>}
-                          <span className="line-name">{selectedWorkAbilityCard.lineName || "—"}</span>
+                          <span className="line-name" style={{ lineHeight: "26px", height: "26px", overflow: "visible" }}>{selectedWorkAbilityCard.lineName || "—"}</span>
                         </div>
                       </div>
                     </div>
@@ -10346,25 +10302,25 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{isDemoMode ? "홍길동" : (reviewerProfile.displayName || session?.user?.name || "—")}</span>
+                          <span className="personal-name">{isDemoMode ? "홍길동" : reviewerProfile.displayName || session?.user?.name || "—"}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{isDemoMode ? "남" : (reviewerProfile.gender || "—")}</span>
+                          <span className="personal-gender">{isDemoMode ? "남" : reviewerProfile.gender || "—"}</span>
                           <span className="personal-separator">|</span>
                           <span className="personal-age">{isDemoMode ? "22" : (reviewerProfile.age ?? "—")} 세</span>
                           <div className="personal-tags">
-                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : (roleLabel || "—"), "—")}</span>
-                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : (reviewerProfile.vision || "-"), "-")}</span>
+                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : roleLabel || "—", "—")}</span>
+                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : reviewerProfile.vision || "-", "-")}</span>
                           </div>
                         </div>
 
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "서울대" : (reviewerProfile.school || "—")}</span>
+                            <span className="field-value">{isDemoMode ? "서울대" : reviewerProfile.school || "—"}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "경영" : (reviewerProfile.major || "—")}</span>
+                            <span className="field-value">{isDemoMode ? "경영" : reviewerProfile.major || "—"}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
@@ -10423,7 +10379,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                               src={selectedWorkCareerCard.icon}
                               alt={selectedWorkCareerCard.badge || "활동"}
                               onClick={(e) => handleCompanyLogoClick(e, selectedWorkCareerCard.companyHomepageUrl)}
-                              style={{ cursor: selectedWorkCareerCard.companyHomepageUrl ? 'pointer' : undefined }}
+                              style={{ cursor: selectedWorkCareerCard.companyHomepageUrl ? "pointer" : undefined }}
                               onError={(e) => {
                                 (e.target as HTMLImageElement).style.display = "none";
                               }}
@@ -10433,7 +10389,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                               <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.3)" }}>-</span>
                             </div>
                           )}
-                          <span className="line-name">{selectedWorkCareerCard.lineName || selectedWorkCareerCard.badge || "—"}</span>
+                          <span className="line-name" style={{ lineHeight: "26px", height: "26px", overflow: "visible" }}>{selectedWorkCareerCard.lineName || selectedWorkCareerCard.badge || "—"}</span>
                         </div>
                       </div>
                     </div>
@@ -10543,136 +10499,136 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const careerIdxForLock = (selectedWorkCareerCard?.id || 1) - 1;
                       const adminImgCountForLock = (careerRecords[careerIdxForLock]?.output_images || []).filter((i) => i?.url?.trim()).length;
                       return Array.from({ length: WORKCAREER_IMAGE_SLOT_COUNT }).map((_, imageIdx) => {
-                      const viewImages = normalizeWorkCareerImages(selectedWorkCareerCard?.images);
-                      const viewCaptions = normalizeWorkCareerCaptions(selectedWorkCareerCard?.imageCaptions);
-                      const imagesForState = workCareerViewIsEditing ? editingCareerImages : viewImages;
-                      const captionsForState = workCareerViewIsEditing ? editingCareerImageCaptions : viewCaptions;
-                      const image = imagesForState[imageIdx] || null;
-                      const caption = captionsForState[imageIdx] || "";
-                      const isEnabled = imageIdx === 0 || !!imagesForState[imageIdx - 1];
-                      const isRequired = imageIdx < 2;
-                      const isAdminLocked = imageIdx < adminImgCountForLock;
-                      const showEditingActions = workCareerViewIsEditing && !isAdminLocked;
-                      return (
-                        <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${!isEnabled ? " disabled" : ""}${isAdminLocked ? " admin-locked" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
-                          {image ? (
-                            <div className="image-preview" onClick={() => handleCareerImagePreview(imageIdx)}>
-                              <img src={image} alt={`이미지 ${imageIdx + 1}`} />
-                              {showEditingActions && (
-                                <div className="image-actions-overlay">
-                                  <button
-                                    type="button"
-                                    className="image-action-btn"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      triggerCareerImageUpload(imageIdx);
-                                    }}
-                                    title="교체"
-                                    aria-label="교체"
-                                  >
-                                    <i className="ti ti-upload"></i>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="image-action-btn image-delete-btn"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleCareerImageDelete(imageIdx);
-                                    }}
-                                    title="삭제"
-                                    aria-label="삭제"
-                                  >
-                                    <i className="ti ti-trash"></i>
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <div
-                              className="image-preview"
-                              onClick={async () => {
-                                if (showEditingActions && isEnabled) triggerCareerImageUpload(imageIdx);
-                              }}
-                            >
-                              {showEditingActions && (
-                                <div className="image-actions-overlay">
-                                  <button
-                                    type="button"
-                                    className="image-action-btn"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      triggerCareerImageUpload(imageIdx);
-                                    }}
-                                    disabled={!isEnabled}
-                                    title="업로드"
-                                    aria-label="업로드"
-                                  >
-                                    <i className="ti ti-upload"></i>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="image-action-btn image-delete-btn"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleCareerImageDelete(imageIdx);
-                                    }}
-                                    disabled
-                                    title="삭제"
-                                    aria-label="삭제"
-                                  >
-                                    <i className="ti ti-trash"></i>
-                                  </button>
-                                </div>
-                              )}
-                              <div className="empty-slot">
-                                <i className="ti ti-photo-plus"></i>
+                        const viewImages = normalizeWorkCareerImages(selectedWorkCareerCard?.images);
+                        const viewCaptions = normalizeWorkCareerCaptions(selectedWorkCareerCard?.imageCaptions);
+                        const imagesForState = workCareerViewIsEditing ? editingCareerImages : viewImages;
+                        const captionsForState = workCareerViewIsEditing ? editingCareerImageCaptions : viewCaptions;
+                        const image = imagesForState[imageIdx] || null;
+                        const caption = captionsForState[imageIdx] || "";
+                        const isEnabled = imageIdx === 0 || !!imagesForState[imageIdx - 1];
+                        const isRequired = imageIdx < 2;
+                        const isAdminLocked = imageIdx < adminImgCountForLock;
+                        const showEditingActions = workCareerViewIsEditing && !isAdminLocked;
+                        return (
+                          <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${!isEnabled ? " disabled" : ""}${isAdminLocked ? " admin-locked" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
+                            {image ? (
+                              <div className="image-preview" onClick={() => handleCareerImagePreview(imageIdx)}>
+                                <img src={image} alt={`이미지 ${imageIdx + 1}`} />
+                                {showEditingActions && (
+                                  <div className="image-actions-overlay">
+                                    <button
+                                      type="button"
+                                      className="image-action-btn"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        triggerCareerImageUpload(imageIdx);
+                                      }}
+                                      title="교체"
+                                      aria-label="교체"
+                                    >
+                                      <i className="ti ti-upload"></i>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="image-action-btn image-delete-btn"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleCareerImageDelete(imageIdx);
+                                      }}
+                                      title="삭제"
+                                      aria-label="삭제"
+                                    >
+                                      <i className="ti ti-trash"></i>
+                                    </button>
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                          )}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            ref={(el) => {
-                              careerImageFileInputRefs.current[imageIdx] = el;
-                            }}
-                            style={{ display: "none" }}
-                            onChange={(e) => handleCareerImageFileChange(e, imageIdx)}
-                          />
-                          <div className="image-caption-overlay">
-                            {showEditingActions && activeCareerCaptionIdx === imageIdx ? (
-                              <input
-                                type="text"
-                                className="caption-input"
-                                value={editingCareerImageCaptions[imageIdx] || ""}
-                                onChange={(e) => {
-                                  if (e.target.value.length <= 20) handleCareerCaptionChange(imageIdx, e.target.value);
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                                placeholder="캡션 입력 (최대 20자)"
-                                maxLength={20}
-                                autoFocus
-                              />
                             ) : (
-                              <span className="caption-text">{caption}</span>
+                              <div
+                                className="image-preview"
+                                onClick={async () => {
+                                  if (showEditingActions && isEnabled) triggerCareerImageUpload(imageIdx);
+                                }}
+                              >
+                                {showEditingActions && (
+                                  <div className="image-actions-overlay">
+                                    <button
+                                      type="button"
+                                      className="image-action-btn"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        triggerCareerImageUpload(imageIdx);
+                                      }}
+                                      disabled={!isEnabled}
+                                      title="업로드"
+                                      aria-label="업로드"
+                                    >
+                                      <i className="ti ti-upload"></i>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="image-action-btn image-delete-btn"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleCareerImageDelete(imageIdx);
+                                      }}
+                                      disabled
+                                      title="삭제"
+                                      aria-label="삭제"
+                                    >
+                                      <i className="ti ti-trash"></i>
+                                    </button>
+                                  </div>
+                                )}
+                                <div className="empty-slot">
+                                  <i className="ti ti-photo-plus"></i>
+                                </div>
+                              </div>
+                            )}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              ref={(el) => {
+                                careerImageFileInputRefs.current[imageIdx] = el;
+                              }}
+                              style={{ display: "none" }}
+                              onChange={(e) => handleCareerImageFileChange(e, imageIdx)}
+                            />
+                            <div className="image-caption-overlay">
+                              {showEditingActions && activeCareerCaptionIdx === imageIdx ? (
+                                <input
+                                  type="text"
+                                  className="caption-input"
+                                  value={editingCareerImageCaptions[imageIdx] || ""}
+                                  onChange={(e) => {
+                                    if (e.target.value.length <= 20) handleCareerCaptionChange(imageIdx, e.target.value);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  placeholder="캡션 입력 (최대 20자)"
+                                  maxLength={20}
+                                  autoFocus
+                                />
+                              ) : (
+                                <span className="caption-text">{caption}</span>
+                              )}
+                            </div>
+                            {showEditingActions && (
+                              <button
+                                type="button"
+                                className={`image-action-btn image-caption-btn${activeCareerCaptionIdx === imageIdx ? " active" : ""}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveCareerCaptionIdx(activeCareerCaptionIdx === imageIdx ? null : imageIdx);
+                                }}
+                                title={activeCareerCaptionIdx === imageIdx ? "캡션 저장" : "캡션 편집"}
+                                aria-label="캡션"
+                                style={{ position: "absolute", bottom: "8px", right: "8px", zIndex: 3 }}
+                              >
+                                <i className="ti ti-text-caption"></i>
+                              </button>
                             )}
                           </div>
-                          {showEditingActions && (
-                            <button
-                              type="button"
-                              className={`image-action-btn image-caption-btn${activeCareerCaptionIdx === imageIdx ? " active" : ""}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveCareerCaptionIdx(activeCareerCaptionIdx === imageIdx ? null : imageIdx);
-                              }}
-                              title={activeCareerCaptionIdx === imageIdx ? "캡션 저장" : "캡션 편집"}
-                              aria-label="캡션"
-                              style={{ position: "absolute", bottom: "8px", right: "8px", zIndex: 3 }}
-                            >
-                              <i className="ti ti-text-caption"></i>
-                            </button>
-                          )}
-                        </div>
-                      );
+                        );
                       });
                     })()}
                     {/* 4번째 슬롯 — 후원/제휴사 카드 (항상 읽기전용, 편집 모드에서도 수정 불가) */}
@@ -10694,7 +10650,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                     src={companyLogo}
                                     alt="기업 로고"
                                     onClick={(e) => handleCompanyLogoClick(e, selectedWorkCareerCard.companyHomepageUrl)}
-                                    style={{ cursor: selectedWorkCareerCard.companyHomepageUrl ? 'pointer' : undefined }}
+                                    style={{ cursor: selectedWorkCareerCard.companyHomepageUrl ? "pointer" : undefined }}
                                     onError={(e) => {
                                       (e.target as HTMLImageElement).style.display = "none";
                                       const sibling = (e.target as HTMLImageElement).nextElementSibling as HTMLElement | null;
@@ -10948,11 +10904,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <div className="personal-grid">
                       <div className="personal-photo">
                         <img
-                          src={
-                            isDemoMode
-                              ? "/images/0/crew profile/남 1.webp"
-                              : reviewerProfile.profilePhotoUrl || "/images/0/crew profile/남 1.webp"
-                          }
+                          src={isDemoMode ? "/images/0/crew profile/남 1.webp" : reviewerProfile.profilePhotoUrl || "/images/0/crew profile/남 1.webp"}
                           alt="프로필"
                           onError={(e) => {
                             (e.target as HTMLImageElement).src = "/images/0/crew profile/남 1.webp";
@@ -10961,30 +10913,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       </div>
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">
-                            {isDemoMode ? "홍길동" : reviewerProfile.displayName || session?.user?.name || "—"}
-                          </span>
+                          <span className="personal-name">{isDemoMode ? "홍길동" : reviewerProfile.displayName || session?.user?.name || "—"}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">
-                            {isDemoMode ? "남" : reviewerProfile.gender || "—"}
-                          </span>
+                          <span className="personal-gender">{isDemoMode ? "남" : reviewerProfile.gender || "—"}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-age">
-                            {isDemoMode ? "22" : reviewerProfile.age ?? "—"} 세
-                          </span>
+                          <span className="personal-age">{isDemoMode ? "22" : (reviewerProfile.age ?? "—")} 세</span>
                         </div>
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">
-                              {isDemoMode ? "서울대" : reviewerProfile.school || "—"}
-                            </span>
+                            <span className="field-value">{isDemoMode ? "서울대" : reviewerProfile.school || "—"}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">
-                              {isDemoMode ? "경영" : reviewerProfile.major || "—"}
-                            </span>
+                            <span className="field-value">{isDemoMode ? "경영" : reviewerProfile.major || "—"}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
@@ -11001,12 +10943,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         </div>
                       </div>
                       <div className="personal-tags">
-                        <span className="tag-badge tag-role">
-                          {isDemoMode ? "앰배서더" : roleLabel || "일반"}
-                        </span>
-                        <span className="tag-badge tag-keyword">
-                          {isDemoMode ? "엔비디아 구글 테슬라" : reviewerProfile.vision || "-"}
-                        </span>
+                        <span className="tag-badge tag-role">{isDemoMode ? "앰배서더" : roleLabel || "일반"}</span>
+                        <span className="tag-badge tag-keyword">{isDemoMode ? "엔비디아 구글 테슬라" : reviewerProfile.vision || "-"}</span>
                       </div>
                     </div>
                   </div>
@@ -11047,14 +10985,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   </button>
                   <div className="modal-footer-right">
                     {!isWeeklyReviewEditing ? (
-                      <button
-                        type="button"
-                        className="modal-edit-btn"
-                        onClick={handleWeeklyReviewEditClick}
-                        disabled={!isOwner}
-                        style={!isOwner ? { opacity: 0.3, cursor: "not-allowed" } : undefined}
-                        title={isOwner ? "수정" : "본인 주차 리뷰만 수정할 수 있습니다"}
-                      >
+                      <button type="button" className="modal-edit-btn" onClick={handleWeeklyReviewEditClick} disabled={!isOwner} style={!isOwner ? { opacity: 0.3, cursor: "not-allowed" } : undefined} title={isOwner ? "수정" : "본인 주차 리뷰만 수정할 수 있습니다"}>
                         수정
                       </button>
                     ) : (
