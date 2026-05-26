@@ -148,12 +148,12 @@ export async function GET(request: NextRequest) {
       supabaseAdmin.from("rest_requests").select("week_id").eq("user_id", profile.user_id).eq("status", "approved"),
       // 모든 시즌
       supabaseAdmin.from("seasons").select("id, name, year, start_date, end_date").order("start_date", { ascending: true }),
-      // 성공 주차 - user_weekly_growth 사용 (pms1.5와 동일)
-      supabaseAdmin.from("user_weekly_growth").select("week_id").eq("user_id", profile.user_id).eq("is_success", true),
+      // 성공 주차 - user_week_statuses SoT 기반
+      supabaseAdmin.from("user_week_statuses").select("week_start_date").eq("user_id", profile.user_id).eq("status", "success"),
       // activity_records (practicalCounts용)
       supabaseAdmin.from("activity_records").select("id, week_id, activity_type_id, is_completed").eq("user_id", profile.user_id),
-      // user_weekly_growth (시즌별 성공 주차)
-      supabaseAdmin.from("user_weekly_growth").select("week_id, is_success, is_resting, weeks!inner(season_id)").eq("user_id", profile.user_id)
+      // user_week_statuses (시즌별 성공 주차 + 휴식 판정)
+      supabaseAdmin.from("user_week_statuses").select("week_start_date, status").eq("user_id", profile.user_id)
     ]);
 
     // activity_types는 캐시에서
@@ -169,7 +169,17 @@ export async function GET(request: NextRequest) {
     const allWeeks = allWeeksResult.data || [];
     const allRests = allRestsResult.data || [];
     const allSeasons = allSeasonsResult.data || [];
-    const userActivities = userActivitiesResult.data || [];
+    // user_week_statuses success → week_id 변환 (allWeeks 재활용)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const weekByStartDateSummary = new Map<string, any>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    allWeeks.forEach((w: any) => weekByStartDateSummary.set(w.start_date, w));
+    const userActivities = (userActivitiesResult.data || [])
+      .map((s: any) => {
+        const w = weekByStartDateSummary.get(s.week_start_date);
+        return w ? { week_id: w.id } : null;
+      })
+      .filter(Boolean);
 
     // activity_type_id → cluster_id 매핑
     const typeToClusterMap = new Map<string, string>();
@@ -302,13 +312,15 @@ export async function GET(request: NextRequest) {
         return (seasonOrderMap[b.seasons.name] || 0) - (seasonOrderMap[a.seasons.name] || 0);
       });
 
-    // 시즌별 성공 주차 수 실시간 계산
-    const userWeeklyGrowthData = userWeeklyGrowthResult.data || [];
+    // 시즌별 성공 주차 수 실시간 계산 (user_week_statuses SoT 기반)
+    const userWeeklyGrowthData: any[] = userWeeklyGrowthResult.data || [];
     const seasonSuccessWeeksMap = new Map<string, number>();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    userWeeklyGrowthData.forEach((wg: any) => {
-      const seasonId = wg.weeks?.season_id;
-      if (wg.is_success && seasonId) {
+    userWeeklyGrowthData.forEach((ws: any) => {
+      const weekMeta = weekByStartDateSummary.get(ws.week_start_date);
+      if (!weekMeta) return;
+      const seasonId = weekMeta.season_id;
+      if (ws.status === "success" && seasonId) {
         seasonSuccessWeeksMap.set(seasonId, (seasonSuccessWeeksMap.get(seasonId) || 0) + 1);
       }
     });

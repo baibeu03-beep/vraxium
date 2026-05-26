@@ -130,15 +130,16 @@ export async function GET(
     status = "running";
   }
 
-  const { data: weeklyGrowthRecords } = await supabase
-    .from("user_weekly_growth")
-    .select("week_id, is_success, is_resting, weeks!inner(season_key)")
+  const { data: weekStatusRecords } = await supabase
+    .from("user_week_statuses")
+    .select("week_start_date, status")
     .eq("user_id", userId);
 
-  const totalWeeks = weeklyGrowthRecords?.length ?? 0;
-  const successWeeks = weeklyGrowthRecords?.filter((r: any) => r.is_success)?.length ?? 0;
-  const restWeeks = weeklyGrowthRecords?.filter((r: any) => r.is_resting)?.length ?? 0;
-  const failWeeks = totalWeeks - successWeeks - restWeeks;
+  const successWeeks = weekStatusRecords?.filter((r: any) => r.status === "success")?.length ?? 0;
+  const restWeeks = weekStatusRecords?.filter((r: any) => r.status === "personal_rest")?.length ?? 0;
+  const officialRestWeeks = weekStatusRecords?.filter((r: any) => r.status === "official_rest")?.length ?? 0;
+  const failWeeks = weekStatusRecords?.filter((r: any) => r.status === "fail")?.length ?? 0;
+  const totalWeeks = successWeeks + failWeeks + restWeeks + officialRestWeeks;
 
   const { data: userProfile } = await supabase
     .from("user_profiles")
@@ -151,27 +152,42 @@ export async function GET(
   let endWeekInfo: any = null;
   const growthStatus = userProfile?.growth_status;
   if (growthStatus === "graduated" || growthStatus === "withdrawn" || growthStatus === "expelled") {
-    const { data: lastGrowth } = await supabase
-      .from("user_weekly_growth")
-      .select("week_id, weeks!inner(week_number, season_definitions!inner(season_label, season_type, year))")
+    const { data: lastStatus } = await supabase
+      .from("user_week_statuses")
+      .select("week_start_date")
       .eq("user_id", userId)
-      .order("week_id", { ascending: false })
+      .order("week_start_date", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (lastGrowth) {
-      const es = (lastGrowth as any).weeks?.season_definitions;
-      const eType: string = es?.season_type || "";
-      const eIsBreak = eType.includes("break");
-      endWeekInfo = {
-        year: es?.year || null,
-        seasonName: seasonLabel(eType.includes("break") ? eType.replace("_break", "").split("_").pop() || eType : eType),
-        weekNumber: eIsBreak ? null : (lastGrowth as any).weeks?.week_number,
-        isBreak: eIsBreak,
-      };
+    if (lastStatus) {
+      const { data: lastWeek } = await supabase
+        .from("weeks")
+        .select("week_number, season_definitions!inner(season_label, season_type, year)")
+        .eq("start_date", (lastStatus as any).week_start_date)
+        .maybeSingle();
+      if (lastWeek) {
+        const es = (lastWeek as any).season_definitions;
+        const eType: string = es?.season_type || "";
+        const eIsBreak = eType.includes("break");
+        endWeekInfo = {
+          year: es?.year || null,
+          seasonName: seasonLabel(eType.includes("break") ? eType.replace("_break", "").split("_").pop() || eType : eType),
+          weekNumber: eIsBreak ? null : (lastWeek as any).week_number,
+          isBreak: eIsBreak,
+        };
+      }
     }
   }
 
-  const seasonKeys = new Set(weeklyGrowthRecords?.map((r: any) => r.weeks?.season_key).filter(Boolean) || []);
+  const statusStartDates = (weekStatusRecords || []).map((r: any) => r.week_start_date).filter(Boolean);
+  let seasonKeys = new Set<string>();
+  if (statusStartDates.length > 0) {
+    const { data: seasonWeeks } = await supabase
+      .from("weeks")
+      .select("start_date, season_key")
+      .in("start_date", statusStartDates);
+    seasonKeys = new Set((seasonWeeks || []).map((w: any) => w.season_key).filter(Boolean));
+  }
   const availableSeasons = seasonKeys.size;
 
   // Resolve growth start date for weeklyCards filter

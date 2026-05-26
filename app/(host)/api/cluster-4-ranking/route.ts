@@ -114,6 +114,8 @@ export async function GET(request: NextRequest) {
     // allWeeks에 이미 start_date가 있으므로 재사용
     const weekStartDateMap = new Map<string, string>();
     (allWeeks || []).forEach(w => weekStartDateMap.set(w.id, w.start_date));
+    const startDateToWeekIdMap = new Map<string, string>();
+    (allWeeks || []).forEach(w => startDateToWeekIdMap.set(w.start_date, w.id));
 
     const selectedWeekStartDate = selectedWeek.startDate;
 
@@ -191,25 +193,22 @@ export async function GET(request: NextRequest) {
       restRequestsResult,
       introductionsResult
     ] = await Promise.all([
-      // 해당 주차의 성장 기록 — 실패 사유까지 포함 (pms1.5 calculate-weekly 가 set 한 필드들).
+      // 해당 주차의 성장 상태 (user_week_statuses SoT 기반)
       supabaseAdmin
-        .from('user_weekly_growth')
-        .select('user_id, is_success, is_resting, is_club_break, failure_reason, failure_details, earned_stars, required_stars, experience_completed, experience_required, experience_min_rating')
-        .eq('week_id', weekId),
-      // 누적 인정 주차 실시간 계산용 — 전 주차의 success 행. user_growth_stats 캐시 대신 사용.
-      // 이유: 캐시가 며칠 단위로만 갱신되어 stale → cluster-4-card 와 표시값 어긋남.
-      // cluster-4-card L1276-1302 와 동일 산식: 온보딩 이후 success + 온보딩 +1 + 현재 주차 활동 시 +1.
-      // PostgREST max-rows 가 서버측 1000 으로 강제돼 limit/range 모두 1000 으로 잘림 →
-      // range 페이지네이션으로 전체 행 수집 (안 그러면 일부 유저 success 행 누락되며 누적주차 잘림).
+        .from('user_week_statuses')
+        .select('user_id, status')
+        .eq('week_start_date', selectedWeekStartDate),
+      // 누적 인정 주차 실시간 계산용 — user_week_statuses status='success' 기반.
+      // PostgREST max-rows 가 서버측 1000 으로 강제돼 range 페이지네이션으로 전체 행 수집.
       (async () => {
         const PAGE = 1000;
-        const all: { user_id: string; week_id: string }[] = [];
+        const all: { user_id: string; week_start_date: string }[] = [];
         for (let from = 0; ; from += PAGE) {
           const { data, error } = await supabaseAdmin!
-            .from('user_weekly_growth')
-            .select('user_id, week_id')
+            .from('user_week_statuses')
+            .select('user_id, week_start_date')
             .in('user_id', userIdArray)
-            .eq('is_success', true)
+            .eq('status', 'success')
             .range(from, from + PAGE - 1);
           if (error) return { data: all, error };
           if (!data || data.length === 0) break;
@@ -285,7 +284,7 @@ export async function GET(request: NextRequest) {
         .select('id')
         .eq('week_id', weekId)
         .eq('is_active', true),
-      // 휴식 신청(rest_requests, status=approved) — user_weekly_growth 레코드가 누락된 주차의
+      // 휴식 신청(rest_requests, status=approved) — user_week_statuses 레코드가 누락된 주차의
       // '휴식(개인)' fallback 판정용. cluster-4-card(L1165-1168) 와 동일 source.
       supabaseAdmin
         .from('rest_requests')
@@ -365,7 +364,7 @@ export async function GET(request: NextRequest) {
       userAllPointsMap.get(p.user_id)!.push(p);
     });
 
-    // 사용자별 성장 기록 Map — 실패 사유 / 별점 / 실무 경험 통계 모두 보존.
+    // 사용자별 성장 상태 Map (user_week_statuses SoT 기반)
     type WeeklyGrowthRow = {
       is_success: boolean;
       is_resting: boolean;
@@ -380,15 +379,28 @@ export async function GET(request: NextRequest) {
       experience_min_rating: number | null;
     };
     const userGrowthMap = new Map<string, WeeklyGrowthRow>();
-    (weeklyGrowthData || []).forEach(wg => {
-      userGrowthMap.set(wg.user_id, wg as WeeklyGrowthRow);
+    (weeklyGrowthData || []).forEach((wg: any) => {
+      userGrowthMap.set(wg.user_id, {
+        is_success: wg.status === "success",
+        is_resting: wg.status === "personal_rest",
+        is_club_break: wg.status === "official_rest",
+        failure_reason: null,
+        failure_details: null,
+        earned_stars: null,
+        required_stars: null,
+        experience_completed: null,
+        experience_required: null,
+        experience_min_rating: null,
+      });
     });
 
-    // 사용자별 success 주차 Set Map (user_weekly_growth.is_success=true 기준)
+    // 사용자별 success 주차 Set Map (user_week_statuses status='success' 기반, week_start_date → week_id 변환)
     const userSuccessWeeksMap = new Map<string, Set<string>>();
-    (successWeeksAllData || []).forEach(row => {
+    (successWeeksAllData || []).forEach((row: any) => {
+      const wId = startDateToWeekIdMap.get(row.week_start_date);
+      if (!wId) return;
       if (!userSuccessWeeksMap.has(row.user_id)) userSuccessWeeksMap.set(row.user_id, new Set());
-      userSuccessWeeksMap.get(row.user_id)!.add(row.week_id);
+      userSuccessWeeksMap.get(row.user_id)!.add(wId);
     });
 
     // 모든 주차 메타 Map (id → start_date, end_date) — 누적 산정용.
@@ -488,7 +500,7 @@ export async function GET(request: NextRequest) {
       let growthStatus = '실패';
 
       // 성장 상태 결정 (cluster-4-card L1170-1196 과 동일한 로직)
-      // user_weekly_growth 레코드가 누락된 주차에 대비해 rest_requests / activity_records 를 fallback 으로 사용.
+      // user_week_statuses 레코드가 누락된 주차에 대비해 rest_requests / activity_records 를 fallback 으로 사용.
       if (isOnboardingWeek) {
         growthStatus = '성공';
       } else if (weeklyGrowth) {

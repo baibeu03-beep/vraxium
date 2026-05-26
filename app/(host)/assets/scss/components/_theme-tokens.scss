@@ -78,8 +78,7 @@
 // 자산 매핑:
 //   icon-star      → /images/0/cluster 1/Star Badge.png       (별 — premium star)
 //   icon-shield    → /images/0/cluster 1/Shield.png           (방패 — neutral shield)
-//   icon-lightning → /images/0/cluster4/icon/icon - 어흥.png  (번개 — semantic match,
-//                    어흥/lightning 시각자산 재사용. 별도 lightning PNG 가 추가되면 교체.)
+//   icon-lightning → /images/0/Graphic13.png                  (번개 — dedicated lightning asset)
 // =============================================================
 .encre-theme,
 .resume-card.ec-theme {
@@ -96,7 +95,7 @@
       background-image: url("/images/0/cluster 1/Shield.png");
     }
     &.icon-lightning {
-      background-image: url("/images/0/cluster4/icon/icon - 어흥.png");
+      background-image: url("/images/0/Graphic13.png");
     }
   }
 }

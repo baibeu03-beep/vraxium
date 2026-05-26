@@ -108,8 +108,8 @@ export async function buildWeeklyCards(supabase: any, userId: string, opts: {
     teamPartsRes, roleHistRes, teamsRes, partsRes,
   ] = await Promise.all([
     weeksQ,
-    supabase.from("user_weekly_growth").select("week_id, is_success, is_resting, is_official_rest").eq("user_id", userId),
-    supabase.from("points").select("week_id, point_type, points").eq("user_id", userId),
+    supabase.from("user_week_statuses").select("week_start_date, status").eq("user_id", userId),
+    supabase.from("user_weekly_points").select("week_start_date, points, advantages, penalty").eq("user_id", userId),
     supabase.from("activity_records").select("week_id, activity_type_id, is_completed").eq("user_id", userId),
     supabase.from("activity_types").select("id, cluster_id").eq("is_active", true),
     supabase.from("rest_requests").select("week_id").eq("user_id", userId).eq("status", "approved"),
@@ -138,20 +138,32 @@ export async function buildWeeklyCards(supabase: any, userId: string, opts: {
   ]);
 
   // ── Build index maps ──
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const startDateToWeekId = new Map<string, string>();
+  weeks.forEach((w: any) => startDateToWeekId.set(w.start_date, w.id));
+
   const growthMap = new Map<string, { is_success: boolean; is_resting: boolean; is_official_rest: boolean }>();
-  (growthRes.data || []).forEach((r: any) => growthMap.set(r.week_id, r));
+  (growthRes.data || []).forEach((r: any) => {
+    const wId = startDateToWeekId.get(r.week_start_date);
+    if (!wId) return;
+    growthMap.set(wId, {
+      is_success: r.status === "success",
+      is_resting: r.status === "personal_rest",
+      is_official_rest: r.status === "official_rest",
+    });
+  });
 
   const restWeekIds = new Set<string>((restRes.data || []).map((r: any) => r.week_id));
 
-  // Points grouped by week
+  // Points grouped by week (user_weekly_points: week_start_date → star/shield/lightning)
   const pointsMap = new Map<string, { star: number; shield: number; lightning: number }>();
   (pointsRes.data || []).forEach((p: any) => {
-    let entry = pointsMap.get(p.week_id);
-    if (!entry) { entry = { star: 0, shield: 0, lightning: 0 }; pointsMap.set(p.week_id, entry); }
-    if (p.point_type === "star") entry.star += p.points;
-    else if (p.point_type === "shield") entry.shield += p.points;
-    else if (p.point_type === "lightning") entry.lightning += p.points;
+    const wId = startDateToWeekId.get(p.week_start_date);
+    if (!wId) return;
+    pointsMap.set(wId, {
+      star: p.points || 0,
+      shield: p.advantages || 0,
+      lightning: p.penalty || 0,
+    });
   });
 
   // Activity type → cluster mapping

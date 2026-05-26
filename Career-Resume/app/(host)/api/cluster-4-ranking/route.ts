@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     const today = new Date().toISOString().split('T')[0];
     const { data: allWeeks, error: weeksError } = await supabaseAdmin
       .from('weeks')
-      .select('id, week_number, start_date, end_date, is_club_break, holiday_name, seasons (id, year, name)')
+      .select('id, week_number, start_date, end_date, is_club_break, holiday_name, seasons (id, name)')
       .lt('end_date', today)
       .order('start_date', { ascending: false });
 
@@ -72,11 +72,12 @@ export async function GET(request: NextRequest) {
       const seasonData = week.seasons;
       const rawSeasonName = seasonData?.name || '';
       const { displayName, isBreak } = parseBreakSeasonName(rawSeasonName);
+      const computedYear = week.start_date ? new Date(week.start_date).getFullYear() : 0;
       return {
         id: week.id,
         weekNumber: week.week_number,
         seasonId: seasonData?.id || null,
-        seasonYear: seasonData?.year || 0,
+        seasonYear: computedYear,
         seasonName: displayName,
         rawSeasonName: rawSeasonName,
         startDate: week.start_date,
@@ -85,8 +86,8 @@ export async function GET(request: NextRequest) {
         isBreakSeason: isBreak,
         holidayName: week.holiday_name,
         label: isBreak
-          ? `${seasonData?.year}년, ${displayName} 시즌, 전환 주차`
-          : `${seasonData?.year}년, ${displayName} 시즌, ${week.week_number}주차`
+          ? `${computedYear}년, ${displayName} 시즌, 전환 주차`
+          : `${computedYear}년, ${displayName} 시즌, ${week.week_number}주차`
       };
     });
 

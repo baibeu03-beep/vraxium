@@ -1499,22 +1499,23 @@ const Cluster4Content = () => {
       // 온보딩 주차 여부 확인
       const isOnboardingWeek = weekId === onboardingWeekId;
 
-      // 5. 누적 성공 주차 수 계산 (cluster-4-card와 동일한 로직)
-      // success_weeks 테이블은 존재하지 않음 — user_weekly_growth + is_success=true 로 조회 (다른 API 들과 동일)
-      const { data: successWeeksData } = await supabase.from("user_weekly_growth").select("week_id, weeks!inner(end_date)").eq("user_id", targetUserId).eq("is_success", true);
+      // 5. 누적 성공 주차 수 계산 (user_week_statuses SoT 기반)
+      const { data: successStatusData } = await supabase.from("user_week_statuses").select("week_start_date").eq("user_id", targetUserId).eq("status", "success");
+      const successStartDates = (successStatusData || []).map((s: any) => s.week_start_date).filter(Boolean);
+      const { data: successWeeksJoined } = successStartDates.length > 0
+        ? await supabase.from("weeks").select("id, start_date, end_date").in("start_date", successStartDates)
+        : { data: [] };
 
       const userStartDateForCum = profileResult.growthInfo?.startDate || '1900-01-01';
       let currentCumulativeApproved = 0;
-      if (successWeeksData && successWeeksData.length > 0) {
-        currentCumulativeApproved = successWeeksData.filter((sw: any) => {
-          const weekEndDate = sw.weeks?.end_date;
-          // 온보딩 주차 이전(=합류 전) 성공 주차는 제외
-          return weekEndDate && weekEndDate <= currentWeekData.end_date && weekEndDate >= userStartDateForCum;
+      if (successWeeksJoined && successWeeksJoined.length > 0) {
+        currentCumulativeApproved = successWeeksJoined.filter((sw: any) => {
+          return sw.end_date && sw.end_date <= currentWeekData.end_date && sw.end_date >= userStartDateForCum;
         }).length;
       }
-      // 온보딩 주차도 누적에 포함 (success_weeks에 없는 경우)
+      // 온보딩 주차도 누적에 포함 (user_week_statuses에 없는 경우)
       if (onboardingWeekId) {
-        const onboardingAlreadyCounted = successWeeksData?.some((sw: any) => sw.week_id === onboardingWeekId);
+        const onboardingAlreadyCounted = successWeeksJoined?.some((sw: any) => sw.id === onboardingWeekId);
         if (!onboardingAlreadyCounted) {
           const { data: onboardingWeekInfo } = await supabase.from("weeks").select("end_date").eq("id", onboardingWeekId).maybeSingle();
           if (onboardingWeekInfo && onboardingWeekInfo.end_date <= currentWeekData.end_date) {

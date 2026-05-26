@@ -19,6 +19,7 @@ import { REPUTATION_KEYWORD_GROUPS } from "@/lib/reputation-keywords";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
+import type { Cluster4LineDetailDto, Cluster4LinePartType } from "@/lib/cluster4LinesTypes";
 import DetailLogModal from "./DetailLogModal";
 import confetti from "canvas-confetti";
 import HelpModalBody from "@/components/shared/HelpModalBody";
@@ -383,6 +384,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 어드민 개별 권한 부여 (secondary_info_grants)
   interface SecondaryInfoGrant { activity_type_id: string; deadline: string; }
   const [secondaryInfoGrants, setSecondaryInfoGrants] = useState<SecondaryInfoGrant[]>([]);
+
+  // 라인 개설/제출 상태 (파트별)
+  const [lineDetails, setLineDetails] = useState<Record<Cluster4LinePartType, Cluster4LineDetailDto | null>>({
+    info: null, experience: null, competency: null, career: null,
+  });
+  const [lineDetailsLoading, setLineDetailsLoading] = useState(false);
+  const [lineSubmissionModalOpen, setLineSubmissionModalOpen] = useState(false);
+  const [lineSubmissionTarget, setLineSubmissionTarget] = useState<Cluster4LineDetailDto | null>(null);
+  const [lineSubmissionForm, setLineSubmissionForm] = useState({
+    subtitle: "", outputLink2: "", outputLink3: "", outputLink4: "", outputLink5: "",
+  });
+  const [lineSubmissionSaving, setLineSubmissionSaving] = useState(false);
 
   // DB에서 가져온 activity_types 정보
   interface ActivityTypeInfo {
@@ -1202,7 +1215,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           }).length;
         }
 
-        // 온보딩 주차(무적 주차)는 성공 주차에 포함 (user_weekly_growth에 레코드가 없어도)
+        // 온보딩 주차(무적 주차)는 성공 주차에 포함 (user_week_statuses에 레코드가 없어도)
         const onboardingWeekIdForCount = profileResult.onboardingWeekId;
         if (onboardingWeekIdForCount) {
           // 온보딩 주차가 이미 successWeeksData에 포함되어 있는지 확인
@@ -1445,6 +1458,103 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
     fetchWeekData();
   }, [weekId, urlUserId, isDemoMode, isMounted]);
+
+  // 라인 개설/제출 상태 fetch (파트별 병렬)
+  useEffect(() => {
+    if (!isMounted || isDemoMode || !weekId) return;
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(weekId)) return;
+    // 본인 조회 전용 — 타인 프로필(urlUserId)을 볼 때는 라인 제출 UI 불필요
+    if (urlUserId) return;
+
+    let cancelled = false;
+    const parts: Cluster4LinePartType[] = ["info", "experience", "competency", "career"];
+    setLineDetailsLoading(true);
+
+    Promise.all(
+      parts.map((pt) =>
+        fetch(`/api/cluster4/lines/detail?weekId=${weekId}&partType=${pt}`)
+          .then((r) => r.json())
+          .then((json) => ({ pt, data: json.success ? (json.data as Cluster4LineDetailDto) : null }))
+          .catch(() => ({ pt, data: null })),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      const next = { ...lineDetails };
+      for (const { pt, data } of results) next[pt] = data;
+      setLineDetails(next);
+      setLineDetailsLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekId, isDemoMode, isMounted, urlUserId]);
+
+  const refetchLineDetail = async (partType: Cluster4LinePartType) => {
+    if (!weekId) return;
+    try {
+      const res = await fetch(`/api/cluster4/lines/detail?weekId=${weekId}&partType=${partType}`);
+      const json = await res.json();
+      if (json.success) {
+        setLineDetails((prev) => ({ ...prev, [partType]: json.data as Cluster4LineDetailDto }));
+      }
+    } catch { /* ignore */ }
+  };
+
+  const openLineSubmissionModal = (detail: Cluster4LineDetailDto) => {
+    setLineSubmissionTarget(detail);
+    const sub = detail.submission;
+    setLineSubmissionForm({
+      subtitle: sub?.subtitle || "",
+      outputLink2: sub?.outputLink2 || "",
+      outputLink3: sub?.outputLink3 || "",
+      outputLink4: sub?.outputLink4 || "",
+      outputLink5: sub?.outputLink5 || "",
+    });
+    setLineSubmissionModalOpen(true);
+  };
+
+  const handleLineSubmissionSave = async () => {
+    if (!lineSubmissionTarget?.line) return;
+    setLineSubmissionSaving(true);
+    const lt = lineSubmissionTarget.line.lineTargetId;
+    const isEdit = lineSubmissionTarget.status === "success";
+    const method = isEdit ? "PATCH" : "POST";
+
+    try {
+      const res = await fetch(`/api/cluster4/lines/${lt}/submission`, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subtitle: lineSubmissionForm.subtitle.trim() || null,
+          output_link_2: lineSubmissionForm.outputLink2.trim() || null,
+          output_link_3: lineSubmissionForm.outputLink3.trim() || null,
+          output_link_4: lineSubmissionForm.outputLink4.trim() || null,
+          output_link_5: lineSubmissionForm.outputLink5.trim() || null,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        await popup.alert(isEdit ? "수정되었습니다." : "제출되었습니다.");
+        setLineSubmissionModalOpen(false);
+        await refetchLineDetail(lineSubmissionTarget.line.partType);
+      } else {
+        await popup.alert(json.error || "저장에 실패했습니다.");
+      }
+    } catch {
+      await popup.alert("네트워크 오류가 발생했습니다.");
+    } finally {
+      setLineSubmissionSaving(false);
+    }
+  };
+
+  // 라인 상태별 라벨/아이콘
+  const lineStatusConfig = {
+    void: { label: "라인 미개설", color: "#6b7280", bg: "#f3f4f6", border: "#d1d5db", icon: "" },
+    pending: { label: "강화 대기", color: "#d97706", bg: "#fffbeb", border: "#fbbf24", icon: "/images/0/cluster4/icon/6 강화 대기.png" },
+    success: { label: "강화 성공", color: "#059669", bg: "#ecfdf5", border: "#34d399", icon: "/images/0/cluster4/icon/5 강화 성공.png" },
+    fail: { label: "강화 실패", color: "#dc2626", bg: "#fef2f2", border: "#f87171", icon: "/images/0/cluster4/icon/7 강화 실패.png" },
+  } as const;
 
   // DB에서 실무 경력 데이터 가져오기
   // career-records는 urlUserId가 있으면 Stage 1에서 이미 로드됨 (earlyCareerResult)
@@ -5363,6 +5473,90 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
   };
 
+  // 라인 제출 배너 렌더러 (각 섹션에서 호출)
+  const renderLineSubmissionBanner = (partType: Cluster4LinePartType) => {
+    if (isDemoMode || urlUserId || lineDetailsLoading) return null;
+    const detail = lineDetails[partType];
+    if (!detail || detail.status === "void") return null;
+
+    const cfg = lineStatusConfig[detail.status];
+    const line = detail.line;
+    const sub = detail.submission;
+    const canSubmit = detail.status === "pending";
+    const canEdit = detail.status === "success" && line &&
+      new Date().getTime() <= new Date(line.submissionClosesAt).getTime();
+
+    return (
+      <div
+        className="line-submission-banner"
+        style={{
+          padding: "12px 16px",
+          marginBottom: "12px",
+          borderRadius: "8px",
+          border: `1px solid ${cfg.border}`,
+          backgroundColor: cfg.bg,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px",
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 }}>
+          {cfg.icon && <img src={cfg.icon} alt={cfg.label} style={{ width: 24, height: 24 }} />}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 600, color: cfg.color, fontSize: "13px", marginBottom: "2px" }}>
+              {cfg.label}
+            </div>
+            {line && (
+              <div style={{ fontSize: "12px", color: "#374151" }}>
+                <span style={{ fontWeight: 500 }}>{line.mainTitle}</span>
+                {line.outputLink1 && (
+                  <a
+                    href={line.outputLink1}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ marginLeft: "8px", color: "#2563eb", textDecoration: "underline", fontSize: "11px" }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    링크1
+                  </a>
+                )}
+              </div>
+            )}
+            {sub && (
+              <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "2px" }}>
+                제출: {new Date(sub.submittedAt).toLocaleDateString("ko-KR")}
+                {sub.subtitle && <span> | {sub.subtitle}</span>}
+              </div>
+            )}
+          </div>
+        </div>
+        {(canSubmit || canEdit) && isOwner && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              openLineSubmissionModal(detail);
+            }}
+            style={{
+              padding: "6px 14px",
+              borderRadius: "6px",
+              border: "none",
+              backgroundColor: canEdit ? "#059669" : "#d97706",
+              color: "white",
+              fontWeight: 600,
+              fontSize: "12px",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {canEdit ? "수정" : "제출"}
+          </button>
+        )}
+      </div>
+    );
+  };
+
   // 실무 정보 카드 데이터 (DB 데이터 기반 + 빈 카드 2개)
   const workInfoCards = [
     ...workInfoActivityTypes.map((activityType, index) => {
@@ -6823,6 +7017,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </span>
             </div>
           </div>
+          {renderLineSubmissionBanner("info")}
           <div className="work-info-cards">
             {effectiveWorkInfoCards.map((card) => {
               const isEmpty = card.isEmpty;
@@ -6919,6 +7114,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </span>
             </div>
           </div>
+          {renderLineSubmissionBanner("experience")}
           <div className="work-exp-cards">
             {Array.from({ length: 5 }, (_, cardIndex) => {
               // 슬롯 기반 렌더링: 실제 데이터 개수와 무관하게 항상 5개 슬롯을 만든다.
@@ -7078,6 +7274,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </span>
             </div>
           </div>
+          {renderLineSubmissionBanner("competency")}
           <div className="work-ability-cards">
             {[displayedAbilityCard].map((card) => {
               const isFailedCard = card.enhancementStatus === "failed";
@@ -7186,6 +7383,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </span>
             </div>
           </div>
+          {renderLineSubmissionBanner("career")}
           <div className="work-career-cards">
             {currentCareerCards.map((card, cardIndex) => {
               const isEmpty = card.isEmpty;
@@ -11063,6 +11261,126 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           </div>,
           document.body,
         )}
+
+      {/* 라인 제출 모달 */}
+      {lineSubmissionModalOpen && lineSubmissionTarget?.line && isMounted &&
+        createPortal(
+          <div
+            className="section-modal-overlay"
+            style={{
+              position: "fixed",
+              top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: "rgba(0,0,0,0.6)",
+              zIndex: 100005,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            onClick={() => setLineSubmissionModalOpen(false)}
+          >
+            <div
+              style={{
+                backgroundColor: "#fff",
+                borderRadius: "12px",
+                width: "min(480px, 90vw)",
+                maxHeight: "80vh",
+                overflow: "auto",
+                padding: "24px",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700 }}>
+                  {lineSubmissionTarget.status === "success" ? "라인 제출 수정" : "라인 제출"}
+                </h3>
+                <button
+                  onClick={() => setLineSubmissionModalOpen(false)}
+                  style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer", padding: "4px" }}
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* 읽기 전용: mainTitle */}
+              <div style={{ marginBottom: "12px" }}>
+                <label style={{ display: "block", fontSize: "12px", color: "#6b7280", marginBottom: "4px", fontWeight: 600 }}>Main Title (읽기 전용)</label>
+                <div style={{ padding: "8px 12px", backgroundColor: "#f3f4f6", borderRadius: "6px", fontSize: "14px", color: "#374151" }}>
+                  {lineSubmissionTarget.line.mainTitle}
+                </div>
+              </div>
+
+              {/* 읽기 전용: outputLink1 */}
+              {lineSubmissionTarget.line.outputLink1 && (
+                <div style={{ marginBottom: "12px" }}>
+                  <label style={{ display: "block", fontSize: "12px", color: "#6b7280", marginBottom: "4px", fontWeight: 600 }}>Output Link 1 (읽기 전용)</label>
+                  <div style={{ padding: "8px 12px", backgroundColor: "#f3f4f6", borderRadius: "6px", fontSize: "13px" }}>
+                    <a href={lineSubmissionTarget.line.outputLink1} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline", wordBreak: "break-all" }}>
+                      {lineSubmissionTarget.line.outputLink1}
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {/* 편집 가능: subtitle */}
+              <div style={{ marginBottom: "12px" }}>
+                <label style={{ display: "block", fontSize: "12px", color: "#374151", marginBottom: "4px", fontWeight: 600 }}>Sub Title</label>
+                <input
+                  type="text"
+                  value={lineSubmissionForm.subtitle}
+                  onChange={(e) => setLineSubmissionForm((p) => ({ ...p, subtitle: e.target.value }))}
+                  placeholder="서브타이틀을 입력하세요"
+                  style={{ width: "100%", padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "14px", boxSizing: "border-box" }}
+                />
+              </div>
+
+              {/* 편집 가능: outputLink2~5 */}
+              {(["outputLink2", "outputLink3", "outputLink4", "outputLink5"] as const).map((field, i) => (
+                <div key={field} style={{ marginBottom: "12px" }}>
+                  <label style={{ display: "block", fontSize: "12px", color: "#374151", marginBottom: "4px", fontWeight: 600 }}>Output Link {i + 2}</label>
+                  <input
+                    type="url"
+                    value={lineSubmissionForm[field]}
+                    onChange={(e) => setLineSubmissionForm((p) => ({ ...p, [field]: e.target.value }))}
+                    placeholder="https://..."
+                    style={{ width: "100%", padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "14px", boxSizing: "border-box" }}
+                  />
+                </div>
+              ))}
+
+              {/* 제출 기간 안내 */}
+              <div style={{ fontSize: "11px", color: "#9ca3af", marginBottom: "16px" }}>
+                제출 기간: {new Date(lineSubmissionTarget.line.submissionOpensAt).toLocaleDateString("ko-KR")} ~ {new Date(lineSubmissionTarget.line.submissionClosesAt).toLocaleDateString("ko-KR")}
+              </div>
+
+              <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                <button
+                  onClick={() => setLineSubmissionModalOpen(false)}
+                  style={{ padding: "8px 16px", borderRadius: "6px", border: "1px solid #d1d5db", backgroundColor: "#fff", cursor: "pointer", fontSize: "13px" }}
+                >
+                  취소
+                </button>
+                <button
+                  onClick={handleLineSubmissionSave}
+                  disabled={lineSubmissionSaving}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: "6px",
+                    border: "none",
+                    backgroundColor: lineSubmissionSaving ? "#9ca3af" : "#2563eb",
+                    color: "#fff",
+                    cursor: lineSubmissionSaving ? "not-allowed" : "pointer",
+                    fontWeight: 600,
+                    fontSize: "13px",
+                  }}
+                >
+                  {lineSubmissionSaving ? "저장 중..." : lineSubmissionTarget.status === "success" ? "수정" : "제출"}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )
+      }
 
       {/* Detail Log 모달 — 빈 placeholder 컨테이너 (674×826) */}
       <DetailLogModal show={showDetailLogModal} onHide={() => setShowDetailLogModal(false)} />

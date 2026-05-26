@@ -732,7 +732,7 @@ export async function GET(request: NextRequest) {
       // review_status / is_qualified 는 schema 에 없으므로 select 에 포함하지 않는다.
       // 누락 필드는 attachSeasons() 에서 기본값으로 채워 Front 호환성 유지.
       supabaseAdmin.from("user_season_histories").select(
-        "id, user_id, season_id, rating, review, created_at, updated_at"
+        "id, user_id, season_id, rating, review, created_at, updated_at, seasons(id, name, started_at, ended_at)"
       ).eq("user_id", profile.id),
 
       // grade_stats (품계 정보)
@@ -789,7 +789,7 @@ export async function GET(request: NextRequest) {
       supabaseAdmin.from("user_season_statuses").select("status").eq("user_id", profile.id),
 
       // seasons 테이블 (UUID 기반) — user_season_histories.season_id 매핑용
-      supabaseAdmin.from("seasons").select("id, year, name, start_date, end_date"),
+      supabaseAdmin.from("seasons").select("id, name, started_at, ended_at"),
     ]);
 
     // season_type → 한글 라벨 변환 (season_definitions 기준)
@@ -872,7 +872,46 @@ export async function GET(request: NextRequest) {
 
     // seasons 테이블 (UUID 기반) — user_season_histories.season_id 가 참조하는 테이블
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const seasonsTableData = ((seasonsTableResult as any)?.data || []) as any[];
+    let seasonsTableData = ((seasonsTableResult as any)?.data || []) as any[];
+    if ((seasonsTableResult as any)?.error) {
+      console.error('[Profile API] seasons table query error:', (seasonsTableResult as any).error);
+    }
+
+    // Fallback: seasons 직접 쿼리가 비어있으면 weeks → seasons FK join 으로 재시도
+    if (seasonsTableData.length === 0) {
+      console.warn('[Profile API] seasons table returned 0 rows, trying fallback via weeks→seasons join');
+      try {
+        const { data: weeksWithSeasons, error: wsFallbackErr } = await supabaseAdmin
+          .from("weeks")
+          .select("season_id, seasons(id, name, started_at, ended_at)")
+          .not("season_id", "is", null);
+        if (wsFallbackErr) {
+          console.error('[Profile API] weeks→seasons fallback error:', wsFallbackErr);
+        } else if (weeksWithSeasons?.length) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const uniqueSeasons = new Map<string, any>();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          weeksWithSeasons.forEach((w: any) => {
+            if (w.seasons && !uniqueSeasons.has(w.seasons.id)) {
+              uniqueSeasons.set(w.seasons.id, w.seasons);
+            }
+          });
+          seasonsTableData = Array.from(uniqueSeasons.values());
+          console.log('[Profile API] seasons fallback via weeks succeeded, count:', seasonsTableData.length);
+        }
+      } catch (e) {
+        console.error('[Profile API] seasons fallback exception:', e);
+      }
+    }
+
+    // DB 컬럼 started_at/ended_at → API 표준 start_date/end_date 정규화
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    seasonsTableData = seasonsTableData.map((s: any) => ({
+      ...s,
+      start_date: s.started_at ?? s.start_date ?? null,
+      end_date: s.ended_at ?? s.end_date ?? null,
+    }));
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const seasonsByUuidMap = new Map<string, any>(
       seasonsTableData.map((s: any) => [s.id, s])
@@ -899,16 +938,27 @@ export async function GET(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const attachSeasons = (rows: any[] | null | undefined): any[] =>
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (rows || []).map((row: any) => ({
-        ...row,
-        role_in_season: row.role_in_season ?? null,
-        approved_weeks: row.approved_weeks ?? 0,
-        total_weeks: row.total_weeks ?? 0,
-        progress_status: row.progress_status ?? 'in_progress',
-        review_status: row.review_status ?? 'reviewing',
-        is_qualified: row.is_qualified ?? false,
-        seasons: row.season_id ? seasonsByUuidMap.get(row.season_id) || null : null,
-      }));
+      (rows || []).map((row: any) => {
+        const rawSeason = row.seasons || (row.season_id ? seasonsByUuidMap.get(row.season_id) || null : null);
+        const sdStart = rawSeason?.started_at ?? rawSeason?.start_date ?? null;
+        const sdEnd = rawSeason?.ended_at ?? rawSeason?.end_date ?? null;
+        const seasons = rawSeason ? {
+          ...rawSeason,
+          start_date: sdStart,
+          end_date: sdEnd,
+          year: rawSeason.year ?? (sdStart ? new Date(sdStart).getFullYear() : null),
+        } : null;
+        return {
+          ...row,
+          role_in_season: row.role_in_season ?? null,
+          approved_weeks: row.approved_weeks ?? 0,
+          total_weeks: row.total_weeks ?? 0,
+          progress_status: row.progress_status ?? 'in_progress',
+          review_status: row.review_status ?? 'reviewing',
+          is_qualified: row.is_qualified ?? false,
+          seasons,
+        };
+      });
     const seasonHistories = attachSeasons(seasonHistoriesResult.data);
 
     console.log('[Profile API] final seasonHistories (after attach):', JSON.stringify(seasonHistories?.map((sh: any) => ({ id: sh.id, season_id: sh.season_id, seasons_id: sh.seasons?.id, seasons_name: sh.seasons?.name }))));
@@ -1050,10 +1100,9 @@ export async function GET(request: NextRequest) {
             season_id,
             seasons!inner (
               id,
-              year,
               name,
-              start_date,
-              end_date
+              started_at,
+              ended_at
             )
           )
         `)
@@ -1065,7 +1114,7 @@ export async function GET(request: NextRequest) {
         // 시즌별로 그룹화 (성공한 주차 수와 전체 참여 주차 수 카운트)
         const seasonMap = new Map<string, {
           seasonId: string;
-          seasonData: { id: string; year: number; name: string; start_date: string; end_date: string };
+          seasonData: { id: string; name: string; started_at: string; ended_at: string };
           successWeekIds: Set<string>;
           totalWeekIds: Set<string>;
         }>();
@@ -1123,7 +1172,7 @@ export async function GET(request: NextRequest) {
         const { data: newSeasonHistories } = await supabaseAdmin
           .from('user_season_histories')
           .select(
-            "id, user_id, season_id, rating, review, created_at, updated_at"
+            "id, user_id, season_id, rating, review, created_at, updated_at, seasons(id, name, started_at, ended_at)"
           )
           .eq('user_id', profile.id);
 
@@ -1164,7 +1213,7 @@ export async function GET(request: NextRequest) {
         const { data: refreshed } = await supabaseAdmin
           .from('user_season_histories')
           .select(
-            "id, user_id, season_id, rating, review, created_at, updated_at"
+            "id, user_id, season_id, rating, review, created_at, updated_at, seasons(id, name, started_at, ended_at)"
           )
           .eq('user_id', profile.id);
 

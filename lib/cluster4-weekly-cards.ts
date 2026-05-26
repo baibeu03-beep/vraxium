@@ -108,7 +108,7 @@ export async function buildWeeklyCards(supabase: any, userId: string, opts: {
     teamPartsRes, roleHistRes, teamsRes, partsRes,
   ] = await Promise.all([
     weeksQ,
-    supabase.from("user_weekly_growth").select("week_id, is_success, is_resting, is_official_rest").eq("user_id", userId),
+    supabase.from("user_week_statuses").select("week_start_date, status").eq("user_id", userId),
     supabase.from("points").select("week_id, point_type, points").eq("user_id", userId),
     supabase.from("activity_records").select("week_id, activity_type_id, is_completed").eq("user_id", userId),
     supabase.from("activity_types").select("id, cluster_id").eq("is_active", true),
@@ -138,9 +138,20 @@ export async function buildWeeklyCards(supabase: any, userId: string, opts: {
   ]);
 
   // ── Build index maps ──
+  const startDateToWeekId = new Map<string, string>();
+  weeks.forEach((w: any) => startDateToWeekId.set(w.start_date, w.id));
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const growthMap = new Map<string, { is_success: boolean; is_resting: boolean; is_official_rest: boolean }>();
-  (growthRes.data || []).forEach((r: any) => growthMap.set(r.week_id, r));
+  (growthRes.data || []).forEach((r: any) => {
+    const wId = startDateToWeekId.get(r.week_start_date);
+    if (!wId) return;
+    growthMap.set(wId, {
+      is_success: r.status === "success",
+      is_resting: r.status === "personal_rest",
+      is_official_rest: r.status === "official_rest",
+    });
+  });
 
   const restWeekIds = new Set<string>((restRes.data || []).map((r: any) => r.week_id));
 

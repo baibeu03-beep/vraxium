@@ -21,9 +21,9 @@ export async function GET(
         *,
         seasons (
           id,
-          year,
           name,
-          start_date
+          started_at,
+          ended_at
         )
       `)
       .eq('user_id', userId)
@@ -57,8 +57,17 @@ export async function GET(
 
     // seasons 데이터가 없는 항목 필터링 후 정렬 (년도 내림차순, 시즌 순서 내림차순)
     const validData = historyData.filter(item => item.seasons !== null)
-    const sortedData = validData.sort((a, b) => {
-      const yearDiff = b.seasons.year - a.seasons.year
+      .map((item: any) => ({
+        ...item,
+        seasons: {
+          ...item.seasons,
+          start_date: item.seasons.started_at ?? null,
+          end_date: item.seasons.ended_at ?? null,
+          year: item.seasons.started_at ? new Date(item.seasons.started_at).getFullYear() : null,
+        },
+      }))
+    const sortedData = validData.sort((a: any, b: any) => {
+      const yearDiff = (b.seasons.year ?? 0) - (a.seasons.year ?? 0)
       if (yearDiff !== 0) return yearDiff
       return (seasonOrderMap[b.seasons.name] || 0) - (seasonOrderMap[a.seasons.name] || 0)
     })

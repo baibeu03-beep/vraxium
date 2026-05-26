@@ -1376,7 +1376,7 @@ const Cluster4Content = () => {
       const today = new Date().toISOString().split("T")[0];
 
       // 현재 주차 정보 가져오기 (is_club_break, holiday_name 포함)
-      const { data: currentWeekData } = await supabase.from("weeks").select("id, week_number, is_club_break, holiday_name, seasons (id, name, year)").lte("start_date", today).gte("end_date", today).maybeSingle();
+      const { data: currentWeekData } = await supabase.from("weeks").select("id, week_number, is_club_break, holiday_name, seasons (id, name, started_at)").lte("start_date", today).gte("end_date", today).maybeSingle();
 
       if (currentWeekData) {
         // 시즌 이름 변환 (spring -> 봄, summer -> 여름, fall -> 가을, winter -> 겨울)
@@ -1406,8 +1406,9 @@ const Cluster4Content = () => {
           displayName = "시즌 전환";
         }
 
+        const computedYear = seasonData?.started_at ? new Date(seasonData.started_at).getFullYear() : 0;
         setCurrentSeasonInfo({
-          year: seasonData?.year || 0,
+          year: computedYear,
           name: displayName,
           currentWeek: currentWeekData.week_number,
           isClubBreak: currentWeekData.is_club_break || false,
@@ -1434,7 +1435,7 @@ const Cluster4Content = () => {
       // 1. 현재 주차 정보 가져오기
       const { data: currentWeekData } = await supabase
         .from("weeks")
-        .select("id, end_date, week_number, seasons(year, name)")
+        .select("id, end_date, week_number, seasons(name, started_at)")
         .lte("start_date", today)
         .gte("end_date", today)
         .maybeSingle();

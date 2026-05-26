@@ -115,7 +115,7 @@ export async function GET(request: NextRequest) {
     ] = await Promise.all([
       // 성장 시작일
       profile.onboarding_week_id
-        ? supabaseAdmin.from("weeks").select("start_date, week_number, season_id, seasons (id, year, name)").eq("id", profile.onboarding_week_id).maybeSingle()
+        ? supabaseAdmin.from("weeks").select("start_date, week_number, season_id, seasons (id, name)").eq("id", profile.onboarding_week_id).maybeSingle()
         : Promise.resolve({ data: null }),
       // weekly_activities (completionRate 계산용)
       supabaseAdmin.from("weekly_activities").select("week_id, activity_type_id").eq("is_active", true),
@@ -134,10 +134,9 @@ export async function GET(request: NextRequest) {
         review,
         seasons (
           id,
-          year,
           name,
-          start_date,
-          end_date
+          started_at,
+          ended_at
         )
       `).eq("user_id", profile.user_id),
       // growth_stats (reliability_rate)
@@ -147,7 +146,7 @@ export async function GET(request: NextRequest) {
       // 휴식 요청
       supabaseAdmin.from("rest_requests").select("week_id").eq("user_id", profile.user_id).eq("status", "approved"),
       // 모든 시즌
-      supabaseAdmin.from("seasons").select("id, name, year, start_date, end_date").order("start_date", { ascending: true }),
+      supabaseAdmin.from("seasons").select("id, name, started_at, ended_at").order("started_at", { ascending: true }),
       // 성공 주차 - user_weekly_growth 사용 (pms1.5와 동일)
       supabaseAdmin.from("user_weekly_growth").select("week_id").eq("user_id", profile.user_id).eq("is_success", true),
       // activity_records (practicalCounts용)
@@ -164,11 +163,26 @@ export async function GET(request: NextRequest) {
     const activitiesData = activityRecordsData.filter((ar: { is_completed: boolean }) => ar.is_completed);
     const weeklyActivities = weeklyActivitiesResult.data;
     const cumulativePoints = cumulativePointsResult.data;
-    const seasonHistories = seasonHistoriesResult.data;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const seasonHistories = ((seasonHistoriesResult.data || []) as any[]).map((item: any) => ({
+      ...item,
+      seasons: item.seasons ? {
+        ...item.seasons,
+        start_date: item.seasons.started_at ?? item.seasons.start_date ?? null,
+        end_date: item.seasons.ended_at ?? item.seasons.end_date ?? null,
+        year: item.seasons.year ?? (item.seasons.started_at ? new Date(item.seasons.started_at).getFullYear() : null),
+      } : null,
+    }));
     const growthStats = growthStatsResult.data;
     const allWeeks = allWeeksResult.data || [];
     const allRests = allRestsResult.data || [];
-    const allSeasons = allSeasonsResult.data || [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allSeasons = ((allSeasonsResult.data || []) as any[]).map((s: any) => ({
+      ...s,
+      start_date: s.started_at ?? s.start_date ?? null,
+      end_date: s.ended_at ?? s.end_date ?? null,
+      year: s.year ?? (s.started_at ? new Date(s.started_at).getFullYear() : null),
+    }));
     const userActivities = userActivitiesResult.data || [];
 
     // activity_type_id → cluster_id 매핑

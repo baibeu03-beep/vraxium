@@ -550,7 +550,7 @@ export async function GET(request: NextRequest) {
           ? supabaseAdmin.from("weeks").select("started_at").eq("id", profile.onboarding_week_id).maybeSingle()
           : Promise.resolve({ data: null }),
         supabaseAdmin.from("rest_requests").select("week_id").eq("user_id", profile.id).eq("status", "approved"),
-        supabaseAdmin.from("user_weekly_growth").select("week_id").eq("user_id", profile.id).eq("is_success", true),
+        Promise.resolve({ data: [], error: null }),
         supabaseAdmin.from("user_role_history").select("id, user_id, role, started_at, ended_at").eq("user_id", profile.id),
         supabaseAdmin.from("activity_records").select("id, week_id, activity_type_id, is_completed").eq("user_id", profile.id),
         supabaseAdmin.from("user_activity_details").select("week_id, activity_type_id, sub_title, output_links, growth_point, image_urls, image_captions, rating").eq("user_id", profile.id),
@@ -749,8 +749,8 @@ export async function GET(request: NextRequest) {
       // 모든 시즌 — season_definitions 테이블 사용
       supabaseAdmin.from("season_definitions").select("season_key, season_label, season_type, year").order("year", { ascending: true }),
 
-      // 해당 유저의 성공 주차 (주차별) - user_weekly_growth 사용 (pms1.5와 동일)
-      supabaseAdmin.from("user_weekly_growth").select("week_id").eq("user_id", profile.id).eq("is_success", true),
+      // 해당 유저의 성공 주차 — dead code (userActivities 미사용), shape 호환만 유지
+      Promise.resolve({ data: [], error: null }),
 
       // 해당 유저의 역할 이력
       supabaseAdmin.from("user_role_history").select("id, user_id, role, started_at, ended_at").eq("user_id", profile.id),
@@ -780,11 +780,11 @@ export async function GET(request: NextRequest) {
       // 파트 목록 - 캐시 사용
       getCachedParts(),
 
-      // user_weekly_growth (시즌별 성공 주차 실시간 계산용)
-      supabaseAdmin.from("user_weekly_growth").select("week_id, is_success, is_resting, weeks!inner(season_key)").eq("user_id", profile.id),
+      // user_week_statuses (시즌별 성공 주차 + Period SoT 통합)
+      supabaseAdmin.from("user_week_statuses").select("week_start_date, status").eq("user_id", profile.id),
 
-      // Period SoT (admin 에서 시드/관리하는 canonical 테이블)
-      supabaseAdmin.from("user_week_statuses").select("status").eq("user_id", profile.id),
+      // Period SoT — 위의 userWeeklyGrowthResult 와 동일 source 이므로 placeholder
+      Promise.resolve({ data: null, error: null }),
       supabaseAdmin.from("user_season_statuses").select("status").eq("user_id", profile.id),
     ]);
 
@@ -909,7 +909,8 @@ export async function GET(request: NextRequest) {
     );
 
     // ─── Period 계산 (SoT: user_week_statuses + user_season_statuses) ───
-    const wsRows = ((weekStatusesResult as { data: Array<{ status: string }> | null })?.data ?? []);
+    // userWeeklyGrowthResult 가 이제 user_week_statuses (week_start_date, status) 를 반환
+    const wsRows = ((userWeeklyGrowthResult as { data: Array<{ status: string }> | null })?.data ?? []);
     const ssRows = ((seasonStatusesResult as { data: Array<{ status: string }> | null })?.data ?? []);
 
     let approvedWeeksCount = 0;      // a: 성장(성공) 주차
@@ -1024,61 +1025,37 @@ export async function GET(request: NextRequest) {
 
     let finalSeasonHistories = seasonHistories || [];
 
-    // seasonHistories가 비어있으면 user_weekly_growth 기반으로 자동 생성
+    // seasonHistories가 비어있으면 user_week_statuses + weeks 기반으로 자동 생성
     if (!seasonHistories || seasonHistories.length === 0) {
-      console.log('[Profile API] No season histories found, auto-generating from user_weekly_growth...');
+      console.log('[Profile API] No season histories found, auto-generating from user_week_statuses...');
 
-      // user_weekly_growth에서 해당 유저의 모든 주차 기록 조회 (weeks, seasons 조인)
-      const { data: weeklyGrowthData } = await supabaseAdmin
-        .from('user_weekly_growth')
-        .select(`
-          week_id,
-          is_success,
-          weeks!inner (
-            id,
-            season_id,
-            seasons!inner (
-              id,
-              year,
-              name,
-              start_date,
-              end_date
-            )
-          )
-        `)
+      // user_week_statuses에서 해당 유저의 모든 주차 상태 조회
+      const { data: weekStatusData } = await supabaseAdmin
+        .from('user_week_statuses')
+        .select('week_start_date, status')
         .eq('user_id', profile.id);
 
-      console.log('[Profile API] Found user_weekly_growth records:', weeklyGrowthData?.length || 0);
+      console.log('[Profile API] Found user_week_statuses records:', weekStatusData?.length || 0);
 
-      if (weeklyGrowthData && weeklyGrowthData.length > 0) {
-        // 시즌별로 그룹화 (성공한 주차 수와 전체 참여 주차 수 카운트)
+      // week_start_date → season_key 매핑 (allWeeks 재활용)
+      if (weekStatusData && weekStatusData.length > 0) {
         const seasonMap = new Map<string, {
           seasonId: string;
-          seasonData: { id: string; year: number; name: string; start_date: string; end_date: string };
-          successWeekIds: Set<string>;
-          totalWeekIds: Set<string>;
+          totalCount: number;
         }>();
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        weeklyGrowthData.forEach((record: any) => {
-          const seasonId = record.weeks.season_id;
-          const seasonData = record.weeks.seasons;
-          const weekId = record.week_id;
-          const isSuccess = record.is_success;
+        weekStatusData.forEach((ws: any) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const weekMeta = allWeeks.find((w: any) => w.start_date === ws.week_start_date);
+          if (!weekMeta) return;
+          const seasonId = weekMeta.season_key;
+          if (!seasonId) return;
 
           if (!seasonMap.has(seasonId)) {
-            seasonMap.set(seasonId, {
-              seasonId,
-              seasonData,
-              successWeekIds: isSuccess ? new Set([weekId]) : new Set(),
-              totalWeekIds: new Set([weekId])
-            });
+            seasonMap.set(seasonId, { seasonId, totalCount: 1 });
           } else {
-            const existing = seasonMap.get(seasonId)!;
-            existing.totalWeekIds.add(weekId);
-            if (isSuccess) {
-              existing.successWeekIds.add(weekId);
-            }
+            seasonMap.get(seasonId)!.totalCount++;
           }
         });
 
@@ -1251,33 +1228,44 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    // 시즌별 성공 주차 수 및 전체 휴식 주차 ID 실시간 계산 (user_weekly_growth 기반)
-    const userWeeklyGrowthData = userWeeklyGrowthResult.data || [];
-    const seasonSuccessWeeksMap = new Map<string, number>();
-    const allRestingWeekIds = new Set<string>(); // 전체 휴식 주차 ID (시즌 구분 없이)
+    // 시즌별 성공 주차 수 및 전체 휴식 주차 ID 실시간 계산 (user_week_statuses SoT 기반)
+    const userWeeklyGrowthData: any[] = userWeeklyGrowthResult.data || [];
+    // week_start_date → week 메타 매핑 (allWeeks 재활용)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    userWeeklyGrowthData.forEach((wg: any) => {
-      const seasonId = wg.weeks?.season_key;
+    const weekByStartDate = new Map<string, any>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    allWeeks.forEach((w: any) => weekByStartDate.set(w.start_date, w));
 
-      if (wg.is_success && seasonId) {
+    const seasonSuccessWeeksMap = new Map<string, number>();
+    const allRestingWeekIds = new Set<string>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    userWeeklyGrowthData.forEach((ws: any) => {
+      const weekMeta = weekByStartDate.get(ws.week_start_date);
+      if (!weekMeta) return;
+      const seasonId = weekMeta.season_key;
+
+      if (ws.status === "success" && seasonId) {
         seasonSuccessWeeksMap.set(seasonId, (seasonSuccessWeeksMap.get(seasonId) || 0) + 1);
       }
-      if (wg.is_resting) {
-        allRestingWeekIds.add(wg.week_id);
+      if (ws.status === "personal_rest" && weekMeta.id) {
+        allRestingWeekIds.add(weekMeta.id);
       }
     });
 
     console.log(`[Profile API] allRestingWeekIds size: ${allRestingWeekIds.size}`);
 
-    // 온보딩 주차 성공 카운트 추가 (온보딩 주차는 무조건 성공이지만 user_weekly_growth에 없을 수 있음)
+    // 온보딩 주차 성공 카운트 추가 (온보딩 주차는 무조건 성공이지만 user_week_statuses에 없을 수 있음)
     if (onboardingSeasonId) {
-      // 온보딩 주차가 user_weekly_growth에 is_success=true로 있는지 확인
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const onboardingInGrowth = userWeeklyGrowthData.find((wg: any) =>
-        wg.week_id === profile.onboarding_week_id && wg.is_success
-      );
+      const onboardingWeekMeta = profile.onboarding_week_id
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ? allWeeks.find((w: any) => w.id === profile.onboarding_week_id)
+        : null;
+      const onboardingStartDate = onboardingWeekMeta?.start_date;
+      const onboardingInGrowth = onboardingStartDate
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ? userWeeklyGrowthData.find((ws: any) => ws.week_start_date === onboardingStartDate && ws.status === "success")
+        : null;
       if (!onboardingInGrowth) {
-        // 없으면 온보딩 시즌에 +1 추가
         seasonSuccessWeeksMap.set(onboardingSeasonId, (seasonSuccessWeeksMap.get(onboardingSeasonId) || 0) + 1);
       }
     }
@@ -1323,7 +1311,7 @@ export async function GET(request: NextRequest) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const operatingWeekIds = new Set(operatingWeeks.map((w: any) => w.id));
 
-      // 인정받은 주차 수 (실시간 계산: user_weekly_growth 기반)
+      // 인정받은 주차 수 (실시간 계산: user_week_statuses 기반)
       const approvedWeeksCount = seasonSuccessWeeksMap.get(seasonId) || 0;
 
       // 현재 진행 중인 시즌인지 확인 (시즌 종료일이 오늘 이후)
@@ -1335,10 +1323,10 @@ export async function GET(request: NextRequest) {
       // progress_status 실시간 보정: 진행 중인 시즌은 항상 'in_progress'
       const correctedProgressStatus = isSeasonInProgress ? 'in_progress' : (item.progress_status || 'completed');
 
-      // 휴식 주차 수 (해당 시즌 내) - rest_requests + user_weekly_growth.is_resting 모두 포함
+      // 휴식 주차 수 (해당 시즌 내) - rest_requests + user_week_statuses personal_rest 모두 포함
       let restWeeksInSeason = 0;
       operatingWeekIds.forEach((weekId: string) => {
-        // rest_requests 또는 user_weekly_growth.is_resting 중 하나라도 있으면 휴식
+        // rest_requests 또는 user_week_statuses personal_rest 중 하나라도 있으면 휴식
         if (userRestWeekIdsForSeason.has(weekId) || allRestingWeekIds.has(weekId)) {
           restWeeksInSeason++;
         }

@@ -187,8 +187,8 @@ export async function GET(request: NextRequest) {
           season_id,
           seasons (
             id,
-            year,
-            name
+            name,
+            started_at
           )
         )
       `)
