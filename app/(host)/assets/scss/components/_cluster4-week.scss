@@ -11116,7 +11116,7 @@
       grid-row: 1;
       display: flex;
       flex-direction: column;
-      gap: 0;
+      gap: 2px;
       min-width: 0;
       padding: 3px 8px 3px 0;
       position: relative;
@@ -11132,7 +11132,7 @@
       align-items: center;
       gap: 5px;
       font-family: "Pretendard", sans-serif;
-      font-size: 13px !important; // ?몄쟻?ы빆 蹂몃Ц pt ?듭씪
+      font-size: 14px !important; // ?몄쟻?ы빆 蹂몃Ц pt ?듭씪
       line-height: 1.14;
       color: #ddd;
       min-width: 0;
@@ -11172,7 +11172,7 @@
       color: rgba(255, 255, 255, 0.3);
       flex-shrink: 0;
       padding-left: 6px !important; // ?쇰꺼怨?| 援щ텇???ъ씠 ?щ갚
-      font-size: 13px !important; // 蹂몃Ц pt ?듭씪
+      font-size: 14px !important; // 蹂몃Ц pt ?듭씪
     }
 
     // 1????怨좎젙??(留먯쨪???놁쓬, 理쒕? 湲?먯닔 ?낅젰 李⑤떒?쇰줈 蹂댁옣)
@@ -11187,19 +11187,19 @@
       border: 1px solid rgba(255, 165, 0, 0.3);
       background: rgb(26, 26, 46);
       white-space: nowrap;
-      font-size: 13px !important; // 蹂몃Ц pt ?듭씪
+      font-size: 14px !important; // 蹂몃Ц pt ?듭씪
     }
     .personal-gender {
       min-width: 16px; // 1??
       display: inline-block;
       white-space: nowrap;
-      font-size: 13px !important; // 蹂몃Ц pt ?듭씪
+      font-size: 14px !important; // 蹂몃Ц pt ?듭씪
     }
     .personal-age {
       min-width: 48px; // "22 ??
       display: inline-block;
       white-space: nowrap;
-      font-size: 13px !important; // 蹂몃Ц pt ?듭씪
+      font-size: 14px !important; // 蹂몃Ц pt ?듭씪
     }
 
     // ??븷/?ㅼ썙???쒓렇 ??row-1 ?대? 媛濡?諛곗튂 (?몃? override??.personal-row-1 .personal-tags)
@@ -11419,7 +11419,7 @@
 
       .field-value {
         font-family: "Pretendard", sans-serif;
-        font-size: 14px !important;
+        font-size: 14px !important; // ?꾨뱶媛?pt ?듭씪
         line-height: 1.14;
         color: #ddd;
         display: block;
@@ -11429,7 +11429,7 @@
 
       .field-label {
         font-family: "Pretendard", sans-serif;
-        font-size: 14px !important;
+        font-size: 14px !important; // ?꾨뱶 ?쇰꺼 pt ?듭씪
         line-height: 1.14;
         color: rgba(255, 255, 255, 0.4);
         flex-shrink: 0;
@@ -11455,6 +11455,7 @@
     max-width: 100% !important;
     box-sizing: border-box !important;
     position: relative; // .workinfo-mid-divider absolute 기준점 (overflow:visible 보장됨)
+    z-index: 2; // output-links transform(34px)이 아래 .workinfo-text-section과 시각적으로 겹침 — 클릭 이벤트가 text-section으로 빠지지 않도록 stacking context 확보
 
     // mid-col1 ↔ text-section 사이 시각적 구분선 — flow 비점유, .workinfo-left 의 overflow-y:auto 영향 X
     // 위치: mid-section 하단 + 58px (≈ 1.5cm) → text-section 상단 영역
@@ -11489,12 +11490,13 @@
 
     .workinfo-mid-col2 {
       flex: none !important;
-      width: 360px !important; // Output Link ?곸뿭 怨좎젙??(220 + 76 ??2cm ?뺤옣)
+      width: 360px !important;
       min-width: 0;
       display: flex;
       justify-content: flex-end;
       box-sizing: border-box;
-      margin-top: -20px !important; // output-links 블록만 위로 보정 (Main Title 영역과 겹침 해소). 원값 20px → -20px (총 40px 위로)
+      margin-top: -20px !important;
+      position: relative; // .workinfo-output-links absolute 배치 기준점
     }
   }
 
@@ -11656,20 +11658,22 @@
   .workinfo-output-links {
     display: flex;
     flex-direction: column;
-    gap: 9px;
-    flex: 0 0 54%;
+    gap: 5px;
     width: 54%;
     max-width: 270px;
     min-width: 0;
     box-sizing: border-box;
-    margin-top: 2px !important; // base 위치 — flow 차지 공간 변경 없음 (margin-top 증가 시 col2 가 col1 보다 커서 .workinfo-mid-section 의 min/실효 높이가 같이 커져 .workinfo-text-section 까지 밀어내는 부작용 있었음. 그래서 시각 이동은 transform 으로만.)
-    transform: translateY(34px) !important; // output-links 영역만 시각적으로 아래로 이동 — layout box 영향 없음 → downstream flow(.workinfo-text-section / .workinfo-image-grid / .workcareer-grade-section 등) y 좌표 보존. 4개 모달 공통.
+    position: absolute;
+    top: 36px; // 실제 layout 위치 = old margin-top(2px) + old translateY(34px). hit-test 영역이 시각 위치와 일치.
+    right: 0;
+    z-index: 3;
+    pointer-events: auto;
 
     .output-link-row {
       display: flex;
       align-items: center;
       gap: 6px;
-      min-height: 22px;
+      min-height: 20px;
       position: relative;
       width: 100%;
       min-width: 0;
@@ -11686,7 +11690,7 @@
       line-height: 1;
     }
 
-    // cluster3 .link-dot 복원
+    // cluster3 .link-dot ?⑦꽩
     .link-dot {
       width: 8px;
       height: 8px;
@@ -11701,9 +11705,12 @@
       flex: 1;
       min-width: 0;
       max-width: none;
-      font-size: 14px !important;
-      line-height: 20px;
+      font-size: 12px !important;
+      line-height: 1.3;
       color: rgba(255, 255, 255, 0.7);
+      display: inline-flex;
+      align-items: center;
+      min-height: 18px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -11784,11 +11791,66 @@
         font-size: 10px;
       }
     }
+
+    // 편집 모드 — 클릭 가능 텍스트 (2차 모달 트리거)
+    .output-link-editable {
+      cursor: pointer;
+      border: 1px solid rgba(255, 165, 0, 0.25);
+      border-radius: 3px;
+      padding: 2px 8px;
+      min-height: 18px;
+      display: inline-flex;
+      align-items: center;
+      position: relative;
+      z-index: 2;
+      pointer-events: auto !important;
+      transition: border-color 0.2s, background 0.2s;
+
+      &:hover:not(.output-link-disabled) {
+        border-color: #faab07;
+        background: rgba(255, 165, 0, 0.08);
+      }
+
+      &.output-link-disabled {
+        cursor: not-allowed;
+        opacity: 0.4;
+        border-color: rgba(255, 255, 255, 0.1);
+        font-size: 9px !important;
+        pointer-events: none;
+      }
+
+      &.output-link-empty:not(.output-link-disabled) {
+        font-style: italic;
+        font-size: 10px !important;
+      }
+    }
+
+    // 보기 모드 — 클릭 시 URL 열기
+    .output-link-clickable {
+      display: block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      cursor: pointer;
+      min-height: 18px;
+      padding: 1px 0;
+      transition: color 0.15s;
+
+      &:hover {
+        color: #faab07;
+        text-decoration: underline;
+      }
+    }
   }
 
   // 醫뚰븯?? Main Title / Sub Title / Growth Point
   // ?ъ슜???붿껌: Main Title 0.5cm(??-19px) ?꾨줈 ??text-section留?異붽? 蹂댁젙
   .workinfo-text-section {
+    // 4종 모달 공통: text-section.bottom을 좌측 컬럼 하단(= 우측 image-line-code.bottom)에 정렬.
+    // align-items:stretch로 좌/우 컬럼 같은 높이 → margin-top:auto가 남은 free space를 흡수해
+    // 마지막 child(text-section)를 컬럼 하단으로 푸시. 구 -40px 수동 오프셋 대체.
+    // (workcareer는 workinfo-right 말미 grade-section overhang(~9px)을 modal-scope에서 별도 보정.)
     margin-top: auto !important;
     display: flex;
     flex-direction: column;
@@ -12743,50 +12805,7 @@
         &.star-full {
           color: #faab07;
         }
-
-        // edit 모드: 별 하나 위에 좌/우 절반 클릭존 — 글리프 위에 absolute 버튼 두 개
-        &.is-interactive {
-          position: relative;
-          display: inline-block;
-          width: 1em;
-          height: 1em;
-          cursor: pointer;
-
-          .rating-star-glyph {
-            display: block;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-          }
-
-          .rating-star-half {
-            position: absolute;
-            top: 0;
-            width: 50%;
-            height: 100%;
-            background: transparent;
-            border: 0;
-            padding: 0;
-            margin: 0;
-            cursor: pointer;
-            z-index: 1;
-
-            &.rating-star-left  { left: 0; }
-            &.rating-star-right { right: 0; }
-
-            &:focus-visible {
-              outline: 1px solid #faab07;
-              outline-offset: 1px;
-            }
-          }
-        }
       }
-    }
-
-    &.is-editable .rating-stars:focus-visible {
-      outline: 1px solid rgba(250, 171, 7, 0.6);
-      outline-offset: 2px;
-      border-radius: 2px;
     }
 
     .rating-number-input {
@@ -14820,5 +14839,178 @@
     max-height: 855px !important;
     transform: scale(#{"max(1, min(calc(1 + (100vw - 1920px) / 1484px), calc(1 + (100vh - 1080px) / 835px), calc(100vw / 1788px), calc(100vh / 1006px)))"}) !important;
     transform-origin: center center !important;
+  }
+}
+
+// ============================================================
+// Output Link 2차 모달 — Portal로 document.body에 렌더링 (전역 스코프)
+// ============================================================
+.output-link-edit-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 200000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.output-link-edit-modal {
+  background: #1e1e1e;
+  border: 1px solid rgba(255, 165, 0, 0.35);
+  border-radius: 12px;
+  padding: 24px 28px;
+  width: 420px;
+  max-width: 90vw;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+
+  .output-link-edit-title {
+    font-size: 19px;
+    font-weight: 600;
+    color: #faab07;
+    margin: 0 0 20px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    i {
+      font-size: 20px;
+    }
+  }
+
+  .output-link-edit-field {
+    margin-bottom: 16px;
+
+    label {
+      display: block;
+      font-size: 16px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.6);
+      margin-bottom: 6px;
+    }
+
+    .output-link-edit-input {
+      width: 100%;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 17px;
+      font-family: "Pretendard", sans-serif;
+      box-sizing: border-box;
+      transition: border-color 0.2s;
+
+      &:focus {
+        outline: none;
+        border-color: #faab07;
+      }
+
+      &::placeholder {
+        color: rgba(255, 255, 255, 0.25);
+        font-size: 17px;
+      }
+    }
+
+    .output-link-edit-field-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 4px;
+
+      .char-count {
+        font-size: 14px;
+        color: rgba(255, 255, 255, 0.3);
+      }
+
+      .field-error {
+        font-size: 15px;
+        color: #ff4444;
+      }
+    }
+  }
+
+  .output-link-edit-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+
+    button {
+      padding: 9px 22px;
+      border-radius: 6px;
+      font-size: 17px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .btn-cancel {
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: rgba(255, 255, 255, 0.6);
+
+      &:hover {
+        border-color: rgba(255, 255, 255, 0.4);
+        color: #fff;
+      }
+    }
+
+    .btn-save {
+      background: #faab07;
+      border: 1px solid #faab07;
+      color: #1a1a1a;
+      font-weight: 600;
+
+      &:hover {
+        background: #e09e06;
+        border-color: #e09e06;
+      }
+    }
+  }
+}
+
+// ============================================================
+// Output Link 커스텀 툴팁 — Portal로 document.body에 렌더링 (전역 스코프)
+// ============================================================
+.ol-custom-tooltip {
+  position: fixed;
+  transform: translate(-50%, -100%);
+  width: 150px;
+  max-width: 150px;
+  padding: 7px 14px;
+  background: #1a3a4a;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.45;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  z-index: 300000;
+  pointer-events: none;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  height: auto;
+  animation: olTooltipFadeIn 0.12s ease-out;
+
+  &::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: #1a3a4a;
+  }
+}
+
+@keyframes olTooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% + 4px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -100%);
   }
 }

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { useSearchParams, usePathname, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { getFixedDropdownPosition } from "@/utils/documentZoom";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { useDebugLayout } from "@/utils/debugLayout";
@@ -12,14 +12,7 @@ import { usePopup } from "@/components/ui/popup";
 import { supabase } from "@/lib/supabase";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
-import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
-import { isPxRoute, isEcRoute, withPxRoute, getThemeClass } from "@/lib/cluster-route";
-import { REPUTATION_KEYWORD_GROUPS } from "@/lib/reputation-keywords";
-import { isAdminEmail } from "@/lib/admin";
-import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
-import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
-import type { Cluster4LineDetailDto, Cluster4LinePartType } from "@/lib/cluster4LinesTypes";
 import DetailLogModal from "./DetailLogModal";
 import confetti from "canvas-confetti";
 import HelpModalBody from "@/components/shared/HelpModalBody";
@@ -142,6 +135,99 @@ const stripFieldLabel = (value: string | null | undefined, labels: string[]) => 
   return matchedLabel ? text.slice(0, -matchedLabel.length).trim() || text : text;
 };
 
+// ============================================================================
+// reputation-form 중첩 모달 — 키워드 선택 (5군락 100개)
+// TODO: [백엔드 작업 필요] reputationKeywords DB를 5군락 구조로 매핑 후 대체
+// ============================================================================
+interface KeywordGroup {
+  id: string;
+  color: "blue" | "green" | "yellow" | "orange" | "red";
+  emoji: string;
+  title: string;
+  count: number;
+  keywords: string[];
+}
+
+const KEYWORD_GROUPS: KeywordGroup[] = [
+  {
+    id: "group1",
+    color: "blue",
+    emoji: "🔵",
+    title: "도구 · 기술 · 시스템 활용 역량",
+    count: 36,
+    keywords: [
+      "노션 유망주",
+      "노션 마스터",
+      "인스타 유망주",
+      "인스타 마스터",
+      "유튜브 유망주",
+      "유튜브 마스터",
+      "AI 유망주",
+      "AI 마스터",
+      "블로그 유망주",
+      "블로그 마스터",
+      "미드저니 유망주",
+      "미드저니 마스터",
+      "깃업 유망주",
+      "깃업 마스터",
+      "노코드 유망주",
+      "노코드 마스터",
+      "옵시디언 유망주",
+      "옵시디언 마스터",
+      "파워포인트",
+      "엑셀 유망주",
+      "엑셀 마스터",
+      "카카오 생태계",
+      "네이버 생태계",
+      "구글 생태계",
+      "퍼블리싱",
+      "UI / UX 기획",
+      "웹 develop",
+      "앱 develop",
+      "서버 관리",
+      "데이터 처리",
+      "데이터 분석",
+      "데이터 해석",
+      "AI 프롬프트",
+      "시스템 구축력",
+      "도구 사용력",
+      "기술 습득력",
+    ],
+  },
+  {
+    id: "group2",
+    color: "green",
+    emoji: "🟢",
+    title: "콘텐츠 · 표현 · 메시지 생산 역량",
+    count: 16,
+    keywords: ["콘텐츠", "카드 콘텐츠", "텍스트 콘텐츠", "스토리텔링", "동영상 숏폼", "동영상 롱폼", "릴스 특화", "쇼츠 특화", "캐치프레이즈", "슬로건", "표현력", "언어 능력", "설득력", "상상력", "유머와 재미", "창의성"],
+  },
+  {
+    id: "group3",
+    color: "yellow",
+    emoji: "🟡",
+    title: "마케팅 · 확산 · 영향력 설계",
+    count: 10,
+    keywords: ["퍼포먼스", "브랜딩 마케팅", "바이럴 마케팅", "커뮤니티", "연관 검색어", "구글 트렌드", "정보력", "사회성", "소통력", "공감력"],
+  },
+  {
+    id: "group4",
+    color: "orange",
+    emoji: "🟠",
+    title: "사고 · 분석 · 구조화 역량",
+    count: 16,
+    keywords: ["인지력", "관찰력", "이해력", "논리력", "상황 추론력", "문제 정의력", "연구력", "업무 분석력", "업무 기획력", "계획력", "구조화", "도식화", "범위화", "항목화", "자료화", "변칙성"],
+  },
+  {
+    id: "group5",
+    color: "red",
+    emoji: "🔴",
+    title: "태도 · 실행 · 지속성 기반 역량",
+    count: 22,
+    keywords: ["지속성", "기민성", "신뢰성", "성장성", "유연성", "안정성", "위기 대응성", "학습력", "지도력", "소속감", "적극성", "자신감", "헌신성", "행동력", "회복력", "몰입력", "잠재력", "업무 진행력", "업무 관리력", "수용력", "지구력", "강인한 체력"],
+  },
+];
+
 // 기업 로고 클릭 → 기업 홈페이지 1번 링크 새 탭. URL 없으면 동작 안 함.
 const handleCompanyLogoClick = (e: React.MouseEvent, url: string | null | undefined) => {
   if (!url) return;
@@ -154,14 +240,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const { data: session } = useSession();
   const { mask } = useDataMasking();
   const searchParams = useSearchParams();
-  const pathname = usePathname();
-  const router = useRouter();
-  // PX / EC 컨텍스트면 prev/next/filter/weekly 링크가 모두 해당 org 라우트로 이동.
-  // 모든 cluster navigation 은 withPxRoute(path, pathname) 으로 일반화된 suffix 적용.
-  const isPX = isPxRoute(pathname);
-  const isEC = isEcRoute(pathname);
   const popup = usePopup();
   const urlUserId = searchParams.get("userId") || searchParams.get("userID");
+  // ?admin=true — Output Link 2차 모달 UI 테스트용 프론트 전용 override (DB/API/권한 변경 없음)
+  const isAdminPreview = searchParams.get("admin") === "true";
   // SSR/client hydration 일관성을 위해 stateful — 첫 렌더 SSR=client=false, 마운트 후 localStorage 값 반영
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -377,25 +459,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     growth_point?: string | null;
     image_urls?: (string | null)[] | null;
     image_captions?: string[] | null;
-    rating?: number | null;
   }
   const [weekActivityDetails, setWeekActivityDetails] = useState<ActivityDetail[]>([]);
 
-  // 어드민 개별 권한 부여 (secondary_info_grants)
-  interface SecondaryInfoGrant { activity_type_id: string; deadline: string; }
-  const [secondaryInfoGrants, setSecondaryInfoGrants] = useState<SecondaryInfoGrant[]>([]);
+  // 활동별 평점 (activity_type_id → points)
+  const [activityRatings, setActivityRatings] = useState<Map<string, number>>(new Map());
 
-  // 라인 개설/제출 상태 (파트별)
-  const [lineDetails, setLineDetails] = useState<Record<Cluster4LinePartType, Cluster4LineDetailDto | null>>({
-    info: null, experience: null, competency: null, career: null,
-  });
-  const [lineDetailsLoading, setLineDetailsLoading] = useState(false);
-  const [lineSubmissionModalOpen, setLineSubmissionModalOpen] = useState(false);
-  const [lineSubmissionTarget, setLineSubmissionTarget] = useState<Cluster4LineDetailDto | null>(null);
-  const [lineSubmissionForm, setLineSubmissionForm] = useState({
-    subtitle: "", outputLink2: "", outputLink3: "", outputLink4: "", outputLink5: "",
-  });
-  const [lineSubmissionSaving, setLineSubmissionSaving] = useState(false);
+  // 어드민 개별 권한 부여 (secondary_info_grants)
+  interface SecondaryInfoGrant {
+    activity_type_id: string;
+    deadline: string;
+  }
+  const [secondaryInfoGrants, setSecondaryInfoGrants] = useState<SecondaryInfoGrant[]>([]);
 
   // DB에서 가져온 activity_types 정보
   interface ActivityTypeInfo {
@@ -947,27 +1022,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
       return;
     }
-
-    // 실 모드 방어 — weekId 가 UUID 가 아니면 (frontend dummy 가 흘러들어왔다는 신호)
-    //   profile API 호출을 차단하고 base route 로 redirect 한다. base route 가
-    //   현재 주차 UUID 를 다시 계산해서 정상 경로로 보낸다.
-    //   silent fail (weekData=null 영구) 회피를 위해 명시적 분기.
-    if (weekId) {
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(weekId)) {
-        console.warn(
-          `[cluster-4-card] Non-UUID weekId "${weekId}" in non-demo mode — redirecting to base route to resolve current UUID.`,
-        );
-        // pathname 마지막 segment (= 잘못된 weekId) 제거하고 base route 로.
-        // PX/EC 변형 라우트도 동일 패턴이라 generic 하게 처리.
-        const baseRoute = pathname.replace(/\/[^/]+\/?$/, "") || "/cluster-4-card";
-        const qs = urlUserId ? `?userId=${urlUserId}` : "";
-        router.replace(`${baseRoute}${qs}`);
-        setIsLoadingWeek(false);
-        return;
-      }
-    }
-
     const fetchWeekData = async () => {
       if (!weekId) return;
 
@@ -1015,6 +1069,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         const apiApprovedActivities = profileResult.approvedActivities || [];
         const apiActivityRecords = profileResult.activityRecords || [];
         const apiActivityDetails = profileResult.activityDetails || [];
+        const apiActivityPoints = profileResult.activityPoints || [];
 
         // profile API에서 제공하는 teams, parts 사용
         const apiTeams = profileResult.teams || [];
@@ -1215,7 +1270,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           }).length;
         }
 
-        // 온보딩 주차(무적 주차)는 성공 주차에 포함 (user_week_statuses에 레코드가 없어도)
+        // 온보딩 주차(무적 주차)는 성공 주차에 포함 (user_weekly_growth에 레코드가 없어도)
         const onboardingWeekIdForCount = profileResult.onboardingWeekId;
         if (onboardingWeekIdForCount) {
           // 온보딩 주차가 이미 successWeeksData에 포함되어 있는지 확인
@@ -1295,8 +1350,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             setSecondaryInfoGrants(wb.secondaryInfoGrants as SecondaryInfoGrant[]);
           }
 
-          // 13. 평점은 user_activity_details.rating 에서 직접 가져옴 (workExpCards 빌더에서 detail.rating 사용).
-          //   SoT 전환: points(point_type='star') 기반 매핑은 폐기. 라인 평점은 self-edit 항목으로 관리.
+          // 13. 평점 매핑 — points.line_id (= activity_types.id) + 현재 주차 매칭.
+          //   어드민(compliance-manage)은 (reward_star + 보너스 평점) 을 한 행에 합산해 저장하므로,
+          //   화면 표시는 라인의 reward_star 만큼 차감해 실제 평점(0~10) 만 노출.
+          //   (예: 26봄 9주차부터 실무 경험 reward_star=10 → 저장 20 = 평점 10 으로 환산)
+          //   apiActivityPoints 는 given_at desc 정렬이므로 동일 키 중복 시 최신 값이 우선.
+          const ratingsMap = new Map<string, number>();
+          apiActivityPoints.forEach((p: { line_id: string | null; week_id: string | null; points: number }) => {
+            if (p.line_id && p.week_id === weekId && !ratingsMap.has(p.line_id)) {
+              const baseStar = typesMap.get(p.line_id)?.reward_star || 0;
+              const rating = Math.max(0, (p.points || 0) - baseStar);
+              ratingsMap.set(p.line_id, rating);
+            }
+          });
+          setActivityRatings(ratingsMap);
 
           // cluster-4-1과 동일한 로직으로 해당 주차 데이터 계산
           // 온보딩 주차 확인
@@ -1458,103 +1525,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
     fetchWeekData();
   }, [weekId, urlUserId, isDemoMode, isMounted]);
-
-  // 라인 개설/제출 상태 fetch (파트별 병렬)
-  useEffect(() => {
-    if (!isMounted || isDemoMode || !weekId) return;
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(weekId)) return;
-    // 본인 조회 전용 — 타인 프로필(urlUserId)을 볼 때는 라인 제출 UI 불필요
-    if (urlUserId) return;
-
-    let cancelled = false;
-    const parts: Cluster4LinePartType[] = ["info", "experience", "competency", "career"];
-    setLineDetailsLoading(true);
-
-    Promise.all(
-      parts.map((pt) =>
-        fetch(`/api/cluster4/lines/detail?weekId=${weekId}&partType=${pt}`)
-          .then((r) => r.json())
-          .then((json) => ({ pt, data: json.success ? (json.data as Cluster4LineDetailDto) : null }))
-          .catch(() => ({ pt, data: null })),
-      ),
-    ).then((results) => {
-      if (cancelled) return;
-      const next = { ...lineDetails };
-      for (const { pt, data } of results) next[pt] = data;
-      setLineDetails(next);
-      setLineDetailsLoading(false);
-    });
-
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekId, isDemoMode, isMounted, urlUserId]);
-
-  const refetchLineDetail = async (partType: Cluster4LinePartType) => {
-    if (!weekId) return;
-    try {
-      const res = await fetch(`/api/cluster4/lines/detail?weekId=${weekId}&partType=${partType}`);
-      const json = await res.json();
-      if (json.success) {
-        setLineDetails((prev) => ({ ...prev, [partType]: json.data as Cluster4LineDetailDto }));
-      }
-    } catch { /* ignore */ }
-  };
-
-  const openLineSubmissionModal = (detail: Cluster4LineDetailDto) => {
-    setLineSubmissionTarget(detail);
-    const sub = detail.submission;
-    setLineSubmissionForm({
-      subtitle: sub?.subtitle || "",
-      outputLink2: sub?.outputLink2 || "",
-      outputLink3: sub?.outputLink3 || "",
-      outputLink4: sub?.outputLink4 || "",
-      outputLink5: sub?.outputLink5 || "",
-    });
-    setLineSubmissionModalOpen(true);
-  };
-
-  const handleLineSubmissionSave = async () => {
-    if (!lineSubmissionTarget?.line) return;
-    setLineSubmissionSaving(true);
-    const lt = lineSubmissionTarget.line.lineTargetId;
-    const isEdit = lineSubmissionTarget.status === "success";
-    const method = isEdit ? "PATCH" : "POST";
-
-    try {
-      const res = await fetch(`/api/cluster4/lines/${lt}/submission`, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subtitle: lineSubmissionForm.subtitle.trim() || null,
-          output_link_2: lineSubmissionForm.outputLink2.trim() || null,
-          output_link_3: lineSubmissionForm.outputLink3.trim() || null,
-          output_link_4: lineSubmissionForm.outputLink4.trim() || null,
-          output_link_5: lineSubmissionForm.outputLink5.trim() || null,
-        }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        await popup.alert(isEdit ? "수정되었습니다." : "제출되었습니다.");
-        setLineSubmissionModalOpen(false);
-        await refetchLineDetail(lineSubmissionTarget.line.partType);
-      } else {
-        await popup.alert(json.error || "저장에 실패했습니다.");
-      }
-    } catch {
-      await popup.alert("네트워크 오류가 발생했습니다.");
-    } finally {
-      setLineSubmissionSaving(false);
-    }
-  };
-
-  // 라인 상태별 라벨/아이콘
-  const lineStatusConfig = {
-    void: { label: "라인 미개설", color: "#6b7280", bg: "#f3f4f6", border: "#d1d5db", icon: "" },
-    pending: { label: "강화 대기", color: "#d97706", bg: "#fffbeb", border: "#fbbf24", icon: "/images/0/cluster4/icon/6 강화 대기.png" },
-    success: { label: "강화 성공", color: "#059669", bg: "#ecfdf5", border: "#34d399", icon: "/images/0/cluster4/icon/5 강화 성공.png" },
-    fail: { label: "강화 실패", color: "#dc2626", bg: "#fef2f2", border: "#f87171", icon: "/images/0/cluster4/icon/7 강화 실패.png" },
-  } as const;
 
   // DB에서 실무 경력 데이터 가져오기
   // career-records는 urlUserId가 있으면 Stage 1에서 이미 로드됨 (earlyCareerResult)
@@ -1811,136 +1781,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     setCanEditColleague(isDemoMode);
   }, [isDemoMode]);
 
-  // ============================================================
-  // user_edit_windows 기반 Cluster4 작성 기간 권한 (cluster3 패턴 재사용)
-  //   - cluster4.weekly_reviews   → Weekly Review 박스 저장 (POST/PUT/DELETE)
-  //   - cluster4.work_info        → Work Info 모달 (신규 분할 키)
-  //   - cluster4.work_ability     → Work Ability 모달 (신규 분할 키)
-  //   - cluster4.work_exp         → Work Exp 모달 (신규 분할 키, rating 포함)
-  //   - cluster4.work_career      → Work Career 모달 (신규 분할 키)
-  //   - cluster4.activity_details → legacy. 4개 모달 신규 키가 없을 때 fallback 으로 사용.
-  // 우선순위:
-  //   1) isDemoMode      → 자동 허용
-  //   2) admin           → 자동 허용 (마더 계정)
-  //   3) dev override    → ?unlockCluster4* (DEV/QA 전용, 서버 PUT 에는 영향 없음)
-  //   4) permission API  → /api/edit-windows/permission?resource_key=cluster4.*
-  // 서버 PUT 도 동일 resource_key 로 enforce 되므로, dev override 는 프론트 UI 만 풀고
-  // 서버는 여전히 작성 기간을 검사한다 (서버 우회 X).
-  const [canEditWeeklyReviews, setCanEditWeeklyReviews] = useState<boolean>(isDemoMode);
-  const [canEditActivityDetails, setCanEditActivityDetails] = useState<boolean>(isDemoMode);
-  // 모달별 신규 키 — 어드민이 카드별로 따로 열고 닫는다.
-  const [workInfoWindowOpen, setWorkInfoWindowOpen] = useState<boolean>(isDemoMode);
-  const [workAbilityWindowOpen, setWorkAbilityWindowOpen] = useState<boolean>(isDemoMode);
-  const [workExpWindowOpen, setWorkExpWindowOpen] = useState<boolean>(isDemoMode);
-  const [workCareerWindowOpen, setWorkCareerWindowOpen] = useState<boolean>(isDemoMode);
-  // 주간 평판(weekly_reputation) 작성기간 — season_reputation 과 별도 키.
-  // 정책: user_edit_windows.user_id = 작성자(reviewer = session user) 기준.
-  //       타 크루(non-owner)가 본 페이지 owner 에게 평판을 남길 때, 어드민이 reviewer 의
-  //       user_edit_windows row 를 열어두면 작성 가능. (peer-review 이므로 page owner 의
-  //       user_edit_windows 가 아닌 session user 자신의 row 를 검사한다.)
-  const [weeklyReputationWindowOpen, setWeeklyReputationWindowOpen] = useState<boolean>(isDemoMode);
-  const [editWindowRefreshTick, setEditWindowRefreshTick] = useState(0);
-
-  useEffect(() => {
-    const isAdminCombined =
-      !!session?.user?.isAdmin || isAdminEmail(session?.user?.email);
-    const unlockAll = searchParams.get("unlockCluster4") === "1";
-    const unlockWeekly =
-      searchParams.get("unlockCluster4WeeklyReviews") === "1";
-    const unlockActivity =
-      searchParams.get("unlockCluster4ActivityDetails") === "1";
-    // 모달별 dev override (없으면 unlockActivity / unlockAll 로 폴백)
-    const unlockWorkInfo = searchParams.get("unlockCluster4WorkInfo") === "1";
-    const unlockWorkAbility = searchParams.get("unlockCluster4WorkAbility") === "1";
-    const unlockWorkExp = searchParams.get("unlockCluster4WorkExp") === "1";
-    const unlockWorkCareer = searchParams.get("unlockCluster4WorkCareer") === "1";
-
-    const unlockWeeklyReputation =
-      searchParams.get("unlockCluster4WeeklyReputation") === "1";
-
-    // 데모/관리자/admin URL 진입은 fetch 없이 즉시 허용.
-    if (isDemoMode || isAdminCombined) {
-      setCanEditWeeklyReviews(true);
-      setCanEditActivityDetails(true);
-      setWorkInfoWindowOpen(true);
-      setWorkAbilityWindowOpen(true);
-      setWorkExpWindowOpen(true);
-      setWorkCareerWindowOpen(true);
-      setWeeklyReputationWindowOpen(true);
-      return;
-    }
-
-    // 미로그인은 dev override 만 허용 (서버는 별도 401).
-    if (!session?.user) {
-      setCanEditWeeklyReviews(unlockAll || unlockWeekly);
-      setCanEditActivityDetails(unlockAll || unlockActivity);
-      setWorkInfoWindowOpen(unlockAll || unlockActivity || unlockWorkInfo);
-      setWorkAbilityWindowOpen(unlockAll || unlockActivity || unlockWorkAbility);
-      setWorkExpWindowOpen(unlockAll || unlockActivity || unlockWorkExp);
-      setWorkCareerWindowOpen(unlockAll || unlockActivity || unlockWorkCareer);
-      setWeeklyReputationWindowOpen(unlockAll || unlockWeeklyReputation);
-      return;
-    }
-
-    // dev override 베이스라인 + permission API OR 결합
-    setCanEditWeeklyReviews(unlockAll || unlockWeekly);
-    setCanEditActivityDetails(unlockAll || unlockActivity);
-    setWorkInfoWindowOpen(unlockAll || unlockActivity || unlockWorkInfo);
-    setWorkAbilityWindowOpen(unlockAll || unlockActivity || unlockWorkAbility);
-    setWorkExpWindowOpen(unlockAll || unlockActivity || unlockWorkExp);
-    setWorkCareerWindowOpen(unlockAll || unlockActivity || unlockWorkCareer);
-    setWeeklyReputationWindowOpen(unlockAll || unlockWeeklyReputation);
-
-    let cancelled = false;
-    const loadPermission = async (resourceKey: string): Promise<boolean> => {
-      try {
-        const response = await fetch(
-          `/api/edit-windows/permission?resource_key=${encodeURIComponent(resourceKey)}`,
-          { cache: "no-store" }
-        );
-        const result = await response.json();
-        const permission = result?.data;
-        if (result?.success && permission && typeof permission.canEdit === "boolean") {
-          return Boolean(permission.canEdit);
-        }
-      } catch (error) {
-        console.error(`[cluster4 permission] ${resourceKey} 조회 실패`, error);
-      }
-      return false;
-    };
-
-    Promise.all([
-      loadPermission(CLUSTER4_EDIT_RESOURCE_KEYS.weeklyReviews),
-      loadPermission(CLUSTER4_EDIT_RESOURCE_KEYS.activityDetails),
-      loadPermission(CLUSTER4_EDIT_RESOURCE_KEYS.workInfo),
-      loadPermission(CLUSTER4_EDIT_RESOURCE_KEYS.workAbility),
-      loadPermission(CLUSTER4_EDIT_RESOURCE_KEYS.workExp),
-      loadPermission(CLUSTER4_EDIT_RESOURCE_KEYS.workCareer),
-      loadPermission(CLUSTER4_EDIT_RESOURCE_KEYS.weeklyReputation),
-    ]).then(([weeklyOpen, activityOpen, workInfoOpen, workAbilityOpen, workExpOpen, workCareerOpen, weeklyReputationOpen]) => {
-      if (cancelled) return;
-      setCanEditWeeklyReviews((unlockAll || unlockWeekly) || weeklyOpen);
-      setCanEditActivityDetails((unlockAll || unlockActivity) || activityOpen);
-      setWorkInfoWindowOpen((unlockAll || unlockActivity || unlockWorkInfo) || workInfoOpen);
-      setWorkAbilityWindowOpen((unlockAll || unlockActivity || unlockWorkAbility) || workAbilityOpen);
-      setWorkExpWindowOpen((unlockAll || unlockActivity || unlockWorkExp) || workExpOpen);
-      setWorkCareerWindowOpen((unlockAll || unlockActivity || unlockWorkCareer) || workCareerOpen);
-      setWeeklyReputationWindowOpen((unlockAll || unlockWeeklyReputation) || weeklyReputationOpen);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    isDemoMode,
-    session?.user,
-    session?.user?.isAdmin,
-    session?.user?.email,
-    searchParams,
-    editWindowRefreshTick,
-  ]);
-  // ============================================================
-
   // Weekly Review / 연계동료 작성 시간 윈도우
   // 앵커 = weekData.startDate (= N주차 월요일 00:00 KST)
   //   144h(=6d 0h)  → N주차 일요일 00:00 KST  → +1min = 일 00:01 (오픈)
@@ -1964,20 +1804,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     return true;
   };
 
-  // 일반 모드 백엔드 승인 상태 → 4개 모달 canEdit* 플래그 합성
+  // 일반 모드 백엔드 승인 상태 → 모든 canEdit* 플래그에 일괄 반영
   // 다른 크루 카드 열람 시(isOwner=false)에는 승인됐어도 수정 비활성화
-  // 어드민(마더) 계정은 승인/소유/작성기간 무관하게 모든 라인 카드 수정 가능
-  //
-  // 합성 규칙 (4개 모달):
-  //   isDemoMode → true
-  //   admin      → true
-  //   else       → (approved && isOwner) && (모달별 신규 키 열림 OR legacy activity_details 열림)
-  //
-  // canEditReputation / canEditColleague:
-  //   - canEditColleague: 본인 페이지에서 본인이 작성 → approved+isOwner.
-  //   - canEditReputation: peer-review 라 타 크루(non-owner)가 작성 → approved && !isOwner
-  //     AND user_edit_windows(resource_key=cluster4.weekly_reputation) 가 reviewer 기준 열림.
-  //     (admin 은 위 분기에서 우회. season_reputation 과 동일 패턴.)
+  // 어드민(마더) 계정은 승인/소유 무관하게 모든 라인 카드 수정 가능
   useEffect(() => {
     if (isDemoMode) return; // 데모 모드는 위 useEffect들이 true로 셋업
     if (session?.user?.isAdmin) {
@@ -1993,33 +1822,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     (async () => {
       const approved = await checkApprovalStatus();
       if (cancelled) return;
-      const approvedAndOwner = approved && isOwner;
-      // weekly_reputation 은 peer-review — 타 크루가 본 페이지 owner 에게 평판을 작성한다.
-      // 그러므로 session user 가 owner 가 아닐 때만 활성화한다.
-      setCanEditReputation(approved && !isOwner && weeklyReputationWindowOpen);
-      setCanEditColleague(approvedAndOwner);
-      // 4개 모달 — 승인+소유 AND (신규 키 OR legacy activity_details)
-      // canEditActivityDetails 는 legacy fallback. 신규 키가 닫혀 있어도
-      // 기존 어드민이 activity_details 만 열어둔 경우엔 그대로 동작한다.
-      setCanEditWorkInfo(approvedAndOwner && (workInfoWindowOpen || canEditActivityDetails));
-      setCanEditWorkAbility(approvedAndOwner && (workAbilityWindowOpen || canEditActivityDetails));
-      setCanEditWorkExp(approvedAndOwner && (workExpWindowOpen || canEditActivityDetails));
-      setCanEditWorkCareer(approvedAndOwner && (workCareerWindowOpen || canEditActivityDetails));
+      const editable = approved && isOwner;
+      setCanEditReputation(editable);
+      setCanEditColleague(editable);
+      setCanEditWorkInfo(editable);
+      setCanEditWorkAbility(editable);
+      setCanEditWorkExp(editable);
+      setCanEditWorkCareer(editable);
     })();
     return () => {
       cancelled = true;
     };
-  }, [
-    isDemoMode,
-    session,
-    isOwner,
-    workInfoWindowOpen,
-    workAbilityWindowOpen,
-    workExpWindowOpen,
-    workCareerWindowOpen,
-    canEditActivityDetails,
-    weeklyReputationWindowOpen,
-  ]);
+  }, [isDemoMode, session, isOwner]);
 
   // 작업 3: 이번 주 내가 보낸 평판 리스트 (중복 방지 + 7명 제한 체크용 — best-effort)
   // TODO: [백엔드 작업 필요]
@@ -2133,6 +1947,31 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const [editingSubTitle, setEditingSubTitle] = useState<string>("");
   const [editingGrowthPoint, setEditingGrowthPoint] = useState<string>("");
   const [editingOutputLinks, setEditingOutputLinks] = useState<{ desc: string; url: string }[]>(Array(5).fill({ desc: "", url: "" }));
+  // Output Link 2차 모달 (URL/설명 분리 입력)
+  const [outputLinkEditModal, setOutputLinkEditModal] = useState<{
+    modalType: "workInfo" | "workExp" | "workAbility" | "workCareer";
+    linkIdx: number;
+    url: string;
+    desc: string;
+    error: string;
+  } | null>(null);
+  // admin preview 저장 값 — edit mode가 false로 돌아가도 유지 (새로고침 시 초기화)
+  const [adminSavedOutputLinks, setAdminSavedOutputLinks] = useState<Record<string, { desc: string; url: string }[]>>({});
+  // Output Link 커스텀 툴팁 (보기 모드 hover)
+  const [olTooltip, setOlTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
+  const olTooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showOlTooltip = (e: React.MouseEvent, text: string) => {
+    if (!text) return;
+    const el = e.currentTarget as HTMLElement;
+    if (el.scrollWidth <= el.clientWidth) return;
+    if (olTooltipTimer.current) clearTimeout(olTooltipTimer.current);
+    const rect = el.getBoundingClientRect();
+    setOlTooltip({ text, x: rect.left + rect.width / 2, y: rect.top - 6 });
+  };
+  const hideOlTooltip = () => {
+    if (olTooltipTimer.current) clearTimeout(olTooltipTimer.current);
+    olTooltipTimer.current = setTimeout(() => setOlTooltip(null), 80);
+  };
   const [editingImages, setEditingImages] = useState<(string | null)[]>(createEmptyWorkInfoImages);
   const imageFileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
@@ -2293,35 +2132,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     return "waiting";
   };
 
-  // 강화 실패 / 해당 없음이면 수정 불가 (라인 카드 strict 정책 — 기존 로직 보존)
+  // 강화 실패 / 해당 없음이면 수정 불가
   const isLineLocked = (card: any): boolean => {
     const s = getEnhanceStatus(card);
     return s === "failed" || s === "not_applicable";
   };
 
-  // 4개 모달 (Work Info/Ability/Exp/Career) 전용 — strict 보다 한 단계 완화된 lock 평가.
-  // 정책 (2026-05 임시):
-  //   - "failed"          → 영구 잠금 (진짜 강화 실패는 수정 불가 정책 유지)
-  //   - "not_applicable"  → 모달의 작성기간(canEdit)이 열려 있으면 해제.
-  //     운영 DB 에 weekly_activities / activity_records 가 없어서 getEnhancementStatus 가
-  //     모든 카드를 not_applicable 로 계산하는 데이터 부재 케이스를 어드민이 명시적으로
-  //     작성기간을 열어줬을 때 unblock 하기 위함. 진짜 "해당 없음" 카드도 작성기간이
-  //     별도로 열려 있을 때만 우회되므로 통제 가능.
-  //   - 그 외 status      → 잠금 아님
-  // (empty 상태는 별도 isEmpty / status === "empty" 게이트가 담당하므로 여기서 미처리)
-  const isLineLockedForEdit = (card: any, canEdit: boolean): boolean => {
-    const s = getEnhanceStatus(card);
-    if (s === "failed") return true;
-    if (s === "not_applicable") return !canEdit;
-    return false;
-  };
-
   const LINE_LOCKED_TITLE = "강화 실패 또는 해당 없음 상태에서는 수정할 수 없습니다.";
-  const LINE_FAILED_TITLE = "강화 실패 상태에서는 수정할 수 없습니다.";
 
   // workInfo View 모달 — 보기/편집 토글 핸들러 (Type B 푸터 규칙 + 관리자 승인)
   const handleEditWorkInfo = async () => {
-    if (!canEditWorkInfo) {
+    if (!canEditWorkInfo && !isAdminPreview) {
       await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
       return;
     }
@@ -2364,7 +2185,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleResetWorkInfo = async () => {
-    if (!isDemoMode && !canEditWorkInfo) {
+    if (!isDemoMode && !canEditWorkInfo && !isAdminPreview) {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
@@ -2427,20 +2248,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   // user_activity_details 저장 (모달 저장 공용 헬퍼). 데모 모드에서는 API 호출 스킵.
-  // resourceKey: 어느 모달에서 저장하는지 서버에 알려주는 hint. 서버는 이 키 또는
-  // legacy cluster4.activity_details 중 하나가 열려 있으면 통과시킨다.
-  const persistActivityDetailToServer = async (params: {
-    activityTypeId: string;
-    subTitle: string | null;
-    outputLinks: { desc: string; url: string }[] | null;
-    growthPoint: string | null;
-    images: (string | null)[];
-    imageCaptions: string[];
-    resourceKey?: string;
-    // workExp 전용 — 라인 평점 (0~10 정수 또는 null). self-edit 항목으로
-    // user_activity_details.rating 컬럼에 그대로 저장된다.
-    rating?: number | null;
-  }): Promise<{ images: (string | null)[] }> => {
+  const persistActivityDetailToServer = async (params: { activityTypeId: string; subTitle: string | null; outputLinks: { desc: string; url: string }[] | null; growthPoint: string | null; images: (string | null)[]; imageCaptions: string[] }): Promise<{ images: (string | null)[] }> => {
     if (isDemoMode) return { images: params.images };
     if (!currentUserId || !weekId) return { images: params.images };
     const persistedImages = await persistImageUrls(params.images, params.activityTypeId);
@@ -2454,13 +2262,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         week_id: weekId,
         activity_type_id: params.activityTypeId,
         sub_title: params.subTitle,
-        // DB output_links 는 NOT NULL — 빈 경우에도 [] 로 전송 (서버측에서도 ?? [] 정규화).
-        output_links: userLinks,
+        output_links: userLinks.length > 0 ? userLinks : null,
         growth_point: params.growthPoint,
         image_urls: persistedImages,
         image_captions: params.imageCaptions,
-        ...(params.resourceKey ? { resource_key: params.resourceKey } : {}),
-        ...(params.rating === null || typeof params.rating === "number" ? { rating: params.rating } : {}),
       }),
     });
     if (!res.ok) {
@@ -2471,7 +2276,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleSaveWorkInfo = async () => {
-    if (!isDemoMode && !canEditWorkInfo) {
+    if (!isDemoMode && !canEditWorkInfo && !isAdminPreview) {
+      console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkInfo" });
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
@@ -2500,7 +2306,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           growthPoint: newGrowthPoint,
           images: editingImages,
           imageCaptions: editingImageCaptions,
-          resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.workInfo,
         });
         persistedImages = persisted.images;
       } catch (err) {
@@ -2583,6 +2388,91 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     });
   };
 
+  // Output Link 2차 모달 — 열기
+  const openOutputLinkEditModal = (modalType: "workInfo" | "workExp" | "workAbility" | "workCareer", idx: number) => {
+    let link = { desc: "", url: "" };
+    switch (modalType) {
+      case "workInfo":
+        link = editingOutputLinks[idx] || { desc: "", url: "" };
+        break;
+      case "workExp":
+        link = editingExpOutputLinks[idx] || { desc: "", url: "" };
+        break;
+      case "workAbility":
+        link = editingAbilityOutputLinks[idx] || { desc: "", url: "" };
+        break;
+      case "workCareer":
+        link = editingCareerOutputLinks[idx] || { desc: "", url: "" };
+        break;
+    }
+    setOutputLinkEditModal({ modalType, linkIdx: idx, url: link.url || "", desc: link.desc || "", error: "" });
+  };
+
+  // Output Link 2차 모달 — 저장
+  const saveOutputLinkEdit = () => {
+    if (!outputLinkEditModal) return;
+    const { modalType, linkIdx, url, desc } = outputLinkEditModal;
+    const trimmedUrl = url.trim();
+    console.log("[OutputLinkSave]", { isAdminPreview, modalType, linkIdx, url: trimmedUrl, desc: desc.trim() });
+    if (trimmedUrl && !trimmedUrl.startsWith("http://") && !trimmedUrl.startsWith("https://")) {
+      setOutputLinkEditModal((prev) => (prev ? { ...prev, error: "URL은 http:// 또는 https://로 시작해야 합니다." } : null));
+      return;
+    }
+    const newLink = { desc: desc.trim(), url: trimmedUrl };
+    if (isAdminPreview) {
+      // 프론트 테스트용: API/권한 체크 우회, editing state에만 직접 저장
+      const directSet = (setter: React.Dispatch<React.SetStateAction<{ desc: string; url: string }[]>>) => {
+        setter((prev) => {
+          const next = [...prev];
+          next[linkIdx] = newLink;
+          return next;
+        });
+      };
+      switch (modalType) {
+        case "workInfo":
+          directSet(setEditingOutputLinks);
+          break;
+        case "workExp":
+          directSet(setEditingExpOutputLinks);
+          break;
+        case "workAbility":
+          directSet(setEditingAbilityOutputLinks);
+          break;
+        case "workCareer":
+          directSet(setEditingCareerOutputLinks);
+          break;
+      }
+      // edit mode가 false로 돌아가도 값이 유지되도록 별도 state에도 저장
+      setAdminSavedOutputLinks((prev) => {
+        const arr = [...(prev[modalType] || createEmptyOutputLinks())];
+        arr[linkIdx] = newLink;
+        return { ...prev, [modalType]: arr };
+      });
+      console.log("[OutputLinkSave:AdminPreview] saved to local state:", { modalType, linkIdx, newLink });
+      setOutputLinkEditModal(null);
+      return;
+    }
+    switch (modalType) {
+      case "workInfo":
+        handleOutputLinkChange(linkIdx, "url", trimmedUrl);
+        handleOutputLinkChange(linkIdx, "desc", desc.trim());
+        break;
+      case "workExp":
+        handleExpOutputLinkChange(linkIdx, "url", trimmedUrl);
+        handleExpOutputLinkChange(linkIdx, "desc", desc.trim());
+        break;
+      case "workAbility":
+        handleAbilityOutputLinkChange(linkIdx, "url", trimmedUrl);
+        handleAbilityOutputLinkChange(linkIdx, "desc", desc.trim());
+        break;
+      case "workCareer":
+        handleCareerOutputLinkChange(linkIdx, "url", trimmedUrl);
+        handleCareerOutputLinkChange(linkIdx, "desc", desc.trim());
+        break;
+    }
+    setOutputLinkEditModal(null);
+  };
+
   // workInfo View 모달 — 이미지 업로드/삭제/확대 핸들러
   const triggerImageUpload = (idx: number) => {
     imageFileInputRefs.current[idx]?.click();
@@ -2658,7 +2548,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("해당 카드는 비어있습니다");
       return;
     }
-    if (!canEditWorkAbility) {
+    if (!canEditWorkAbility && !isAdminPreview) {
       await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
       return;
     }
@@ -2699,7 +2589,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleResetWorkAbility = async () => {
-    if (!isDemoMode && !canEditWorkAbility) {
+    if (!isDemoMode && !canEditWorkAbility && !isAdminPreview) {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
@@ -2713,7 +2603,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleSaveWorkAbility = async () => {
-    if (!isDemoMode && !canEditWorkAbility) {
+    if (!isDemoMode && !canEditWorkAbility && !isAdminPreview) {
+      console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkAbility" });
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
@@ -2741,7 +2632,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           growthPoint: newGrowthPoint,
           images: editingAbilityImages,
           imageCaptions: editingAbilityImageCaptions,
-          resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.workAbility,
         });
         persistedImages = persisted.images;
       } catch (err) {
@@ -2889,8 +2779,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     for (let i = 0; i < WORKINFO_IMAGE_SLOT_COUNT; i++) {
       if ((snapCaptions[i] || "") !== (editingExpImageCaptions[i] || "")) return true;
     }
-    // 라인 평점도 self-edit 항목 — dirty 판단 포함
-    if ((snap.rating ?? 0) !== (editingExpRating ?? 0)) return true;
+    // 라인 평점은 어드민 전용 — dirty 판단 대상 아님
     return false;
   };
 
@@ -2899,7 +2788,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("해당 카드는 비어있습니다");
       return;
     }
-    if (!canEditWorkExp) {
+    if (!canEditWorkExp && !isAdminPreview) {
       await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
       return;
     }
@@ -2943,34 +2832,28 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleResetWorkExp = async () => {
-    if (!isDemoMode && !canEditWorkExp) {
+    if (!isDemoMode && !canEditWorkExp && !isAdminPreview) {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
-    // 초기화 = 크루 입력 필드 모두 빈 값으로 (라인 평점 포함 — self-edit)
+    // 초기화 = 크루 입력 필드만 빈 값으로 (라인 평점은 어드민 전용 → 손 대지 않음)
     if (!(await popup.confirm("내용을 모두 초기화하시겠어요?"))) return;
     setEditingExpSubTitle("");
     setEditingExpGrowthPoint("");
     setEditingExpOutputLinks(Array(5).fill({ desc: "", url: "" }));
     setEditingExpImages(createEmptyWorkInfoImages());
     setEditingExpImageCaptions(createEmptyWorkInfoCaptions());
-    setEditingExpRating(0);
   };
 
   const handleSaveWorkExp = async () => {
-    if (!isDemoMode && !canEditWorkExp) {
+    if (!isDemoMode && !canEditWorkExp && !isAdminPreview) {
+      console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkExp" });
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
-    // workCareer 와 동일: 어드민 output_images 가 차지한 앞쪽 슬롯은 user_activity_details 에 저장하지 않음.
-    // 카드 빌더(5717–5742) 가 weekly_activities.output_images + user_activity_details.image_urls 를
-    // 재머지하므로 DB 에는 크루 슬롯만 저장한다. (admin URL 중복 저장/stale 위험 제거)
-    const expActivityForSave = weeklyActivities.find((a) => a.activity_type_id === selectedWorkExpCard?.activityTypeId);
-    const expAdminImgsForSave = (expActivityForSave?.output_images || []).filter((i: { url?: string }) => i?.url?.trim());
-    const expAdminImgCount = expAdminImgsForSave.length;
-    // 아웃풋 이미지 ↔ 캡션 1:1 페어 검증 (admin 슬롯은 외부 입력이라 페어 검증 제외 — workCareer 와 동일)
+    // 아웃풋 이미지 ↔ 캡션 1:1 페어 검증 (이미지 1개 = 캡션 1개, 한쪽만 입력 불가)
     {
-      const mismatch = findImageCaptionMismatch(editingExpImages, editingExpImageCaptions, expAdminImgCount);
+      const mismatch = findImageCaptionMismatch(editingExpImages, editingExpImageCaptions);
       if (mismatch) {
         setWorkExpFooterNotice("error");
         await popup.alert(captionMismatchMessage(mismatch));
@@ -2983,55 +2866,32 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const newSubTitle = editingExpSubTitle.trim() || null;
       const newOutputLinks = editingExpOutputLinks;
       const newGrowthPoint = editingExpGrowthPoint.trim() || null;
-      // 어드민 슬롯 잘라낸 크루 전용 배열만 서버로 전송
-      const crewImagesToSave = editingExpImages.slice(expAdminImgCount);
-      const crewCaptionsToSave = editingExpImageCaptions.slice(expAdminImgCount);
-      let persistedCrewImages: (string | null)[] = crewImagesToSave;
+      let persistedImages: (string | null)[] = editingExpImages;
       try {
         const persisted = await persistActivityDetailToServer({
           activityTypeId: selectedWorkExpCard.activityTypeId,
           subTitle: newSubTitle,
           outputLinks: newOutputLinks,
           growthPoint: newGrowthPoint,
-          images: crewImagesToSave,
-          imageCaptions: crewCaptionsToSave,
-          resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.workExp,
-          // rating 은 self-edit 항목 — 0~10 정수, 0 입력은 null 로 보내 미입력 상태로 복원 가능하게.
-          rating: editingExpRating > 0 ? editingExpRating : null,
+          images: editingExpImages,
+          imageCaptions: editingExpImageCaptions,
         });
-        persistedCrewImages = persisted.images;
+        persistedImages = persisted.images;
       } catch (err) {
         console.error("workExp 저장 실패:", err);
         alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
         return;
       }
-      // 화면 state 는 admin + crew 머지 결과로 복원 (workCareer 패턴)
-      const mergedExpImages: (string | null)[] = [];
-      const mergedExpCaptions: string[] = [];
-      for (let i = 0; i < WORKINFO_IMAGE_SLOT_COUNT; i++) {
-        if (i < expAdminImgCount) {
-          mergedExpImages.push(expAdminImgsForSave[i].url);
-          mergedExpCaptions.push(expAdminImgsForSave[i].caption || "");
-        } else {
-          const crewIdx = i - expAdminImgCount;
-          mergedExpImages.push(persistedCrewImages[crewIdx] || null);
-          mergedExpCaptions.push(crewCaptionsToSave[crewIdx] || "");
-        }
-      }
-      setEditingExpImages(mergedExpImages);
-      setEditingExpImageCaptions(mergedExpCaptions);
-      const persistedRating: number | null = editingExpRating > 0 ? editingExpRating : null;
+      setEditingExpImages(persistedImages);
       setWeekActivityDetails((prev) => {
-        // DB 동기 거울 — image_urls/captions 는 크루 전용 (admin 제외) 저장 정책 반영
         const nextDetail = {
           week_id: weekId,
           activity_type_id: selectedWorkExpCard.activityTypeId,
           sub_title: newSubTitle,
           output_links: newOutputLinks,
           growth_point: newGrowthPoint,
-          image_urls: persistedCrewImages,
-          image_captions: crewCaptionsToSave,
-          rating: persistedRating,
+          image_urls: persistedImages,
+          image_captions: editingExpImageCaptions,
         };
         const existingIndex = prev.findIndex((d) => d.activity_type_id === selectedWorkExpCard.activityTypeId);
         if (existingIndex < 0) return [...prev, nextDetail];
@@ -3044,11 +2904,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               subTitle: newSubTitle || "",
               outputLinks: newOutputLinks,
               growthPoint: editingExpGrowthPoint,
-              images: mergedExpImages,
-              imageCaptions: mergedExpCaptions,
-              // card.rating 은 5점 만점(0~5 half-step) — 저장된 0~10 값을 /2 로 변환
-              rating: persistedRating != null ? persistedRating / 2 : 0,
-              ratingCount: persistedRating != null && persistedRating > 0 ? `${persistedRating} / 10` : "- / 10",
+              images: persistedImages,
+              imageCaptions: editingExpImageCaptions,
+              // rating은 어드민(compliance-manage)에서만 갱신 — 크루 저장 시 건드리지 않음
             }
           : prev,
       );
@@ -3056,8 +2914,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         subTitle: newSubTitle || "",
         growthPoint: editingExpGrowthPoint,
         outputLinks: JSON.parse(JSON.stringify(newOutputLinks)),
-        images: [...mergedExpImages],
-        imageCaptions: [...mergedExpCaptions],
+        images: [...persistedImages],
+        imageCaptions: [...editingExpImageCaptions],
         rating: editingExpRating,
       };
     }
@@ -3170,7 +3028,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("해당 카드는 비어있습니다");
       return;
     }
-    if (!canEditWorkCareer) {
+    if (!canEditWorkCareer && !isAdminPreview) {
       await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
       return;
     }
@@ -3211,7 +3069,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleResetWorkCareer = async () => {
-    if (!isDemoMode && !canEditWorkCareer) {
+    if (!isDemoMode && !canEditWorkCareer && !isAdminPreview) {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
@@ -3248,7 +3106,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleSaveWorkCareer = async () => {
-    if (!isDemoMode && !canEditWorkCareer) {
+    if (!isDemoMode && !canEditWorkCareer && !isAdminPreview) {
+      console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkCareer" });
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
@@ -3285,7 +3144,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           growthPoint: newGrowthPoint,
           images: crewImagesToSave,
           imageCaptions: crewCaptionsToSave,
-          resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.workCareer,
         });
         persistedCrewImages = persisted.images;
       } catch (err) {
@@ -3976,12 +3834,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       return { id: `demo-weekly-review-${Date.now()}`, weekCardId: weekId, created_at: now };
     }
 
-    // 작성 기간 게이트 — 클라이언트가 즉시 차단 (서버는 별도 enforce).
-    if (!canEditWeeklyReviews) {
-      await popup.alert(EDIT_WINDOW_LOCKED_MESSAGE);
-      return null;
-    }
-
     try {
       const endpoint = isUpdate ? `/api/weekly-reviews/${weeklyReviewFromDB?.id}` : "/api/weekly-reviews";
       const method = isUpdate ? "PUT" : "POST";
@@ -3992,13 +3844,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       });
       if (!res.ok) {
         const errJson = await res.json().catch(() => null);
-        // 서버가 작성 기간 닫힘으로 거부 → 통일 문구 + 권한 재조회 트리거.
-        if (res.status === 403 && errJson?.error === "EDIT_WINDOW_CLOSED") {
-          setCanEditWeeklyReviews(false);
-          setEditWindowRefreshTick((t) => t + 1);
-          await popup.alert(EDIT_WINDOW_LOCKED_MESSAGE);
-          return null;
-        }
         console.error("[weekly-review] API 응답 오류:", res.status, errJson);
         return null;
       }
@@ -5323,12 +5168,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
     if (!currentUserId || !weekId) return;
 
-    // 작성 기간 게이트 — 서버는 별도 enforce. UI 차단을 우선 표시.
-    if (!canEditActivityDetails) {
-      await popup.alert(EDIT_WINDOW_LOCKED_MESSAGE);
-      return;
-    }
-
     setIsSaving(true);
     try {
       const detail = editingDetails[activityType];
@@ -5365,14 +5204,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => null);
-        // 서버가 작성 기간 닫힘으로 거부 → 통일 문구 + 권한 재조회 트리거.
-        if (response.status === 403 && error?.error === "EDIT_WINDOW_CLOSED") {
-          setCanEditActivityDetails(false);
-          setEditWindowRefreshTick((t) => t + 1);
-          await popup.alert(EDIT_WINDOW_LOCKED_MESSAGE);
-          return;
-        }
+        const error = await response.json();
         console.error("Failed to save activity detail:", error);
         await popup.alert("저장에 실패했습니다.");
         return;
@@ -5473,90 +5305,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
   };
 
-  // 라인 제출 배너 렌더러 (각 섹션에서 호출)
-  const renderLineSubmissionBanner = (partType: Cluster4LinePartType) => {
-    if (isDemoMode || urlUserId || lineDetailsLoading) return null;
-    const detail = lineDetails[partType];
-    if (!detail || detail.status === "void") return null;
-
-    const cfg = lineStatusConfig[detail.status];
-    const line = detail.line;
-    const sub = detail.submission;
-    const canSubmit = detail.status === "pending";
-    const canEdit = detail.status === "success" && line &&
-      new Date().getTime() <= new Date(line.submissionClosesAt).getTime();
-
-    return (
-      <div
-        className="line-submission-banner"
-        style={{
-          padding: "12px 16px",
-          marginBottom: "12px",
-          borderRadius: "8px",
-          border: `1px solid ${cfg.border}`,
-          backgroundColor: cfg.bg,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "12px",
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 }}>
-          {cfg.icon && <img src={cfg.icon} alt={cfg.label} style={{ width: 24, height: 24 }} />}
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 600, color: cfg.color, fontSize: "13px", marginBottom: "2px" }}>
-              {cfg.label}
-            </div>
-            {line && (
-              <div style={{ fontSize: "12px", color: "#374151" }}>
-                <span style={{ fontWeight: 500 }}>{line.mainTitle}</span>
-                {line.outputLink1 && (
-                  <a
-                    href={line.outputLink1}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ marginLeft: "8px", color: "#2563eb", textDecoration: "underline", fontSize: "11px" }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    링크1
-                  </a>
-                )}
-              </div>
-            )}
-            {sub && (
-              <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "2px" }}>
-                제출: {new Date(sub.submittedAt).toLocaleDateString("ko-KR")}
-                {sub.subtitle && <span> | {sub.subtitle}</span>}
-              </div>
-            )}
-          </div>
-        </div>
-        {(canSubmit || canEdit) && isOwner && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              openLineSubmissionModal(detail);
-            }}
-            style={{
-              padding: "6px 14px",
-              borderRadius: "6px",
-              border: "none",
-              backgroundColor: canEdit ? "#059669" : "#d97706",
-              color: "white",
-              fontWeight: 600,
-              fontSize: "12px",
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {canEdit ? "수정" : "제출"}
-          </button>
-        )}
-      </div>
-    );
-  };
-
   // 실무 정보 카드 데이터 (DB 데이터 기반 + 빈 카드 2개)
   const workInfoCards = [
     ...workInfoActivityTypes.map((activityType, index) => {
@@ -5626,16 +5374,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const lineCode = activityTypesMap.get(typeId)?.line_code || typeId;
       return lineCode.replace(/\s+/g, "") === lineCodeKey;
     });
-    // 분류 정합성 (2026-05) — 어드민 Cluster4 활동 탭이 activity_types.cluster_id 로 분류하므로,
-    // 저장되는 activity_type_id 는 반드시 activity_types 테이블의 id 값이어야 한다.
-    // line_code 매칭이 실패하면 (workAbilityLineMap 의 key 와 DB line_code 가 불일치)
-    // workAbilityActivityTypes(=competencyTypeIds) 중 같은 인덱스 또는 첫 번째 값으로 fallback.
-    // 마지막 lineCodeKey 폴백은 competencyTypeIds 가 비었을 때만 (어드민 분류 불가 — 데이터 미준비 상태).
-    const activityTypeId =
-      matchedActivityTypeId
-      || workAbilityActivityTypes[index]
-      || workAbilityActivityTypes[0]
-      || lineCodeKey;
+    const activityTypeId = matchedActivityTypeId || lineCodeKey;
     const activityTypeInfo = matchedActivityTypeId ? activityTypesMap.get(matchedActivityTypeId) : undefined;
     const activity = weeklyActivities.find((a) => a.activity_type_id === activityTypeId);
     const detail = weekActivityDetails.find((d) => d.activity_type_id === activityTypeId);
@@ -5698,20 +5437,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 크루가 활동 중(휴식/온보딩 아님)이면 매칭 실패 시 '강화 실패'로 폴백.
   // 휴식 주차 — 모든 카드가 not_applicable 이라 status 기반 매칭이 안 되므로, 운영진이 실제
   // 개설한 라인(hasActivity) 을 우선 찾아 본문(Main Title 등) 을 보여주고 상태만 '해당 없음'.
-  const baseMatchedAbilityCard = isRestMode
-    ? effectiveWorkAbilityCards.find((c) => c.hasActivity)
-    : effectiveWorkAbilityCards.find((c) => c.enhancementStatus !== "not_applicable");
-  // 작성기간 폴백 (임시 정책 2026-05) — weekly_activities 부재로 모두 not_applicable 인
-  // 환경에서 어드민이 cluster4.work_ability 작성기간을 열어준 경우, void 대신 실제 카드를
-  // 노출해 모달 진입 + 저장 경로를 살린다. failed 카드는 진짜 강화 실패이므로 우선순위 낮춤.
-  const matchedAbilityCard = baseMatchedAbilityCard
-    ?? (canEditWorkAbility && !isRestMode
-      ? (effectiveWorkAbilityCards.find((c) => c.enhancementStatus !== "failed")
-          ?? effectiveWorkAbilityCards[0])
-      : undefined);
+  const matchedAbilityCard = isRestMode ? effectiveWorkAbilityCards.find((c) => c.hasActivity) : effectiveWorkAbilityCards.find((c) => c.enhancementStatus !== "not_applicable");
   const isAbilityCardVoid = !matchedAbilityCard;
-  const abilityVoidFallbackStatus: EnhancementStatus =
-    isRestMode || isOnboardingWeek ? "not_applicable" : "failed";
+  const abilityVoidFallbackStatus: EnhancementStatus = isRestMode || isOnboardingWeek ? "not_applicable" : "failed";
   const displayedAbilityCard = matchedAbilityCard ?? {
     id: 0,
     activityTypeId: "",
@@ -5750,100 +5478,87 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
   });
 
-  // 작성기간 폴백 (임시 정책 2026-05) — activity_records 부재로 adminProcessedExpTypeIds 가
-  // 빈 경우, canEditWorkExp 가 true 이면 activity_types(cluster=practical_experience) 마스터
-  // 목록(experienceTypeIds) 을 source 로 사용해 카드를 생성한다. 이후 user_activity_details
-  // upsert 가 정상 INSERT 경로로 진입한다 (Work Info 동일 패턴).
-  const expTypeIdsForBuild =
-    adminProcessedExpTypeIds.length > 0
-      ? adminProcessedExpTypeIds
-      : canEditWorkExp
-        ? experienceTypeIds
-        : [];
+  const workExpCards = adminProcessedExpTypeIds.map((activityTypeId, index) => {
+    const activityType = activityTypesMap.get(activityTypeId);
+    const activity = weeklyActivities.find((a) => a.activity_type_id === activityTypeId);
+    const detail = weekActivityDetails.find((d) => d.activity_type_id === activityTypeId);
+    const enhStatus = getEnhancementStatus(activityTypeId);
+    const lineCodeKey = (activityType?.line_code || "").replace(/\s+/g, "");
+    const fallbackMapping = workExpLineMap[lineCodeKey];
+    const hasActivity = !!activity;
 
-  const workExpCards = expTypeIdsForBuild.map((activityTypeId, index) => {
-      const activityType = activityTypesMap.get(activityTypeId);
-      const activity = weeklyActivities.find((a) => a.activity_type_id === activityTypeId);
-      const detail = weekActivityDetails.find((d) => d.activity_type_id === activityTypeId);
-      const enhStatus = getEnhancementStatus(activityTypeId);
-      const lineCodeKey = (activityType?.line_code || "").replace(/\s+/g, "");
-      const fallbackMapping = workExpLineMap[lineCodeKey];
-      const hasActivity = !!activity;
+    // 별점 계산 (points 테이블에서 가져온 평점 사용, 0~10 정수)
+    const ratingScore = activityRatings.get(activityTypeId) || 0;
+    const rating = ratingScore / 2; // 별 표시용 (0~5)
 
-      // 별점 계산 — user_activity_details.rating (0~10 정수, null=미입력) 직접 사용.
-      const detailRating: number | null | undefined = detail?.rating;
-      const ratingScore = typeof detailRating === "number" ? detailRating : 0;
-      const rating = ratingScore / 2; // 별 표시용 (0~5)
-      const hasRating = typeof detailRating === "number" && detailRating > 0;
+    // 기존 index === 3 보이드 강제 제거 — workExpLineMap 6개 항목 전부 유효 카드로 처리
 
-      // 기존 index === 3 보이드 강제 제거 — workExpLineMap 6개 항목 전부 유효 카드로 처리
-
-      // workInfo 패턴 복제: outputLinks 병합 (운영진 + 사용자)
-      const adminLinks = activity?.output_links || [];
-      const userLinks = detail?.output_links || [];
-      const adminCount = adminLinks.filter((l: { url?: string }) => l.url?.trim()).length;
-      const mergedOutputLinks: { desc: string; url: string }[] = [];
-      for (let i = 0; i < 5; i++) {
-        if (i < adminCount && adminLinks[i]?.url?.trim()) {
-          mergedOutputLinks.push({ desc: adminLinks[i].desc || "", url: adminLinks[i].url || "" });
+    // workInfo 패턴 복제: outputLinks 병합 (운영진 + 사용자)
+    const adminLinks = activity?.output_links || [];
+    const userLinks = detail?.output_links || [];
+    const adminCount = adminLinks.filter((l: { url?: string }) => l.url?.trim()).length;
+    const mergedOutputLinks: { desc: string; url: string }[] = [];
+    for (let i = 0; i < 5; i++) {
+      if (i < adminCount && adminLinks[i]?.url?.trim()) {
+        mergedOutputLinks.push({ desc: adminLinks[i].desc || "", url: adminLinks[i].url || "" });
+      } else {
+        const userIdx = i - adminCount;
+        if (userLinks[userIdx]?.url?.trim()) {
+          mergedOutputLinks.push({ desc: userLinks[userIdx].desc || "", url: userLinks[userIdx].url || "" });
         } else {
-          const userIdx = i - adminCount;
-          if (userLinks[userIdx]?.url?.trim()) {
-            mergedOutputLinks.push({ desc: userLinks[userIdx].desc || "", url: userLinks[userIdx].url || "" });
-          } else {
-            mergedOutputLinks.push({ desc: "", url: "" });
-          }
+          mergedOutputLinks.push({ desc: "", url: "" });
         }
       }
+    }
 
-      // 어드민 output_images(weekly_activities.output_images) 와 크루 image_urls 병합 — workCareer 와 동일 패턴.
-      // 어드민 슬롯 우선, 그 다음 크루 슬롯. 레거시로 image_urls 에 어드민 URL 이 같이 저장된 경우 중복 제거.
-      const adminImgs = (activity?.output_images || []).filter((i: { url?: string }) => i?.url?.trim());
-      const adminUrlSet = new Set(adminImgs.map((i: { url: string }) => i.url));
-      const rawCrewImgs: (string | null | undefined)[] = detail?.image_urls || [];
-      const rawCrewCaps: string[] = detail?.image_captions || [];
-      const filteredCrewImgs: (string | null)[] = [];
-      const filteredCrewCaps: string[] = [];
-      for (let i = 0; i < rawCrewImgs.length; i++) {
-        const u = rawCrewImgs[i];
-        if (u && adminUrlSet.has(u)) continue;
-        filteredCrewImgs.push(u || null);
-        filteredCrewCaps.push(rawCrewCaps[i] || "");
+    // 어드민 output_images(weekly_activities.output_images) 와 크루 image_urls 병합 — workCareer 와 동일 패턴.
+    // 어드민 슬롯 우선, 그 다음 크루 슬롯. 레거시로 image_urls 에 어드민 URL 이 같이 저장된 경우 중복 제거.
+    const adminImgs = (activity?.output_images || []).filter((i: { url?: string }) => i?.url?.trim());
+    const adminUrlSet = new Set(adminImgs.map((i: { url: string }) => i.url));
+    const rawCrewImgs: (string | null | undefined)[] = detail?.image_urls || [];
+    const rawCrewCaps: string[] = detail?.image_captions || [];
+    const filteredCrewImgs: (string | null)[] = [];
+    const filteredCrewCaps: string[] = [];
+    for (let i = 0; i < rawCrewImgs.length; i++) {
+      const u = rawCrewImgs[i];
+      if (u && adminUrlSet.has(u)) continue;
+      filteredCrewImgs.push(u || null);
+      filteredCrewCaps.push(rawCrewCaps[i] || "");
+    }
+    const mergedImages: (string | null)[] = [];
+    const mergedCaptions: string[] = [];
+    for (let i = 0; i < WORKINFO_IMAGE_SLOT_COUNT; i++) {
+      if (i < adminImgs.length) {
+        mergedImages.push(adminImgs[i].url);
+        mergedCaptions.push(adminImgs[i].caption || "");
+      } else {
+        const crewIdx = i - adminImgs.length;
+        mergedImages.push(filteredCrewImgs[crewIdx] || null);
+        mergedCaptions.push(filteredCrewCaps[crewIdx] || "");
       }
-      const mergedImages: (string | null)[] = [];
-      const mergedCaptions: string[] = [];
-      for (let i = 0; i < WORKINFO_IMAGE_SLOT_COUNT; i++) {
-        if (i < adminImgs.length) {
-          mergedImages.push(adminImgs[i].url);
-          mergedCaptions.push(adminImgs[i].caption || "");
-        } else {
-          const crewIdx = i - adminImgs.length;
-          mergedImages.push(filteredCrewImgs[crewIdx] || null);
-          mergedCaptions.push(filteredCrewCaps[crewIdx] || "");
-        }
-      }
+    }
 
-      return {
-        id: index + 1,
-        activityTypeId,
-        code: activityType?.line_code || fallbackMapping?.lineCode || "-",
-        badge: activityType?.name || fallbackMapping?.lineName || "-",
-        title: activity?.title || fallbackMapping?.mainTitle || "-",
-        subTitle: detail?.sub_title || "",
-        growthPoint: detail?.growth_point || "",
-        outputLinks: mergedOutputLinks,
-        images: normalizeWorkInfoImages(mergedImages),
-        imageCaptions: normalizeWorkInfoCaptions(mergedCaptions),
-        verified: enhStatus === "success",
-        rating: rating,
-        ratingCount: hasActivity && hasRating ? `${ratingScore} / 10` : "- / 10",
-        hasWeb: (detail?.output_links?.length || 0) > 0,
-        icon: getWorkExpIcon(fallbackMapping?.lineName || activityType?.name || ""),
-        isEmpty: false,
-        enhancementStatus: enhStatus,
-        hasActivity,
-      };
-    });
+    return {
+      id: index + 1,
+      activityTypeId,
+      code: activityType?.line_code || fallbackMapping?.lineCode || "-",
+      badge: activityType?.name || fallbackMapping?.lineName || "-",
+      title: activity?.title || fallbackMapping?.mainTitle || "-",
+      subTitle: detail?.sub_title || "",
+      growthPoint: detail?.growth_point || "",
+      outputLinks: mergedOutputLinks,
+      images: normalizeWorkInfoImages(mergedImages),
+      imageCaptions: normalizeWorkInfoCaptions(mergedCaptions),
+      verified: enhStatus === "success",
+      rating: rating,
+      ratingCount: hasActivity ? `${ratingScore} / 10` : "- / 10",
+      hasWeb: (detail?.output_links?.length || 0) > 0,
+      icon: getWorkExpIcon(fallbackMapping?.lineName || activityType?.name || ""),
+      isEmpty: false,
+      enhancementStatus: enhStatus,
+      hasActivity,
+    };
+  });
 
   // 4칸 슬롯 규칙: 해당되는(=not_applicable이 아닌) 라인만 좌측부터 채우고,
   // 부족한 칸은 보이드 '-' 카드로 패딩한다. 어드민이 한 주에 적용 가능한 실무 경험 라인은
@@ -5871,17 +5586,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   // 휴식 모드(공식/개인) — 운영진 개설 여부와 무관하게 Main Title 강제 '-'.
   // 별점/카테고리 등 본문은 보존, Main Title 만 차폐. 미개설 라인은 void 카드로 패딩.
-  //
-  // 작성기간 폴백 (임시 정책 2026-05) — weekly_activities 부재로 모든 카드가 not_applicable
-  // 인 환경에서 어드민이 cluster4.work_exp 작성기간을 열어준 경우, 필터링된 결과가 비면
-  // not_applicable 카드까지 포함시켜 노출한다 (실제 카드가 있는 경우엔 종전 필터 동작 유지).
-  const workExpFiltered = workExpCards.filter((c) => c.enhancementStatus !== "not_applicable");
-  const workExpRealForEdit =
-    workExpFiltered.length > 0
-      ? workExpFiltered
-      : canEditWorkExp
-        ? workExpCards
-        : [];
   const effectiveWorkExpCards = isRestMode
     ? [
         ...workExpCards
@@ -5897,13 +5601,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         buildVoidWorkExpCard(2),
         buildVoidWorkExpCard(3),
       ]
-    : [
-        ...workExpRealForEdit,
-        buildVoidWorkExpCard(0),
-        buildVoidWorkExpCard(1),
-        buildVoidWorkExpCard(2),
-        buildVoidWorkExpCard(3),
-      ];
+    : [...workExpCards.filter((c) => c.enhancementStatus !== "not_applicable"), buildVoidWorkExpCard(0), buildVoidWorkExpCard(1), buildVoidWorkExpCard(2), buildVoidWorkExpCard(3)];
 
   // 실무 경험 통계 — 카드 표시 기준(getEnhancementStatus 결과)에 맞춰 derive.
   // 운영진이 개설한 활동 중 이 크루에게 해당 없음(역할/이력 외)인 라인은 카운트에서 제외.
@@ -5938,26 +5636,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           const adminUrlSet = new Set(adminImgs.map((i) => i.url));
           const careerActivityType = workCareerActivityTypes[index];
           const careerDetail = careerActivityType ? weekActivityDetails.find((d) => d.activity_type_id === careerActivityType) : null;
-
-          // workExp 패턴과 동일: 어드민(career_projects.output_links) 우선, 그 다음 크루(user_activity_details.output_links).
-          // 어드민이 채운 슬롯 뒤에 크루 슬롯을 이어붙이고 부족분은 빈 객체로 패딩 (총 5슬롯, edit handler 3181 기대 형태).
-          const careerAdminLinks: { desc?: string; url?: string }[] = record.output_links || [];
-          const careerCrewLinks: { desc?: string; url?: string }[] = careerDetail?.output_links || [];
-          const careerAdminLinkCount = careerAdminLinks.filter((l) => l?.url?.trim()).length;
-          const mergedCareerOutputLinks: { desc: string; url: string }[] = [];
-          for (let i = 0; i < 5; i++) {
-            if (i < careerAdminLinkCount && careerAdminLinks[i]?.url?.trim()) {
-              mergedCareerOutputLinks.push({ desc: careerAdminLinks[i].desc || "", url: careerAdminLinks[i].url || "" });
-            } else {
-              const crewIdx = i - careerAdminLinkCount;
-              if (careerCrewLinks[crewIdx]?.url?.trim()) {
-                mergedCareerOutputLinks.push({ desc: careerCrewLinks[crewIdx].desc || "", url: careerCrewLinks[crewIdx].url || "" });
-              } else {
-                mergedCareerOutputLinks.push({ desc: "", url: "" });
-              }
-            }
-          }
-
           const rawCrewImgs = careerDetail?.image_urls || [];
           const rawCrewCaps = careerDetail?.image_captions || [];
           const crewImgs: (string | null)[] = [];
@@ -6002,13 +5680,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             isEmpty: false,
             isFailed: computedStatus === "failed",
             // 추가 정보 (상세 보기용)
-            // edit handler(3185/3191)가 card.subTitle 을 우선 읽는데, 이전엔 키가 없어 projectDescription
-            // alias 로만 도달했고 그 결과 user_activity_details.sub_title 어드민 수정값이 모달 초기화 시 누락됐다.
-            // 직접 키를 도입해 placeholder/real-records 양쪽이 동일하게 동작하도록 정렬.
-            subTitle: careerDetail?.sub_title || record.project_description || "",
-            // 이전엔 카드 객체에 키 자체가 없어 edit handler 가 항상 "" 로 초기화 → 어드민 수정값 손실.
-            growthPoint: careerDetail?.growth_point || "",
-            // projectDescription 은 다른 소비자(상세 카드 본문 등) 호환을 위해 그대로 유지.
             projectDescription: (() => {
               const activityType = workCareerActivityTypes[index];
               const detail = activityType ? weekActivityDetails.find((d) => d.activity_type_id === activityType) : null;
@@ -6019,8 +5690,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             projectId: record.project_id,
             lineCode: record.line_code,
             lineName: record.line_name,
-            // 어드민 career_projects.output_links + 크루 user_activity_details.output_links 병합.
-            outputLinks: mergedCareerOutputLinks,
+            outputLinks: record.output_links,
             secondaryInfoDeadline: record.secondary_info_deadline || null,
             // 어드민 output_images 우선, 남은 슬롯은 크루 user_activity_details.image_urls 로 채움
             images: mergedImages,
@@ -6082,61 +5752,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     return nameA.localeCompare(nameB, "ko", { sensitivity: "base" });
   });
 
-  // 작성기간 폴백 placeholder (임시 정책 2026-05) — career_records 가 비어있고 (admin 아직
-  // 라인을 못 만든 상태) 어드민이 cluster4.work_career 작성기간을 열어준 경우, 1개 placeholder
-  // 카드를 isEmpty=false 로 노출해 user_activity_details INSERT 경로 (subTitle / outputLinks /
-  // images / growthPoint) 만이라도 살린다. 회사명/프로젝트명 등 admin-only 필드는 빈 상태.
-  // 후속 Phase 에서 admin 이 career_records 를 생성하면 (user_id, week_id, activity_type_id)
-  // 키로 user_activity_details 행이 자동 연결된다.
-  //
-  // 새로고침 시 복원 (2026-05-23) — 저장된 user_activity_details row 가 있으면 activityTypeId
-  // (`workCareerActivityTypes[id-1]`) 로 lookup 해서 sub_title / growth_point / output_links /
-  // image_urls / image_captions 을 placeholder 의 본문 필드로 채운다. 이렇게 해야 사용자가
-  // 저장 → 새로고침 후에도 입력값이 모달에 그대로 보인다.
-  const buildCareerPlaceholderCard = (id: number) => {
-    const careerActivityType = workCareerActivityTypes[id - 1] || workCareerActivityTypes[0];
-    const detail = careerActivityType
-      ? weekActivityDetails.find((d) => d.activity_type_id === careerActivityType)
-      : null;
-
-    // 어드민 admin output_images 가 없는 placeholder 경로 — image_urls/captions 전부 크루 슬롯.
-    const crewImages: (string | null)[] = (detail?.image_urls || []).slice(0, WORKCAREER_IMAGE_SLOT_COUNT);
-    const crewCaptions: string[] = (detail?.image_captions || []).slice(0, WORKCAREER_IMAGE_SLOT_COUNT);
-    const paddedImages: (string | null)[] = [];
-    const paddedCaptions: string[] = [];
-    for (let i = 0; i < WORKCAREER_IMAGE_SLOT_COUNT; i++) {
-      paddedImages.push(crewImages[i] ?? null);
-      paddedCaptions.push(crewCaptions[i] ?? "");
-    }
-
-    // detail.output_links 는 워크인포/어빌리티/익스피와 동일하게 JSON 배열로 저장됨.
-    const restoredOutputLinks: { desc: string; url: string }[] = Array.isArray(detail?.output_links)
-      ? (detail!.output_links as { desc?: string; url?: string }[]).map((l) => ({
-          desc: l?.desc || "",
-          url: l?.url || "",
-        }))
-      : [];
-
-    return {
-      ...emptyCareerCard(id),
-      isEmpty: false,
-      title: "(아직 등록된 경력이 없습니다)",
-      // 모달이 읽는 secondary info 필드 복원 (저장 후 새로고침 유지용)
-      projectDescription: detail?.sub_title || null,
-      outputLinks: restoredOutputLinks.length > 0 ? restoredOutputLinks : null,
-      images: paddedImages,
-      imageCaptions: paddedCaptions,
-      growthPoint: detail?.growth_point || "",
-    };
-  };
-
-  // 데이터 수만큼만 표시, 0개면 빈 카드 1개만 (작성기간 열림 시 placeholder 로 승격)
-  const displayWorkCareerCards =
-    sortedWorkCareerCards.length > 0
-      ? sortedWorkCareerCards
-      : canEditWorkCareer
-        ? [buildCareerPlaceholderCard(1)]
-        : [emptyCareerCard(1)];
+  // 데이터 수만큼만 표시, 0개면 빈 카드 1개만
+  const displayWorkCareerCards = sortedWorkCareerCards.length > 0 ? sortedWorkCareerCards : [emptyCareerCard(1)];
 
   // 페이지네이션: 6개씩 한 페이지
   const CAREER_CARDS_PER_PAGE = 6;
@@ -6187,12 +5804,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             style={{ cursor: "pointer", width: "44px", height: "44px" }}
           >
             <img src="/images/0/cluster4/icon/icon%20-%20%EC%A0%84%EA%B5%AC.png" alt="전구" className="tab-icon" />
-            <Link href={withPxRoute(`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname)} className="tab-badge" onClick={(e) => e.stopPropagation()}>
+            <Link href={`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}`} className="tab-badge" onClick={(e) => e.stopPropagation()}>
               <span className="badge-text">Weekly Growth</span>
               <img src="/images/0/cluster4/icon/icon%20-%20wallet.png" alt="wallet" className="badge-icon" />
             </Link>
           </div>
-          <Link href={withPxRoute(`/cluster-4-1${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname)} className="tab" style={{ width: "44px", height: "44px" }}>
+          <Link href={`/cluster-4-1${urlUserId ? `?userId=${urlUserId}` : ""}`} className="tab" style={{ width: "44px", height: "44px" }}>
             <img src="/images/0/cluster4/icon/icon%20-%20book.png" alt="book" className="tab-icon" />
             <div className="tab-badge">
               <span className="badge-text">Season Growth</span>
@@ -6206,7 +5823,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         </div>
         <div className="nav-buttons">
           {prevWeekId ? (
-            <Link href={withPxRoute(`/cluster-4-card/${prevWeekId}${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname)} className="nav-btn-prev">
+            <Link href={`/cluster-4-card/${prevWeekId}${urlUserId ? `?userId=${urlUserId}` : ""}`} className="nav-btn-prev">
               <span>이전 주</span>
               <img src="/images/0/cluster4/icon/icon%20-%20arrow%20left.png" alt="left" className="arrow-icon" />
             </Link>
@@ -6217,7 +5834,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             </button>
           )}
           {nextWeekId ? (
-            <Link href={withPxRoute(`/cluster-4-card/${nextWeekId}${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname)} className="nav-btn-next">
+            <Link href={`/cluster-4-card/${nextWeekId}${urlUserId ? `?userId=${urlUserId}` : ""}`} className="nav-btn-next">
               <span>다음 주</span>
               <img src="/images/0/cluster4/icon/icon%20-%20arrow%20right.png" alt="right" className="arrow-icon" />
             </Link>
@@ -6227,7 +5844,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <img src="/images/0/cluster4/icon/icon%20-%20arrow%20right.png" alt="right" className="arrow-icon" />
             </button>
           )}
-          <Link href={withPxRoute(`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}#weekly-filter-bar`, pathname)} className="nav-btn-filled">
+          <Link href={`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}#weekly-filter-bar`} className="nav-btn-filled">
             <img src="/images/0/cluster4/icon/icon%20-%201.png" alt="list" className="list-icon" />
             <span>전체 목록으로 돌아가기</span>
           </Link>
@@ -6242,20 +5859,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             <div
               className="edit-icon"
               onClick={async () => {
-                // peer-review 셀프 차단 — 본인 페이지에서는 작성 불가 (admin 제외).
-                // 작성기간 게이트보다 먼저 검사하여 owner 에게 명확한 안내를 노출한다.
-                if (!isDemoMode && isOwner && !session?.user?.isAdmin) {
-                  await popup.alert("주차 평판은 타 크루만이 작성할 수 있습니다.");
+                // 임시: 마더 계정(어드민) 외에는 주차 평판 작성/수정 비활성화
+                if (!isDemoMode && !session?.user?.isAdmin) {
+                  await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
                   return;
                 }
-                // 작성기간 게이트 — user_edit_windows(resource_key=cluster4.weekly_reputation).
-                // admin 우회 / 데모 우회. 서버 POST/PUT 도 동일 키로 enforce.
-                if (
-                  !isDemoMode &&
-                  !session?.user?.isAdmin &&
-                  !weeklyReputationWindowOpen
-                ) {
-                  await popup.alert(EDIT_WINDOW_LOCKED_MESSAGE);
+                if (!isDemoMode && isOwner && !session?.user?.isAdmin) {
+                  await popup.alert("주차 평판은 타 크루만이 작성할 수 있습니다.");
                   return;
                 }
                 handleEditClick(() => {
@@ -6479,38 +6089,34 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   </span>
                 </span>
               </div>
-              {/* PX 분기에서만 단감/인절미/어흥 라벨/아이콘을 PX alias 로 치환.
-                  weekPoints 원본은 미터치 — 표시 layer 만 alias. */}
               <div className="info-group right" style={{ gap: "8px", fontSize: "16px", fontFamily: "'Pretendard', sans-serif", marginLeft: "0px" }}>
-                {(() => {
-                  const items: Array<{ name: "단감" | "인절미" | "어흥"; value: number; defaultSrc: string }> = [
-                    { name: "단감", value: weekPoints.star, defaultSrc: "/images/0/cluster4/icon/icon - 단감.png" },
-                    { name: "인절미", value: Math.abs(weekPoints.shield - weekPoints.lightning), defaultSrc: "/images/0/cluster4/icon/icon - 인절미.png" },
-                    { name: "어흥", value: Math.abs(weekPoints.lightning), defaultSrc: "/images/0/cluster4/icon/icon - 어흥.png" },
-                  ];
-                  return items.map((item, idx) => {
-                    // org-aware alias (PX → 투구/방패/화살, EC → 별/방패/번개).
-                    const mapped = getOrgAliasFromPathname(pathname, item.name);
-                    const label = mapped?.label ?? item.name;
-                    return (
-                      <React.Fragment key={item.name}>
-                        {idx === 0 ? <span className="info-divider">·</span> : <span className="info-divider">·</span>}
-                        <span className="info-item with-icon">
-                          {label}
-                          {mapped ? (
-                            <span className={`item-icon badge-icon ${mapped.iconClass}`} aria-hidden="true" />
-                          ) : (
-                            <img src={item.defaultSrc} alt={item.name} className="item-icon" />
-                          )}
-                          <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                            {item.value}
-                          </strong>
-                          <span className="unit-text">개</span>
-                        </span>
-                      </React.Fragment>
-                    );
-                  });
-                })()}
+                <span className="info-divider">·</span>
+                <span className="info-item with-icon">
+                  단감
+                  <img src="/images/0/cluster4/icon/icon - 단감.png" alt="단감" className="item-icon" />
+                  <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
+                    {weekPoints.star}
+                  </strong>
+                  <span className="unit-text">개</span>
+                </span>
+                <span className="info-divider">·</span>
+                <span className="info-item with-icon">
+                  인절미
+                  <img src="/images/0/cluster4/icon/icon - 인절미.png" alt="인절미" className="item-icon" />
+                  <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
+                    {Math.abs(weekPoints.shield - weekPoints.lightning)}
+                  </strong>
+                  <span className="unit-text">개</span>
+                </span>
+                <span className="info-divider">·</span>
+                <span className="info-item with-icon">
+                  어흥
+                  <img src="/images/0/cluster4/icon/icon - 어흥.png" alt="어흥" className="item-icon" />
+                  <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
+                    {Math.abs(weekPoints.lightning)}
+                  </strong>
+                  <span className="unit-text">개</span>
+                </span>
               </div>
             </div>
           </div>
@@ -6661,13 +6267,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                         className="badge-status yellow"
                                         style={{
                                           padding: "4px 7.2px",
-                                          background: isPX ? "rgba(30, 149, 3, 0.1)" : isEC ? "rgba(255, 75, 112, 0.1)" : "rgba(250, 171, 7, 0.1)",
+                                          background: "rgba(250, 171, 7, 0.1)",
                                           borderRadius: 4,
                                           fontSize: 15,
                                           fontFamily: "'Pretendard', sans-serif",
                                           fontWeight: 600,
                                           lineHeight: "15px",
-                                          color: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#faab07",
+                                          color: "#faab07",
                                           whiteSpace: "nowrap",
                                           flexShrink: 0,
                                         }}
@@ -6795,13 +6401,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                 className="badge-status yellow"
                                 style={{
                                   padding: "4px 7.2px",
-                                  background: isPX ? "rgba(30, 149, 3, 0.1)" : isEC ? "rgba(255, 75, 112, 0.1)" : "rgba(250, 171, 7, 0.1)",
+                                  background: "rgba(250, 171, 7, 0.1)",
                                   borderRadius: 4,
                                   fontSize: 15,
                                   fontFamily: "'Pretendard', sans-serif",
                                   fontWeight: 600,
                                   lineHeight: "15px",
-                                  color: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#faab07",
+                                  color: "#faab07",
                                   whiteSpace: "nowrap",
                                   flexShrink: 0,
                                   marginRight: "8px",
@@ -7017,7 +6623,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </span>
             </div>
           </div>
-          {renderLineSubmissionBanner("info")}
           <div className="work-info-cards">
             {effectiveWorkInfoCards.map((card) => {
               const isEmpty = card.isEmpty;
@@ -7114,7 +6719,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </span>
             </div>
           </div>
-          {renderLineSubmissionBanner("experience")}
           <div className="work-exp-cards">
             {Array.from({ length: 5 }, (_, cardIndex) => {
               // 슬롯 기반 렌더링: 실제 데이터 개수와 무관하게 항상 5개 슬롯을 만든다.
@@ -7274,7 +6878,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </span>
             </div>
           </div>
-          {renderLineSubmissionBanner("competency")}
           <div className="work-ability-cards">
             {[displayedAbilityCard].map((card) => {
               const isFailedCard = card.enhancementStatus === "failed";
@@ -7383,7 +6986,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </span>
             </div>
           </div>
-          {renderLineSubmissionBanner("career")}
           <div className="work-career-cards">
             {currentCareerCards.map((card, cardIndex) => {
               const isEmpty = card.isEmpty;
@@ -8757,7 +8359,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   </div>
 
                   <div className="section-modal-body keyword-select-body">
-                    {REPUTATION_KEYWORD_GROUPS.map((group, gIdx) => (
+                    {KEYWORD_GROUPS.map((group, gIdx) => (
                       <div key={group.id} className={`keyword-group group-${group.color}`}>
                         <h4 className="group-title">
                           [군락 {gIdx + 1}] {group.title}
@@ -8901,15 +8503,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       setHeaderModalOpen(true);
                       fetchKeywordsIfNeeded();
                     }}
-                    style={{
-                      padding: "8px 16px",
-                      background: isPX ? "rgba(30, 149, 3, 0.2)" : isEC ? "rgba(255, 75, 112, 0.2)" : "rgba(250, 171, 7, 0.2)",
-                      border: `1px solid ${isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07"}`,
-                      borderRadius: "6px",
-                      color: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07",
-                      fontSize: "13px",
-                      cursor: "pointer",
-                    }}
+                    style={{ padding: "8px 16px", background: "rgba(250, 171, 7, 0.2)", border: "1px solid #FAAB07", borderRadius: "6px", color: "#FAAB07", fontSize: "13px", cursor: "pointer" }}
                   >
                     수정
                   </button>
@@ -9174,19 +8768,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         {/* 1행: 활동 카테고리 — 기존 매핑 activityTypeConfig[activityType].icon (selectedWorkInfoCard.icon) 사용 */}
                         <div className="line-info-row">
                           {selectedWorkInfoCard.icon ? <img className="line-activity-icon" src={selectedWorkInfoCard.icon} alt={selectedWorkInfoCard.category || "활동"} /> : <span className="line-status-icon">●</span>}
-                          <span className="line-name" style={{ lineHeight: "26px", height: "26px", overflow: "visible" }}>{"인포데스크 — 데모 확인용 매우 긴 텍스트 두 줄 줄바꿈 테스트입니다 테스트입니다"}</span>
+                          <span className="line-name" style={{ lineHeight: "26px", height: "26px", overflow: "visible" }}>
+                            {"인포데스크"}
+                          </span>
                         </div>
                       </div>
                     </div>
 
                     {/* 2열: Output Link 5개 — cluster3 output modal 패턴 (dot + input/text + open-btn) + adminCount 보호 + 순차 입력 */}
                     <div className="workinfo-mid-col2">
-                      <div className="workinfo-output-links">
+                      <div className="workinfo-output-links" onWheel={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
                         {[0, 1, 2, 3, 4].map((i) => {
                           // cluster3 dot 색상(3개) → 5개 확장
-                          // chart legend palette — 가운데 yellow brand accent 만 3-way 분기.
-                          // 좌우 2색 (#FF6B6B/#4ECDC4) 및 끝 2색 (#6BCB77/#A084DC) 은 semantic palette.
-                          const dotColor = ["#FF6B6B", "#4ECDC4", isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07", "#6BCB77", "#A084DC"][i];
+                          const dotColor = ["#FF6B6B", "#4ECDC4", "#FAAB07", "#6BCB77", "#A084DC"][i];
                           const adminCount = selectedWorkInfoCard?.activityType ? getAdminOutputLinksCount(selectedWorkInfoCard.activityType) : 0;
                           const isAdminLink = i < adminCount;
                           // 데모 데이터 (프론트 전용)
@@ -9197,21 +8791,35 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                             { desc: "커리어 트랙 로드맵", url: "https://example.com/career-roadmap" },
                             { desc: "주차별 성장 기록 아카이브", url: "https://example.com/growth-history" },
                           ];
-                          // 보기 모드는 데모 데이터, 편집 모드는 editingOutputLinks
-                          const link = workInfoViewIsEditing ? editingOutputLinks[i] || { desc: "", url: "" } : demoOutputLinks[i] || { desc: "", url: "" };
+                          // 표시 우선순위: 1) editing state (수정 모드) 2) admin preview 저장 값 3) card/demo data
+                          const adminOverride = isAdminPreview ? adminSavedOutputLinks["workInfo"]?.[i] : null;
+                          const link = workInfoViewIsEditing
+                            ? editingOutputLinks[i] || { desc: "", url: "" }
+                            : (adminOverride?.url?.trim() ? adminOverride : demoOutputLinks[i]) || { desc: "", url: "" };
                           const hasUrl = !!link.url?.trim();
-                          // 순차 입력: 사용자 링크 영역(idx >= adminCount)에서 이전 칸 비어있으면 disabled
-                          const prevUserLink = i > adminCount ? editingOutputLinks[i - 1] : null;
-                          const sequentialDisabled = workInfoViewIsEditing && !isAdminLink && i > adminCount && !prevUserLink?.url?.trim();
+                          const prevLink = workInfoViewIsEditing ? editingOutputLinks[i - 1] : (isAdminPreview ? adminSavedOutputLinks["workInfo"]?.[i - 1] : null);
+                          const sequentialDisabled = workInfoViewIsEditing && !isAdminLink && i > adminCount && !prevLink?.url?.trim();
                           const displayText = link.desc?.trim() || link.url;
+                          if (isAdminPreview && i === 0) console.log("[RenderWorkInfo]", { isEditing: workInfoViewIsEditing, link, adminOverride });
                           return (
                             <div className={`output-link-row ${isAdminLink ? "admin-link" : ""}`} key={i}>
-                              {/* cluster3 패턴: dot + input/text + open-btn */}
                               <span className="link-dot" style={{ backgroundColor: dotColor }} />
-                              {workInfoViewIsEditing && !isAdminLink ? (
-                                <input type="url" className="output-link-input" placeholder={sequentialDisabled ? "이전 링크를 먼저 입력하세요" : "https://..."} value={link.url} disabled={sequentialDisabled} onChange={(e) => handleOutputLinkChange(i, "url", e.target.value)} />
+                              {workInfoViewIsEditing && (!isAdminLink || isAdminPreview) ? (
+                                <span
+                                  className={`output-link-text output-link-editable${hasUrl ? "" : " output-link-empty"}${sequentialDisabled ? " output-link-disabled" : ""}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    if (!sequentialDisabled) openOutputLinkEditModal("workInfo", i);
+                                  }}
+                                  title={hasUrl ? link.desc?.trim() || link.url : undefined}
+                                >
+                                  {sequentialDisabled ? "먼저 상위 Output Link를 입력해주세요" : hasUrl ? displayText || "" : `Output Link ${i + 1}`}
+                                </span>
                               ) : hasUrl ? (
-                                <span className="output-link-text">{displayText.length > 20 ? displayText.substring(0, 20) + ".." : displayText}</span>
+                                <span className="output-link-text output-link-clickable" onMouseEnter={(e) => showOlTooltip(e, link.desc?.trim() || link.url || "")} onMouseLeave={hideOlTooltip} onClick={() => window.open(ensureProtocol(link.url), "_blank")}>
+                                  {displayText}
+                                </span>
                               ) : (
                                 <span className="output-link-text output-link-empty">-</span>
                               )}
@@ -9446,43 +9054,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 <div className="modal-footer-right">
                   {!workInfoViewIsEditing ? (
                     (() => {
-                      // 임시 정책: 작성기간(canEditWorkInfo) 이 열려 있으면 "not_applicable" 은 우회.
-                      // "failed" 는 진짜 강화 실패이므로 잠금 유지. (data: 테이블 부재 폴백 대응)
-                      const rawLocked = isLineLocked(selectedWorkInfoCard); // strict (참고용)
-                      const lockedForEdit = isLineLockedForEdit(selectedWorkInfoCard, canEditWorkInfo);
-                      const isFailedStatus = getEnhanceStatus(selectedWorkInfoCard) === "failed";
+                      const locked = isLineLocked(selectedWorkInfoCard);
                       const isEmptyStatus = (selectedWorkInfoCard?.status as string) === "empty";
-                      const disabled = !canEditWorkInfo || lockedForEdit || isEmptyStatus;
-                      // [DEBUG 2026-05-22] 작성기간이 열렸는데도 버튼이 비활성/미렌더 보고 → 게이트값 콘솔 출력.
-                      // 콘솔에 [workInfo gate] 한 줄이 매 렌더마다 찍힌다. 운영 안정화 후 제거.
-                      if (typeof window !== "undefined") {
-                        // eslint-disable-next-line no-console
-                        console.log("[workInfo gate]", {
-                          activityType: selectedWorkInfoCard?.activityType,
-                          status: selectedWorkInfoCard?.status,
-                          enhanceStatus: getEnhanceStatus(selectedWorkInfoCard),
-                          canEditWorkInfo,
-                          rawLocked,
-                          lockedForEdit,
-                          isFailedStatus,
-                          isEmptyStatus,
-                          disabled,
-                          isOwner,
-                          isDemoMode,
-                          isAdmin,
-                          workInfoWindowOpen,
-                          canEditActivityDetails,
-                        });
-                      }
-                      const title = isEmptyStatus
-                        ? "빈 카드 상태에서는 수정할 수 없습니다."
-                        : isFailedStatus
-                          ? LINE_FAILED_TITLE
-                          : lockedForEdit
-                            ? LINE_LOCKED_TITLE
-                            : canEditWorkInfo
-                              ? "수정"
-                              : "작성할 수 있는 기간이 아닙니다. 😊";
+                      const disabled = !isAdminPreview && (!canEditWorkInfo || locked || isEmptyStatus);
+                      const title = isEmptyStatus ? "빈 카드 상태에서는 수정할 수 없습니다." : locked ? LINE_LOCKED_TITLE : canEditWorkInfo || isAdminPreview ? "수정" : "작성할 수 있는 기간이 아닙니다. 😊";
                       return (
                         <button className="modal-edit-btn" onClick={handleEditWorkInfo} disabled={disabled} aria-disabled={disabled} style={disabled ? { opacity: 0.3, cursor: "not-allowed" } : undefined} title={title}>
                           수정
@@ -9645,32 +9220,48 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       <div className="workinfo-line-info">
                         <div className="line-info-row">
                           <img className="line-activity-icon" src={getWorkExpIcon(lookupWorkExpMapping(selectedWorkExpCard.code)?.lineName || selectedWorkExpCard.badge || "")} alt={selectedWorkExpCard.badge || "활동"} />
-                          <span className="line-name" style={{ lineHeight: "26px", height: "26px", overflow: "visible" }}>{lookupWorkExpMapping(selectedWorkExpCard.code)?.lineName || selectedWorkExpCard.badge || "—"}</span>
+                          <span className="line-name" style={{ lineHeight: "26px", height: "26px", overflow: "visible" }}>
+                            {lookupWorkExpMapping(selectedWorkExpCard.code)?.lineName || selectedWorkExpCard.badge || "—"}
+                          </span>
                         </div>
                       </div>
                     </div>
 
                     {/* Output Link 5개 */}
                     <div className="workinfo-mid-col2">
-                      <div className="workinfo-output-links">
+                      <div className="workinfo-output-links" onWheel={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
                         {[0, 1, 2, 3, 4].map((i) => {
-                          // chart legend palette — 가운데 yellow brand accent 만 3-way 분기.
-                          // 좌우 2색 (#FF6B6B/#4ECDC4) 및 끝 2색 (#6BCB77/#A084DC) 은 semantic palette.
-                          const dotColor = ["#FF6B6B", "#4ECDC4", isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07", "#6BCB77", "#A084DC"][i];
+                          const dotColor = ["#FF6B6B", "#4ECDC4", "#FAAB07", "#6BCB77", "#A084DC"][i];
                           const adminCount = selectedWorkExpCard?.activityTypeId ? getAdminOutputLinksCount(selectedWorkExpCard.activityTypeId) : 0;
                           const isAdminLink = i < adminCount;
-                          const link = workExpViewIsEditing ? editingExpOutputLinks[i] || { desc: "", url: "" } : selectedWorkExpCard.outputLinks?.[i] || { desc: "", url: "" };
+                          const adminOverride = isAdminPreview ? adminSavedOutputLinks["workExp"]?.[i] : null;
+                          const link = workExpViewIsEditing
+                            ? editingExpOutputLinks[i] || { desc: "", url: "" }
+                            : (adminOverride?.url?.trim() ? adminOverride : selectedWorkExpCard.outputLinks?.[i]) || { desc: "", url: "" };
                           const hasUrl = !!link.url?.trim();
-                          const prevUserLink = i > adminCount ? editingExpOutputLinks[i - 1] : null;
-                          const sequentialDisabled = workExpViewIsEditing && !isAdminLink && i > adminCount && !prevUserLink?.url?.trim();
+                          const prevLink = workExpViewIsEditing ? editingExpOutputLinks[i - 1] : (isAdminPreview ? adminSavedOutputLinks["workExp"]?.[i - 1] : null);
+                          const sequentialDisabled = workExpViewIsEditing && !isAdminLink && i > adminCount && !prevLink?.url?.trim();
                           const displayText = link.desc?.trim() || link.url;
+                          if (isAdminPreview && i === 0) console.log("[RenderWorkExp]", { isEditing: workExpViewIsEditing, link, adminOverride });
                           return (
                             <div className={`output-link-row ${isAdminLink ? "admin-link" : ""}`} key={i}>
                               <span className="link-dot" style={{ backgroundColor: dotColor }} />
-                              {workExpViewIsEditing && !isAdminLink ? (
-                                <input type="url" className="output-link-input" placeholder={sequentialDisabled ? "이전 링크를 먼저 입력하세요" : "https://..."} value={link.url} disabled={sequentialDisabled} onChange={(e) => handleExpOutputLinkChange(i, "url", e.target.value)} />
+                              {workExpViewIsEditing && (!isAdminLink || isAdminPreview) ? (
+                                <span
+                                  className={`output-link-text output-link-editable${hasUrl ? "" : " output-link-empty"}${sequentialDisabled ? " output-link-disabled" : ""}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    if (!sequentialDisabled) openOutputLinkEditModal("workExp", i);
+                                  }}
+                                  title={hasUrl ? link.desc?.trim() || link.url : undefined}
+                                >
+                                  {sequentialDisabled ? "먼저 상위 Output Link를 입력해주세요" : hasUrl ? displayText || "" : `Output Link ${i + 1}`}
+                                </span>
                               ) : hasUrl ? (
-                                <span className="output-link-text">{displayText.length > 20 ? displayText.substring(0, 20) + ".." : displayText}</span>
+                                <span className="output-link-text output-link-clickable" onMouseEnter={(e) => showOlTooltip(e, link.desc?.trim() || link.url || "")} onMouseLeave={hideOlTooltip} onClick={() => window.open(ensureProtocol(link.url), "_blank")}>
+                                  {displayText}
+                                </span>
                               ) : (
                                 <span className="output-link-text output-link-empty">-</span>
                               )}
@@ -9884,49 +9475,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   </div>
                   <span className="line-code image-line-code">{lookupWorkExpMapping(selectedWorkExpCard.code)?.lineCode || selectedWorkExpCard.code || ""}</span>
 
-                  {/* 라인 평점 — self-edit: 표시는 항상 보이고, 편집 모드에서 별 클릭(좌/우 절반)으로 0~10 입력 */}
+                  {/* 라인 평점 — 어드민(compliance-manage)에서 입력한 값을 읽기전용으로 표시 (0=미입력, 1~10) */}
                   {(() => {
-                    const ratingValue = workExpViewIsEditing
-                      ? editingExpRating
-                      : (selectedWorkExpCard?.rating ?? 0) * 2;
+                    const ratingValue = (selectedWorkExpCard?.rating ?? 0) * 2;
                     const halfValue = (ratingValue || 0) / 2;
-                    const editable = workExpViewIsEditing;
-                    const setRating = (next: number) => {
-                      const clamped = Math.max(0, Math.min(10, next));
-                      // 동일 값을 다시 클릭하면 0 으로 리셋 (toggle)
-                      setEditingExpRating((prev) => (prev === clamped ? 0 : clamped));
-                    };
                     return (
-                      <div
-                        className={`workexp-rating-section${editable ? " is-editable" : ""}`}
-                        data-field="rating"
-                      >
+                      <div className="workexp-rating-section" data-field="rating">
                         <span className="rating-label">라인 평점</span>
-                        <div
-                          className="rating-stars"
-                          role={editable ? "slider" : undefined}
-                          aria-label={editable ? "라인 평점 (0~10)" : undefined}
-                          aria-valuemin={editable ? 0 : undefined}
-                          aria-valuemax={editable ? 10 : undefined}
-                          aria-valuenow={editable ? ratingValue : undefined}
-                          tabIndex={editable ? 0 : -1}
-                          onKeyDown={(e) => {
-                            if (!editable) return;
-                            if (e.key === "ArrowRight" || e.key === "ArrowUp") {
-                              e.preventDefault();
-                              setRating(ratingValue + 1);
-                            } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
-                              e.preventDefault();
-                              setRating(ratingValue - 1);
-                            } else if (e.key === "Home") {
-                              e.preventDefault();
-                              setEditingExpRating(0);
-                            } else if (e.key === "End") {
-                              e.preventDefault();
-                              setEditingExpRating(10);
-                            }
-                          }}
-                        >
+                        <div className="rating-stars">
                           {[1, 2, 3, 4, 5].map((star) => {
                             let starClass = "star-empty";
                             if (halfValue >= star) {
@@ -9934,37 +9490,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                             } else if (halfValue >= star - 0.5) {
                               starClass = "star-half";
                             }
-                            if (!editable) {
-                              return (
-                                <span key={star} className={`rating-star ${starClass}`}>
-                                  ★
-                                </span>
-                              );
-                            }
-                            // 편집 모드: 좌측 절반 = 2N-1, 우측 절반 = 2N
-                            const leftValue = star * 2 - 1;
-                            const rightValue = star * 2;
                             return (
-                              <span key={star} className={`rating-star ${starClass} is-interactive`}>
-                                <button
-                                  type="button"
-                                  className="rating-star-half rating-star-left"
-                                  aria-label={`${leftValue}점`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setRating(leftValue);
-                                  }}
-                                />
-                                <button
-                                  type="button"
-                                  className="rating-star-half rating-star-right"
-                                  aria-label={`${rightValue}점`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setRating(rightValue);
-                                  }}
-                                />
-                                <span className="rating-star-glyph" aria-hidden>★</span>
+                              <span key={star} className={`rating-star ${starClass}`}>
+                                ★
                               </span>
                             );
                           })}
@@ -9987,19 +9515,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   {!workExpViewIsEditing ? (
                     (() => {
                       const empty = selectedWorkExpCard?.isEmpty;
-                      // 임시 정책 동기화 (Work Info 와 동일).
-                      const lockedForEdit = isLineLockedForEdit(selectedWorkExpCard, canEditWorkExp);
-                      const isFailedStatus = getEnhanceStatus(selectedWorkExpCard) === "failed";
-                      const disabled = !canEditWorkExp || empty || lockedForEdit;
-                      const title = empty
-                        ? "비어있는 카드입니다"
-                        : isFailedStatus
-                          ? LINE_FAILED_TITLE
-                          : lockedForEdit
-                            ? LINE_LOCKED_TITLE
-                            : canEditWorkExp
-                              ? "수정"
-                              : "작성할 수 있는 기간이 아닙니다. 😊";
+                      const locked = isLineLocked(selectedWorkExpCard);
+                      const disabled = !isAdminPreview && (!canEditWorkExp || empty || locked);
+                      const title = empty ? "비어있는 카드입니다" : locked ? LINE_LOCKED_TITLE : canEditWorkExp || isAdminPreview ? "수정" : "작성할 수 있는 기간이 아닙니다. 😊";
                       return (
                         <button className="modal-edit-btn" onClick={handleEditWorkExp} disabled={disabled} style={disabled ? { opacity: 0.3, cursor: "not-allowed" } : undefined} title={title}>
                           수정
@@ -10163,31 +9681,46 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       <div className="workinfo-line-info">
                         <div className="line-info-row">
                           {selectedWorkAbilityCard.icon ? <img className="line-activity-icon" src={selectedWorkAbilityCard.icon} alt={selectedWorkAbilityCard.lineName || "활동"} /> : <span className="line-status-icon">●</span>}
-                          <span className="line-name" style={{ lineHeight: "26px", height: "26px", overflow: "visible" }}>{selectedWorkAbilityCard.lineName || "—"}</span>
+                          <span className="line-name" style={{ lineHeight: "26px", height: "26px", overflow: "visible" }}>
+                            {selectedWorkAbilityCard.lineName || "—"}
+                          </span>
                         </div>
                       </div>
                     </div>
 
                     <div className="workinfo-mid-col2">
-                      <div className="workinfo-output-links">
+                      <div className="workinfo-output-links" onWheel={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
                         {[0, 1, 2, 3, 4].map((i) => {
-                          // chart legend palette — 가운데 yellow brand accent 만 3-way 분기.
-                          // 좌우 2색 (#FF6B6B/#4ECDC4) 및 끝 2색 (#6BCB77/#A084DC) 은 semantic palette.
-                          const dotColor = ["#FF6B6B", "#4ECDC4", isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07", "#6BCB77", "#A084DC"][i];
+                          const dotColor = ["#FF6B6B", "#4ECDC4", "#FAAB07", "#6BCB77", "#A084DC"][i];
                           const adminCount = selectedWorkAbilityCard?.activityTypeId ? getAdminOutputLinksCount(selectedWorkAbilityCard.activityTypeId) : 0;
                           const isAdminLink = i < adminCount;
-                          const link = workAbilityViewIsEditing ? editingAbilityOutputLinks[i] || { desc: "", url: "" } : selectedWorkAbilityCard.outputLinks?.[i] || { desc: "", url: "" };
+                          const adminOverride = isAdminPreview ? adminSavedOutputLinks["workAbility"]?.[i] : null;
+                          const link = workAbilityViewIsEditing
+                            ? editingAbilityOutputLinks[i] || { desc: "", url: "" }
+                            : (adminOverride?.url?.trim() ? adminOverride : selectedWorkAbilityCard.outputLinks?.[i]) || { desc: "", url: "" };
                           const hasUrl = !!link.url?.trim();
-                          const prevUserLink = i > adminCount ? editingAbilityOutputLinks[i - 1] : null;
-                          const sequentialDisabled = workAbilityViewIsEditing && !isAdminLink && i > adminCount && !prevUserLink?.url?.trim();
+                          const prevLink = workAbilityViewIsEditing ? editingAbilityOutputLinks[i - 1] : (isAdminPreview ? adminSavedOutputLinks["workAbility"]?.[i - 1] : null);
+                          const sequentialDisabled = workAbilityViewIsEditing && !isAdminLink && i > adminCount && !prevLink?.url?.trim();
                           const displayText = link.desc?.trim() || link.url;
                           return (
                             <div className={`output-link-row ${isAdminLink ? "admin-link" : ""}`} key={i}>
                               <span className="link-dot" style={{ backgroundColor: dotColor }} />
-                              {workAbilityViewIsEditing && !isAdminLink ? (
-                                <input type="url" className="output-link-input" placeholder={sequentialDisabled ? "이전 링크를 먼저 입력하세요" : "https://..."} value={link.url} disabled={sequentialDisabled} onChange={(e) => handleAbilityOutputLinkChange(i, "url", e.target.value)} />
+                              {workAbilityViewIsEditing && (!isAdminLink || isAdminPreview) ? (
+                                <span
+                                  className={`output-link-text output-link-editable${hasUrl ? "" : " output-link-empty"}${sequentialDisabled ? " output-link-disabled" : ""}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    if (!sequentialDisabled) openOutputLinkEditModal("workAbility", i);
+                                  }}
+                                  title={hasUrl ? link.desc?.trim() || link.url : undefined}
+                                >
+                                  {sequentialDisabled ? "먼저 상위 Output Link를 입력해주세요" : hasUrl ? displayText || "" : `Output Link ${i + 1}`}
+                                </span>
                               ) : hasUrl ? (
-                                <span className="output-link-text">{displayText.length > 20 ? displayText.substring(0, 20) + ".." : displayText}</span>
+                                <span className="output-link-text output-link-clickable" onMouseEnter={(e) => showOlTooltip(e, link.desc?.trim() || link.url || "")} onMouseLeave={hideOlTooltip} onClick={() => window.open(ensureProtocol(link.url), "_blank")}>
+                                  {displayText}
+                                </span>
                               ) : (
                                 <span className="output-link-text output-link-empty">-</span>
                               )}
@@ -10399,19 +9932,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   {!workAbilityViewIsEditing ? (
                     (() => {
                       const empty = selectedWorkAbilityCard?.isEmpty;
-                      // 임시 정책 동기화 (Work Info 와 동일).
-                      const lockedForEdit = isLineLockedForEdit(selectedWorkAbilityCard, canEditWorkAbility);
-                      const isFailedStatus = getEnhanceStatus(selectedWorkAbilityCard) === "failed";
-                      const disabled = !canEditWorkAbility || empty || lockedForEdit;
-                      const title = empty
-                        ? "비어있는 카드입니다"
-                        : isFailedStatus
-                          ? LINE_FAILED_TITLE
-                          : lockedForEdit
-                            ? LINE_LOCKED_TITLE
-                            : canEditWorkAbility
-                              ? "수정"
-                              : "작성할 수 있는 기간이 아닙니다. 😊";
+                      const locked = isLineLocked(selectedWorkAbilityCard);
+                      const disabled = !isAdminPreview && (!canEditWorkAbility || empty || locked);
+                      const title = empty ? "비어있는 카드입니다" : locked ? LINE_LOCKED_TITLE : canEditWorkAbility || isAdminPreview ? "수정" : "작성할 수 있는 기간이 아닙니다. 😊";
                       return (
                         <button className="modal-edit-btn" onClick={handleEditWorkAbility} disabled={disabled} style={disabled ? { opacity: 0.3, cursor: "not-allowed" } : undefined} title={title}>
                           수정
@@ -10587,32 +10110,47 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                               <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.3)" }}>-</span>
                             </div>
                           )}
-                          <span className="line-name" style={{ lineHeight: "26px", height: "26px", overflow: "visible" }}>{selectedWorkCareerCard.lineName || selectedWorkCareerCard.badge || "—"}</span>
+                          <span className="line-name" style={{ lineHeight: "26px", height: "26px", overflow: "visible" }}>
+                            {selectedWorkCareerCard.lineName || selectedWorkCareerCard.badge || "—"}
+                          </span>
                         </div>
                       </div>
                     </div>
 
                     <div className="workinfo-mid-col2">
-                      <div className="workinfo-output-links">
+                      <div className="workinfo-output-links" onWheel={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
                         {[0, 1, 2, 3, 4].map((i) => {
-                          // chart legend palette — 가운데 yellow brand accent 만 3-way 분기.
-                          // 좌우 2색 (#FF6B6B/#4ECDC4) 및 끝 2색 (#6BCB77/#A084DC) 은 semantic palette.
-                          const dotColor = ["#FF6B6B", "#4ECDC4", isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07", "#6BCB77", "#A084DC"][i];
+                          const dotColor = ["#FF6B6B", "#4ECDC4", "#FAAB07", "#6BCB77", "#A084DC"][i];
                           const activityType = workCareerActivityTypes[(selectedWorkCareerCard?.id || 1) - 1];
                           const adminCount = activityType ? getAdminOutputLinksCount(activityType) : 0;
                           const isAdminLink = i < adminCount;
-                          const link = workCareerViewIsEditing ? editingCareerOutputLinks[i] || { desc: "", url: "" } : selectedWorkCareerCard.outputLinks?.[i] || { desc: "", url: "" };
+                          const adminOverride = isAdminPreview ? adminSavedOutputLinks["workCareer"]?.[i] : null;
+                          const link = workCareerViewIsEditing
+                            ? editingCareerOutputLinks[i] || { desc: "", url: "" }
+                            : (adminOverride?.url?.trim() ? adminOverride : selectedWorkCareerCard.outputLinks?.[i]) || { desc: "", url: "" };
                           const hasUrl = !!link.url?.trim();
-                          const prevUserLink = i > adminCount ? editingCareerOutputLinks[i - 1] : null;
-                          const sequentialDisabled = workCareerViewIsEditing && !isAdminLink && i > adminCount && !prevUserLink?.url?.trim();
+                          const prevLink = workCareerViewIsEditing ? editingCareerOutputLinks[i - 1] : (isAdminPreview ? adminSavedOutputLinks["workCareer"]?.[i - 1] : null);
+                          const sequentialDisabled = workCareerViewIsEditing && !isAdminLink && i > adminCount && !prevLink?.url?.trim();
                           const displayText = link.desc?.trim() || link.url;
                           return (
                             <div className={`output-link-row ${isAdminLink ? "admin-link" : ""}`} key={i}>
                               <span className="link-dot" style={{ backgroundColor: dotColor }} />
-                              {workCareerViewIsEditing && !isAdminLink ? (
-                                <input type="url" className="output-link-input" placeholder={sequentialDisabled ? "이전 링크를 먼저 입력하세요" : "https://..."} value={link.url} disabled={sequentialDisabled} onChange={(e) => handleCareerOutputLinkChange(i, "url", e.target.value)} />
+                              {workCareerViewIsEditing && (!isAdminLink || isAdminPreview) ? (
+                                <span
+                                  className={`output-link-text output-link-editable${hasUrl ? "" : " output-link-empty"}${sequentialDisabled ? " output-link-disabled" : ""}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    if (!sequentialDisabled) openOutputLinkEditModal("workCareer", i);
+                                  }}
+                                  title={hasUrl ? link.desc?.trim() || link.url : undefined}
+                                >
+                                  {sequentialDisabled ? "먼저 상위 Output Link를 입력해주세요" : hasUrl ? displayText || "" : `Output Link ${i + 1}`}
+                                </span>
                               ) : hasUrl ? (
-                                <span className="output-link-text">{displayText.length > 20 ? displayText.substring(0, 20) + ".." : displayText}</span>
+                                <span className="output-link-text output-link-clickable" onMouseEnter={(e) => showOlTooltip(e, link.desc?.trim() || link.url || "")} onMouseLeave={hideOlTooltip} onClick={() => window.open(ensureProtocol(link.url), "_blank")}>
+                                  {displayText}
+                                </span>
                               ) : (
                                 <span className="output-link-text output-link-empty">-</span>
                               )}
@@ -10935,19 +10473,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   {!workCareerViewIsEditing ? (
                     (() => {
                       const empty = selectedWorkCareerCard?.isEmpty;
-                      // 임시 정책 동기화 (Work Info 와 동일).
-                      const lockedForEdit = isLineLockedForEdit(selectedWorkCareerCard, canEditWorkCareer);
-                      const isFailedStatus = getEnhanceStatus(selectedWorkCareerCard) === "failed";
-                      const disabled = !canEditWorkCareer || empty || lockedForEdit;
-                      const title = empty
-                        ? "비어있는 카드입니다"
-                        : isFailedStatus
-                          ? LINE_FAILED_TITLE
-                          : lockedForEdit
-                            ? LINE_LOCKED_TITLE
-                            : canEditWorkCareer
-                              ? "수정"
-                              : "작성할 수 있는 기간이 아닙니다. 😊";
+                      const locked = isLineLocked(selectedWorkCareerCard);
+                      const disabled = !isAdminPreview && (!canEditWorkCareer || empty || locked);
+                      const title = empty ? "비어있는 카드입니다" : locked ? LINE_LOCKED_TITLE : canEditWorkCareer || isAdminPreview ? "수정" : "작성할 수 있는 기간이 아닙니다. 😊";
                       return (
                         <button className="modal-edit-btn" onClick={handleEditWorkCareer} disabled={disabled} style={disabled ? { opacity: 0.3, cursor: "not-allowed" } : undefined} title={title}>
                           수정
@@ -11028,12 +10556,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       {weeklyReviewModalOpen &&
         typeof document !== "undefined" &&
         createPortal(
-          // Phase C — portal root 에 theme class 직접 부착. 본 modal 은
-          // document.body 직속이라 .cluster-px-theme / .encre-theme ancestor
-          // cascade 가 닿지 못한다. _popup-portal-theme.scss 의
-          // .section-modal-overlay.cluster-px-theme / .encre-theme combined
-          // selector 와 짝.
-          <div className={`section-modal-overlay ${getThemeClass(pathname)}`.trim()}>
+          <div className="section-modal-overlay">
             <div className="section-modal section-modal-weekly-review-form">
               {/* 헤더 */}
               <div className="section-modal-header">
@@ -11217,7 +10740,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className={`dropdown-options-fixed review-rating-dropdown-options ${getThemeClass(pathname)}`.trim()}
+            className="dropdown-options-fixed review-rating-dropdown-options"
             style={{
               position: "fixed",
               top: reviewRatingDropdownPos.top,
@@ -11242,7 +10765,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className={`dropdown-options-fixed ${getThemeClass(pathname)}`.trim()}
+            className="dropdown-options-fixed"
             style={{
               position: "fixed",
               top: ratingDropdownPos.top,
@@ -11262,128 +10785,80 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           document.body,
         )}
 
-      {/* 라인 제출 모달 */}
-      {lineSubmissionModalOpen && lineSubmissionTarget?.line && isMounted &&
+      {/* Output Link 커스텀 툴팁 — 보기 모드 hover 시 전체 설명 표시 */}
+      {olTooltip &&
+        createPortal(
+          <div className="ol-custom-tooltip" style={{ left: olTooltip.x, top: olTooltip.y }}>
+            {olTooltip.text}
+          </div>,
+          document.body,
+        )}
+
+      {/* Detail Log 모달 — 빈 placeholder 컨테이너 (674×826) */}
+      <DetailLogModal show={showDetailLogModal} onHide={() => setShowDetailLogModal(false)} />
+
+      {/* Output Link 2차 모달 — Portal로 document.body에 직접 렌더링 (1차 모달 위에 뜸) */}
+      {outputLinkEditModal &&
         createPortal(
           <div
-            className="section-modal-overlay"
-            style={{
-              position: "fixed",
-              top: 0, left: 0, right: 0, bottom: 0,
-              backgroundColor: "rgba(0,0,0,0.6)",
-              zIndex: 100005,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+            className="output-link-edit-overlay"
+            onMouseDown={(e) => e.stopPropagation()}
+            onWheel={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
             }}
-            onClick={() => setLineSubmissionModalOpen(false)}
           >
-            <div
-              style={{
-                backgroundColor: "#fff",
-                borderRadius: "12px",
-                width: "min(480px, 90vw)",
-                maxHeight: "80vh",
-                overflow: "auto",
-                padding: "24px",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700 }}>
-                  {lineSubmissionTarget.status === "success" ? "라인 제출 수정" : "라인 제출"}
-                </h3>
-                <button
-                  onClick={() => setLineSubmissionModalOpen(false)}
-                  style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer", padding: "4px" }}
-                >
-                  &times;
-                </button>
-              </div>
-
-              {/* 읽기 전용: mainTitle */}
-              <div style={{ marginBottom: "12px" }}>
-                <label style={{ display: "block", fontSize: "12px", color: "#6b7280", marginBottom: "4px", fontWeight: 600 }}>Main Title (읽기 전용)</label>
-                <div style={{ padding: "8px 12px", backgroundColor: "#f3f4f6", borderRadius: "6px", fontSize: "14px", color: "#374151" }}>
-                  {lineSubmissionTarget.line.mainTitle}
+            <div className="output-link-edit-modal" onMouseDown={(e) => e.stopPropagation()}>
+              <h3 className="output-link-edit-title">
+                <i className="ti ti-link" />
+                Output Link {outputLinkEditModal.linkIdx + 1} 편집
+              </h3>
+              <div className="output-link-edit-field">
+                <label>Output Link 주소</label>
+                <input
+                  type="url"
+                  className="output-link-edit-input"
+                  value={outputLinkEditModal.url}
+                  onChange={(e) => {
+                    if (e.target.value.length <= 1000) setOutputLinkEditModal((prev) => (prev ? { ...prev, url: e.target.value, error: "" } : null));
+                  }}
+                  placeholder="https://..."
+                  maxLength={1000}
+                  autoFocus
+                />
+                <div className="output-link-edit-field-footer">
+                  <span className="char-count">{outputLinkEditModal.url.length} / 1,000</span>
+                  {outputLinkEditModal.error && <span className="field-error">{outputLinkEditModal.error}</span>}
                 </div>
               </div>
-
-              {/* 읽기 전용: outputLink1 */}
-              {lineSubmissionTarget.line.outputLink1 && (
-                <div style={{ marginBottom: "12px" }}>
-                  <label style={{ display: "block", fontSize: "12px", color: "#6b7280", marginBottom: "4px", fontWeight: 600 }}>Output Link 1 (읽기 전용)</label>
-                  <div style={{ padding: "8px 12px", backgroundColor: "#f3f4f6", borderRadius: "6px", fontSize: "13px" }}>
-                    <a href={lineSubmissionTarget.line.outputLink1} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline", wordBreak: "break-all" }}>
-                      {lineSubmissionTarget.line.outputLink1}
-                    </a>
-                  </div>
-                </div>
-              )}
-
-              {/* 편집 가능: subtitle */}
-              <div style={{ marginBottom: "12px" }}>
-                <label style={{ display: "block", fontSize: "12px", color: "#374151", marginBottom: "4px", fontWeight: 600 }}>Sub Title</label>
+              <div className="output-link-edit-field">
+                <label>Output Link 설명</label>
                 <input
                   type="text"
-                  value={lineSubmissionForm.subtitle}
-                  onChange={(e) => setLineSubmissionForm((p) => ({ ...p, subtitle: e.target.value }))}
-                  placeholder="서브타이틀을 입력하세요"
-                  style={{ width: "100%", padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "14px", boxSizing: "border-box" }}
+                  className="output-link-edit-input"
+                  value={outputLinkEditModal.desc}
+                  onChange={(e) => {
+                    if (e.target.value.length <= 30) setOutputLinkEditModal((prev) => (prev ? { ...prev, desc: e.target.value } : null));
+                  }}
+                  placeholder="링크에 대한 설명을 입력하세요"
+                  maxLength={30}
                 />
-              </div>
-
-              {/* 편집 가능: outputLink2~5 */}
-              {(["outputLink2", "outputLink3", "outputLink4", "outputLink5"] as const).map((field, i) => (
-                <div key={field} style={{ marginBottom: "12px" }}>
-                  <label style={{ display: "block", fontSize: "12px", color: "#374151", marginBottom: "4px", fontWeight: 600 }}>Output Link {i + 2}</label>
-                  <input
-                    type="url"
-                    value={lineSubmissionForm[field]}
-                    onChange={(e) => setLineSubmissionForm((p) => ({ ...p, [field]: e.target.value }))}
-                    placeholder="https://..."
-                    style={{ width: "100%", padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: "6px", fontSize: "14px", boxSizing: "border-box" }}
-                  />
+                <div className="output-link-edit-field-footer">
+                  <span className="char-count">{outputLinkEditModal.desc.length} / 30</span>
                 </div>
-              ))}
-
-              {/* 제출 기간 안내 */}
-              <div style={{ fontSize: "11px", color: "#9ca3af", marginBottom: "16px" }}>
-                제출 기간: {new Date(lineSubmissionTarget.line.submissionOpensAt).toLocaleDateString("ko-KR")} ~ {new Date(lineSubmissionTarget.line.submissionClosesAt).toLocaleDateString("ko-KR")}
               </div>
-
-              <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-                <button
-                  onClick={() => setLineSubmissionModalOpen(false)}
-                  style={{ padding: "8px 16px", borderRadius: "6px", border: "1px solid #d1d5db", backgroundColor: "#fff", cursor: "pointer", fontSize: "13px" }}
-                >
+              <div className="output-link-edit-buttons">
+                <button type="button" className="btn-cancel" onClick={() => setOutputLinkEditModal(null)}>
                   취소
                 </button>
-                <button
-                  onClick={handleLineSubmissionSave}
-                  disabled={lineSubmissionSaving}
-                  style={{
-                    padding: "8px 16px",
-                    borderRadius: "6px",
-                    border: "none",
-                    backgroundColor: lineSubmissionSaving ? "#9ca3af" : "#2563eb",
-                    color: "#fff",
-                    cursor: lineSubmissionSaving ? "not-allowed" : "pointer",
-                    fontWeight: 600,
-                    fontSize: "13px",
-                  }}
-                >
-                  {lineSubmissionSaving ? "저장 중..." : lineSubmissionTarget.status === "success" ? "수정" : "제출"}
+                <button type="button" className="btn-save" onClick={saveOutputLinkEdit}>
+                  저장
                 </button>
               </div>
             </div>
           </div>,
           document.body,
-        )
-      }
-
-      {/* Detail Log 모달 — 빈 placeholder 컨테이너 (674×826) */}
-      <DetailLogModal show={showDetailLogModal} onHide={() => setShowDetailLogModal(false)} />
+        )}
     </div>
   );
 };

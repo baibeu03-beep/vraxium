@@ -1998,19 +1998,19 @@ const Cluster2Content = () => {
           {/* 큰 육각형 이미지 4개 */}
           <div className="hexagon-large-row">
             <div className={`hexagon-large-item ${!subPhotos[0] ? "empty" : ""}`} onClick={() => handleSetStarred(0)} style={{ cursor: subPhotos[0] ? "pointer" : "default" }}>
-              <div className="hex-large"><img src={subPhotos[0] || "/images/0/3.png"} alt="Joy" fetchPriority="high" decoding="async" /></div>
+              <div className="hex-large">{subPhotos[0] && <img src={subPhotos[0]} alt="Joy" fetchPriority="high" decoding="async" />}</div>
               <span className="hex-label">Joy</span>
             </div>
             <div className={`hexagon-large-item ${!subPhotos[1] ? "empty" : ""}`} onClick={() => handleSetStarred(1)} style={{ cursor: subPhotos[1] ? "pointer" : "default" }}>
-              <div className="hex-large"><img src={subPhotos[1] || "/images/0/4.png"} alt="Blue" fetchPriority="high" decoding="async" /></div>
+              <div className="hex-large">{subPhotos[1] && <img src={subPhotos[1]} alt="Blue" fetchPriority="high" decoding="async" />}</div>
               <span className="hex-label">Blue</span>
             </div>
             <div className={`hexagon-large-item ${!subPhotos[2] ? "empty" : ""}`} onClick={() => handleSetStarred(2)} style={{ cursor: subPhotos[2] ? "pointer" : "default" }}>
-              <div className="hex-large"><img src={subPhotos[2] || "/images/0/5.png"} alt="Passion" fetchPriority="high" decoding="async" /></div>
+              <div className="hex-large">{subPhotos[2] && <img src={subPhotos[2]} alt="Passion" fetchPriority="high" decoding="async" />}</div>
               <span className="hex-label">Passion</span>
             </div>
             <div className={`hexagon-large-item ${!subPhotos[3] ? "empty" : ""}`} onClick={() => handleSetStarred(3)} style={{ cursor: subPhotos[3] ? "pointer" : "default" }}>
-              <div className="hex-large"><img src={subPhotos[3] || "/images/0/6.png"} alt="Moments" fetchPriority="high" decoding="async" /></div>
+              <div className="hex-large">{subPhotos[3] && <img src={subPhotos[3]} alt="Moments" fetchPriority="high" decoding="async" />}</div>
               <span className="hex-label">Moments</span>
             </div>
           </div>
@@ -2039,7 +2039,7 @@ const Cluster2Content = () => {
 
         {/* 중앙 프로필 사진 */}
         <div className={`frame-center ${!mainPhoto ? "empty" : ""}`}>
-          <img src={mainPhoto || "/images/0/2.png"} alt="Profile" />
+          {mainPhoto && <img src={mainPhoto} alt="Profile" />}
         </div>
 
         {/* 오른쪽 카드 */}
@@ -2238,9 +2238,9 @@ const Cluster2Content = () => {
               <p className="quote-text">{sloganData.slogan2.content}</p>
               <div className="quote-footer">
                 <div className="quote-author">
-                  <img src={subPhotos[0] || "/images/0/cluster 2/이안1.webp"} alt="" />
+                  {subPhotos[0] && <img src={subPhotos[0]} alt="" />}
                   <div className="author-info">
-                    <span className="author-name">{sloganAuthorName || "Unknown"}</span>
+                    <span className="author-name">{sloganAuthorName || (!urlUserId ? session?.user?.name : "") || "Unknown"}</span>
                     <span className="author-role">{sloganData.slogan2.content ? sloganData.slogan2.option : SECTION2_SLOGAN_DEFAULTS.slogans[1].option}</span>
                   </div>
                 </div>
@@ -2310,9 +2310,9 @@ const Cluster2Content = () => {
               <p className="quote-text">{sloganData.slogan3.content}</p>
               <div className="quote-footer">
                 <div className="quote-author">
-                  <img src={subPhotos[2] || "/images/0/cluster 2/이안3.jpg"} alt="" />
+                  {subPhotos[2] && <img src={subPhotos[2]} alt="" />}
                   <div className="author-info">
-                    <span className="author-name">{sloganAuthorName || "Unknown"}</span>
+                    <span className="author-name">{sloganAuthorName || (!urlUserId ? session?.user?.name : "") || "Unknown"}</span>
                     <span className="author-role">{sloganData.slogan3.content ? sloganData.slogan3.option : SECTION2_SLOGAN_DEFAULTS.slogans[2].option}</span>
                   </div>
                 </div>
@@ -3472,22 +3472,40 @@ const Cluster2Content = () => {
                       </div>
                     </div>
 
-                    {/* 영상 링크 입력 */}
-                    <div className="form-group">
-                      <label>영상 링크 (YouTube URL)</label>
-                      <input
-                        type="url"
-                        value={video.videoUrl}
-                        onChange={(e) => {
-                          const newData = [...editingVideoData];
-                          newData[index].videoUrl = e.target.value;
-                          // 썸네일 자동 업데이트
-                          newData[index].thumbnail = getYouTubeThumbnail(e.target.value);
-                          setEditingVideoData(newData);
-                        }}
-                        placeholder="https://youtu.be/... 또는 https://www.youtube.com/watch?v=..."
-                      />
-                    </div>
+                    {/* 영상 링크 입력 — 순차 업로드: 선행 슬롯이 비어 있으면 비활성화 */}
+                    {(() => {
+                      const prevEmpty = index > 0 && !editingVideoData[index - 1]?.videoUrl;
+                      return (
+                        <div className="form-group">
+                          <label>영상 링크 (YouTube URL)</label>
+                          <div
+                            onClick={() => {
+                              if (prevEmpty) {
+                                showAlert(`${index}번째 동영상을 먼저 등록해주세요.`);
+                              }
+                            }}
+                          >
+                            <input
+                              type="url"
+                              value={video.videoUrl}
+                              disabled={prevEmpty}
+                              onChange={(e) => {
+                                if (prevEmpty) {
+                                  showAlert(`${index}번째 동영상을 먼저 등록해주세요.`);
+                                  return;
+                                }
+                                const newData = [...editingVideoData];
+                                newData[index].videoUrl = e.target.value;
+                                // 썸네일 자동 업데이트
+                                newData[index].thumbnail = getYouTubeThumbnail(e.target.value);
+                                setEditingVideoData(newData);
+                              }}
+                              placeholder={prevEmpty ? `${index}번째 동영상을 먼저 등록해주세요.` : "https://youtu.be/... 또는 https://www.youtube.com/watch?v=..."}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* 썸네일 미리보기 */}
                     {video.videoUrl && (
