@@ -231,13 +231,14 @@ export async function POST(request: NextRequest) {
     }
 
     // 권한 체크: 마감 시간 이내 OR 어드민 개별 grant
-    // 실무경험은 team_id 별로 weekly_activities 가 분리되어 있어서, 유저 팀에 해당하는 행을 골라야 한다.
-    const [weeklyActivitiesResult, userTeamResult, grantResult] = await Promise.all([
+    // cluster4_lines + cluster4_line_targets 기준으로 검증 (weekly_activities 미존재).
+    // 실무경험은 team_id 로 필터 — cluster4_lines.team_id 가 NULL(공통) 또는 유저 팀과 일치.
+    const [lineTargetsResult, userTeamResult, grantResult] = await Promise.all([
       supabaseAdmin
-        .from('weekly_activities')
-        .select('is_active, opened_at, deadline, team_id')
+        .from('cluster4_line_targets')
+        .select('week_id, target_user_id, cluster4_lines!inner(is_active, submission_opens_at, submission_closes_at, team_id, activity_type_id)')
         .eq('week_id', week_id)
-        .eq('activity_type_id', activity_type_id),
+        .eq('cluster4_lines.activity_type_id', activity_type_id),
       supabaseAdmin
         .from('user_team_parts')
         .select('team_id, left_at')
@@ -254,25 +255,20 @@ export async function POST(request: NextRequest) {
     ])
 
     const userTeamId: string | null = userTeamResult.data?.team_id || null
-    const candidateRows = weeklyActivitiesResult.data || []
-    // 클럽 공통(NULL) 행 우선, 없으면 유저 팀 매칭 행
-    const wa = candidateRows.find((r) => r.team_id == null)
-      || candidateRows.find((r) => r.team_id === userTeamId)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const candidateTargets = (lineTargetsResult.data || []) as any[]
+    // 클럽 공통(team_id=NULL) 라인 우선, 없으면 유저 팀 매칭 라인
+    const matchedTarget = candidateTargets.find((t) => t.cluster4_lines?.team_id == null)
+      || candidateTargets.find((t) => t.cluster4_lines?.team_id === userTeamId)
       || null
-    // deadline 컬럼 우선, 없으면 opened_at+48h 폴백
-    const isBeforeDeadline = wa?.is_active && (
-      wa?.deadline
-        ? Date.now() < new Date(wa.deadline).getTime()
-        : wa?.opened_at && (Date.now() - new Date(wa.opened_at).getTime()) < 48 * 60 * 60 * 1000
-    )
+    const line = matchedTarget?.cluster4_lines || null
+    // submission_closes_at 기준 마감 검증
+    const isBeforeDeadline = line?.is_active && line?.submission_closes_at &&
+      Date.now() < new Date(line.submission_closes_at).getTime()
 
     const grant = grantResult.data
     const hasActiveGrant = grant && new Date(grant.deadline).getTime() > Date.now()
 
-    // 관리자는 마감 시간 게이트 우회 가능 (운영상 복구/보강용).
-    // user_edit_windows row 가 열려 있는 사용자도 같은 의미적 등급으로 우회 허용:
-    // 어드민이 명시적으로 작성기간을 열어줬다 = secondary_info_grants 와 동등 권한 부여.
-    // weekly_activities 테이블 부재 / 마감 시간 미설정 환경에서 신규 키 정책으로 통일.
     if (
       !gate.context.isAdmin &&
       !hasOpenWindow &&

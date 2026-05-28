@@ -1375,8 +1375,22 @@ const Cluster4Content = () => {
     const fetchCurrentSeason = async () => {
       const today = new Date().toISOString().split("T")[0];
 
-      // 현재 주차 정보 가져오기 (is_club_break, holiday_name 포함)
-      const { data: currentWeekData } = await supabase.from("weeks").select("id, week_number, is_club_break, holiday_name, seasons (id, name, started_at)").lte("start_date", today).gte("end_date", today).maybeSingle();
+      // 현재 주차 정보 가져오기 (신규 schema: is_official_rest + season_definitions)
+      const { data: currentWeekData, error: currentWeekError } = await supabase
+        .from("weeks")
+        .select("id, week_number, is_official_rest, holiday_name, season_key, season_definitions(season_key, season_type, season_label, year)")
+        .lte("start_date", today)
+        .gte("end_date", today)
+        .maybeSingle();
+
+      if (currentWeekError) {
+        console.error("주차 데이터 로드 오류:", {
+          query: "weeks select id,week_number,is_official_rest,holiday_name,season_key,season_definitions(season_key,season_type,season_label,year) where start_date<=today and end_date>=today",
+          message: currentWeekError.message,
+          error: currentWeekError,
+        });
+        return;
+      }
 
       if (currentWeekData) {
         // 시즌 이름 변환 (spring -> 봄, summer -> 여름, fall -> 가을, winter -> 겨울)
@@ -1387,8 +1401,8 @@ const Cluster4Content = () => {
           winter: "겨울",
         };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const seasonData = currentWeekData.seasons as any;
-        const rawSeasonName = seasonData?.name || "";
+        const seasonData = currentWeekData.season_definitions as any;
+        const rawSeasonName = seasonData?.season_type || "";
 
         // break 시즌인지 확인 (예: spring_summer_break, fall_winter_break)
         const isBreakSeason = rawSeasonName.toLowerCase().includes("break");
@@ -1406,12 +1420,12 @@ const Cluster4Content = () => {
           displayName = "시즌 전환";
         }
 
-        const computedYear = seasonData?.started_at ? new Date(seasonData.started_at).getFullYear() : 0;
+        const computedYear = seasonData?.year || 0;
         setCurrentSeasonInfo({
           year: computedYear,
           name: displayName,
           currentWeek: currentWeekData.week_number,
-          isClubBreak: currentWeekData.is_club_break || false,
+          isClubBreak: currentWeekData.is_official_rest || false,
           holidayName: currentWeekData.holiday_name || null,
           isBreakSeason,
           fromSeason,
@@ -1433,12 +1447,21 @@ const Cluster4Content = () => {
       const targetUserId = urlUserId || session?.user?.id;
 
       // 1. 현재 주차 정보 가져오기
-      const { data: currentWeekData } = await supabase
+      const { data: currentWeekData, error: currentWeekError } = await supabase
         .from("weeks")
-        .select("id, end_date, week_number, seasons(name, started_at)")
+        .select("id, start_date, end_date, week_number, is_official_rest, season_key, season_definitions(season_key, season_type, season_label, year)")
         .lte("start_date", today)
         .gte("end_date", today)
         .maybeSingle();
+
+      if (currentWeekError) {
+        console.error("주차 데이터 로드 오류:", {
+          query: "weeks select id,start_date,end_date,week_number,is_official_rest,season_key,season_definitions(season_key,season_type,season_label,year) where start_date<=today and end_date>=today",
+          message: currentWeekError.message,
+          error: currentWeekError,
+        });
+        return;
+      }
 
       if (!currentWeekData) return;
 
@@ -1570,11 +1593,11 @@ const Cluster4Content = () => {
 
       // 8. 실무 경험 eligible 조건 체크 (cluster-4-card와 동일한 로직)
       // eligible_min/max 룰 적용 시점: 2026년 봄 시즌 9주차부터
-      const weekSeasonData = (currentWeekData as any)?.seasons;
+      const weekSeasonData = (currentWeekData as any)?.season_definitions;
       const isEligibilityRuleActive = weekSeasonData && (
         weekSeasonData.year > 2026 ||
-        (weekSeasonData.year === 2026 && weekSeasonData.name !== 'spring') ||
-        (weekSeasonData.year === 2026 && weekSeasonData.name === 'spring' && (currentWeekData as any).week_number >= 9)
+        (weekSeasonData.year === 2026 && weekSeasonData.season_type !== 'spring') ||
+        (weekSeasonData.year === 2026 && weekSeasonData.season_type === 'spring' && (currentWeekData as any).week_number >= 9)
       );
 
       // 매니징 라인 역할 분기 — 라인명에 _파트장/_에이전트 표기.

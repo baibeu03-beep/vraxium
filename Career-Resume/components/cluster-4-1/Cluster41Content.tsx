@@ -362,7 +362,12 @@ const Cluster41Content = () => {
         if (abortController.signal.aborted) return;
 
         if (!weeklyRes.ok) {
-          console.error("[weekly-cards] API 실패:", weeklyRes.status, weeklyResult?.error, weeklyResult?.detail);
+          console.error("주차 데이터 로드 오류:", {
+            status: weeklyRes.status,
+            error: weeklyResult?.error,
+            message: weeklyResult?.detail || weeklyResult?.message || weeklyResult?.error,
+          });
+          setDbWeeklyData([]);
         } else {
           setDbWeeklyData(weeklyResult.weeklyCards || []);
 

@@ -439,11 +439,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       week_number: number;
       start_date: string;
       end_date: string;
-      season_id: string;
-      seasons?: {
-        id: string;
+      season_key: string;
+      season_definitions?: {
+        season_key: string;
+        season_type: string;
+        season_label: string | null;
         year: number;
-        name: string;
       };
     };
     // 사용자 기록 상태
@@ -973,14 +974,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         const earlyUserId = urlUserId || null;
 
         // 프로필 API (주차 번들 포함) + 보조 API 동시 시작
+        const hasSessionUser = !!session?.user?.id;
         const earlyApiPromise = earlyUserId
           ? Promise.all([
               fetch(`/api/career-records?week_id=${weekId}&user_id=${earlyUserId}`, { cache: "no-store" })
                 .then((r) => r.json())
                 .catch(() => null),
-              fetch(`/api/weekly-reputations?targetUserId=${earlyUserId}&weekCardId=${weekId}`)
-                .then((r) => r.json())
-                .catch(() => null),
+              hasSessionUser
+                ? fetch(`/api/weekly-reputations?targetUserId=${earlyUserId}&weekCardId=${weekId}`)
+                    .then((r) => r.json())
+                    .catch(() => null)
+                : Promise.resolve(null),
               fetch(`/api/weekly-colleagues?userId=${earlyUserId}&weekCardId=${weekId}`)
                 .then((r) => r.json())
                 .catch(() => null),
@@ -1093,7 +1097,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
         // phase(진행 중/집계 중) 와 무관하게 운영진이 마킹한 휴식 여부.
         // 활동 라인 단위(실무 정보/역량/경험/경력) 판정에서 사용.
-        const userIsOnOfficialRestForWeek = !isCurrentWeekOnboarding && (isBreakSeason || !!weeklyGrowth?.is_club_break || (!weeklyGrowth && !!currentWeek.is_club_break));
+        // 신규 schema: weeks.is_official_rest (구 is_club_break), profile API adaptedWeeklyGrowth.is_official_rest.
+        const userIsOnOfficialRestForWeek = !isCurrentWeekOnboarding && (isBreakSeason || !!weeklyGrowth?.is_official_rest || (!weeklyGrowth && !!currentWeek.is_official_rest));
         const userIsOnPersonalRestForWeek = !isCurrentWeekOnboarding && (!!weeklyGrowth?.is_resting || (!weeklyGrowth && apiRestWeekIds.includes(currentWeek.id)));
 
         // 휴식만 phase 우회 — 온보딩 주차도 일반 phase(진행 중 → 집계 중) 거치고 결정 시점에 무조건 성공.
@@ -1134,7 +1139,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           toSeasonName,
           startDate: currentWeek.start_date,
           endDate: currentWeek.end_date,
-          isClubBreak: currentWeek.is_club_break || false,
+          isClubBreak: currentWeek.is_official_rest || false,
           holidayName: currentWeek.holiday_name,
           growthStatus,
           isPersonalRest: userIsOnPersonalRestForWeek,
@@ -1188,8 +1193,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         }
 
         // 누적 인절미 계산 (현재 시즌 내, 현재 주차까지의 shield 합계 - lightning 합계)
-        const currentSeasonId = seasonData?.id;
-        const seasonWeekIds = new Set(allWeeksForCumulative.filter((w: any) => w.season_id === currentSeasonId).map((w: any) => w.id));
+        // 신규 schema: weeks.season_key (구 season_id). profile API adaptedCurrentWeek.seasons 는
+        // season_key/name/year/season_label 만 노출(id 없음) → currentWeek.season_key 를 직접 사용.
+        const currentSeasonKey = currentWeek.season_key;
+        const seasonWeekIds = new Set(allWeeksForCumulative.filter((w: any) => w.season_key === currentSeasonKey).map((w: any) => w.id));
         const seasonPointsData = allPointsData.filter((p: any) => seasonWeekIds.has(p.week_id));
         const totalShields = seasonPointsData.filter((p: any) => p.point_type === "shield").reduce((sum: number, p: any) => sum + p.points, 0);
         const totalLightnings = seasonPointsData.filter((p: any) => p.point_type === "lightning").reduce((sum: number, p: any) => sum + p.points, 0);
@@ -1219,7 +1226,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           }
         }
         // 현재 주차가 활동 주차이면 eligible 체크에 포함 (+1)
-        const currentWeekIsActive = !currentWeek.is_club_break && weekId !== onboardingWeekIdForCount;
+        const currentWeekIsActive = !currentWeek.is_official_rest && weekId !== onboardingWeekIdForCount;
         const currentWeekAlreadyInSuccess = successWeeksData.some((sw: any) => sw.week_id === weekId);
         const cumulativeForEligible = currentApprovedCount + (currentWeekIsActive && !currentWeekAlreadyInSuccess ? 1 : 0);
         setCumulativeApprovedWeeks(cumulativeForEligible);
@@ -1311,7 +1318,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
           // 실무 역량: 평소 매주 최대 1개. 공식 휴식 주차는 기본 0이지만, 예외적으로 개설된 활동이 있으면 1.
           const hasActiveCompetency = activeActivities.some((a) => competencyTypesList.includes(a.activity_type_id));
-          const competencyTotal = currentWeek.is_club_break || isBreakSeason ? (hasActiveCompetency ? 1 : 0) : 1;
+          const competencyTotal = currentWeek.is_official_rest || isBreakSeason ? (hasActiveCompetency ? 1 : 0) : 1;
 
           // 실무 경험: 해당 주차에 개설된 experience 활동 중 eligible 조건 체크
           // eligible_min/max 룰 적용 시점: 2026년 봄 시즌 9주차부터
@@ -1447,7 +1454,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     };
 
     fetchWeekData();
-  }, [weekId, urlUserId, isDemoMode, isMounted]);
+  }, [weekId, urlUserId, isDemoMode, isMounted, session?.user?.id]);
 
   // DB에서 실무 경력 데이터 가져오기
   // career-records는 urlUserId가 있으면 Stage 1에서 이미 로드됨 (earlyCareerResult)
@@ -1522,6 +1529,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 주차 평판 데이터 가져오기 함수
   const fetchWeeklyReputations = async () => {
     if (!urlUserId || !weekId) return;
+    if (!session?.user?.id) return;
     try {
       const res = await fetch(`/api/weekly-reputations?targetUserId=${urlUserId}&weekCardId=${weekId}`);
       if (res.ok) {

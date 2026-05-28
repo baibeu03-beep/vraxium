@@ -1,38 +1,11 @@
-// Server-side builder for Cluster4 weekly card DTOs.
-// Single source of truth — frontend must NOT duplicate this logic.
+// Deprecated legacy server-side builder for Cluster4 weekly card DTOs.
+// Frontend weekly-cards API must proxy ADMIN_API_BASE_URL instead of calling this.
+// Kept temporarily because legacy weekly-growth routes still import buildWeeklyCards.
 
 import { seasonLabel, formatSeasonLabel } from "@/lib/cluster4-types";
+import type { Cluster4WeeklyCardDto } from "@/shared/cluster4.contracts";
 
-export interface WeeklyCardDto {
-  weekId: string;
-  weekNumber: number;
-  seasonYear: number;
-  seasonName: string;
-  seasonLabel: string;
-  startDate: string;
-  endDate: string;
-  isBreakSeason: boolean;
-  isClubBreak: boolean;
-  fromSeason: string | null;
-  toSeason: string | null;
-  holidayName: string | null;
-  isOnboarding: boolean;
-  resultStatus: string;
-  teamName: string | null;
-  partName: string | null;
-  roleLabel: string | null;
-  points: { star: number; shield: number; lightning: number };
-  cumulativeInjeolmi: number;
-  growthRate: { rate: number; count: number; total: number };
-  infoRate: { rate: number; count: number; total: number };
-  competencyRate: { rate: number; count: number; total: number };
-  experienceRate: { rate: number; count: number; total: number };
-  careerRate: { rate: number; count: number; total: number };
-  reputationCount: number;
-  fmScore: number;
-  colleagueCount: number;
-  accumulatedApprovedWeeks: number;
-}
+export type WeeklyCardDto = Cluster4WeeklyCardDto;
 
 const SEASON_MAP: Record<string, string> = {
   spring: "봄", summer: "여름", fall: "가을", winter: "겨울",

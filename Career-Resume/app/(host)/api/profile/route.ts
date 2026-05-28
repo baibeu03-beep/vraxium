@@ -514,9 +514,9 @@ export async function GET(request: NextRequest) {
         supabaseAdmin.from("weeks")
           .select("id, start_date, end_date, season_key, season_definitions(season_type)")
           .order("start_date", { ascending: false }),
-        // [13] weekly_activities for this week
-        supabaseAdmin.from("weekly_activities")
-          .select("id, activity_type_id, title, is_active, opened_at, output_links")
+        // [13] cluster4_lines for this week (via cluster4_line_targets)
+        supabaseAdmin.from("cluster4_line_targets")
+          .select("week_id, cluster4_lines!inner(id, activity_type_id, main_title, is_active, submission_opens_at, submission_closes_at, output_link_1, output_images, team_id)")
           .eq("week_id", weekId),
         // [14] user_week_statuses for this user (전체 → JS에서 weekId 매칭)
         supabaseAdmin.from("user_week_statuses")
@@ -547,12 +547,12 @@ export async function GET(request: NextRequest) {
         ...weekResults
       ] = await Promise.all([
         profile.onboarding_week_id
-          ? supabaseAdmin.from("weeks").select("started_at").eq("id", profile.onboarding_week_id).maybeSingle()
+          ? supabaseAdmin.from("weeks").select("start_date").eq("id", profile.onboarding_week_id).maybeSingle()
           : Promise.resolve({ data: null }),
         supabaseAdmin.from("rest_requests").select("week_id").eq("user_id", profile.id).eq("status", "approved"),
         supabaseAdmin.from("user_weekly_growth").select("week_id").eq("user_id", profile.id).eq("is_success", true),
         supabaseAdmin.from("user_role_history").select("id, user_id, role, started_at, ended_at").eq("user_id", profile.id),
-        supabaseAdmin.from("activity_records").select("id, week_id, activity_type_id, is_completed").eq("user_id", profile.id),
+        supabaseAdmin.from("cluster4_line_submissions").select("id, user_id, submitted_at, cluster4_line_targets!inner(week_id, cluster4_lines!inner(activity_type_id))").eq("user_id", profile.id),
         supabaseAdmin.from("user_activity_details").select("week_id, activity_type_id, sub_title, output_links, growth_point, image_urls, image_captions, rating").eq("user_id", profile.id),
         // activityPoints (point_type='star') 기반 라인 평점 경로는 폐기 — SoT 가 user_activity_details.rating 으로 이동.
         // 응답 shape 호환을 위해 빈 결과만 반환 (consumer 측에서도 함께 정리).
@@ -563,9 +563,19 @@ export async function GET(request: NextRequest) {
         ...weekQueries,
       ]);
 
-      const activityRecordsData = activityRecordsResult.data || [];
+      // cluster4_line_submissions → activityRecords 호환 DTO 변환
+      // submissions 존재 = is_completed: true. 미존재 activity_type_id는 행 자체 없음 (= "failed").
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const completedActivities = activityRecordsData.filter((ar: any) => ar.is_completed);
+      const rawSubmissions = (activityRecordsResult.data || []) as any[];
+      const activityRecordsData = rawSubmissions
+        .filter((s) => s.cluster4_line_targets?.cluster4_lines?.activity_type_id)
+        .map((s) => ({
+          id: s.id,
+          week_id: s.cluster4_line_targets.week_id,
+          activity_type_id: s.cluster4_line_targets.cluster4_lines.activity_type_id,
+          is_completed: true,
+        }));
+      const completedActivities = activityRecordsData;
 
       // weekResults 는 weekQueries 와 같은 순서 (7 개). Front (Cluster4CardContent.tsx:1095~1152) 의
       //   wb.{activityTypes, currentWeek, allWeeks, weeklyActivities, weeklyGrowth, allPoints, successWeeks}
@@ -623,11 +633,39 @@ export async function GET(request: NextRequest) {
         .filter((w: any) => successStartDates.has(w.start_date))
         .map((w: any) => ({ week_id: w.id, weeks: { end_date: w.end_date } }));
 
+      // cluster4_line_targets → weeklyActivities 호환 DTO 변환
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawLineTargets = ((weekResults[3]?.data as any[]) ?? []);
+      const seenActivityTypes = new Set<string>();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const adaptedWeeklyActivities = rawLineTargets
+        .filter((t) => t.cluster4_lines?.activity_type_id)
+        .filter((t) => {
+          const key = t.cluster4_lines.activity_type_id;
+          if (seenActivityTypes.has(key)) return false;
+          seenActivityTypes.add(key);
+          return true;
+        })
+        .map((t) => {
+          const line = t.cluster4_lines;
+          return {
+            id: line.id,
+            activity_type_id: line.activity_type_id,
+            title: line.main_title,
+            is_active: line.is_active,
+            opened_at: line.submission_opens_at,
+            deadline: line.submission_closes_at,
+            output_links: line.output_link_1 ? [{ url: line.output_link_1 }] : [],
+            output_images: line.output_images || [],
+            team_id: line.team_id || null,
+          };
+        });
+
       const weekBundle = weekId && weekResults.length === 7 ? {
         activityTypes: weekResults[0]?.data || [],
         currentWeek:   adaptedCurrentWeek,
         allWeeks:      adaptedAllWeeks,
-        weeklyActivities: weekResults[3]?.data || [],
+        weeklyActivities: adaptedWeeklyActivities,
         weeklyGrowth:  adaptedWeeklyGrowth,
         allPoints: weekResults[5]?.data || [],
         successWeeks: adaptedSuccessWeeks,
@@ -642,7 +680,7 @@ export async function GET(request: NextRequest) {
         onboardingWeekId: profile.onboarding_week_id || null,
         growthStartWeek: resolvedGrowthStart.growthStartWeek,
         growthInfo: {
-          startDate: resolvedGrowthStart.startDate || joinedWeekRaw?.started_at || null,
+          startDate: resolvedGrowthStart.startDate || joinedWeekRaw?.start_date || null,
           startWeekInfo: resolvedGrowthStart.startWeekInfo,
           growthStartWeek: resolvedGrowthStart.growthStartWeek,
         },
@@ -719,8 +757,8 @@ export async function GET(request: NextRequest) {
               .maybeSingle()
           : Promise.resolve({ data: null }),
 
-      // weekly_activities - 모든 열린 활동 조회 (completionRate 계산용)
-      supabaseAdmin.from("weekly_activities").select("week_id, activity_type_id").eq("is_active", true),
+      // cluster4_lines+targets — 모든 열린 활동 조회 (completionRate 계산용)
+      supabaseAdmin.from("cluster4_line_targets").select("week_id, cluster4_lines!inner(activity_type_id)").eq("cluster4_lines.is_active", true),
 
       // cumulative_points (별, 번개, 방패)
       supabaseAdmin.from("user_cumulative_points").select("total_stars, total_lightnings, total_shields").eq("user_id", profile.id).maybeSingle(),
@@ -756,8 +794,8 @@ export async function GET(request: NextRequest) {
       // 해당 유저의 역할 이력
       supabaseAdmin.from("user_role_history").select("id, user_id, role, started_at, ended_at").eq("user_id", profile.id),
 
-      // 해당 유저의 활동 이행 기록 (강화 상태 판단용) - id 추가 (points 매핑용)
-      supabaseAdmin.from("activity_records").select("id, week_id, activity_type_id, is_completed").eq("user_id", profile.id),
+      // 해당 유저의 제출 기록 (강화 상태 판단용) — cluster4_line_submissions 기반
+      supabaseAdmin.from("cluster4_line_submissions").select("id, user_id, submitted_at, cluster4_line_targets!inner(week_id, cluster4_lines!inner(activity_type_id))").eq("user_id", profile.id),
 
       // 해당 유저의 2차 정보 (서브타이틀, 아웃풋링크, 라인 평점)
       supabaseAdmin.from("user_activity_details").select("week_id, activity_type_id, sub_title, output_links, growth_point, image_urls, image_captions, rating").eq("user_id", profile.id),
@@ -845,10 +883,24 @@ export async function GET(request: NextRequest) {
       } : null;
     }
 
-    // activity_records에서 is_completed=true인 것만 필터링 (기존 activities 테이블 대체)
-    const activityRecordsData = activityRecordsResult.data || [];
-    const activitiesData = activityRecordsData.filter((ar: { is_completed: boolean }) => ar.is_completed);
-    const weeklyActivities = weeklyActivitiesResult.data;
+    // cluster4_line_submissions → activityRecords 호환 DTO 변환 (전체 프로필 응답)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawSubmissionsFull = (activityRecordsResult.data || []) as any[];
+    const activityRecordsData = rawSubmissionsFull
+      .filter((s: any) => s.cluster4_line_targets?.cluster4_lines?.activity_type_id)
+      .map((s: any) => ({
+        id: s.id,
+        week_id: s.cluster4_line_targets.week_id,
+        activity_type_id: s.cluster4_line_targets.cluster4_lines.activity_type_id,
+        is_completed: true,
+      }));
+    const activitiesData = activityRecordsData;
+    // cluster4_line_targets → weeklyActivities 호환 DTO (completionRate 계산용)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawWaTargets = (weeklyActivitiesResult.data || []) as any[];
+    const weeklyActivities = rawWaTargets
+      .filter((t: any) => t.cluster4_lines?.activity_type_id)
+      .map((t: any) => ({ week_id: t.week_id, activity_type_id: t.cluster4_lines.activity_type_id }));
     const cumulativePoints = cumulativePointsResult.data;
     const gradeStats = gradeStatsResult.data;
     const growthStats = growthStatsResult.data;

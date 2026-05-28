@@ -28,25 +28,25 @@ const Cluster4CardEcPage = () => {
       try {
         const today = new Date().toISOString().split("T")[0];
 
-        // v1: 실 컬럼명 (started_at/ended_at) 사용
+        // 신규 schema: start_date/end_date + season_definitions(season_type)
         const { data: currentWeek, error } = await supabase
           .from("weeks")
-          .select("id, started_at, ended_at, seasons(name)")
-          .lte("started_at", today)
-          .gte("ended_at", today)
+          .select("id, start_date, end_date, season_definitions(season_type)")
+          .lte("start_date", today)
+          .gte("end_date", today)
           .single();
 
         if (error || !currentWeek) {
           const { data: latestWeek } = await supabase
             .from("weeks")
-            .select("id, seasons(name)")
-            .order("started_at", { ascending: false })
+            .select("id, season_definitions(season_type)")
+            .order("start_date", { ascending: false })
             .limit(1)
             .single();
 
           if (latestWeek) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const seasonName = (latestWeek.seasons as any)?.name || "";
+            const seasonName = (latestWeek.season_definitions as any)?.season_type || "";
             if (!seasonName.toLowerCase().includes("break")) {
               router.replace(`/cluster-4-card-ec/${latestWeek.id}`);
               return;
@@ -54,7 +54,7 @@ const Cluster4CardEcPage = () => {
           }
         } else {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const seasonName = (currentWeek.seasons as any)?.name || "";
+          const seasonName = (currentWeek.season_definitions as any)?.season_type || "";
           if (!seasonName.toLowerCase().includes("break")) {
             router.replace(`/cluster-4-card-ec/${currentWeek.id}`);
             return;

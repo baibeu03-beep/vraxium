@@ -222,19 +222,39 @@ export async function GET(request: Request) {
     }
 
     // 2.6) Growth stats enrichment — user_growth_stats(누적 활동 통계).
-    // user_id 별 1행 가정 (PK 또는 unique). cumulative_weeks 컬럼 존재 의존 — 미존재 시
-    // 쿼리 실패 → 에러 로그 후 view 폴백 (approvedWeeks 도 함께 view 로 떨어진다).
-    const { data: growthStats, error: growthError } = await supabase
-      .from("user_growth_stats")
-      .select("user_id, approved_weeks, cumulative_weeks")
-      .in("user_id", userIds)
-      .returns<UserGrowthStatsRow[]>();
+    // cumulative_weeks 컬럼이 DB에 없을 수 있으므로 2단계 방어:
+    //   1차: cumulative_weeks 포함 쿼리 → 성공 시 그대로 사용
+    //   2차: 실패 시 cumulative_weeks 없이 재시도 → approved_weeks 라도 확보
+    //   둘 다 실패 시 view fallback (mergeRow 에서 crew_list_view 값 사용)
+    let growthStats: UserGrowthStatsRow[] | null = null;
+    {
+      const { data, error } = await supabase
+        .from("user_growth_stats")
+        .select("user_id, approved_weeks, cumulative_weeks")
+        .in("user_id", userIds)
+        .returns<UserGrowthStatsRow[]>();
 
-    console.log("[/api/crews] growth_stats rows=", growthStats?.length ?? 0, "err=", growthError?.message);
+      if (!error) {
+        growthStats = data;
+      } else {
+        console.warn("[/api/crews] growth_stats full query failed (retrying without cumulative_weeks):", error.message);
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from("user_growth_stats")
+          .select("user_id, approved_weeks")
+          .in("user_id", userIds);
 
-    if (growthError) {
-      console.error("user_growth_stats enrichment failed (continuing without it):", JSON.stringify(growthError));
+        if (!fallbackError && fallbackData) {
+          growthStats = (fallbackData as { user_id: string; approved_weeks: number | null }[]).map((r) => ({
+            ...r,
+            cumulative_weeks: null,
+          }));
+        } else {
+          console.error("[/api/crews] growth_stats fallback also failed (continuing without it):", fallbackError?.message);
+        }
+      }
     }
+
+    console.log("[/api/crews] growth_stats rows=", growthStats?.length ?? 0);
 
     const growthMap = new Map<string, UserGrowthStatsRow>();
     for (const row of growthStats ?? []) growthMap.set(row.user_id, row);

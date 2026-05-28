@@ -28,26 +28,26 @@ const Cluster4CardPage = () => {
       try {
         const today = new Date().toISOString().split('T')[0];
 
-        // 현재 날짜가 포함된 주차 찾기 — v1: 실 컬럼명 (started_at/ended_at) 사용
+        // 현재 날짜가 포함된 주차 찾기 — 신규 schema: start_date/end_date + season_definitions(season_type)
         const { data: currentWeek, error } = await supabase
           .from('weeks')
-          .select('id, started_at, ended_at, seasons(name)')
-          .lte('started_at', today)
-          .gte('ended_at', today)
+          .select('id, start_date, end_date, season_definitions(season_type)')
+          .lte('start_date', today)
+          .gte('end_date', today)
           .single();
 
         if (error || !currentWeek) {
           // 현재 주차가 없으면 가장 최근 주차로
           const { data: latestWeek } = await supabase
             .from('weeks')
-            .select('id, seasons(name)')
-            .order('started_at', { ascending: false })
+            .select('id, season_definitions(season_type)')
+            .order('start_date', { ascending: false })
             .limit(1)
             .single();
 
           if (latestWeek) {
             // break 시즌 제외
-            const seasonName = (latestWeek.seasons as any)?.name || '';
+            const seasonName = (latestWeek.season_definitions as any)?.season_type || '';
             if (!seasonName.toLowerCase().includes('break')) {
               router.replace(`/cluster-4-card/${latestWeek.id}`);
               return;
@@ -55,7 +55,7 @@ const Cluster4CardPage = () => {
           }
         } else {
           // break 시즌 제외
-          const seasonName = (currentWeek.seasons as any)?.name || '';
+          const seasonName = (currentWeek.season_definitions as any)?.season_type || '';
           if (!seasonName.toLowerCase().includes('break')) {
             router.replace(`/cluster-4-card/${currentWeek.id}`);
             return;

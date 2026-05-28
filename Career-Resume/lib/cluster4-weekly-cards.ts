@@ -92,15 +92,32 @@ export async function buildWeeklyCards(supabase: any, userId: string, opts: {
   const kstNow = new Date(now + 9 * 3_600_000);
   const cutoffDate = new Date(kstNow.getTime() - VISIBLE_OFFSET_MS).toISOString().split("T")[0];
 
+  // joinedWeekStartDate (= activity_started_at) 가 cutoffDate 보다 미래거나 같으면
+  // .gte 가 모든 weeks 를 잘라낸다. 잘못된 activity_started_at 으로 카드 0건이
+  // 나오는 사고를 막기 위해 가드. (cluster4-card-ui-audit 보고서 가설 A 대응)
+  const applyJoinedFilter =
+    !!opts.joinedWeekStartDate && opts.joinedWeekStartDate <= cutoffDate;
+
   // ── Phase 1: queries that don't depend on weekIds ──
+  // season_definitions 는 left join. orphan season_key 가 있는 weeks 가 통째로
+  // drop 되면 weekly list 가 0건이 되는 사고를 막기 위해 !inner 제거.
+  // (cluster4-card-ui-audit 보고서 가설 B 대응)
+  const weeksQueryDescription = [
+    "weeks",
+    "select=id,week_number,start_date,end_date,is_official_rest,holiday_name,season_key,season_definitions(season_key,season_label,season_type,year)",
+    `start_date<=${cutoffDate}`,
+    applyJoinedFilter ? `start_date>=${opts.joinedWeekStartDate}` : null,
+    "order=start_date.desc",
+  ].filter(Boolean).join(" | ");
+
   let weeksQ = supabase
     .from("weeks")
-    .select("id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, season_definitions!inner(season_key, season_label, season_type, year)")
+    .select("id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, season_definitions(season_key, season_label, season_type, year)")
     .lte("start_date", cutoffDate)
     .order("start_date", { ascending: false });
 
-  if (opts.joinedWeekStartDate) {
-    weeksQ = weeksQ.gte("start_date", opts.joinedWeekStartDate);
+  if (applyJoinedFilter) {
+    weeksQ = weeksQ.gte("start_date", opts.joinedWeekStartDate!);
   }
 
   const [
@@ -122,6 +139,16 @@ export async function buildWeeklyCards(supabase: any, userId: string, opts: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const weeks: any[] = weeksRes.data || [];
   const weekIds = weeks.map((w: any) => w.id);
+
+  if (weeksRes.error) {
+    const message = weeksRes.error.message || String(weeksRes.error);
+    console.error("[buildWeeklyCards] weeks query ERROR:", {
+      query: weeksQueryDescription,
+      message,
+      error: weeksRes.error,
+    });
+    throw new Error(`weeks query failed: ${message}`);
+  }
 
   // ── Phase 2: queries that depend on weekIds ──
   const [waRes, crRes, cpRes, repRes, colRes] = await Promise.all([
@@ -388,8 +415,12 @@ export async function buildWeeklyCards(supabase: any, userId: string, opts: {
   for (const w of weeks) {
     const sd = w.season_definitions;
     const rawName: string = sd?.season_type || "";
-    const { displayName: sName, isBreak: isBreakSeason, fromSeason, toSeason } = parseBreakSeason(rawName);
-    const sYear: number = sd?.year || 0;
+    const { displayName: parsedSeasonName, isBreak: isBreakSeason, fromSeason, toSeason } = parseBreakSeason(rawName);
+    // season_definitions 가 left join 으로 null 일 수 있다 (orphan season_key).
+    // 그래도 카드 자체는 살려야 하므로 year/seasonName/seasonLabel 을 안전한 값으로 fallback.
+    const sYear: number =
+      sd?.year || (w.start_date ? new Date(w.start_date).getFullYear() : 0);
+    const sName = parsedSeasonName || "기타";
     const sLabel = formatSeasonLabel({ seasonLabel: sd?.season_label, seasonName: sName, year: sYear });
 
     const isOnboarding = opts.onboardingWeekId === w.id;

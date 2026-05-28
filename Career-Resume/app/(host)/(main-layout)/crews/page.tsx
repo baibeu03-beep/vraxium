@@ -91,6 +91,7 @@ function CrewsContent() {
   };
   const [crews, setCrews] = useState<Crew[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
   // 필터 상태
@@ -144,16 +145,19 @@ function CrewsContent() {
 
     let cancelled = false;
     setLoading(true);
+    setFetchError(false);
 
     const fetchCrews = async () => {
       try {
-        // cache: "no-store" 로 brower HTTP cache 우회 — user_profiles 변경이 바로 반영되어야 함.
-        // API route 자체는 dynamic="force-dynamic" + revalidate=0 이라 서버단에서도 매 요청 신선.
         const res = await fetch(`/api/crews?org=${encodeURIComponent(org)}`, { cache: "no-store" });
+        if (!res.ok) {
+          console.error("크루 목록 API 응답 에러:", res.status);
+          if (!cancelled) { setFetchError(true); setCrews([]); setFilteredCrews([]); }
+          return;
+        }
         const result = await res.json();
         if (cancelled) return;
         if (result.success) {
-          // Defense-in-depth: API already filters server-side, but enforce client-side too.
           const scoped: Crew[] = (result.data as Crew[]).filter((c) => c.organizationSlug === org);
           setCrews(scoped);
           const active = scoped.filter((c) => c.growthStatus !== "graduated" && c.growthStatus !== "suspended");
@@ -165,10 +169,7 @@ function CrewsContent() {
         }
       } catch (err) {
         console.error("크루 목록 조회 실패:", err);
-        if (!cancelled) {
-          setCrews([]);
-          setFilteredCrews([]);
-        }
+        if (!cancelled) { setFetchError(true); setCrews([]); setFilteredCrews([]); }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -658,6 +659,35 @@ function CrewsContent() {
                         50% { opacity: 0.4; }
                       }
                     `}</style>
+                  </div>
+                ) : fetchError ? (
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    minHeight: 'calc(100vh - 320px)',
+                    color: '#aaa',
+                    textAlign: 'center',
+                    gap: 12,
+                  }}>
+                    <div style={{
+                      fontFamily: "'Pretendard', sans-serif",
+                      fontSize: 18,
+                      fontWeight: 700,
+                      color: '#fff',
+                    }}>
+                      조회 실패
+                    </div>
+                    <div style={{
+                      fontFamily: "'Pretendard', sans-serif",
+                      fontSize: 14,
+                      color: '#888',
+                      lineHeight: 1.6,
+                    }}>
+                      목록을 불러오지 못했습니다.<br />
+                      잠시 후 다시 시도해 주세요.
+                    </div>
                   </div>
                 ) : crews.length === 0 ? (
                   <div style={{

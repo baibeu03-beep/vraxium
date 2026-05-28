@@ -22,7 +22,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('user_id')
     const weekId = searchParams.get('week_id')
-    const seasonId = searchParams.get('season_id')
+    // 신규 schema: weeks.season_key (구 season_id). 호출측 호환을 위해 둘 다 받는다.
+    const seasonKey = searchParams.get('season_key') || searchParams.get('season_id')
 
     // 로그인만 검증 — 타 크루 카드 진입(peer-view) 허용.
     const session = await getServerSession(authOptions)
@@ -184,11 +185,12 @@ export async function GET(request: NextRequest) {
           week_number,
           start_date,
           end_date,
-          season_id,
-          seasons (
-            id,
-            name,
-            started_at
+          season_key,
+          season_definitions (
+            season_key,
+            season_type,
+            season_label,
+            year
           )
         )
       `)
@@ -203,12 +205,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // 시즌별 필터링 (post-query)
+    // 시즌별 필터링 (post-query) — 신규 schema: season_key
     let filteredData = data || []
-    if (seasonId && filteredData.length > 0) {
+    if (seasonKey && filteredData.length > 0) {
       filteredData = filteredData.filter(record => {
-        const weeks = record.weeks as { season_id?: string } | null
-        return weeks?.season_id === seasonId
+        const weeks = record.weeks as { season_key?: string } | null
+        return weeks?.season_key === seasonKey
       })
     }
 
