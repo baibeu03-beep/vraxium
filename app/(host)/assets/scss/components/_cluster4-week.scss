@@ -12869,16 +12869,17 @@
 }
 
 .image-preview-modal {
-  width: 1020px;
-  height: 794px;
+  width: min(1468px, calc(100vw - 48px));
+  height: min(855px, calc(100dvh - 48px));
   background: #1a1a2e;
   border: 1px solid rgba(255, 165, 0, 0.3);
-  padding: 0;
+  padding: 12px;
   box-shadow: 0 0 60px rgba(255, 165, 0, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  box-sizing: border-box;
 
   img {
     max-width: 100%;
