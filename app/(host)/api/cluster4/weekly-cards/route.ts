@@ -3,44 +3,102 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const UPSTREAM_TIMEOUT_MS = 8000;
+
 export async function GET(request: NextRequest) {
   const adminApiBaseUrl = process.env.ADMIN_API_BASE_URL;
 
+  console.log("[cluster4/weekly-cards] ADMIN_API_BASE_URL =", JSON.stringify(adminApiBaseUrl));
+
   if (!adminApiBaseUrl) {
+    console.error("[cluster4/weekly-cards] ADMIN_API_BASE_URL is not configured");
     return NextResponse.json(
       { success: false, error: "ADMIN_API_BASE_URL is not configured" },
       { status: 500 },
     );
   }
 
+  const sourceUrl = new URL(request.url);
+  const baseTrimmed = adminApiBaseUrl.replace(/\/+$/, "");
+  const targetUrl = new URL(`${baseTrimmed}/api/cluster4/weekly-cards`);
+  targetUrl.search = sourceUrl.search;
+  const targetUrlString = targetUrl.toString();
+
+  console.log("[cluster4/weekly-cards] upstream target =", targetUrlString);
+
+  const headers = new Headers();
+  const cookie = request.headers.get("cookie");
+  if (cookie) headers.set("cookie", cookie);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    console.warn(`[cluster4/weekly-cards] upstream timeout after ${UPSTREAM_TIMEOUT_MS}ms → aborting`);
+    controller.abort();
+  }, UPSTREAM_TIMEOUT_MS);
+
+  const startedAt = Date.now();
+  console.log("[cluster4/weekly-cards] fetch START", { url: targetUrlString, timeoutMs: UPSTREAM_TIMEOUT_MS });
+
   try {
-    const sourceUrl = new URL(request.url);
-    const targetUrl = new URL("/api/cluster4/weekly-cards", adminApiBaseUrl);
-    targetUrl.search = sourceUrl.search;
-
-    const headers = new Headers();
-    const cookie = request.headers.get("cookie");
-    if (cookie) headers.set("cookie", cookie);
-
-    const upstream = await fetch(targetUrl, {
+    const upstream = await fetch(targetUrlString, {
       method: "GET",
       headers,
       cache: "no-store",
+      signal: controller.signal,
     });
+    const elapsedMs = Date.now() - startedAt;
+    const contentType = upstream.headers.get("content-type") || "application/json";
     const body = await upstream.text();
+
+    console.log("[cluster4/weekly-cards] fetch SUCCESS", {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      contentType,
+      bodyLen: body.length,
+      elapsedMs,
+    });
 
     return new NextResponse(body, {
       status: upstream.status,
       statusText: upstream.statusText,
-      headers: {
-        "content-type": upstream.headers.get("content-type") || "application/json",
-      },
+      headers: { "content-type": contentType },
     });
   } catch (err: any) {
-    console.error("[cluster4/weekly-cards] error:", err?.message || err);
+    const elapsedMs = Date.now() - startedAt;
+    const isAbort = err?.name === "AbortError";
+    console.error("[cluster4/weekly-cards] fetch FAILURE", {
+      url: targetUrlString,
+      elapsedMs,
+      isAbort,
+      name: err?.name,
+      message: err?.message || String(err),
+    });
+
+    if (isAbort) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Cluster4 weekly cards upstream timeout",
+          detail: `upstream did not respond within ${UPSTREAM_TIMEOUT_MS}ms (${targetUrlString})`,
+        },
+        { status: 504 },
+      );
+    }
+
     return NextResponse.json(
-      { success: false, error: "Cluster4 weekly cards proxy failed", detail: err?.message || String(err) },
-      { status: 500 },
+      {
+        success: false,
+        error: "Cluster4 weekly cards proxy failed",
+        detail: err?.message || String(err),
+        upstream: targetUrlString,
+      },
+      { status: 502 },
     );
+  } finally {
+    clearTimeout(timeoutId);
+    console.log("[cluster4/weekly-cards] fetch FINALLY", {
+      url: targetUrlString,
+      elapsedMs: Date.now() - startedAt,
+    });
   }
 }
