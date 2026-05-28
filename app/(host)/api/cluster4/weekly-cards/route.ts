@@ -26,9 +26,20 @@ export async function GET(request: NextRequest) {
 
   console.log("[cluster4/weekly-cards] upstream target =", targetUrlString);
 
+  const internalApiKey = process.env.INTERNAL_API_KEY;
+  if (!internalApiKey) {
+    console.warn("[weekly-cards proxy] INTERNAL_API_KEY missing");
+  }
+
   const headers = new Headers();
+  headers.set("Content-Type", "application/json");
+  headers.set("x-internal-api-key", internalApiKey ?? "");
   const cookie = request.headers.get("cookie");
   if (cookie) headers.set("cookie", cookie);
+
+  console.log("[weekly-cards proxy] internal key attached", {
+    hasKey: Boolean(internalApiKey),
+  });
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
