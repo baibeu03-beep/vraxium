@@ -34,6 +34,16 @@ const computeResultDecidedMs = (startDate: string): number => {
   return weekStartMs + (10 * 24 + 12) * 3600 * 1000 + 60 * 1000;
 };
 
+// 실무 정보/라인 강화 상태·집계 마감 = 해당 주차 수요일 22:00 KST.
+// = N(월) 00:00 KST + 2일 + 22시간 = weekStart + 70h.
+// 백엔드 cluster4_lines.submission_closes_at(수 22:00) 정책과 동일 — 프론트 fallback 정합용.
+// ※ 목요일 12:01(computeResultDecidedMs)은 주차 카드 phase·실무 경력 승격 전용이며,
+//    실무 정보 상태/집계 판정에는 사용하지 않는다.
+const computeLineDeadlineMs = (startDate: string): number => {
+  const weekStartMs = new Date(`${startDate}T00:00:00+09:00`).getTime();
+  return weekStartMs + (2 * 24 + 22) * 3600 * 1000; // 수 22:00 KST
+};
+
 interface Cluster4CardContentProps {
   weekId: string;
 }
@@ -301,6 +311,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 라인 카드 '강화 대기 → 강화 성공' 과 주차 카드 '집계 중 → 성장 성공/실패/휴식' 이 동시에 확정.
   // 2차 정보 작성 여부는 강화 판정에 영향을 주지 않는다 (2026 정책).
   const resultsDecided = !!(weekData?.startDate && Date.now() >= computeResultDecidedMs(weekData.startDate));
+
+  // 실무 정보/라인 강화 마감(해당 주차 수 22:00 KST) 도달 여부.
+  // 실무 정보 상태(getEnhancementStatus) / 강화 성공 집계(isEnhancementSuccess·recalculateStats)는
+  // resultsDecided(목 12:01)가 아니라 이 플래그를 기준으로 success/fail 을 가른다.
+  const lineDeadlinePassed = !!(weekData?.startDate && Date.now() >= computeLineDeadlineMs(weekData.startDate));
 
   // 팀/파트/역할/포인트 데이터 상태
   const [teamName, setTeamName] = useState<string | null>(null);
@@ -1358,18 +1373,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           // 실무 경력: career_records 기반으로 계산됨 (별도 useEffect에서 처리)
           // 여기서는 초기값 0으로 설정, career_records 로드 후 덮어씀
 
-          // success 계산 (강화 성공 기준: is_completed + 결정 시점 도달 — N+1 목 12:01 KST)
-          // 해당 주차의 완료된 활동만 필터링
-          type CompletedActivity = { week_id: string; activity_type_id: string };
-          const weekCompletedActivities = allCompletedActivities.filter((a: CompletedActivity) => a.week_id === weekId);
+          // 강화 성공 집계 기준 = '라인 개설(is_active) + 마감(해당 주차 수 22:00 KST) 도달'.
+          // 기입/이행(is_completed) 여부는 보지 않는다 — getEnhancementStatus 와 동일 기준.
+          const isLineDeadlinePassedHere = currentWeek?.start_date ? Date.now() >= computeLineDeadlineMs(currentWeek.start_date) : false;
+          const openActivityTypeIds = new Set(activeActivities.map((a) => a.activity_type_id));
 
-          // 결정 시점 (N+1 목 12:01 KST) 도달 여부 — getEnhancementStatus 와 동일 기준
-          const isResultsDecidedHere = currentWeek?.start_date ? Date.now() >= computeResultDecidedMs(currentWeek.start_date) : false;
-
-          // 강화 성공 여부 판단 헬퍼 (2차 정보 / deadline 무관, 결정 시점만 본다)
+          // 마감 전 → success 미집계(false), 마감 후 → 열린 라인을 success 로 집계.
           const isEnhancementSuccess = (activityTypeId: string): boolean => {
-            if (!isResultsDecidedHere) return false;
-            return weekCompletedActivities.some((a: CompletedActivity) => a.activity_type_id === activityTypeId);
+            if (!isLineDeadlinePassedHere) return false;
+            return openActivityTypeIds.has(activityTypeId);
           };
 
           const infoSuccess = infoTypesList.filter((activityTypeId) => isEnhancementSuccess(activityTypeId)).length;
@@ -4936,13 +4948,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     return false;
   };
 
-  // 강화 상태 판단 함수 (결정 시점 기반: N+1주(목) 12:01 KST)
+  // 강화 상태 판단 함수 (마감 기준: 해당 주차 수요일 22:00 KST = computeLineDeadlineMs)
   // - 해당 없음: 활동 미개설(is_active=false) / 온보딩 주차(무적 주차) / 개인 휴식 / 역할 미스매치 / 누적 주차 외
-  // - 강화 실패: 활동 개설됨 + 카페 댓글 집계에서 이행하지 않음 (is_completed = false) — 진행 중에도 즉시 표시
-  // - 강화 대기: 활동 개설됨 + 이행함 (is_completed = true) + 결정 시점 이전
-  // - 강화 성공: 활동 개설됨 + 이행함 (is_completed = true) + 결정 시점 이후
+  // - 강화 대기: 활동 개설됨 + 마감(수 22:00 KST) 이전
+  // - 강화 성공: 활동 개설됨 + 마감(수 22:00 KST) 이후 — 기입/이행 여부와 무관하게 success
   // - empty: 더미데이터의 sentinel 플래그 (record.is_empty)
-  // ※ 2차 정보 작성 여부 / weekly_activities.deadline / opened_at+48h 는 강화 성공/실패 판정에 영향을 주지 않는다.
+  // ※ SoT 는 백엔드 line.enhancementStatus 이며 이 함수는 백엔드 값이 없을 때의 fallback 이다.
+  // ※ 제출/이행(record.is_completed) 여부는 enhancementStatus 가 아니라 입력 여부 표시용으로만 쓴다.
+  // ※ failed 는 이 레거시 경로에서는 쓰지 않는다(미개설은 not_applicable). 목요일 12:01(resultsDecided) 기준도 쓰지 않는다.
   type EnhancementStatus = "success" | "waiting" | "failed" | "not_applicable" | "empty";
   const getEnhancementStatus = (activityType: string): EnhancementStatus => {
     // 클럽 온보딩 주차(무적 주차)는 모든 활동이 해당 없음
@@ -4990,13 +5003,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       return "not_applicable";
     }
 
-    if (!record || !record.is_completed) {
-      // 레코드 없거나 is_completed = false → 강화 실패 (진행 중 phase에도 즉시 표시)
-      return "failed";
-    }
-
-    // 이행함 (is_completed = true) — 결정 시점 도달 여부로 결정
-    return resultsDecided ? "success" : "waiting";
+    // 라인 개설(is_active) 상태에서 마감(해당 주차 수 22:00 KST) 전 = '강화 대기'(waiting),
+    // 마감 후 = '강화 성공'(success). 기입/이행(record.is_completed) 여부는 enhancementStatus 에
+    // 영향을 주지 않는다 — 입력 여부는 별도(기입/미기입)로만 표시한다.
+    return lineDeadlinePassed ? "success" : "waiting";
   };
 
   // 강화 상태별 아이콘
@@ -5286,15 +5296,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
   };
 
-  // 통계 재계산 함수 (저장 후 즉시 업데이트용 - 강화 성공 기준: is_completed + 결정 시점 도달)
+  // 통계 재계산 함수 (저장 후 즉시 업데이트용 - 강화 성공 기준: is_completed + 마감 도달)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const recalculateStats = (_updatedDetails: ActivityDetail[]) => {
     const activeActivities = weeklyActivities.filter((a) => a.is_active);
 
-    // 강화 성공 여부 판단 헬퍼 (2차 정보 / deadline 무관, 결정 시점만 본다 — getEnhancementStatus 와 동일)
+    // 강화 성공 = '라인 개설(is_active) + 마감(수 22:00 KST) 도달'. 기입/이행 여부는 보지 않는다.
+    // 마감 전 → success 미집계, 마감 후 → 열린 라인을 success 로 집계 (getEnhancementStatus 와 동일).
+    const openActivityTypeIds = new Set(activeActivities.map((a) => a.activity_type_id));
     const isEnhancementSuccessLocal = (activityTypeId: string): boolean => {
-      if (!resultsDecided) return false;
-      return weekApprovedTypes.has(activityTypeId);
+      if (!lineDeadlinePassed) return false;
+      return openActivityTypeIds.has(activityTypeId);
     };
 
     const calcStats = (types: string[]) => {

@@ -1,9 +1,104 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase-server";
+import type { Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const UPSTREAM_TIMEOUT_MS = 8000;
+
+// experience partType 정규화 (업스트림이 "exp" 축약형으로 줄 수 있음)
+function isExperiencePart(p: unknown): boolean {
+  const v = String(p ?? "").toLowerCase();
+  return v === "experience" || v === "exp";
+}
+
+// 업스트림 weekly-cards 응답의 experience line 에 lineRating 을 주입한다.
+// 라인 평점 SoT = user_activity_details.rating (0~10, NULL=미입력). 이 앱이 직접 write 하는
+// self-edit 데이터이므로 admin 업스트림 DTO 가 아닌 여기(proxy)에서 보강한다.
+// 매칭 키: (user_id, week_id, activity_type_id). 실패/예외 시 원본을 그대로 반환(비파괴).
+async function enrichLineRatings(rawBody: string, userId: string | null): Promise<string> {
+  if (!userId) return rawBody;
+  let json: unknown;
+  try {
+    json = JSON.parse(rawBody);
+  } catch {
+    return rawBody; // 비 JSON 응답(에러 등) → 그대로
+  }
+  const root = json as { success?: boolean; data?: Array<{ weekId?: string | null; lines?: Cluster4WeeklyLineDto[] }> };
+  const cards = Array.isArray(root?.data) ? root.data : null;
+  if (!cards) return rawBody;
+
+  // experience line 들의 (weekId, activityTypeId) 수집
+  const expRefs: Array<{ line: Cluster4WeeklyLineDto; weekId: string; activityTypeId: string }> = [];
+  const weekIds = new Set<string>();
+  const activityTypeIds = new Set<string>();
+  let expLinesTotal = 0;
+  let skippedNoActivityTypeId = 0;
+  for (const card of cards) {
+    const lines = Array.isArray(card?.lines) ? card.lines : [];
+    for (const line of lines) {
+      if (!isExperiencePart(line?.partType)) continue;
+      expLinesTotal++;
+      const weekId = (line?.weekId as string | null | undefined) ?? card?.weekId ?? null;
+      const activityTypeId = (line?.activityTypeId as string | null | undefined) ?? null;
+      // activityTypeId 가 없으면 user_activity_details(키: activity_type_id) 와 join 불가 → lineRating=null
+      if (!weekId || !activityTypeId) {
+        skippedNoActivityTypeId++;
+        continue;
+      }
+      expRefs.push({ line, weekId, activityTypeId });
+      weekIds.add(weekId);
+      activityTypeIds.add(activityTypeId);
+    }
+  }
+  if (expRefs.length === 0) {
+    if (expLinesTotal > 0) {
+      console.warn("[weekly-cards proxy] lineRating 주입 불가 — experience line 에 activityTypeId 없음", {
+        expLinesTotal,
+        skippedNoActivityTypeId,
+      });
+    }
+    return rawBody;
+  }
+
+  let ratingByKey: Map<string, number | null>;
+  try {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from("user_activity_details")
+      .select("week_id, activity_type_id, rating")
+      .eq("user_id", userId)
+      .in("week_id", Array.from(weekIds))
+      .in("activity_type_id", Array.from(activityTypeIds));
+    if (error) {
+      console.warn("[weekly-cards proxy] lineRating enrich query 실패 — 원본 반환", error.message);
+      return rawBody;
+    }
+    ratingByKey = new Map<string, number | null>();
+    (data ?? []).forEach((r: { week_id: string; activity_type_id: string; rating: number | null }) => {
+      ratingByKey.set(`${r.week_id}|${r.activity_type_id}`, r.rating ?? null);
+    });
+  } catch (e) {
+    console.warn("[weekly-cards proxy] lineRating enrich 예외 — 원본 반환", (e as Error)?.message);
+    return rawBody;
+  }
+
+  // experience line 에 lineRating 주입 (없으면 null)
+  let injected = 0;
+  for (const ref of expRefs) {
+    const v = ratingByKey.get(`${ref.weekId}|${ref.activityTypeId}`);
+    ref.line.lineRating = typeof v === "number" ? v : null;
+    if (typeof v === "number") injected++;
+  }
+  console.log("[weekly-cards proxy] lineRating 주입 완료", {
+    expLineCount: expRefs.length,
+    skippedNoActivityTypeId,
+    ratingRowsMatched: injected,
+    weeks: weekIds.size,
+  });
+  return JSON.stringify(root);
+}
 
 export async function GET(request: NextRequest) {
   const adminApiBaseUrl = process.env.ADMIN_API_BASE_URL;
@@ -69,7 +164,14 @@ export async function GET(request: NextRequest) {
       elapsedMs,
     });
 
-    return new NextResponse(body, {
+    // 정상 JSON 응답에 한해 experience line 에 lineRating 보강 주입 (비파괴 — 실패 시 원본).
+    const userId = sourceUrl.searchParams.get("userId");
+    const enrichedBody =
+      upstream.ok && contentType.includes("application/json")
+        ? await enrichLineRatings(body, userId)
+        : body;
+
+    return new NextResponse(enrichedBody, {
       status: upstream.status,
       statusText: upstream.statusText,
       headers: { "content-type": contentType },

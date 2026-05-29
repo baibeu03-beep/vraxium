@@ -166,6 +166,61 @@ async function fetchResumeCardSettings(client: any, userId: string | null, orgSl
   }
 }
 
+// Cluster3 "주차 평균 백분위" canonical source.
+// 기존엔 user_grade_stats.avg_percentile 캐시를 직접 SELECT 했으나,
+// admin 레포에 동일한 getClubRank(userId) 실시간 계산식을 쓰는
+//   GET /api/cluster3/club-rank
+// 가 canonical route 로 추가되었다. 이 헬퍼는 admin API(ADMIN_API_BASE_URL)를
+// 호출해 data.avgPercentile 을 그대로 반환한다 (weekly-cards proxy 와 동일한
+// x-internal-api-key 인증 패턴). best-effort — 실패/미설정 시 null 반환.
+async function fetchClubRankAvgPercentile(request: NextRequest, userId: string | null): Promise<number | null> {
+  if (!userId) return null;
+
+  const adminApiBaseUrl = process.env.ADMIN_API_BASE_URL;
+  if (!adminApiBaseUrl) {
+    console.warn("[profile] ADMIN_API_BASE_URL 미설정 — club-rank avgPercentile 조회 불가");
+    return null;
+  }
+
+  const baseTrimmed = adminApiBaseUrl.replace(/\/+$/, "");
+  const targetUrl = new URL(`${baseTrimmed}/api/cluster3/club-rank`);
+  targetUrl.searchParams.set("userId", userId);
+
+  const internalApiKey = process.env.INTERNAL_API_KEY;
+  if (!internalApiKey) console.warn("[profile] INTERNAL_API_KEY missing — club-rank 호출");
+
+  const headers = new Headers();
+  headers.set("Content-Type", "application/json");
+  headers.set("x-internal-api-key", internalApiKey ?? "");
+  const cookie = request.headers.get("cookie");
+  if (cookie) headers.set("cookie", cookie);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  try {
+    const upstream = await fetch(targetUrl.toString(), {
+      method: "GET",
+      headers,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!upstream.ok) {
+      console.warn("[profile] club-rank upstream non-OK", upstream.status, targetUrl.toString());
+      return null;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const json: any = await upstream.json();
+    const raw = json?.data?.avgPercentile;
+    const num = typeof raw === "number" ? raw : parseFloat(raw);
+    return Number.isFinite(num) ? num : null;
+  } catch (e) {
+    console.warn("[profile] club-rank fetch 실패 — avgPercentile null", (e as Error)?.message || String(e));
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // GET: 프로필 조회 (userId 쿼리 파라미터로 다른 유저 조회 가능)
 export async function GET(request: NextRequest) {
   try {
@@ -515,8 +570,10 @@ export async function GET(request: NextRequest) {
           .select("id, start_date, end_date, season_key, season_definitions(season_type)")
           .order("start_date", { ascending: false }),
         // [13] weekly_activities for this week
+        // output_images 포함 — 관리자 이미지 슬롯 lock(adminImageCount) 의 fallback 출처.
+        // (matchedLine.outputImages 미수신 환경에서도 getAdminOutputImages 가 0을 반환하지 않도록.)
         supabaseAdmin.from("weekly_activities")
-          .select("id, activity_type_id, title, is_active, opened_at, output_links")
+          .select("id, activity_type_id, title, is_active, opened_at, output_links, output_images")
           .eq("week_id", weekId),
         // [14] user_week_statuses for this user (전체 → JS에서 weekId 매칭)
         supabaseAdmin.from("user_week_statuses")
@@ -675,6 +732,10 @@ export async function GET(request: NextRequest) {
       return parsed;
     };
 
+    // Cluster3 주차 평균 백분위: admin canonical route(/api/cluster3/club-rank) 실시간 계산값.
+    // DB 쿼리들과 병렬로 선행 호출하고 응답 직전에 await 한다.
+    const clubRankAvgPercentilePromise = fetchClubRankAvgPercentile(request, profile.id);
+
     // 모든 쿼리를 병렬로 실행 (성능 최적화)
     const [
       joinedWeekResult,
@@ -734,8 +795,10 @@ export async function GET(request: NextRequest) {
         "id, user_id, season_id, rating, review, created_at, updated_at"
       ).eq("user_id", profile.id),
 
-      // grade_stats (품계 정보)
-      supabaseAdmin.from("user_grade_stats").select("avg_percentile, grade, grade_label").eq("user_id", profile.id).maybeSingle(),
+      // grade_stats (품계 정보) — grade/grade_label 만 사용.
+      // avgPercentile 은 더 이상 이 캐시 컬럼(avg_percentile)에서 읽지 않고
+      // GET /api/cluster3/club-rank 의 실시간 계산값을 사용한다 (아래 clubRankAvgPercentile).
+      supabaseAdmin.from("user_grade_stats").select("grade, grade_label").eq("user_id", profile.id).maybeSingle(),
 
       // growth_stats (성장 기간 집계 + reliability_rate)
       supabaseAdmin.from("user_growth_stats").select("approved_weeks, unapproved_weeks, rest_weeks, club_break_weeks, passed_weeks, available_weeks, available_weeks_club, available_seasons, rest_seasons, approved_seasons, reliability_rate").eq("user_id", profile.id).maybeSingle(),
@@ -841,12 +904,65 @@ export async function GET(request: NextRequest) {
       } : null;
     }
 
+    // 현재 진행 중인 시즌/주차 정보 (cluster-4-1 상단 "현재 클럽은 …" 문구 SoT).
+    // 프론트에서 계산하지 않고 canonical server(supabaseAdmin) 값을 그대로 내려준다.
+    //   weeks: week_number, is_official_rest, holiday_name
+    //   season_definitions: season_type(spring/…/spring_summer_break), year
+    const { data: currentWeekRow } = await supabaseAdmin
+      .from("weeks")
+      .select("week_number, is_official_rest, holiday_name, season_key, season_definitions!inner(season_type, year)")
+      .lte("start_date", today)
+      .gte("end_date", today)
+      .maybeSingle();
+
+    let currentSeasonInfo: {
+      year: number;
+      name: string;
+      currentWeek: number;
+      isClubBreak: boolean;
+      holidayName: string | null;
+      isBreakSeason: boolean;
+      fromSeason: string | null;
+      toSeason: string | null;
+    } | null = null;
+    if (currentWeekRow) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sd = (currentWeekRow as any).season_definitions;
+      const rawSeasonType = String(sd?.season_type || "");
+      const isBreakSeason = rawSeasonType.includes("break");
+      let fromSeason: string | null = null;
+      let toSeason: string | null = null;
+      let displayName = slFn(rawSeasonType);
+      if (isBreakSeason) {
+        const segs = rawSeasonType.replace("_break", "").split("_");
+        if (segs.length >= 2) {
+          fromSeason = slFn(segs[0]);
+          toSeason = slFn(segs[1]);
+        }
+        displayName = "시즌 전환";
+      }
+      currentSeasonInfo = {
+        year: sd?.year || 0,
+        name: displayName,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        currentWeek: (currentWeekRow as any).week_number,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        isClubBreak: (currentWeekRow as any).is_official_rest || false,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        holidayName: (currentWeekRow as any).holiday_name || null,
+        isBreakSeason,
+        fromSeason,
+        toSeason,
+      };
+    }
+
     // activity_records에서 is_completed=true인 것만 필터링 (기존 activities 테이블 대체)
     const activityRecordsData = activityRecordsResult.data || [];
     const activitiesData = activityRecordsData.filter((ar: { is_completed: boolean }) => ar.is_completed);
     const weeklyActivities = weeklyActivitiesResult.data;
     const cumulativePoints = cumulativePointsResult.data;
     const gradeStats = gradeStatsResult.data;
+    const clubRankAvgPercentile = await clubRankAvgPercentilePromise;
     const growthStats = growthStatsResult.data;
     const allWeeks = allWeeksResult.data || [];
     const allRests = allRestsResult.data || [];
@@ -1460,6 +1576,8 @@ export async function GET(request: NextRequest) {
         shields: cumulativePoints?.total_shields || 0,
       },
       seasonHistories: finalSeasonHistoriesWithOnboarding,
+      // 현재 진행 시즌/주차 (cluster-4-1 상단 문구 SoT) — 서버 canonical 값
+      currentSeasonInfo,
       growthStartWeek: resolvedGrowthStart.growthStartWeek,
       growthInfo: {
         status: profile.status,
@@ -1471,7 +1589,9 @@ export async function GET(request: NextRequest) {
         endWeekInfo: growthEndWeekInfo,
       },
       gradeStats: gradeStats ? {
-        avgPercentile: parseFloat(gradeStats.avg_percentile) || 0,
+        // avgPercentile: user_grade_stats.avg_percentile 캐시 제거 →
+        // GET /api/cluster3/club-rank 의 실시간 data.avgPercentile 사용 (admin 과 동일 계산식).
+        avgPercentile: clubRankAvgPercentile ?? 0,
         grade: gradeStats.grade || 10,
         gradeLabel: gradeStats.grade_label || '정 9품',
       } : null,

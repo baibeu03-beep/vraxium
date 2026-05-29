@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3000",
     "dev:3000": "cross-env NEXTAUTH_URL=http://localhost:3000 next dev -p 3000",
     "dev:3001": "cross-env NEXTAUTH_URL=http://localhost:3001 next dev -p 3001",
     "dev:3002": "cross-env NEXTAUTH_URL=http://localhost:3002 next dev -p 3002",

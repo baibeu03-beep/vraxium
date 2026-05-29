@@ -2,6 +2,7 @@ const SEASON_NAME_MAP = {
   spring: "봄",
   summer: "여름",
   fall: "가을",
+  autumn: "가을", // DB season_definitions.season_type 는 "autumn" 을 사용 (fall 별칭 병행 유지)
   winter: "겨울",
 } as const;
 

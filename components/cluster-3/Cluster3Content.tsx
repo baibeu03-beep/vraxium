@@ -12,6 +12,7 @@ import { useProfile } from "@/contexts/ProfileContext";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { isPxRoute, isEcRoute, getThemeClass } from "@/lib/cluster-route";
+import type { Cluster3StatsCards } from "@/lib/cluster3StatsCardsTypes";
 import { usePopup } from "@/components/ui/popup";
 import {
   CLUSTER3_DUMMY_PROFILE,
@@ -317,7 +318,9 @@ const Cluster3Content = () => {
     startDate: string | null;
     endDate: string | null;
   }
-  const [growthInfo, setGrowthInfo] = useState<GrowthInfo | null>({
+  // growthInfo: 데모/로딩 시 Process 카드 fallback 값. 실제 모드는 statsCards 가 우선이므로
+  // 더 이상 setter 로 갱신하지 않는다(초기 더미값만 유지).
+  const [growthInfo] = useState<GrowthInfo | null>({
     status: "active",
     growthStatus: "pending",
     startDate: "2025-02-22",
@@ -363,6 +366,10 @@ const Cluster3Content = () => {
     approvedSeasons: number; // 성장(성공) 시즌
   }
   const [growthPeriodStats, setGrowthPeriodStats] = useState<GrowthPeriodStats | null>(null);
+
+  // stats-cards SoT — 실제 모드 전용. GET /api/cluster3/stats-cards(admin canonical) proxy 응답.
+  // 데모 모드에서는 null 로 두고 기존 더미 시드(growthInfo·growthPeriodStats·pointsData)를 사용한다.
+  const [statsCards, setStatsCards] = useState<Cluster3StatsCards | null>(null);
 
   // 성장 상태 표시 (DB에 저장된 값 그대로 또는 영문값 변환)
   const getGrowthStatusText = (status: string, growthStatus: string): string => {
@@ -734,11 +741,6 @@ const Cluster3Content = () => {
           setHasReliabilityData(false);
         }
 
-        // 성장 진행 상태 데이터 설정
-        if (result.growthInfo) {
-          setGrowthInfo(result.growthInfo);
-        }
-
         // 영어 이름 설정
         if (result.data?.eng_name) {
           setEngName(result.data.eng_name);
@@ -749,26 +751,16 @@ const Cluster3Content = () => {
           setDisplayName(result.data.display_name);
         }
 
-        // 성장 점수 기록 데이터 설정 (badges에서 가져옴)
-        if (result.badges) {
-          setPointsData({
-            dangam: result.badges.stars || 0, // 단감 = star (별)
-            injeolmi: result.badges.shields || 0, // 인절미 = total_shields (이미 계산된 값: shields_net - lightnings)
-            eoheung: result.badges.lightnings || 0, // 어흥 = lightning (번개)
-          });
-        }
-
         // 품계 데이터 설정
         if (result.gradeStats) {
           setGradeStats(result.gradeStats);
           // 상위 퍼센트 즉시 설정 (애니메이션은 섹션 스크롤 시 실행)
-          setTopPercent(result.gradeStats.avgPercentile || 0);
+          setTopPercent(result.gradeStats.avgPercentile ?? 0);
         }
 
-        // 성장 기간 집계 데이터 설정
-        if (result.growthPeriodStats) {
-          setGrowthPeriodStats(result.growthPeriodStats);
-        }
+        // NOTE: stats-cards(성장 진행 상태/기간 집계/점수 기록) 값은 더 이상 /api/profile 의
+        //  growthInfo·growthPeriodStats·badges 에서 읽지 않는다.
+        //  실제 모드 SoT = GET /api/cluster3/stats-cards (아래 별도 effect → setStatsCards).
       } catch (error) {
         console.error("신뢰도 데이터 로드 오류:", error);
         setHasReliabilityData(false);
@@ -777,6 +769,38 @@ const Cluster3Content = () => {
 
     fetchReliabilityRate();
   }, [session?.user?.email, urlUserId]);
+
+  // stats-cards (성장 진행 상태/기간 집계/점수 기록) — 실제 모드 SoT.
+  // GET /api/cluster3/stats-cards proxy(admin canonical) 응답을 그대로 사용한다.
+  // 데모 모드는 더미 시드를 유지하므로 호출하지 않는다.
+  useEffect(() => {
+    if (isDemoMode) return;
+    if (!session?.user?.email && !urlUserId) return;
+
+    let cancelled = false;
+    const fetchStatsCards = async () => {
+      try {
+        const apiUrl = urlUserId
+          ? `/api/cluster3/stats-cards?userId=${urlUserId}`
+          : "/api/cluster3/stats-cards";
+        const response = await fetch(apiUrl);
+        if (!response.ok) {
+          console.warn("[cluster3/stats-cards] non-OK", response.status);
+          return;
+        }
+        const json = await response.json();
+        const data = (json?.data ?? null) as Cluster3StatsCards | null;
+        if (!cancelled && data) setStatsCards(data);
+      } catch (error) {
+        console.error("[cluster3/stats-cards] 로드 오류:", error);
+      }
+    };
+
+    fetchStatsCards();
+    return () => {
+      cancelled = true;
+    };
+  }, [isDemoMode, session?.user?.email, urlUserId]);
 
   // 일정 신뢰도 프로그레스 애니메이션
   useEffect(() => {
@@ -845,15 +869,17 @@ const Cluster3Content = () => {
               requestAnimationFrame(countUp);
 
               // 상위 퍼센트 카운트업 애니메이션 (gradeStats.avgPercentile 값으로)
+              // 백엔드 어드민 API 값(소수점 포함)을 그대로 표시 — 반올림/재계산 금지
               const topDuration = 800;
-              const topTarget = gradeStats?.avgPercentile || 0;
+              const topTarget = gradeStats?.avgPercentile ?? 0;
               const topStartTime = Date.now();
 
               const countUpTop = () => {
                 const elapsed = Date.now() - topStartTime;
                 const progress = Math.min(elapsed / topDuration, 1);
                 const easeOut = 1 - Math.pow(1 - progress, 3);
-                const currentPercent = Math.round(easeOut * topTarget);
+                // 애니메이션 중간 프레임만 보간하고, 최종 프레임은 API 값 그대로 사용
+                const currentPercent = progress < 1 ? easeOut * topTarget : topTarget;
 
                 setTopPercent(currentPercent);
 
@@ -2096,6 +2122,65 @@ const Cluster3Content = () => {
     return etcIcons[id ? id % etcIcons.length : Math.floor(Math.random() * etcIcons.length)];
   };
 
+  // === stats-cards 표시 값 정규화 ===
+  // 실제 모드: GET /api/cluster3/stats-cards (statsCards) 우선.
+  // 데모/로딩: 기존 더미 시드(growthInfo·growthPeriodStats·pointsData) fallback.
+  // pending 괄호값은 number 이면 표시, null 이면 괄호 미표시.
+  const processCard = statsCards
+    ? {
+        statusText: getGrowthStatusText(
+          statsCards.process.growthStatus ?? "",
+          statsCards.process.growthStatusLabel ?? statsCards.process.growthStatus ?? "",
+        ),
+        startDate: statsCards.process.growthStartDate,
+        endDate: statsCards.process.growthEndDate,
+        isBeCluving: statsCards.process.isBeCluving,
+      }
+    : {
+        statusText: growthInfo ? getGrowthStatusText(growthInfo.status, growthInfo.growthStatus) : "-",
+        startDate: growthInfo?.startDate ?? null,
+        endDate: growthInfo?.endDate ?? null,
+        // 기존 정책: 종료일이 없으면 Be Cluving 표시
+        isBeCluving: !growthInfo?.endDate,
+      };
+
+  const periodCard = statsCards
+    ? {
+        successWeeks: statsCards.period.successWeeks,
+        successWeeksPending: statsCards.period.successWeeksPending,
+        failWeeks: statsCards.period.failWeeks,
+        personalRestWeeks: statsCards.period.personalRestWeeks,
+        personalRestWeeksPending: statsCards.period.personalRestWeeksPending,
+        officialRestWeeks: statsCards.period.officialRestWeeks,
+        growableWeeks: statsCards.period.growableWeeks,
+        personalRestSeasons: statsCards.period.personalRestSeasons,
+        successSeasons: statsCards.period.successSeasons,
+      }
+    : {
+        successWeeks: growthPeriodStats?.approvedWeeks ?? 0,
+        // 데모: 기존 괄호값(=성공 시즌) 유지 → number 이므로 괄호 표시
+        successWeeksPending: growthPeriodStats?.approvedSeasons ?? null,
+        failWeeks: growthPeriodStats?.unapprovedWeeks ?? 0,
+        personalRestWeeks: growthPeriodStats?.restWeeks ?? 0,
+        personalRestWeeksPending: growthPeriodStats?.restSeasons ?? null,
+        officialRestWeeks: growthPeriodStats?.clubBreakWeeks ?? 0,
+        growableWeeks: growthPeriodStats?.availableWeeks ?? 0,
+        personalRestSeasons: growthPeriodStats?.restSeasons ?? 0,
+        successSeasons: growthPeriodStats?.approvedSeasons ?? 0,
+      };
+
+  const pointCard = statsCards
+    ? {
+        dangam: statsCards.points.totalStars, // 별(총합)
+        injeolmi: statsCards.points.totalShields, // 방패(총합)
+        eoheung: statsCards.points.totalLightning, // 번개(총합)
+      }
+    : {
+        dangam: pointsData.dangam,
+        injeolmi: pointsData.injeolmi,
+        eoheung: pointsData.eoheung,
+      };
+
   return (
     <div className="cluster3-content">
       {/* Section 1: CLUB FINAL INDEX - 새 디자인 */}
@@ -2178,19 +2263,19 @@ const Cluster3Content = () => {
                 <span className="info-label">
                   <span className="dot">·</span> 성장 상태
                 </span>
-                <span className="info-value highlight">{growthInfo ? getGrowthStatusText(growthInfo.status, growthInfo.growthStatus) : "-"}</span>
+                <span className="info-value highlight">{processCard.statusText}</span>
               </div>
               <div className="info-row">
                 <span className="info-label">
                   <span className="dot">·</span> 성장 시작일
                 </span>
-                <span className="info-value">{growthInfo?.startDate ? formatDateKorean(growthInfo.startDate) : "-"}</span>
+                <span className="info-value">{processCard.startDate ? formatDateKorean(processCard.startDate) : "-"}</span>
               </div>
               <div className="info-row">
                 <span className="info-label">
                   <span className="dot">·</span> 성장 종료일
                 </span>
-                <span className={`info-value ${growthInfo?.endDate ? "" : "be-cluving"}`}>{growthInfo?.endDate ? formatDateKorean(growthInfo.endDate) : "Be Cluving"}</span>
+                <span className={`info-value ${processCard.isBeCluving ? "be-cluving" : ""}`}>{processCard.isBeCluving ? "Be Cluving" : processCard.endDate ? formatDateKorean(processCard.endDate) : "-"}</span>
               </div>
             </div>
             <div className="card-footer">
@@ -2214,8 +2299,10 @@ const Cluster3Content = () => {
                   <span className="dot">·</span> 성장 <span className="hl success">성공</span> 주차
                 </span>
                 <span className="info-value week">
-                  {growthPeriodStats?.approvedWeeks ?? 0}
-                  <span className="highlight-orange">({growthPeriodStats?.approvedSeasons ?? 0})</span>
+                  {periodCard.successWeeks}
+                  {periodCard.successWeeksPending !== null && (
+                    <span className="highlight-orange">({periodCard.successWeeksPending})</span>
+                  )}
                   <span className="unit">주</span>
                 </span>
               </div>
@@ -2224,7 +2311,7 @@ const Cluster3Content = () => {
                   <span className="dot">·</span> 성장 <span className="hl fail">실패</span> 주차
                 </span>
                 <span className="info-value week">
-                  {growthPeriodStats?.unapprovedWeeks ?? 0}
+                  {periodCard.failWeeks}
                   <span className="unit">주</span>
                 </span>
               </div>
@@ -2233,8 +2320,10 @@ const Cluster3Content = () => {
                   <span className="dot">·</span> <span className="hl personal">개인</span> 휴식 주차
                 </span>
                 <span className="info-value week">
-                  {growthPeriodStats?.restWeeks ?? 0}
-                  <span className="highlight-orange">({growthPeriodStats?.restSeasons ?? 0})</span>
+                  {periodCard.personalRestWeeks}
+                  {periodCard.personalRestWeeksPending !== null && (
+                    <span className="highlight-orange">({periodCard.personalRestWeeksPending})</span>
+                  )}
                   <span className="unit">주</span>
                 </span>
               </div>
@@ -2243,7 +2332,7 @@ const Cluster3Content = () => {
                   <span className="dot">·</span> <span className="hl official">공식</span> 휴식 주차
                 </span>
                 <span className="info-value week">
-                  {growthPeriodStats?.clubBreakWeeks ?? 0}
+                  {periodCard.officialRestWeeks}
                   <span className="unit">주</span>
                 </span>
                 <div className="club-break-tooltip">공식 휴식 주차(구정 설 연휴, 추석, 중간/기말고사 등)에 사전 승인된 &apos;활동&apos;을 진행하여 적격요건을 달성한 경우, 해당 주차는 &apos;휴식(공식) 주차&apos;가 아닌, &apos;성장(성공) 주차&apos;에 반영됩니다.</div>
@@ -2253,7 +2342,7 @@ const Cluster3Content = () => {
                   <span className="dot">·</span> 성장 가능 주차
                 </span>
                 <span className="info-value week">
-                  {growthPeriodStats?.availableWeeks ?? 0}
+                  {periodCard.growableWeeks}
                   <span className="unit">주</span>
                 </span>
               </div>
@@ -2262,7 +2351,7 @@ const Cluster3Content = () => {
                   <span className="dot">·</span> <span className="hl personal">개인</span> 휴식 시즌
                 </span>
                 <span className="info-value season">
-                  {growthPeriodStats?.restSeasons ?? 0}
+                  {periodCard.personalRestSeasons}
                   <span className="unit">시즌</span>
                 </span>
               </div>
@@ -2271,7 +2360,7 @@ const Cluster3Content = () => {
                   <span className="dot">·</span> 성장 <span className="hl success">성공</span> 시즌
                 </span>
                 <span className="info-value season">
-                  {growthPeriodStats?.approvedSeasons ?? 0}
+                  {periodCard.successSeasons}
                   <span className="unit">시즌</span>
                 </span>
               </div>
@@ -2301,9 +2390,9 @@ const Cluster3Content = () => {
                   defaultSrc: string;
                   defaultIconClass: string;
                 }> = [
-                  { name: "단감", value: pointsData.dangam, defaultSrc: "/images/0/cluster 3/icon/Ok01.png", defaultIconClass: "label-icon orange" },
-                  { name: "인절미", value: pointsData.injeolmi, defaultSrc: "/images/0/cluster 3/icon/OK02.png", defaultIconClass: "label-icon" },
-                  { name: "어흥", value: Math.abs(pointsData.eoheung), defaultSrc: "/images/0/cluster 3/icon/Ok03.png", defaultIconClass: "label-icon" },
+                  { name: "단감", value: pointCard.dangam, defaultSrc: "/images/0/cluster 3/icon/Ok01.png", defaultIconClass: "label-icon orange" },
+                  { name: "인절미", value: pointCard.injeolmi, defaultSrc: "/images/0/cluster 3/icon/OK02.png", defaultIconClass: "label-icon" },
+                  { name: "어흥", value: Math.abs(pointCard.eoheung), defaultSrc: "/images/0/cluster 3/icon/Ok03.png", defaultIconClass: "label-icon" },
                 ];
                 return rows.map((row) => {
                   // org-aware alias (PX → 투구/방패/화살, EC → 별/방패/번개).
@@ -2363,7 +2452,7 @@ const Cluster3Content = () => {
           <div className="section2-progress">
             <div className="progress-info">
               <span className="progress-label">상위</span>
-              <span className="progress-percent">{topPercent}</span>
+              <span className="progress-percent">{topPercent.toFixed(2)}</span>
               <span className="progress-unit">%</span>
             </div>
           </div>

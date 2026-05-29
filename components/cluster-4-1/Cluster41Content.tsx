@@ -9,6 +9,7 @@ import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { isPxRoute, isEcRoute, withPxRoute } from "@/lib/cluster-route";
 import type { AdminCluster4WeeklyCardDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
+import type { Cluster3StatsCards } from "@/lib/cluster3StatsCardsTypes";
 
 const truncate = (text: string | null | undefined, maxLen: number = 5): string => {
   const t = text || "-";
@@ -325,6 +326,11 @@ const Cluster41Content = () => {
   }
   const [growthPeriodStats, setGrowthPeriodStats] = useState<GrowthPeriodStats | null>(null);
 
+  // 성장 주차 집계(가능/성공/실패/휴식) SoT — 실제 모드 전용.
+  // GET /api/cluster3/stats-cards(admin canonical) proxy 응답. Cluster3 와 동일 SoT.
+  // 데모/로딩/실패 시에는 기존 growthPeriodStats(/api/profile) fallback.
+  const [statsCards, setStatsCards] = useState<Cluster3StatsCards | null>(null);
+
   interface WeekInfo {
     year: number | null;
     seasonName: string | null;
@@ -391,6 +397,11 @@ const Cluster41Content = () => {
           if (profileResult.growthInfo.startDate) {
             setJoinedWeekStartDate(profileResult.growthInfo.startDate);
           }
+        }
+
+        // 현재 시즌/주차 — 서버 canonical 값을 그대로 표시 (프론트 계산 X)
+        if (profileResult.currentSeasonInfo) {
+          setCurrentSeasonInfo(profileResult.currentSeasonInfo);
         }
 
         const seasonNameMap: { [key: string]: string } = {
@@ -461,6 +472,36 @@ const Cluster41Content = () => {
     return () => { abortController.abort(); };
   }, [targetUserId]);
 
+  // 성장 주차 집계 — 실제 모드 SoT.
+  // GET /api/cluster3/stats-cards proxy(admin canonical) 응답을 그대로 사용한다(프론트 계산 X).
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    const fetchStatsCards = async () => {
+      try {
+        const url = targetUserId
+          ? `/api/cluster3/stats-cards?userId=${targetUserId}`
+          : "/api/cluster3/stats-cards";
+        const response = await fetch(url, { signal: abortController.signal });
+        if (!response.ok) {
+          console.warn("[cluster3/stats-cards] non-OK", response.status);
+          return;
+        }
+        const json = await response.json();
+        if (abortController.signal.aborted) return;
+        const data = (json?.data ?? null) as Cluster3StatsCards | null;
+        setStatsCards(data);
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return;
+        console.error("[cluster3/stats-cards] 로드 오류:", error);
+      }
+    };
+
+    fetchStatsCards();
+
+    return () => { abortController.abort(); };
+  }, [targetUserId]);
+
   const getGrowthBadgeText = (status: string | null, growthStatus: string | null): string => {
     if (
       status === 'graduated' ||
@@ -486,6 +527,15 @@ const Cluster41Content = () => {
       return '성장 휴식';
     }
     return '성장 진행 중';
+  };
+
+  // 성장 주차 집계 표시값 — 실제 모드: admin stats-cards(period) 우선, 데모/로딩/실패: /api/profile fallback.
+  // 프론트 계산 없이 API 응답값만 표시. 숫자 4종만 admin 으로 전환(시작/종료 주차·badge·괄호 시즌값은 기존 유지).
+  const growthWeeks = {
+    available: statsCards?.period.growableWeeks ?? growthPeriodStats?.availableWeeks ?? null,
+    approved: statsCards?.period.successWeeks ?? growthPeriodStats?.approvedWeeks ?? null,
+    unapproved: statsCards?.period.failWeeks ?? growthPeriodStats?.unapprovedWeeks ?? null,
+    rest: statsCards?.period.personalRestWeeks ?? growthPeriodStats?.restWeeks ?? null,
   };
 
   const updateSeasonPos = () => {
@@ -651,7 +701,14 @@ const Cluster41Content = () => {
                 <svg className="badge-border" viewBox="0 0 124 50" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M0.84668 0.846558H122.847V26.7666L98.4467 48.8466H0.84668V0.846558Z" fill={isPX ? '#1E9503' : isEC ? '#FF4B70' : '#FAAB07'} stroke={isPX ? '#1E9503' : isEC ? '#FF4B70' : '#FAAB07'} strokeWidth="1.69311"/>
                 </svg>
-                <span className="badge-text">{getGrowthBadgeText(userStatus, growthStatus)}</span>
+                <span className="badge-text">{getGrowthBadgeText(
+                  userStatus,
+                  // 상태값 SoT: admin stats-cards(process) 우선 → growthStatusLabel → growthStatus,
+                  // 데모/로딩/실패 시 기존 /api/profile growthStatus fallback.
+                  statsCards?.process.growthStatusLabel
+                    ?? statsCards?.process.growthStatus
+                    ?? growthStatus
+                )}</span>
               </div>
             </div>
 
@@ -706,25 +763,25 @@ const Cluster41Content = () => {
                 <div className="detail-row">
                   <span className="detail-label">성장 가능 주차</span>
                   <span className="detail-value">
-                    <span className="number">{growthPeriodStats?.availableWeeks ?? '-'}</span><span className="orange-highlight">({growthPeriodStats?.availableSeasons ?? '-'})</span> <span className="white-text">개 주차</span>
+                    <span className="number">{growthWeeks.available ?? '-'}</span><span className="orange-highlight">({growthPeriodStats?.availableSeasons ?? '-'})</span> <span className="white-text">개 주차</span>
                   </span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">성장 성공 주차</span>
                   <span className="detail-value">
-                    <span className="number">{growthPeriodStats?.approvedWeeks ?? '-'}</span> <span className="white-text">개 주차</span>
+                    <span className="number">{growthWeeks.approved ?? '-'}</span> <span className="white-text">개 주차</span>
                   </span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">성장 실패 주차</span>
                   <span className="detail-value">
-                    <span className="number">{growthPeriodStats?.unapprovedWeeks ?? '-'}</span> <span className="white-text">개 주차</span>
+                    <span className="number">{growthWeeks.unapproved ?? '-'}</span> <span className="white-text">개 주차</span>
                   </span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">성장 휴식 주차</span>
                   <span className="detail-value">
-                    <span className="number">{growthPeriodStats?.restWeeks ?? '-'}</span> <span className="white-text">개 주차</span>
+                    <span className="number">{growthWeeks.rest ?? '-'}</span> <span className="white-text">개 주차</span>
                   </span>
                 </div>
                 <div className="detail-row">
