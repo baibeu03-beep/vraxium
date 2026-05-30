@@ -205,6 +205,26 @@ const CLUSTER4_WEEKLY_RAW: Array<{
     periodRaw:  "2026 - 05 - 18 (월) ~ 2026 - 05 - 24 (일)",
     imageUrl:   "/images/0/cluster4/주차 이미지/봄 12주차 (5월 4주차).png",
   },
+  {
+    seasonName: "2026년, 봄 시즌, 13주차",
+    periodRaw:  "2026 - 05 - 25 (월) ~ 2026 - 05 - 31 (일)",
+    imageUrl:   "/images/0/cluster4/주차 이미지/봄 13주차 (6월 1주차).png",
+  },
+  {
+    seasonName: "2026년, 봄 시즌, 14주차",
+    periodRaw:  "2026 - 06 - 01 (월) ~ 2026 - 06 - 07 (일)",
+    imageUrl:   "/images/0/cluster4/주차 이미지/휴식(개인,공식).png",
+  },
+  {
+    seasonName: "2026년, 봄 시즌, 15주차",
+    periodRaw:  "2026 - 06 - 08 (월) ~ 2026 - 06 - 14 (일)",
+    imageUrl:   "/images/0/cluster4/주차 이미지/휴식(개인,공식).png",
+  },
+  {
+    seasonName: "2026년, 봄 시즌, 16주차",
+    periodRaw:  "2026 - 06 - 15 (월) ~ 2026 - 06 - 21 (일)",
+    imageUrl:   "/images/0/cluster4/주차 이미지/휴식(개인,공식).png",
+  },
 ];
 
 // 표시용 메타 — periodRaw는 컴팩트 포맷으로 변환, 그 외 필드는 그대로.

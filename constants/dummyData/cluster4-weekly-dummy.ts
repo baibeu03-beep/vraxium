@@ -1,70 +1,53 @@
 // constants/dummyData/cluster4-weekly-dummy.ts
 // TODO: 더미 데이터 — 기획자 확인용, 실서버 노출 안 됨
 
-// DBWeekData 인터페이스에 맞춤 — 20개 주차 (다양한 시즌/상태/숫자)
-// 성장 상태 분포: 성공6 / 실패4 / 휴식(공식)5 / 휴식(개인)3 / 진행 중1 / 집계 중1
-// TODO: [백엔드 작업 필요] '진행 중' / '집계 중' 상태 결정 로직 추가 — 현재는 더미 맨 위 2장에만 표시
-export const DUMMY_WEEKLY_LIST: {
-  id: string;
-  weekNumber: number;
-  seasonYear: number;
-  seasonName: string;
-  startDate: string;
-  endDate: string;
-  isClubBreak: boolean;
-  isBreakSeason: boolean;
-  fromSeason: string | null;
-  toSeason: string | null;
-  holidayName: string | null;
-  termNumber: number | null;
-  growthStatus: string;
-}[] = [
-  // 2026 봄 시즌
-  { id: "dw-01", weekNumber: 3, seasonYear: 2026, seasonName: "봄", startDate: "2026-03-16", endDate: "2026-03-22", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "진행 중" },
-  { id: "dw-02", weekNumber: 2, seasonYear: 2026, seasonName: "봄", startDate: "2026-03-09", endDate: "2026-03-15", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "집계 중" },
-  { id: "dw-03", weekNumber: 1, seasonYear: 2026, seasonName: "봄", startDate: "2026-03-02", endDate: "2026-03-08", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "성공" },
+import type { Cluster4WeekData, Cluster4WeekExtra } from "@/lib/cluster4-types";
+
+// 30개 주차 (다양한 시즌/상태/숫자)
+// 봄/가을=16주, 겨울/여름=8주. 봄/가을 6~8·14~16주차는 공식 휴식.
+// 전환 주차(weekNumber=0)는 집계 범위 포함, 시즌 주수 표시 제외.
+export const DUMMY_WEEKLY_LIST: Cluster4WeekData[] = [
+  // ── 2026 봄 시즌 (16주 기준, 현재 13주차 = 2026-05-25) ──
+  { id: "dw-30", weekNumber: 13, seasonYear: 2026, seasonName: "봄", startDate: "2026-05-25", endDate: "2026-05-31", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "running" },
+  { id: "dw-29", weekNumber: 12, seasonYear: 2026, seasonName: "봄", startDate: "2026-05-18", endDate: "2026-05-24", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "tallying" },
+  { id: "dw-28", weekNumber: 11, seasonYear: 2026, seasonName: "봄", startDate: "2026-05-11", endDate: "2026-05-17", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "success" },
+  { id: "dw-27", weekNumber: 10, seasonYear: 2026, seasonName: "봄", startDate: "2026-05-04", endDate: "2026-05-10", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "fail" },
+  { id: "dw-26", weekNumber: 9, seasonYear: 2026, seasonName: "봄", startDate: "2026-04-27", endDate: "2026-05-03", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "success" },
+  { id: "dw-25", weekNumber: 8, seasonYear: 2026, seasonName: "봄", startDate: "2026-04-20", endDate: "2026-04-26", isOfficialRest: true, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "official_rest" },
+  { id: "dw-24", weekNumber: 7, seasonYear: 2026, seasonName: "봄", startDate: "2026-04-13", endDate: "2026-04-19", isOfficialRest: true, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "official_rest" },
+  { id: "dw-23", weekNumber: 6, seasonYear: 2026, seasonName: "봄", startDate: "2026-04-06", endDate: "2026-04-12", isOfficialRest: true, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "official_rest" },
+  { id: "dw-22", weekNumber: 5, seasonYear: 2026, seasonName: "봄", startDate: "2026-03-30", endDate: "2026-04-05", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "success" },
+  { id: "dw-21", weekNumber: 4, seasonYear: 2026, seasonName: "봄", startDate: "2026-03-23", endDate: "2026-03-29", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "personal_rest" },
+  { id: "dw-01", weekNumber: 3, seasonYear: 2026, seasonName: "봄", startDate: "2026-03-16", endDate: "2026-03-22", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "success" },
+  { id: "dw-02", weekNumber: 2, seasonYear: 2026, seasonName: "봄", startDate: "2026-03-09", endDate: "2026-03-15", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "success" },
+  { id: "dw-03", weekNumber: 1, seasonYear: 2026, seasonName: "봄", startDate: "2026-03-02", endDate: "2026-03-08", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "success" },
   // 전환 주차
-  { id: "dw-04", weekNumber: 0, seasonYear: 2026, seasonName: "봄", startDate: "2026-02-23", endDate: "2026-03-01", isClubBreak: false, isBreakSeason: false, fromSeason: "겨울", toSeason: "봄", holidayName: null, termNumber: null, growthStatus: "성공" },
-  // 2026 겨울 시즌
-  { id: "dw-05", weekNumber: 8, seasonYear: 2026, seasonName: "겨울", startDate: "2026-02-16", endDate: "2026-02-22", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "휴식(개인)" },
-  { id: "dw-06", weekNumber: 7, seasonYear: 2026, seasonName: "겨울", startDate: "2026-02-09", endDate: "2026-02-15", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "성공" },
-  { id: "dw-07", weekNumber: 6, seasonYear: 2026, seasonName: "겨울", startDate: "2026-02-02", endDate: "2026-02-08", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "휴식(공식)" },
-  { id: "dw-08", weekNumber: 5, seasonYear: 2026, seasonName: "겨울", startDate: "2026-01-26", endDate: "2026-02-01", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "성공" },
-  { id: "dw-09", weekNumber: 4, seasonYear: 2026, seasonName: "겨울", startDate: "2026-01-19", endDate: "2026-01-25", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "휴식(개인)" },
-  { id: "dw-10", weekNumber: 3, seasonYear: 2026, seasonName: "겨울", startDate: "2026-01-12", endDate: "2026-01-18", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "성공" },
-  { id: "dw-11", weekNumber: 2, seasonYear: 2026, seasonName: "겨울", startDate: "2026-01-05", endDate: "2026-01-11", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "실패" },
-  { id: "dw-12", weekNumber: 1, seasonYear: 2026, seasonName: "겨울", startDate: "2025-12-29", endDate: "2026-01-04", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "성공" },
+  { id: "dw-04", weekNumber: 0, seasonYear: 2026, seasonName: "봄", startDate: "2026-02-23", endDate: "2026-03-01", isOfficialRest: false, isBreakSeason: true, fromSeason: "겨울", toSeason: "봄", holidayName: null, termNumber: null, growthStatus: "success" },
+  // ── 2026 겨울 시즌 (8주 기준) ──
+  { id: "dw-05", weekNumber: 8, seasonYear: 2026, seasonName: "겨울", startDate: "2026-02-16", endDate: "2026-02-22", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "personal_rest" },
+  { id: "dw-06", weekNumber: 7, seasonYear: 2026, seasonName: "겨울", startDate: "2026-02-09", endDate: "2026-02-15", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "success" },
+  { id: "dw-07", weekNumber: 6, seasonYear: 2026, seasonName: "겨울", startDate: "2026-02-02", endDate: "2026-02-08", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "official_rest" },
+  { id: "dw-08", weekNumber: 5, seasonYear: 2026, seasonName: "겨울", startDate: "2026-01-26", endDate: "2026-02-01", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "success" },
+  { id: "dw-09", weekNumber: 4, seasonYear: 2026, seasonName: "겨울", startDate: "2026-01-19", endDate: "2026-01-25", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "personal_rest" },
+  { id: "dw-10", weekNumber: 3, seasonYear: 2026, seasonName: "겨울", startDate: "2026-01-12", endDate: "2026-01-18", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "success" },
+  { id: "dw-11", weekNumber: 2, seasonYear: 2026, seasonName: "겨울", startDate: "2026-01-05", endDate: "2026-01-11", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "fail" },
+  { id: "dw-12", weekNumber: 1, seasonYear: 2026, seasonName: "겨울", startDate: "2025-12-29", endDate: "2026-01-04", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "success" },
   // 전환 주차
-  { id: "dw-13", weekNumber: 0, seasonYear: 2026, seasonName: "겨울", startDate: "2025-12-22", endDate: "2025-12-28", isClubBreak: false, isBreakSeason: false, fromSeason: "가을", toSeason: "겨울", holidayName: null, termNumber: null, growthStatus: "휴식(공식)" },
-  // 2025 가을 시즌
-  { id: "dw-14", weekNumber: 10, seasonYear: 2025, seasonName: "가을", startDate: "2025-12-15", endDate: "2025-12-21", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "성공" },
-  { id: "dw-15", weekNumber: 9, seasonYear: 2025, seasonName: "가을", startDate: "2025-12-08", endDate: "2025-12-14", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "성공" },
-  { id: "dw-16", weekNumber: 8, seasonYear: 2025, seasonName: "가을", startDate: "2025-12-01", endDate: "2025-12-07", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "휴식(공식)" },
-  { id: "dw-17", weekNumber: 7, seasonYear: 2025, seasonName: "가을", startDate: "2025-11-24", endDate: "2025-11-30", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "성공" },
-  { id: "dw-18", weekNumber: 6, seasonYear: 2025, seasonName: "가을", startDate: "2025-11-17", endDate: "2025-11-23", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "성공" },
-  { id: "dw-19", weekNumber: 5, seasonYear: 2025, seasonName: "가을", startDate: "2025-11-10", endDate: "2025-11-16", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "휴식(공식)" },
-  { id: "dw-20", weekNumber: 4, seasonYear: 2025, seasonName: "가을", startDate: "2025-11-03", endDate: "2025-11-09", isClubBreak: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "성공" },
+  { id: "dw-13", weekNumber: 0, seasonYear: 2026, seasonName: "겨울", startDate: "2025-12-22", endDate: "2025-12-28", isOfficialRest: false, isBreakSeason: true, fromSeason: "가을", toSeason: "겨울", holidayName: null, termNumber: null, growthStatus: "official_rest" },
+  // ── 2025 가을 시즌 (16주 기준, 6~8주차 공식 휴식) ──
+  { id: "dw-14", weekNumber: 10, seasonYear: 2025, seasonName: "가을", startDate: "2025-12-15", endDate: "2025-12-21", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "success" },
+  { id: "dw-15", weekNumber: 9, seasonYear: 2025, seasonName: "가을", startDate: "2025-12-08", endDate: "2025-12-14", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "success" },
+  { id: "dw-16", weekNumber: 8, seasonYear: 2025, seasonName: "가을", startDate: "2025-12-01", endDate: "2025-12-07", isOfficialRest: true, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "official_rest" },
+  { id: "dw-17", weekNumber: 7, seasonYear: 2025, seasonName: "가을", startDate: "2025-11-24", endDate: "2025-11-30", isOfficialRest: true, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "official_rest" },
+  { id: "dw-18", weekNumber: 6, seasonYear: 2025, seasonName: "가을", startDate: "2025-11-17", endDate: "2025-11-23", isOfficialRest: true, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "official_rest" },
+  { id: "dw-19", weekNumber: 5, seasonYear: 2025, seasonName: "가을", startDate: "2025-11-10", endDate: "2025-11-16", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "success" },
+  { id: "dw-20", weekNumber: 4, seasonYear: 2025, seasonName: "가을", startDate: "2025-11-03", endDate: "2025-11-09", isOfficialRest: false, isBreakSeason: false, fromSeason: null, toSeason: null, holidayName: null, termNumber: null, growthStatus: "success" },
 ];
 
 // 주차 카드별 부가 데이터 (팀/파트/역할/포인트/성장률/평판 등)
 // 컴포넌트 함수에서 week ID로 조회
 // shield = 표시 인절미 + lightning (렌더링에서 injeolmi = shield - lightning)
-export const DUMMY_WEEK_EXTRA: Record<
-  string,
-  {
-    points: { star: number; shield: number; lightning: number };
-    teamPart: { teamName: string | null; partName: string | null };
-    roleLabel: string;
-    growthRate: { rate: number; count: number; total: number };
-    infoRate: { rate: number; count: number; total: number };
-    competencyRate: { rate: number; count: number; total: number };
-    experienceRate: { rate: number; count: number; total: number };
-    careerRate: { rate: number; count: number; total: number };
-    reputationCount: number;
-    fmScore: number;
-    colleagueCount: number;
-  }
-> = {
+export const DUMMY_WEEK_EXTRA: Record<string, Cluster4WeekExtra> = {
   "dw-01": {
     // 휴식(개인) — 모두 0
     points: { star: 400, shield: 10, lightning: 1 },
@@ -344,5 +327,142 @@ export const DUMMY_WEEK_EXTRA: Record<
     reputationCount: 2,
     fmScore: 350,
     colleagueCount: 2,
+  },
+  // ── 봄 4~13주차 (dw-21 ~ dw-30) ──
+  "dw-21": {
+    points: { star: 180, shield: 90, lightning: 35 },
+    teamPart: { teamName: "엔터테인먼트", partName: "팬마케팅" },
+    roleLabel: "일반",
+    growthRate: { rate: 65, count: 11, total: 17 },
+    infoRate: { rate: 80, count: 8, total: 10 },
+    competencyRate: { rate: 0, count: 0, total: 1 },
+    experienceRate: { rate: 50, count: 2, total: 4 },
+    careerRate: { rate: 50, count: 1, total: 2 },
+    reputationCount: 1,
+    fmScore: 40,
+    colleagueCount: 1,
+  },
+  "dw-22": {
+    points: { star: 220, shield: 110, lightning: 40 },
+    teamPart: { teamName: "마케팅전략", partName: "브랜드콘텐츠" },
+    roleLabel: "심화(파트장)",
+    growthRate: { rate: 82, count: 18, total: 22 },
+    infoRate: { rate: 90, count: 9, total: 10 },
+    competencyRate: { rate: 100, count: 1, total: 1 },
+    experienceRate: { rate: 75, count: 3, total: 4 },
+    careerRate: { rate: 60, count: 3, total: 5 },
+    reputationCount: 2,
+    fmScore: 120,
+    colleagueCount: 2,
+  },
+  "dw-23": {
+    // 휴식(공식) 봄 6주차
+    points: { star: 0, shield: 0, lightning: 0 },
+    teamPart: { teamName: null, partName: null },
+    roleLabel: "-",
+    growthRate: { rate: 0, count: 0, total: 0 },
+    infoRate: { rate: 0, count: 0, total: 0 },
+    competencyRate: { rate: 0, count: 0, total: 0 },
+    experienceRate: { rate: 0, count: 0, total: 0 },
+    careerRate: { rate: 0, count: 0, total: 0 },
+    reputationCount: 0,
+    fmScore: 0,
+    colleagueCount: 0,
+  },
+  "dw-24": {
+    // 휴식(공식) 봄 7주차
+    points: { star: 0, shield: 0, lightning: 0 },
+    teamPart: { teamName: null, partName: null },
+    roleLabel: "-",
+    growthRate: { rate: 0, count: 0, total: 0 },
+    infoRate: { rate: 0, count: 0, total: 0 },
+    competencyRate: { rate: 0, count: 0, total: 0 },
+    experienceRate: { rate: 0, count: 0, total: 0 },
+    careerRate: { rate: 0, count: 0, total: 0 },
+    reputationCount: 0,
+    fmScore: 0,
+    colleagueCount: 0,
+  },
+  "dw-25": {
+    // 휴식(공식) 봄 8주차
+    points: { star: 0, shield: 0, lightning: 0 },
+    teamPart: { teamName: null, partName: null },
+    roleLabel: "-",
+    growthRate: { rate: 0, count: 0, total: 0 },
+    infoRate: { rate: 0, count: 0, total: 0 },
+    competencyRate: { rate: 0, count: 0, total: 0 },
+    experienceRate: { rate: 0, count: 0, total: 0 },
+    careerRate: { rate: 0, count: 0, total: 0 },
+    reputationCount: 0,
+    fmScore: 0,
+    colleagueCount: 0,
+  },
+  "dw-26": {
+    points: { star: 310, shield: 200, lightning: 80 },
+    teamPart: { teamName: "개발", partName: "백엔드" },
+    roleLabel: "운영진(앰배서더)",
+    growthRate: { rate: 88, count: 22, total: 25 },
+    infoRate: { rate: 100, count: 10, total: 10 },
+    competencyRate: { rate: 100, count: 1, total: 1 },
+    experienceRate: { rate: 75, count: 6, total: 8 },
+    careerRate: { rate: 80, count: 4, total: 5 },
+    reputationCount: 3,
+    fmScore: 450,
+    colleagueCount: 3,
+  },
+  "dw-27": {
+    // 실패
+    points: { star: 45, shield: 30, lightning: 10 },
+    teamPart: { teamName: "디자인", partName: "UI" },
+    roleLabel: "일반",
+    growthRate: { rate: 20, count: 3, total: 15 },
+    infoRate: { rate: 30, count: 3, total: 10 },
+    competencyRate: { rate: 0, count: 0, total: 1 },
+    experienceRate: { rate: 0, count: 0, total: 3 },
+    careerRate: { rate: 0, count: 0, total: 1 },
+    reputationCount: 1,
+    fmScore: 15,
+    colleagueCount: 0,
+  },
+  "dw-28": {
+    points: { star: 275, shield: 180, lightning: 70 },
+    teamPart: { teamName: "엔터테인먼트", partName: "글로벌마케팅" },
+    roleLabel: "심화(파트장)",
+    growthRate: { rate: 78, count: 18, total: 23 },
+    infoRate: { rate: 80, count: 8, total: 10 },
+    competencyRate: { rate: 100, count: 1, total: 1 },
+    experienceRate: { rate: 67, count: 4, total: 6 },
+    careerRate: { rate: 60, count: 3, total: 5 },
+    reputationCount: 2,
+    fmScore: 280,
+    colleagueCount: 2,
+  },
+  "dw-29": {
+    // 집계 중
+    points: { star: 190, shield: 100, lightning: 45 },
+    teamPart: { teamName: "마케팅전략", partName: "브랜드콘텐츠" },
+    roleLabel: "심화(파트장)",
+    growthRate: { rate: 72, count: 13, total: 18 },
+    infoRate: { rate: 70, count: 7, total: 10 },
+    competencyRate: { rate: 100, count: 1, total: 1 },
+    experienceRate: { rate: 50, count: 2, total: 4 },
+    careerRate: { rate: 100, count: 3, total: 3 },
+    reputationCount: 1,
+    fmScore: 95,
+    colleagueCount: 1,
+  },
+  "dw-30": {
+    // 진행 중
+    points: { star: 80, shield: 50, lightning: 20 },
+    teamPart: { teamName: "엔터테인먼트", partName: "팬마케팅" },
+    roleLabel: "일반",
+    growthRate: { rate: 0, count: 0, total: 18 },
+    infoRate: { rate: 0, count: 0, total: 10 },
+    competencyRate: { rate: 0, count: 0, total: 1 },
+    experienceRate: { rate: 0, count: 0, total: 4 },
+    careerRate: { rate: 0, count: 0, total: 3 },
+    reputationCount: 0,
+    fmScore: 0,
+    colleagueCount: 0,
   },
 };

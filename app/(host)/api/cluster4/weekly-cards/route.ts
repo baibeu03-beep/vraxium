@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-server";
+import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import type { Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
 
 export const dynamic = "force-dynamic";
@@ -101,21 +102,20 @@ async function enrichLineRatings(rawBody: string, userId: string | null): Promis
 }
 
 export async function GET(request: NextRequest) {
-  const adminApiBaseUrl = process.env.ADMIN_API_BASE_URL;
+  const adminApiBaseUrl = await resolveAdminBaseUrl();
 
-  console.log("[cluster4/weekly-cards] ADMIN_API_BASE_URL =", JSON.stringify(adminApiBaseUrl));
+  console.log("[cluster4/weekly-cards] admin base url =", JSON.stringify(adminApiBaseUrl));
 
   if (!adminApiBaseUrl) {
-    console.error("[cluster4/weekly-cards] ADMIN_API_BASE_URL is not configured");
+    console.error("[cluster4/weekly-cards] admin backend not discovered (env + localhost probe failed)");
     return NextResponse.json(
-      { success: false, error: "ADMIN_API_BASE_URL is not configured" },
-      { status: 500 },
+      { success: false, error: "admin backend not available" },
+      { status: 502 },
     );
   }
 
   const sourceUrl = new URL(request.url);
-  const baseTrimmed = adminApiBaseUrl.replace(/\/+$/, "");
-  const targetUrl = new URL(`${baseTrimmed}/api/cluster4/weekly-cards`);
+  const targetUrl = new URL(`${adminApiBaseUrl}/api/cluster4/weekly-cards`);
   targetUrl.search = sourceUrl.search;
   const targetUrlString = targetUrl.toString();
 

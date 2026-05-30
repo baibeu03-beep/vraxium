@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
+import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -34,18 +35,17 @@ const UPSTREAM_TIMEOUT_MS = 8000;
 // weekly-cards proxy 와 동일한 x-internal-api-key 인증 패턴.
 // INTERNAL_API_KEY 는 이 서버 route 에서만 사용하며, 클라이언트는 이 proxy 만 호출한다.
 export async function GET(request: NextRequest) {
-  const adminApiBaseUrl = process.env.ADMIN_API_BASE_URL;
+  const adminApiBaseUrl = await resolveAdminBaseUrl();
 
   if (!adminApiBaseUrl) {
-    console.error("[cluster3/stats-cards] ADMIN_API_BASE_URL is not configured");
+    console.error("[cluster3/stats-cards] admin backend not discovered (env + localhost probe failed)");
     return NextResponse.json(
-      { success: false, error: "ADMIN_API_BASE_URL is not configured" },
-      { status: 500 },
+      { success: false, error: "admin backend not available" },
+      { status: 502 },
     );
   }
 
   const sourceUrl = new URL(request.url);
-  const baseTrimmed = adminApiBaseUrl.replace(/\/+$/, "");
 
   // 대상 userId: 쿼리에 있으면 그대로(다른 유저 조회), 없으면 세션 사용자 본인으로 resolve.
   // admin 의 internal-key 경로는 ?userId= 가 필수이므로, 본인 페이지에서도 반드시 채워 보낸다.
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const targetUrl = new URL(`${baseTrimmed}/api/cluster3/stats-cards`);
+  const targetUrl = new URL(`${adminApiBaseUrl}/api/cluster3/stats-cards`);
   targetUrl.searchParams.set("userId", userId);
   const targetUrlString = targetUrl.toString();
 
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
   // 값은 절대 로그하지 않고 length 와 존재 여부만 진단 출력.
   console.log("[cluster3/stats-cards] env diag", {
     cwd: process.cwd(),
-    adminApiBaseUrl,
+    adminBaseUrl: adminApiBaseUrl,
     hasKey: Boolean(internalApiKey),
     keyLength: internalApiKey?.length ?? 0,
   });

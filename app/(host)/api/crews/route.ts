@@ -106,6 +106,7 @@ function mergeRow(
   edu: UserEducationRow | null,
   growth: UserGrowthStatsRow | null,
   membership: UserMembershipRow | null,
+  starsTotal: number | null,
 ) {
   // 우선순위: user_educations(최종학력 sort_order=0) > user_profiles > crew_list_view(legacy) > "-".
   // user_educations 가 truth source — educations PUT(educations/route.ts:297-374)이
@@ -135,7 +136,13 @@ function mergeRow(
     universityMajor: [schoolName, majorName].filter((v) => v && v !== "-").join(" ") || "-",
     status: profile.status ?? view?.status ?? "-",
     growthStatus: profile.growth_status ?? view?.growth_status ?? "-",
-    totalStars: view?.total_stars ?? 0,
+    // 별 개수 SoT = points(point_type='star') 누적 합 (starsTotal).
+    // starsByUser 에 행이 있으면(=어드민 DB 에 star 포인트 존재) 그 합을 우선 사용,
+    // 없으면 legacy crew_list_view.total_stars 폴백, 그것도 없으면 0.
+    // crew_list_view 는 phalanx 28명 전용이라 encre/oranke 는 view 미존재 → 기존엔 항상 0 으로
+    // 떨어지던 버그를 starsTotal 로 교정. (admin point_type 은 star/shield/lightning 만 존재 —
+    // 'check' 필드는 백엔드에 없음. shield/lightning/인절미 등은 미터치.)
+    totalStars: starsTotal ?? view?.total_stars ?? 0,
     // 우선순위: user_growth_stats > crew_list_view(legacy) > 0.
     approvedWeeks: growth?.approved_weeks ?? view?.approved_weeks ?? 0,
     cumulativeWeeks: growth?.cumulative_weeks ?? view?.cumulative_weeks ?? 0,
@@ -270,6 +277,40 @@ export async function GET(request: Request) {
       }
     }
 
+    // 2.8) Stars enrichment — points 테이블(point_type='star') 누적 합산.
+    // 별 개수 SoT: points 테이블 (cluster-4-ranking/route.ts L202-205,
+    // cluster4-weekly-cards.ts L85 와 동일 source — points.user_id = user_profiles.user_id).
+    // crew_list_view.total_stars 는 legacy(phalanx 28명) enrichment 전용이라
+    // encre/oranke 는 view 행이 없어 항상 0 으로 표시되던 문제를 여기서 교정한다.
+    // PostgREST 가 서버측 max-rows 를 1000 으로 강제하므로 range 페이지네이션으로
+    // 전 주차 star 포인트 행을 빠짐없이 수집한 뒤 user 별로 합산한다.
+    // best-effort: 조회 실패 시 view.total_stars 폴백 (별 외 포인트는 미터치).
+    const starsByUser = new Map<string, number>();
+    {
+      const PAGE = 1000;
+      for (let from = 0; ; from += PAGE) {
+        const { data: starRows, error: starError } = await supabase
+          .from("points")
+          .select("user_id, points")
+          .eq("point_type", "star")
+          .in("user_id", userIds)
+          .range(from, from + PAGE - 1)
+          .returns<{ user_id: string; points: number | null }[]>();
+        if (starError) {
+          console.error("points(star) enrichment failed (continuing without it):", JSON.stringify(starError));
+          break;
+        }
+        if (!starRows || starRows.length === 0) break;
+        for (const row of starRows) {
+          const prev = starsByUser.get(row.user_id) ?? 0;
+          starsByUser.set(row.user_id, prev + (Number(row.points) || 0));
+        }
+        if (starRows.length < PAGE) break;
+      }
+    }
+
+    console.log("[/api/crews] star point users=", starsByUser.size);
+
     // 3) Merge
     const rows = profiles.map((p) =>
       mergeRow(
@@ -278,6 +319,7 @@ export async function GET(request: Request) {
         eduMap.get(p.user_id) ?? null,
         growthMap.get(p.user_id) ?? null,
         membershipMap.get(p.user_id) ?? null,
+        starsByUser.get(p.user_id) ?? null,
       ),
     );
 

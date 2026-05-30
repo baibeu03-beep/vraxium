@@ -21,6 +21,18 @@ import { isPxRoute, isEcRoute, getThemeClass, withPxRoute } from "@/lib/cluster-
 const koreaRegions: { [key: string]: string[] } = koreaRegionsData;
 const DEFAULT_PHONE_COMMENT = "평일 오전 10시 ~ 오후 20시 사이에 언제든지 연락가능합니다. 주말은 문자나 텍스트로만 부탁드려요! 😊";
 
+// resume-card .resume-badges point 값 정규화.
+//   number → 그대로(NaN 은 0) / 문자열 숫자 → Number() / null·undefined·기타 → 0.
+// API(/api/profile)의 point.{check,advantage,penalty} 표시 전용 — 어드민 값 방어적 정규화.
+const toPointNum = (value: unknown): number => {
+  if (typeof value === "number") return Number.isNaN(value) ? 0 : value;
+  if (typeof value === "string") {
+    const n = Number(value);
+    return Number.isNaN(n) ? 0 : n;
+  }
+  return 0;
+};
+
 const IDENTITY_TAB_IMAGES = [
   { src: "/images/0/cluster 1/identity-tab-bg-1.png", overlay: 0.45 },
   { src: "/images/0/cluster 1/identity-tab-bg-2.png", overlay: 0.45 },
@@ -90,7 +102,15 @@ const buildSidebarUserProfile = (
   const rawBirth = (profile.birth_date as string | null) ?? "";
   return {
     name: (profile.display_name as string | null) ?? "",
-    nameEng: (profile.eng_name as string | null) ?? "",
+    // 영문명(name-eng): admin API 가 노출하는 englishName(crew.englishName / bundle.englishName
+    // 의 camelCase 미러) → english_name(user_profiles 정규 컬럼, bundle.profile.english_name)
+    // → eng_name(레거시) → placeholder("") 순으로 fallback. read-only 표시이며
+    // displayName(한글 이름, profile.display_name) 영역은 건드리지 않는다.
+    nameEng:
+      (profile.englishName as string | null) ??
+      (profile.english_name as string | null) ??
+      (profile.eng_name as string | null) ??
+      "",
     gender: (profile.gender as string | null) ?? "",
     birthDate: rawBirth ? rawBirth.replace(/-/g, ".") : "",
     city: addressParts[0] || "",
@@ -249,6 +269,10 @@ const Sidebar = () => {
     shields: 0, // 방패
   });
   const [hasBadgeData, setHasBadgeData] = useState<boolean>(false);
+  // resume-card .resume-badges 의 SoT — /api/profile 의 point DTO.
+  //   check → icon-graphic10, advantage → icon-shield, penalty → icon-graphic13(red).
+  // null 이면 badgeData(stars/shields/lightnings) 로 폴백(데모/구캐시 호환).
+  const [pointData, setPointData] = useState<{ check: number; advantage: number; penalty: number } | null>(null);
 
   // 시즌 히스토리 데이터 상태 (user_season_histories + seasons)
   interface SeasonHistory {
@@ -589,6 +613,13 @@ const Sidebar = () => {
     if (cachedProfile.badges) {
       setBadgeData(cachedProfile.badges);
       setHasBadgeData(true);
+    }
+    if (cachedProfile.point) {
+      setPointData({
+        check: toPointNum(cachedProfile.point.check),
+        advantage: toPointNum(cachedProfile.point.advantage),
+        penalty: toPointNum(cachedProfile.point.penalty),
+      });
     }
     if (cachedProfile.seasonHistories && cachedProfile.seasonHistories.length > 0) {
       setSeasonHistories(cachedProfile.seasonHistories);
@@ -1021,6 +1052,7 @@ const Sidebar = () => {
         reliabilityRate: cachedResult.reliabilityRate,
         practicalCounts: cachedResult.practicalCounts,
         badges: cachedResult.badges,
+        point: cachedResult.point,
         seasonHistories: cachedResult.seasonHistories,
         resumeCardSettings: cachedResult.resumeCardSettings,
         growthPeriodStats: cachedResult.growthPeriodStats,
@@ -1109,6 +1141,18 @@ const Sidebar = () => {
           setHasBadgeData(true);
         } else {
           setHasBadgeData(false);
+        }
+
+        // point DTO (check/advantage/penalty) — resume-badges 표시 SoT.
+        // 값 정규화: null/undefined/NaN → 0, 문자열 숫자 → Number().
+        if (result.point) {
+          setPointData({
+            check: toPointNum(result.point.check),
+            advantage: toPointNum(result.point.advantage),
+            penalty: toPointNum(result.point.penalty),
+          });
+        } else {
+          setPointData(null);
         }
 
         // 시즌 히스토리 데이터 설정
@@ -1812,10 +1856,11 @@ const Sidebar = () => {
     const timers = [
       animateNumber(setStat1, currentStats.stat1, 1000),
       animateNumber(setStat2, currentStats.stat2, 1000),
-      // 배지 데이터는 실제 API 데이터 사용 (hasBadgeData가 true인 경우)
-      animateNumber(setBadge1, hasBadgeData ? badgeData.stars : currentStats.badge1, 1000), // 별 (단감)
-      animateNumber(setBadge2, hasBadgeData ? badgeData.shields : currentStats.badge2, 1000), // 방패 (인절미) - DB에서 이미 계산된 값
-      animateNumber(setBadge3, hasBadgeData ? Math.abs(badgeData.lightnings || 0) : currentStats.badge3, 1000), // 번개 (어흥) - 양수로 표시
+      // 배지 데이터 SoT: /api/profile 의 point DTO (check/advantage/penalty).
+      //   point 미수신 시 badgeData(stars/shields/lightnings) → 데모 currentStats 순 폴백.
+      animateNumber(setBadge1, pointData ? pointData.check : (hasBadgeData ? badgeData.stars : currentStats.badge1), 1000), // icon-graphic10 ← point.check
+      animateNumber(setBadge2, pointData ? pointData.advantage : (hasBadgeData ? badgeData.shields : currentStats.badge2), 1000), // icon-shield ← point.advantage
+      animateNumber(setBadge3, pointData ? pointData.penalty : (hasBadgeData ? Math.abs(badgeData.lightnings || 0) : currentStats.badge3), 1000), // icon-graphic13(red) ← point.penalty
       animateNumber(setSkill1, currentStats.skill1, 1000),
       animateNumber(setSkill2, currentStats.skill2, 1000),
       animateNumber(setSkill3, currentStats.skill3, 1000),
@@ -1825,7 +1870,7 @@ const Sidebar = () => {
     return () => {
       timers.forEach((timer) => clearInterval(timer));
     };
-  }, [debugPanelType, hasBadgeData, badgeData]);
+  }, [debugPanelType, hasBadgeData, badgeData, pointData]);
 
   // 커스텀 스크롤바 업데이트
   const updateScrollbar = useCallback(() => {

@@ -15,6 +15,9 @@ interface ProfileData {
   reliabilityRate: number | null;
   completionRate: number | null;
   badges: { stars: number; lightnings: number; shields: number } | null;
+  // resume-card .resume-badges point DTO (source: user_cumulative_points 전용 컬럼).
+  // check=total_checks, advantage=total_advantages, penalty=total_penalties. 미존재 시 0.
+  point: { check: number; advantage: number; penalty: number } | null;
   seasonHistories: any[] | null;
   growthInfo: any | null;
   gradeStats: any | null;
@@ -157,6 +160,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
         reliabilityRate: result.reliabilityRate ?? null,
         completionRate: result.completionRate ?? null,
         badges: result.badges || null,
+        point: result.point || null,
         seasonHistories: result.seasonHistories || null,
         growthInfo: result.growthInfo || null,
         gradeStats: result.gradeStats || null,

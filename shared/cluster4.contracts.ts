@@ -119,6 +119,25 @@ export interface Cluster4LineOutputImageDto {
   [key: string]: unknown;
 }
 
+// statusTone — 어드민 DTO 가능 값(semantic tone): "neutral" | "info" | "success" | "warning" | "danger".
+// statusIconKey/userWeekStatus 와 별개 축 (tone 은 색상 톤, iconKey 는 아이콘/세부 상태).
+export type AdminCluster4StatusTone =
+  | "neutral"
+  | "info"
+  | "success"
+  | "warning"
+  | "danger";
+
+// status-badge 아이콘 키 (어드민 DTO userWeekStatus 와 1:1 동일):
+// "running" | "tallying" | "success" | "fail" | "personal_rest" | "official_rest"
+export type AdminCluster4StatusIconKey =
+  | "running"
+  | "tallying"
+  | "success"
+  | "fail"
+  | "personal_rest"
+  | "official_rest";
+
 export interface AdminCluster4WeeklyCardDto {
   weekId: string;
   weekNumber: number;
@@ -131,7 +150,7 @@ export interface AdminCluster4WeeklyCardDto {
   userWeekStatus?: string | null;
   isRestWeek?: boolean | null;
   statusLabel?: string | null;
-  statusTone?: string | null;
+  statusTone?: AdminCluster4StatusTone | string | null;
   weeklyGrowthRate?: number | null;
   growthNumerator?: number | null;
   growthDenominator?: number | null;
@@ -154,6 +173,26 @@ export interface AdminCluster4WeeklyCardDto {
   colleagueCount?: number | null;
   colleagueTotal?: number | null;
   lines?: Cluster4WeeklyLineDto[];
+
+  // ── section1-header 단일 출처 보강 필드 (어드민 DTO append-only — 2026-05-30) ──
+  // status-badge 아이콘 결정. userWeekStatus 와 동일 enum 이지만 "아이콘용" 의도를 명시.
+  statusIconKey?: AdminCluster4StatusIconKey | null;
+  // 공개 정적 자산 경로(예: "/images/0/cluster4/icon/icon - 성장(성공).png").
+  statusIconUrl?: string | null;
+  // 누적 승인 주차 수 (status='success' 합 — 본 주차 포함, 진행/집계 중 +1 미포함).
+  accumulatedApprovedWeeks?: number | null;
+  // 졸업 목표 주차 수 (조직 상수). totalRequiredWeeks === baseWeekCount.
+  totalRequiredWeeks?: number | null;
+  baseWeekCount?: number | null;
+  // 프론트 계산 없이 곧바로 표시 가능한 주차 진행 라벨(예: "+1 / 25 주차" | "30 / 25 주차").
+  displayWeekProgressLabel?: string | null;
+  // 본 주차 시점의 사용자 기수 (user_team_parts.generation).
+  generation?: number | null;
+  // 본 주차 시점의 운영진/팀장이 관리하는 팀 이름 (user_team_parts.managed_team_id → teams.name).
+  managedTeamName?: string | null;
+  // 본 주차가 온보딩 주차인지 여부 (weekId === user_profiles.onboarding_week_id).
+  isOnboarding?: boolean | null;
+
   [key: string]: unknown;
 }
 

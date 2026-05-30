@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getCachedTeams, getCachedParts, getCachedActivityTypes } from "@/lib/cached-data";
 import { getProfileLookupKey, resolveUserProfileAccess } from "@/lib/user-profile-access";
 import { seasonLabel } from "@/lib/cluster4-types";
+import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -176,14 +177,13 @@ async function fetchResumeCardSettings(client: any, userId: string | null, orgSl
 async function fetchClubRankAvgPercentile(request: NextRequest, userId: string | null): Promise<number | null> {
   if (!userId) return null;
 
-  const adminApiBaseUrl = process.env.ADMIN_API_BASE_URL;
+  const adminApiBaseUrl = await resolveAdminBaseUrl();
   if (!adminApiBaseUrl) {
-    console.warn("[profile] ADMIN_API_BASE_URL 미설정 — club-rank avgPercentile 조회 불가");
+    console.warn("[profile] admin backend 미발견 (env + localhost probe 실패) — club-rank avgPercentile 조회 불가");
     return null;
   }
 
-  const baseTrimmed = adminApiBaseUrl.replace(/\/+$/, "");
-  const targetUrl = new URL(`${baseTrimmed}/api/cluster3/club-rank`);
+  const targetUrl = new URL(`${adminApiBaseUrl}/api/cluster3/club-rank`);
   targetUrl.searchParams.set("userId", userId);
 
   const internalApiKey = process.env.INTERNAL_API_KEY;
@@ -314,6 +314,13 @@ export async function GET(request: NextRequest) {
             stars: legacy.total_stars ?? 0,
             lightnings: 0,
             shields: 0,
+          },
+          // point DTO (legacy 경로) — crew_list_view 에는 check/advantage/penalty 집계가 없음.
+          // 전용 컬럼(total_checks/advantages/penalties) 부재 → 모두 0 (null 아님).
+          point: {
+            check: legacy.total_checks ?? 0,
+            advantage: legacy.total_advantages ?? 0,
+            penalty: legacy.total_penalties ?? 0,
           },
           seasonHistories: [],
           growthInfo: {
@@ -782,7 +789,10 @@ export async function GET(request: NextRequest) {
       // weekly_activities - 모든 열린 활동 조회 (completionRate 계산용)
       supabaseAdmin.from("weekly_activities").select("week_id, activity_type_id").eq("is_active", true),
 
-      // cumulative_points (별, 번개, 방패)
+      // cumulative_points (별, 번개, 방패) — badges 전용.
+      // point DTO(check/advantage/penalty)는 별도 쿼리로 분리 조회한다(아래 cumulativePointDto).
+      // 이유: 한 SELECT 에 존재하지 않는 컬럼이 섞이면 PostgREST 가 쿼리 전체를 에러로 돌려
+      //       data=null 이 되어 badges 와 point 가 동시에 0 으로 죽는다.
       supabaseAdmin.from("user_cumulative_points").select("total_stars, total_lightnings, total_shields").eq("user_id", profile.id).maybeSingle(),
 
       // season_histories
@@ -962,6 +972,27 @@ export async function GET(request: NextRequest) {
     const weeklyActivities = weeklyActivitiesResult.data;
     const cumulativePoints = cumulativePointsResult.data;
     const gradeStats = gradeStatsResult.data;
+
+    // resume-badges point DTO — user_cumulative_points 전용 컬럼(total_checks/advantages/penalties).
+    // 응답은 data:profile 이므로 data.user_id === profile.user_id. 조회 키도 동일하게 맞춘다
+    // (profile.id 가 아닌 profile.user_id 우선 — /api/profile/summary 와 동일 컨벤션).
+    // badges 조회와 분리하여, 한쪽 컬럼이 없거나 조회 실패해도 다른 쪽이 0 으로 죽지 않게 한다.
+    const cumulativePointUserId = profile.user_id ?? profile.id;
+    const cumulativePointsRes = await supabaseAdmin
+      .from("user_cumulative_points")
+      .select("total_checks, total_advantages, total_penalties")
+      .eq("user_id", cumulativePointUserId)
+      .maybeSingle();
+    if (cumulativePointsRes.error) {
+      // 조회 실패(컬럼/권한/네트워크 등) — row 없음과 명확히 구분.
+      console.error("[Profile API] user_cumulative_points 조회 실패(point)", cumulativePointUserId, cumulativePointsRes.error);
+    } else if (!cumulativePointsRes.data) {
+      // 조회는 성공했으나 해당 user_id row 없음.
+      console.warn("[Profile API] user_cumulative_points row 없음(point) for user_id:", cumulativePointUserId);
+    } else {
+      console.log("[Profile API] user_cumulative_points point row", cumulativePointUserId, cumulativePointsRes.data);
+    }
+    const cumulativePointDto = cumulativePointsRes.data;
     const clubRankAvgPercentile = await clubRankAvgPercentilePromise;
     const growthStats = growthStatsResult.data;
     const allWeeks = allWeeksResult.data || [];
@@ -1574,6 +1605,17 @@ export async function GET(request: NextRequest) {
         stars: cumulativePoints?.total_stars || 0,
         lightnings: cumulativePoints?.total_lightnings || 0,
         shields: cumulativePoints?.total_shields || 0,
+      },
+      // resume-card .resume-badges 표시용 point DTO.
+      // source table: user_cumulative_points (전용 컬럼, cumulativePointDto 로 분리 조회)
+      //   point.check     → total_checks
+      //   point.advantage → total_advantages (음수 가능 — || 가 아닌 ?? 사용)
+      //   point.penalty   → total_penalties
+      // 행/값 미존재 시 null 이 아니라 0 으로 내려준다. 기존 badges 필드는 유지(append-only).
+      point: {
+        check: cumulativePointDto?.total_checks ?? 0,
+        advantage: cumulativePointDto?.total_advantages ?? 0,
+        penalty: cumulativePointDto?.total_penalties ?? 0,
       },
       seasonHistories: finalSeasonHistoriesWithOnboarding,
       // 현재 진행 시즌/주차 (cluster-4-1 상단 문구 SoT) — 서버 canonical 값

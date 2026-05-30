@@ -48,6 +48,19 @@ const statusLabel = (status: string, growthStatus: string) => {
 
 const sortByName = (a: Crew, b: Crew) => a.name.localeCompare(b.name, "ko");
 
+// 별 개수 표시 정규화 — 별 개수 SoT 는 /api/crews 의 totalStars
+// (어드민 points 테이블 point_type='star' 누적 합). 표시 규칙:
+//   number → 그대로 / 문자열 숫자 → Number() / null·undefined·NaN → 0.
+// API 는 number 를 보내지만 응답 변형/누락에 대비한 방어적 정규화.
+const toStarCount = (value: unknown): number => {
+  if (typeof value === "number") return Number.isNaN(value) ? 0 : value;
+  if (typeof value === "string") {
+    const n = Number(value);
+    return Number.isNaN(n) ? 0 : n;
+  }
+  return 0;
+};
+
 const clubOptions = ["엥크레", "오랑캐", "팔랑크스"];
 const statusOptions = ["활동 중", "활동 졸업", "활동 중단"];
 const ITEMS_PER_PAGE = 50;
@@ -826,7 +839,7 @@ function CrewsContent() {
                             <div className="price-footer">
                               <div className="price-inner">
                                 <p className="price text-sm fw-6">
-                                  {crew.totalStars.toLocaleString()}{" "}
+                                  {toStarCount(crew.totalStars).toLocaleString()}{" "}
                                   <span className="currency">{totalStarsLabel}</span>
                                 </p>
                                 <Link href={resolveHref(crew)} className="btn--primary text-sm" style={{ fontSize: 12 }}>

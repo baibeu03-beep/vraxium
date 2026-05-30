@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
 import { getFixedDropdownPosition } from "@/utils/documentZoom";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { useDebugLayout } from "@/utils/debugLayout";
@@ -13,10 +13,16 @@ import { supabase } from "@/lib/supabase";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
+import { isPxRoute, isEcRoute, withPxRoute, getThemeClass } from "@/lib/cluster-route";
+import { formatSeasonLabel, formatSeasonWeekTitle } from "@/lib/cluster4-types";
+import { REPUTATION_KEYWORD_GROUPS } from "@/lib/reputation-keywords";
+import { isAdminEmail } from "@/lib/admin";
+import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
+import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
 import DetailLogModal from "./DetailLogModal";
 import confetti from "canvas-confetti";
 import HelpModalBody from "@/components/shared/HelpModalBody";
-import type { Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
+import type { AdminCluster4WeeklyCardDto, Cluster4RateDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
 
 // 주차 결과 결정 시점 = N+1주(목) 12:01 KST = N(월) 00:00 + 10일 12시간 1분
 // 이 시점에 동시에 확정:
@@ -49,6 +55,8 @@ interface DBWeekData {
   weekNumber: number;
   seasonYear: number;
   seasonName: string;
+  seasonLabel?: string | null;
+  seasonType?: string | null;
   isBreakSeason: boolean;
   toSeasonName: string | null;
   startDate: string;
@@ -267,6 +275,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const searchParams = useSearchParams();
   const popup = usePopup();
   const urlUserId = searchParams.get("userId") || searchParams.get("userID");
+  // EC(encre) 라우트(/cluster-4-card-ec/...) 판정 — section1-header info-group right
+  // 의 단감/인절미/어흥 라벨·아이콘을 별/방패/번개로 치환할 때만 사용.
+  // 숫자 값(headerDangam 등)·className·PX/default 분기는 미터치.
+  const pathname = usePathname();
+  const isEC = isEcRoute(pathname);
+  // base key → EC 전용 라벨/아이콘 매핑 (Cluster4Content 의 ecIconSrcMap 과 동일 경로).
+  const EC_HEADER_POINT: Record<"단감" | "인절미" | "어흥", { label: string; icon: string }> = {
+    단감: { label: "별", icon: "/images/0/Graphic10.png" },
+    인절미: { label: "방패", icon: "/images/0/Shield.png" },
+    어흥: { label: "번개", icon: "/images/0/Graphic13.png" },
+  };
   // ?admin=true — Output Link 2차 모달 UI 테스트용 프론트 전용 override (DB/API/권한 변경 없음)
   const isAdminPreview = searchParams.get("admin") === "true";
   // SSR/client hydration 일관성을 위해 stateful — 첫 렌더 SSR=client=false, 마운트 후 localStorage 값 반영
@@ -1236,6 +1255,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           weekNumber: currentWeek.week_number,
           seasonYear: seasonData?.year || 0,
           seasonName,
+          seasonLabel: seasonData?.season_label || null,
+          seasonType: seasonData?.season_type || rawSeasonName || null,
           isBreakSeason,
           toSeasonName,
           startDate: currentWeek.start_date,
@@ -1879,6 +1900,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 찾으면 안 된다. 전체 카드의 lines 를 weekId 태그와 함께 평탄화하여 보관하고,
   // findCluster4Line(weekId + partType + sub-line key) 로만 매칭한다.
   const [cluster4Lines, setCluster4Lines] = useState<Cluster4WeeklyLineDto[]>([]);
+  // section1-header 단일 출처(어드민 DTO) — 현재 주차 카드 메타. 같은 weekly-cards 응답에서
+  // 이미 받아온 matchedCard 를 그대로 보관. 없으면(데모/미매칭/실패) 기존 로컬 계산값 fallback.
+  const [weeklyCardMeta, setWeeklyCardMeta] = useState<AdminCluster4WeeklyCardDto | null>(null);
 
   useEffect(() => {
     // fetch 실행 여부/차단 사유를 항상 로깅 (early-return 진단)
@@ -1935,6 +1959,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         // 진단: 현재 주차 카드/라인 가시성
         const matchedCard = cards.find((c) => c.weekId === weekId);
         const currentWeekLines = allLines.filter((l) => (l.weekId ?? null) === weekId);
+        // section1-header 단일 출처: 현재 주차 카드 메타 보관 (미매칭 시 null → 로컬 fallback)
+        setWeeklyCardMeta(matchedCard ?? null);
         if (!matchedCard) {
           console.warn("[cluster4-canEdit] weekly-cards 응답에 weekId 일치 카드 없음", {
             weekId,
@@ -2197,6 +2223,46 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const experienceLinesInWeek: Cluster4WeeklyLineDto[] = weekId
     ? cluster4Lines.filter((l) => (l.weekId ?? null) === weekId && normalizePartType(l.partType) === "experience")
     : [];
+
+  // ── 실무 정보 카운트/달성률 단일 출처(어드민 weekly-cards DTO lines) ──
+  // 앞 숫자(total) = 현재 주차에 개설된 information 라인 총 개수.
+  // 뒤 숫자(success) = 그중 "강화 성공" 라인 개수.
+  // 강화 성공 판정 기준 = line.enhancementStatus === "success" (백엔드 SoT — enhancementStatusBadge 와 동일 기준).
+  //   pending(강화 대기) / fail(강화 실패) / not_applicable(해당 없음) 은 success 에서 제외.
+  // 어드민 information 라인이 1개라도 수신되면 그것을 SoT 로 사용, 전혀 없으면 기존 로컬 infoStats 로 fallback(회귀 방지).
+  const infoLinesInWeek: Cluster4WeeklyLineDto[] = weekId
+    ? cluster4Lines.filter((l) => (l.weekId ?? null) === weekId && normalizePartType(l.partType) === "information")
+    : [];
+  const infoStatsAdmin = (() => {
+    // 1) 백엔드 집계 단일 출처 우선 — weekly-cards 카드 DTO 에 info 집계(infoRate{rate,count,total})가
+    //    내려오면 그대로 사용한다(프론트 재계산 금지). count=success(B), total=배정 라인 수(A).
+    const infoRate = (weeklyCardMeta as (AdminCluster4WeeklyCardDto & { infoRate?: Cluster4RateDto | null }) | null)?.infoRate ?? null;
+    if (infoRate && typeof infoRate.total === "number" && typeof infoRate.count === "number") {
+      return {
+        total: Number(infoRate.total) || 0,
+        success: Number(infoRate.count) || 0,
+        rate: typeof infoRate.rate === "number" ? infoRate.rate : null,
+      };
+    }
+    // 2) fallback — 백엔드 집계 미수신 시에만 DTO 라인 배열로 재계산.
+    if (infoLinesInWeek.length === 0) {
+      // 어드민 라인도 미수신 → 기존 로컬 계산값 유지
+      return { total: Number(infoStats.total) || 0, success: Number(infoStats.success) || 0, rate: null };
+    }
+    const total = infoLinesInWeek.length;
+    const success = infoLinesInWeek.filter(
+      (l) => String(l.enhancementStatus ?? "").toLowerCase() === "success",
+    ).length;
+    return { total: Number(total) || 0, success: Number(success) || 0, rate: null };
+  })();
+  // 강화율: 백엔드 rate 가 있으면 그대로, 없으면 프론트 fallback 재계산(Math.round((B/A)*100)).
+  // 총 개수 0 → 0 (NaN/Infinity 방지). 소수점 없이 정수 반올림.
+  const infoSuccessRate =
+    typeof infoStatsAdmin.rate === "number"
+      ? infoStatsAdmin.rate
+      : infoStatsAdmin.total > 0
+        ? Math.round((infoStatsAdmin.success / infoStatsAdmin.total) * 100)
+        : 0;
   // 카드(legacy or built) 1개 → matchedLine 결정. cardIndex 가 주어지면(빌드 시) 위치 기반 fallback 사용.
   const resolveExpMatchedLine = (card: any, cardIndex?: number): { line: Cluster4WeeklyLineDto | undefined; by: ExpSelectedBy } => {
     if (!card) return { line: undefined, by: "none" };
@@ -2336,14 +2402,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   useEffect(() => {
     if (!workInfoViewIsEditing) setActiveCaptionIdx(null);
   }, [workInfoViewIsEditing]);
-  // 데모 모드: true (수정 가능 — UI 테스트용) / 일반 모드: false (관리자 승인 필요)
-  // TODO: [백엔드 작업 필요] 일반 모드에서 API 응답의 canEdit 값을 setCanEditWorkInfo로 반영
+  // 데모 모드: true (수정 가능 — UI 테스트용) / 일반 모드: weekly-cards DTO 의 canEdit 단일 출처.
   const [canEditWorkInfo, setCanEditWorkInfo] = useState<boolean>(isDemoMode);
   useEffect(() => {
-    // isDemoMode는 마운트 시 useEffect로 false → checkDemoMode() 결과로 sync됨 (SSR/hydration 일관성).
-    // useState 초기값은 첫 렌더만 사용되므로, 마운트 후 isDemoMode 변경을 canEditWorkInfo로 따라잡기 위해 별도 sync.
-    setCanEditWorkInfo(isDemoMode);
-  }, [isDemoMode]);
+    // 편집 진입(handleEditWorkInfo)·수정 버튼 disabled·저장 핸들러(handleSaveWorkInfo) 차단 기준을
+    // 단일 기준으로 통일한다: 데모/어드민 프리뷰는 항상 true, 일반 모드는
+    // workInfoMatchedLine.canEdit === true && lineTargetId 존재 (백엔드 단일 출처, 프론트 재계산 금지).
+    if (isDemoMode || isAdminPreview) {
+      setCanEditWorkInfo(true);
+      return;
+    }
+    const lineTargetId = (workInfoMatchedLine?.lineTargetId as string | null | undefined) ?? null;
+    setCanEditWorkInfo(workInfoMatchedLine?.canEdit === true && !!lineTargetId);
+  }, [isDemoMode, isAdminPreview, workInfoMatchedLine]);
 
   // ========== workAbility View 모달 전용 state (workInfo 패턴 복제, 완전 독립) ==========
   const [workAbilityFooterNotice, setWorkAbilityFooterNotice] = useState<"default" | "error">("default");
@@ -4932,7 +5003,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const computedWeekPaths = weekData ? getWeekImagePath(weekData) : null;
   const currentImage = isRestMode ? restImage : computedWeekPaths ? computedWeekPaths.primary : "/images/0/cluster4/주차 이미지/겨울 1주차 (1월 1주차).png";
   const currentImageStripped = !isRestMode && computedWeekPaths && computedWeekPaths.stripped !== computedWeekPaths.primary ? computedWeekPaths.stripped : null;
-  const currentTitle = weekData ? (weekData.isBreakSeason ? `${weekData.seasonYear} ${weekData.toSeasonName} 시즌, 전환 주차` : `${weekData.seasonYear} ${weekData.seasonName} 시즌, ${weekData.weekNumber}주차`) : "로딩 중...";
+  const currentTitle = weekData ? (weekData.isBreakSeason ? `${formatSeasonLabel({ seasonLabel: weekData.seasonLabel, seasonName: weekData.toSeasonName || weekData.seasonName, seasonType: weekData.seasonType, year: weekData.seasonYear })} 전환 주차` : formatSeasonWeekTitle({ seasonLabel: weekData.seasonLabel, seasonName: weekData.seasonName, seasonType: weekData.seasonType, year: weekData.seasonYear, weekNumber: weekData.weekNumber })) : "로딩 중...";
 
   // 날짜 포맷팅 함수 (2025 - 01 - 06 (월) 형식)
   const formatDateWithDay = (dateString: string) => {
@@ -4998,6 +5069,90 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const statusBadgeInfo = getStatusBadgeInfo(weekData?.growthStatus);
+
+  // ── section1-header 단일 출처: 어드민 weekly-cards DTO(weeklyCardMeta) 우선, 없으면 기존 로컬 계산값 fallback ──
+  // 백엔드 미수정 — 이미 fetch 중인 /api/cluster4/weekly-cards 의 matchedCard(AdminCluster4WeeklyCardDto) 재사용.
+  // 값이 null/undefined 면 로컬 계산값으로 폴백하고, 표시 단계에서 "-"/0 으로 안전 처리.
+
+  // 제목: displayTitle > titleText > weekLabel > 로컬 조합(currentTitle)
+  const headerTitle = weeklyCardMeta?.displayTitle ?? weeklyCardMeta?.titleText ?? weeklyCardMeta?.weekLabel ?? currentTitle;
+
+  // 상태 배지: 텍스트=statusLabel(어드민), 톤(className)=statusIconKey > statusTone 매핑(미상 vocab 은 로컬 폴백),
+  //            아이콘=statusIconUrl 우선, 없으면 로컬 매핑 유지.
+  // statusIconKey(어드민 DTO, userWeekStatus 와 1:1) → 기존 로컬 status-badge CSS className 매핑.
+  const STATUS_ICON_KEY_CLASS: Record<string, string> = {
+    running: "in-progress",
+    tallying: "counting",
+    success: "success",
+    fail: "fail",
+    personal_rest: "rest-personal",
+    official_rest: "rest-official",
+  };
+  // statusTone(semantic) → status-badge CSS className 보강.
+  // 기존 vocab(success/fail/in_progress/...)은 하위 호환 유지하고, 어드민 DTO 의미 톤(neutral/info/warning/danger)을 추가.
+  const STATUS_TONE_CLASS: Record<string, string> = {
+    success: "success",
+    fail: "fail",
+    in_progress: "in-progress",
+    counting: "counting",
+    rest_personal: "rest-personal",
+    rest_official: "rest-official",
+    // 어드민 DTO semantic tone 보강
+    neutral: "rest-personal",
+    info: "in-progress",
+    warning: "counting",
+    danger: "fail",
+  };
+  const headerStatusText = weeklyCardMeta?.statusLabel ?? statusBadgeInfo.text;
+  const headerStatusClass =
+    (weeklyCardMeta?.statusIconKey ? STATUS_ICON_KEY_CLASS[weeklyCardMeta.statusIconKey] : undefined)
+    ?? (weeklyCardMeta?.statusTone ? STATUS_TONE_CLASS[weeklyCardMeta.statusTone] : undefined)
+    ?? statusBadgeInfo.className;
+  // 아이콘: 어드민 DTO statusIconUrl 우선, null/undefined 면 기존 로컬 아이콘 fallback.
+  const headerStatusIcon = weeklyCardMeta?.statusIconUrl ?? statusBadgeInfo.icon;
+
+  // 날짜 배지
+  const headerStartDate = weeklyCardMeta?.startDate ?? weekData?.startDate ?? null;
+  const headerEndDate = weeklyCardMeta?.endDate ?? weekData?.endDate ?? null;
+
+  // 역할 배지
+  const headerRoleLabel = weeklyCardMeta?.roleLabel ?? roleLabel;
+
+  // 팀/파트
+  const headerTeamName = weeklyCardMeta?.teamName ?? teamName;
+  const headerPartName = weeklyCardMeta?.partName ?? partName;
+
+  // 팀/파트 특수 표기(운영진·온보딩·팀장(managedTeam)) 분기 입력값: 어드민 DTO 우선, null/undefined 면 로컬 상태 fallback.
+  const headerIsOnboarding = weeklyCardMeta?.isOnboarding ?? isOnboardingWeek;
+  const headerGeneration = weeklyCardMeta?.generation ?? generation;
+  const headerManagedTeamName = weeklyCardMeta?.managedTeamName ?? managedTeamName;
+
+  // 주차 진행 라벨: displayWeekProgressLabel 우선.
+  // 없으면 accumulatedApprovedWeeks / (totalRequiredWeeks ?? baseWeekCount) 로 계산, 그것도 없으면 로컬 누적 주차 + 25 fallback.
+  const headerWeekTotal = weeklyCardMeta?.totalRequiredWeeks ?? weeklyCardMeta?.baseWeekCount ?? 25;
+  const isCountingWeek = weekData?.growthStatus === "진행 중" || weekData?.growthStatus === "집계 중";
+  const headerWeekApproved = weeklyCardMeta?.accumulatedApprovedWeeks ?? cumulativeApprovedWeeks;
+  // 기존 .highlight DOM 구조 유지를 위해 강조 토큰과 접미사로 분리.
+  let headerWeekHighlight: string | number = isCountingWeek ? "+1" : headerWeekApproved;
+  let headerWeekSuffix = ` / ${headerWeekTotal} 주차`;
+  if (weeklyCardMeta?.displayWeekProgressLabel) {
+    const label = weeklyCardMeta.displayWeekProgressLabel;
+    const slashIdx = label.indexOf("/");
+    if (slashIdx > -1) {
+      headerWeekHighlight = label.slice(0, slashIdx).trim();
+      headerWeekSuffix = ` ${label.slice(slashIdx)}`;
+    } else {
+      headerWeekHighlight = label;
+      headerWeekSuffix = "";
+    }
+  }
+
+  // 단감/인절미/어흥: 어드민 카드 points 우선(동일 계산식 유지), 없으면 로컬 weekPoints 폴백.
+  // ※ DTO.cumulativeInjeolmi 는 '누적' 개념이라 주차 단위 인절미 배지와 별개 — 사용하지 않음.
+  const headerCardPoints = weeklyCardMeta?.points ?? null;
+  const headerDangam = headerCardPoints?.star ?? weekPoints.star ?? 0;
+  const headerInjeolmi = headerCardPoints ? Math.abs((headerCardPoints.shield ?? 0) - (headerCardPoints.lightning ?? 0)) : Math.abs(weekPoints.shield - weekPoints.lightning);
+  const headerEoheung = headerCardPoints ? Math.abs(headerCardPoints.lightning ?? 0) : Math.abs(weekPoints.lightning);
 
   // 태그 색상 배열
   const tagColors = ["tag--pink", "tag--red", "tag--yellow", "tag--purple", "tag--green", "tag--cyan", "tag--mint", "tag--dark"];
@@ -6650,7 +6805,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           <div className="main-image-container">
             <img
               src={currentImage}
-              alt="주차 이미지"
+              alt={currentTitle}
               className="main-week-image"
               data-stripped-src={currentImageStripped || undefined}
               onError={(e) => {
@@ -6719,20 +6874,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           {/* 헤더 */}
           <div className="section1-header">
             <div className="header-title-row">
-              <h1 className="section1-title">{currentTitle}</h1>
-              <div className={`status-badge ${statusBadgeInfo.className}`}>
-                <span>{statusBadgeInfo.text}</span>
-                <img src={statusBadgeInfo.icon} alt={statusBadgeInfo.text} />
+              <h1 className="section1-title">{headerTitle || "-"}</h1>
+              <div className={`status-badge ${headerStatusClass}`}>
+                <span>{headerStatusText || "-"}</span>
+                <img src={headerStatusIcon} alt={headerStatusText || "-"} />
               </div>
             </div>
             <div className="header-info-row">
               <div className="info-badge date" style={{ alignSelf: "flex-start" }}>
                 <img src="/images/0/cluster4/icon/icon - 6.png" alt="calendar" />
-                <span>{weekData ? `${formatDate(weekData.startDate)} ~ ${formatDate(weekData.endDate)}` : "로딩 중..."}</span>
+                <span>{headerStartDate && headerEndDate ? `${formatDate(headerStartDate)} ~ ${formatDate(headerEndDate)}` : "로딩 중..."}</span>
               </div>
               <div className="info-badge role" style={{ width: "fit-content", minWidth: "auto", maxWidth: "200px", fontFamily: "'Pretendard', sans-serif", alignSelf: "flex-start" }}>
                 <img src="/images/0/cluster4/icon/Interface/Star-3.png" alt="role" />
-                <span style={{ overflow: "hidden", whiteSpace: "nowrap" }}>{truncate(roleLabel, 8)}</span>
+                <span style={{ overflow: "hidden", whiteSpace: "nowrap" }}>{truncate(headerRoleLabel ?? "-", 8)}</span>
               </div>
               <div
                 className="week-info-wrapper"
@@ -6753,7 +6908,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 <div className="info-badge week" style={{ alignSelf: "flex-end" }}>
                   <img src="/images/0/cluster4/icon/icon - 7.png" alt="week" />
                   <span>
-                    <span className="highlight">{weekData?.growthStatus === "진행 중" || weekData?.growthStatus === "집계 중" ? "+1" : cumulativeApprovedWeeks}</span> / 25 주차
+                    <span className="highlight">{headerWeekHighlight}</span>{headerWeekSuffix}
                   </span>
                 </div>
                 <button ref={weekConfirmBtnRef} type="button" className={`week-confirm-btn status-${weekStatus}${isWeekConfirmed ? " is-confirmed" : ""}`} onClick={handleWeekConfirmClick} disabled={weekStatus !== "pending"} aria-label={isWeekConfirmed ? "주차 확인 완료" : "주차 확인 필요"}>
@@ -6772,7 +6927,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <div className="info-group left" style={{ flexShrink: 0 }}>
                 <span className="info-item team" style={{ display: "inline-flex", minWidth: "245px", maxWidth: "245px", fontSize: "16px", fontFamily: "'Pretendard', sans-serif" }}>
                   <strong>[팀]&nbsp;</strong>
-                  <span className="text-gray">{isOnboardingWeek ? "클럽 온보딩" : teamName === "운영진" && generation ? `운영진(${generation}기)` : (teamName || "-").length > 10 ? (teamName || "-").slice(0, 10) + ".." : teamName || "-"}</span>
+                  <span className="text-gray">{headerIsOnboarding ? "클럽 온보딩" : headerTeamName === "운영진" && headerGeneration ? `운영진(${headerGeneration}기)` : (headerTeamName || "-").length > 10 ? (headerTeamName || "-").slice(0, 10) + ".." : headerTeamName || "-"}</span>
                 </span>
                 <span className="info-divider" style={{ marginLeft: "-63px" }}>
                   |
@@ -6780,43 +6935,43 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 <span className="info-item part" style={{ display: "inline-flex", minWidth: "245px", maxWidth: "245px", fontSize: "16px", fontFamily: "'Pretendard', sans-serif", marginLeft: "-4px" }}>
                   <strong>[파트]&nbsp;</strong>
                   <span className="text-gray">
-                    {isOnboardingWeek
+                    {headerIsOnboarding
                       ? "신입OT"
-                      : teamName === "운영진" && partName === "팀장" && managedTeamName
-                        ? `팀장(${managedTeamName})`.length > 10
-                          ? `팀장(${managedTeamName})`.slice(0, 10) + ".."
-                          : `팀장(${managedTeamName})`
-                        : (partName || "-").length > 10
-                          ? (partName || "-").slice(0, 10) + ".."
-                          : partName || "-"}
+                      : headerTeamName === "운영진" && headerPartName === "팀장" && headerManagedTeamName
+                        ? `팀장(${headerManagedTeamName})`.length > 10
+                          ? `팀장(${headerManagedTeamName})`.slice(0, 10) + ".."
+                          : `팀장(${headerManagedTeamName})`
+                        : (headerPartName || "-").length > 10
+                          ? (headerPartName || "-").slice(0, 10) + ".."
+                          : headerPartName || "-"}
                   </span>
                 </span>
               </div>
               <div className="info-group right" style={{ gap: "8px", fontSize: "16px", fontFamily: "'Pretendard', sans-serif", marginLeft: "0px" }}>
                 <span className="info-divider">·</span>
                 <span className="info-item with-icon">
-                  단감
-                  <img src="/images/0/cluster4/icon/icon - 단감.png" alt="단감" className="item-icon" />
+                  {isEC ? EC_HEADER_POINT.단감.label : "단감"}
+                  <img src={isEC ? EC_HEADER_POINT.단감.icon : "/images/0/cluster4/icon/icon - 단감.png"} alt={isEC ? EC_HEADER_POINT.단감.label : "단감"} className="item-icon" />
                   <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                    {weekPoints.star}
+                    {headerDangam}
                   </strong>
                   <span className="unit-text">개</span>
                 </span>
                 <span className="info-divider">·</span>
                 <span className="info-item with-icon">
-                  인절미
-                  <img src="/images/0/cluster4/icon/icon - 인절미.png" alt="인절미" className="item-icon" />
+                  {isEC ? EC_HEADER_POINT.인절미.label : "인절미"}
+                  <img src={isEC ? EC_HEADER_POINT.인절미.icon : "/images/0/cluster4/icon/icon - 인절미.png"} alt={isEC ? EC_HEADER_POINT.인절미.label : "인절미"} className="item-icon" />
                   <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                    {Math.abs(weekPoints.shield - weekPoints.lightning)}
+                    {headerInjeolmi}
                   </strong>
                   <span className="unit-text">개</span>
                 </span>
                 <span className="info-divider">·</span>
                 <span className="info-item with-icon">
-                  어흥
-                  <img src="/images/0/cluster4/icon/icon - 어흥.png" alt="어흥" className="item-icon" />
+                  {isEC ? EC_HEADER_POINT.어흥.label : "어흥"}
+                  <img src={isEC ? EC_HEADER_POINT.어흥.icon : "/images/0/cluster4/icon/icon - 어흥.png"} alt={isEC ? EC_HEADER_POINT.어흥.label : "어흥"} className="item-icon" />
                   <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                    {Math.abs(weekPoints.lightning)}
+                    {headerEoheung}
                   </strong>
                   <span className="unit-text">개</span>
                 </span>
@@ -7310,17 +7465,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               </span>
             </div>
             <span className="section-count">
-              총 <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>{isRestMode ? "-" : infoStats.total}</span> 개 중{" "}
+              총 <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>{isRestMode ? "-" : infoStatsAdmin.total}</span> 개 중{" "}
               <span className="highlight" style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right" }}>
-                {isRestMode ? "-" : infoStats.success}
+                {isRestMode ? "-" : infoStatsAdmin.success}
               </span>{" "}
               개
             </span>
             <div className="section-title-right">
-              <span className="rate-label">파트 강화율</span>
+              <span className="rate-label">허브 강화율</span>
               <span className="rate-value">
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                  {isRestMode ? "-" : infoStats.total > 0 ? Math.ceil((infoStats.success / infoStats.total) * 100) : 0}
+                  {isRestMode ? "-" : infoSuccessRate}
                 </span>
                 %
               </span>
@@ -7431,7 +7586,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               개
             </span>
             <div className="section-title-right">
-              <span className="rate-label">파트 강화율</span>
+              <span className="rate-label">허브 강화율</span>
               <span className="rate-value">
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
                   {isOnboardingWeek || isRestMode ? "-" : experienceStatsDisplay.total > 0 ? Math.ceil((experienceStatsDisplay.success / experienceStatsDisplay.total) * 100) : 0}
@@ -7607,7 +7762,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               개
             </span>
             <div className="section-title-right">
-              <span className="rate-label">파트 강화율</span>
+              <span className="rate-label">허브 강화율</span>
               <span className="rate-value">
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
                   {isOnboardingWeek || isRestMode ? "-" : competencyStats.total > 0 ? Math.ceil((competencyStats.success / competencyStats.total) * 100) : 0}
@@ -7731,7 +7886,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               개
             </span>
             <div className="section-title-right">
-              <span className="rate-label">파트 강화율</span>
+              <span className="rate-label">허브 강화율</span>
               <span className="rate-value">
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
                   {isOnboardingWeek || isRestMode ? "-" : careerStats.total > 0 ? Math.ceil((careerStats.success / careerStats.total) * 100) : 0}
@@ -9652,7 +9807,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           <span className="char-count">{editingSubTitle.length}/300</span>
                         </div>
                       ) : (
-                        <div className="text-block-content">{workInfoMatchedLine?.infoSubtitle || "-"}</div>
+                        <div className="text-block-content">{
+                          // 사용자 제출값 단일 출처: 카드(=weekActivityDetails.sub_title) 우선 →
+                          // DTO 라인 submission.subtitle → 없으면 "-". (운영자 필드 infoSubtitle 표시 금지)
+                          selectedWorkInfoCard?.subTitle
+                          || ((workInfoMatchedLine as (Cluster4WeeklyLineDto & { submission?: { subtitle?: string | null } }) | null)?.submission?.subtitle ?? "")
+                          || "-"
+                        }</div>
                       )}
                     </div>
 
@@ -9676,7 +9837,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           <span className="char-count">{editingGrowthPoint.length}/200</span>
                         </div>
                       ) : (
-                        <div className="text-block-content">{workInfoMatchedLine?.infoGrowthPoint || "-"}</div>
+                        <div className="text-block-content">{
+                          // 사용자 제출값 단일 출처: 카드(=weekActivityDetails.growth_point) 우선 →
+                          // DTO 라인 submission.growthPoint → 없으면 "-". (운영자 필드 infoGrowthPoint 표시 금지)
+                          selectedWorkInfoCard?.growthPoint
+                          || ((workInfoMatchedLine as (Cluster4WeeklyLineDto & { submission?: { growthPoint?: string | null } }) | null)?.submission?.growthPoint ?? "")
+                          || "-"
+                        }</div>
                       )}
                     </div>
                   </div>

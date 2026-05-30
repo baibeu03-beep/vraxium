@@ -61,11 +61,12 @@ export interface CareerRecord {
     week_number: number;
     start_date: string;
     end_date: string;
-    season_id: string;
-    seasons?: {
-      id: string;
+    season_key: string;
+    season_definitions?: {
+      season_key: string;
       year: number;
-      name: string;
+      season_label: string;
+      season_type: string;
     };
   };
   // 사용자 기록 상태

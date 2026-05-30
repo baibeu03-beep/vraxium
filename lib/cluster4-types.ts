@@ -66,3 +66,19 @@ export function formatSeasonLabel(input: {
   if (!input.seasonName) return "";
   return input.year ? `${input.year}년도 ${input.seasonName}시즌` : input.seasonName;
 }
+
+export function formatSeasonWeekTitle(input: {
+  seasonLabel?: string | null;
+  seasonName?: string | null;
+  seasonType?: string | null;
+  year?: number | null;
+  weekNumber?: number | null;
+}): string {
+  const label = formatSeasonLabel({
+    seasonLabel: input.seasonLabel,
+    seasonName: input.seasonName,
+    year: input.year,
+  });
+  if (input.weekNumber == null) return label;
+  return label ? `${label} ${input.weekNumber}주차` : `${input.weekNumber}주차`;
+}

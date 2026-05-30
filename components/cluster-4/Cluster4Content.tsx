@@ -16,6 +16,7 @@ import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { DUMMY_SEASON_DATA, DUMMY_SEASON_HISTORIES, REVIEW_COMMENT_DEFAULT } from "@/constants/dummyData";
 import { dedupedJson } from "@/lib/fetch-dedupe";
 import { isPxRoute, isEcRoute, withPxRoute, getThemeClass } from "@/lib/cluster-route";
+import { formatSeasonLabel, formatSeasonWeekTitle } from "@/lib/cluster4-types";
 import { REPUTATION_KEYWORDS } from "@/lib/reputation-keywords";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
@@ -1163,6 +1164,8 @@ const Cluster4Content = () => {
   const [currentSeasonInfo, setCurrentSeasonInfo] = useState<{
     year: number;
     name: string;
+    seasonLabel?: string | null;
+    seasonType?: string | null;
     currentWeek: number;
     isClubBreak: boolean;
     holidayName: string | null;
@@ -1376,7 +1379,7 @@ const Cluster4Content = () => {
       const today = new Date().toISOString().split("T")[0];
 
       // 현재 주차 정보 가져오기 (is_club_break, holiday_name 포함)
-      const { data: currentWeekData } = await supabase.from("weeks").select("id, week_number, is_club_break, holiday_name, seasons (id, name, year)").lte("start_date", today).gte("end_date", today).maybeSingle();
+      const { data: currentWeekData } = await supabase.from("weeks").select("id, week_number, is_club_break, holiday_name, seasons (id, name, season_label, season_type, year)").lte("start_date", today).gte("end_date", today).maybeSingle();
 
       if (currentWeekData) {
         // 시즌 이름 변환 (spring -> 봄, summer -> 여름, fall -> 가을, winter -> 겨울)
@@ -1409,6 +1412,8 @@ const Cluster4Content = () => {
         setCurrentSeasonInfo({
           year: seasonData?.year || 0,
           name: displayName,
+          seasonLabel: seasonData?.season_label || null,
+          seasonType: seasonData?.season_type || rawSeasonName || null,
           currentWeek: currentWeekData.week_number,
           isClubBreak: currentWeekData.is_club_break || false,
           holidayName: currentWeekData.holiday_name || null,
@@ -2931,7 +2936,7 @@ const Cluster4Content = () => {
                     <>
                       현재 클럽은,{" "}
                       <span style={{ color: "#FF9C9C", fontSize: 20, fontFamily: "Pretendard", fontWeight: "800", lineHeight: "30px", wordWrap: "break-word" }}>
-                        {currentSeasonInfo.year}년 {currentSeasonInfo.toSeason} 시즌
+                        {formatSeasonLabel({ seasonName: currentSeasonInfo.toSeason, year: currentSeasonInfo.year })}
                       </span>
                       을 준비 중인 전환 과정에 있습니다.
                     </>
@@ -2941,7 +2946,7 @@ const Cluster4Content = () => {
                       {currentSeasonInfo ? (
                         <>
                           <span style={{ color: "#FF9C9C", fontSize: 20, fontFamily: "Pretendard", fontWeight: "800", lineHeight: "30px", wordWrap: "break-word" }}>
-                            {currentSeasonInfo.year}년 {currentSeasonInfo.name} 시즌
+                            {formatSeasonLabel({ seasonLabel: currentSeasonInfo.seasonLabel, seasonName: currentSeasonInfo.name, seasonType: currentSeasonInfo.seasonType, year: currentSeasonInfo.year })}
                           </span>
                           을 가동 중에 있습니다.
                         </>
@@ -2966,7 +2971,7 @@ const Cluster4Content = () => {
                 <div className="detail-row">
                   <span className="detail-label">성장 시작 시즌</span>
                   <span className="detail-value">
-                    {growthStartInfo && growthStartInfo.year ? (growthStartInfo.isBreak ? `${growthStartInfo.year}년, ${growthStartInfo.seasonName} 시즌, 전환 주차` : `${growthStartInfo.year}년, ${growthStartInfo.seasonName} 시즌, ${growthStartInfo.weekNumber}주차`) : "-"}
+                    {growthStartInfo && growthStartInfo.year ? (growthStartInfo.isBreak ? `${formatSeasonLabel({ seasonName: growthStartInfo.seasonName, year: growthStartInfo.year })} 전환 주차` : formatSeasonWeekTitle({ seasonName: growthStartInfo.seasonName, year: growthStartInfo.year, weekNumber: growthStartInfo.weekNumber })) : "-"}
                   </span>
                 </div>
                 <div className="detail-row">
@@ -3143,6 +3148,13 @@ const Cluster4Content = () => {
                     인절미: "/images/0/cluster4/icon/icon - 인절미.png",
                     어흥: "/images/0/cluster4/icon/icon - 어흥.png",
                   };
+                  // EC(encre) 전용 아이콘 이미지 매핑 — 라벨(별/방패/번개)에 1:1 대응.
+                  // PX/default 분기는 미터치. 숫자 값(valueMap) 도 그대로.
+                  const ecIconSrcMap = {
+                    단감: "/images/0/Graphic10.png", // 별
+                    인절미: "/images/0/Shield.png",   // 방패
+                    어흥: "/images/0/Graphic13.png",  // 번개
+                  };
                   // org-aware alias — PX → 투구/방패/화살, EC → 별/방패/번개,
                   // 그 외(default 라우트) → null → 원본 단감/인절미/어흥 유지.
                   const mapped = getOrgAliasFromPathname(pathname, name);
@@ -3150,7 +3162,9 @@ const Cluster4Content = () => {
                   return (
                     <span className="stat" key={name}>
                       {label}{" "}
-                      {mapped ? (
+                      {isEC ? (
+                        <img src={ecIconSrcMap[name]} alt={label} className="stat-icon" />
+                      ) : mapped ? (
                         <span className={`stat-icon badge-icon ${mapped.iconClass}`} aria-hidden="true" />
                       ) : (
                         <img src={defaultSrcMap[name]} alt={name} className="stat-icon" />
