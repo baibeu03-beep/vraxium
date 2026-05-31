@@ -30,175 +30,52 @@ const truncate = (text: string | undefined | null, maxLen: number): string => {
   return text.slice(0, maxLen) + "..";
 };
 
-// TODO: 피그마 점검용 임시 더미 데이터 - 점검 완료 후 제거
-const DUMMY_SEASON_ROLES = [
-  { teamName: "엔터테인먼트전략기", partName: "내돈내산파트기획", roleLabel: "운영진(앰배서더팀장)", isAdmin: false, adminGeneration: 3, startedAt: "2025-03-23", profileImage: "/images/0/crew profile/여 1.jpg" },
-  { teamName: "글로벌마케팅전략팀", partName: "클럽 단위", roleLabel: "팀장(헬스케어인턴십)", isAdmin: false, adminGeneration: 3, startedAt: "2025-03-23", profileImage: "/images/0/crew profile/여 2.jpg" },
-  { teamName: "운영(4기)", partName: "클럽 단위", roleLabel: "앰배서더", isAdmin: false, adminGeneration: 4, startedAt: "2025-03-23", profileImage: "/images/0/crew profile/여 3.jpg" },
-];
-
-// TODO: 피그마 점검용 임시 더미 데이터 - 점검 완료 후 제거
-const DUMMY_SEASON_REPUTATIONS = [
-  {
-    id: "dummy-rep-1",
-    rating: 9,
-    fmScore: 1234,
-    keyword_1: "추진력추진력력",
-    keyword_2: "끈기와인내력",
-    keyword_3: "성실성실성실성",
-    content: "가나다라마바사아자차카타파하가나다라마바사아자차카타파하가나다라마바사아자차카타파하가나다라마바사아자차카타파하",
-    reviewer: {
-      display_name: "안유현이",
-      gender: "여",
-      birth_date: "2002-01-01",
-      university: "서울과학기술대학",
-      major_first: "미디어커뮤니케이션학과",
-      teamName: "엔터테인먼트",
-      partName: "내돈내산파트",
-      vision: "엔비디아구글테슬라쿵야",
-      profile_photo_url: "/images/0/crew profile/여 4.webp",
-    },
-  },
-  {
-    id: "dummy-rep-2",
-    rating: 2,
-    fmScore: 7,
-    keyword_1: "소통력",
-    keyword_2: null,
-    keyword_3: null,
-    content: "짧은 코멘트입니다",
-    reviewer: {
-      display_name: "이진",
-      gender: "남",
-      birth_date: "2000-05-15",
-      university: "서울대",
-      major_first: "경영학과",
-      teamName: "운영",
-      partName: "클럽",
-      vision: "네이버",
-      profile_photo_url: "/images/0/crew profile/여 5.jpg",
-    },
-  },
-  {
-    id: "dummy-rep-3",
-    rating: 7,
-    fmScore: 56,
-    keyword_1: "리더십리더십십",
-    keyword_2: "창의력창의력력",
-    keyword_3: null,
-    content: "안녕하세요 이 시즌안녕하세요 이 시즌일이삼사오육칠팔구십",
-    reviewer: {
-      display_name: "유성이",
-      gender: "남",
-      birth_date: "2001-03-20",
-      university: "한국과학기술원",
-      major_first: "전자전기공학과",
-      teamName: "마케팅전략",
-      partName: "전략기획팀",
-      vision: "구글애플삼성테슬라아",
-      profile_photo_url: "/images/0/crew profile/여 6.jpg",
-    },
-  },
-  {
-    id: "dummy-rep-4",
-    rating: 10,
-    fmScore: 999,
-    keyword_1: "분석력분석력력",
-    keyword_2: "전략적사고력",
-    keyword_3: "팀워크팀워크팀",
-    content: "매우 뛰어난 역량을 보여주었습니다 이번 시즌 최고의 크루입니다",
-    reviewer: {
-      display_name: "김민준수",
-      gender: "남",
-      birth_date: "1999-11-30",
-      university: "연세대학교",
-      major_first: "데이터사이언스학과",
-      teamName: "글로벌전략",
-      partName: "콘텐츠마케",
-      vision: "마이크로소프트엔비디",
-      profile_photo_url: "/images/0/crew profile/여 1.jpg",
-    },
-  },
-  {
-    id: "dummy-rep-5",
-    rating: 1,
-    fmScore: 3,
-    keyword_1: "성장가능성",
-    keyword_2: null,
-    keyword_3: null,
-    content: "아직 시작 단계이지만 가능성이 보입니다",
-    reviewer: {
-      display_name: "한솔",
-      gender: "여",
-      birth_date: "2003-07-22",
-      university: "홍익대학교",
-      major_first: "컴퓨터공학",
-      teamName: "기획팀전략",
-      partName: "기획팀",
-      vision: "카카오",
-      profile_photo_url: "/images/0/crew profile/여 2.jpg",
-    },
-  },
-  {
-    id: "dummy-rep-6",
-    rating: 5,
-    fmScore: 88,
-    keyword_1: "커뮤니케이션",
-    keyword_2: "문제해결능력",
-    keyword_3: null,
-    content: "소통 능력이 뛰어나고 팀 분위기를 이끄는 데 기여했습니다",
-    reviewer: {
-      display_name: "박지현",
-      gender: "여",
-      birth_date: "2001-09-05",
-      university: "성균관대학교",
-      major_first: "산업디자인학과",
-      teamName: "브랜드",
-      partName: "디자인파트",
-      vision: "삼성전자구글",
-      profile_photo_url: "/images/0/crew profile/여 3.jpg",
-    },
-  },
-];
-
-// 기본 시즌 데이터 (데이터가 없을 때 사용)
+// 기본 시즌 데이터 — seasonHistories 가 비었을 때(=비-데모 API 로딩 전/무데이터) 쓰이는
+//   render-safe 빈 상태(empty-state) 구조. currentSeason 이 항상 non-null 이어야 하므로
+//   객체 형태는 유지하되, 모든 수치/라벨은 더미 대신 0·빈값(빈 상태)으로 둔다.
+//   (이전의 '자릿수 테스트용' 더미 값은 운영 화면 fallback 더미라 제거함)
+//   image 는 깨진 이미지 방지용 중립 placeholder, review 는 기본 안내 문구(guide text) 유지.
 const defaultSeasonData = {
-  id: "dummy-season-1",
-  year: "2025",
-  season: "여름",
-  dateRange: "2025 - 03 - 23 (월) ~ 2025 - 08 - 22 (일)",
-  status: "시즌 진행 중",
-  statusClass: "in-progress",
+  id: "",
+  year: "",
+  season: "",
+  dateRange: "",
+  status: "",
+  statusClass: "",
   image: "/images/0/cluster4/cluster4-1/image.png",
-  approvedWeeks: 8,
-  totalWeeks: 10,
-  roleInSeason: "운영진(앰배서더)",
-  isQualified: true,
-  seasonRoles: [
-    { teamName: "엔터테인먼트전략기", partName: "내돈내산파트기획", roleLabel: "운영진(앰배서더팀장)", isAdmin: false, adminGeneration: 3, startedAt: "2025-03-23", profileImage: "/images/0/cluster4/cluster4-1/Ellipse 7.png" },
-    { teamName: "글로벌마케팅전략팀", partName: "클럽 단위", roleLabel: "팀장(헬스케어인턴십)", isAdmin: false, adminGeneration: 4, startedAt: "2025-03-23", profileImage: "/images/0/cluster4/cluster4-1/Ellipse 8.png" },
-    { teamName: "운영(4기)", partName: "클럽 단위", roleLabel: "앰배서더", isAdmin: false, adminGeneration: 5, startedAt: "2025-03-23", profileImage: "/images/0/cluster4/cluster4-1/Ellipse 9.png" },
-  ],
-  stats: { dangam: 25, injeolmi: 999, eoheung: 3 }, // TODO: 더미 데이터 — 자릿수 테스트용
-  rating: 10,
+  approvedWeeks: 0,
+  totalWeeks: 0,
+  roleInSeason: "",
+  isQualified: false,
+  seasonRoles: [] as Array<{
+    teamName: string | null;
+    partName: string | null;
+    roleLabel: string;
+    isAdmin: boolean;
+    adminGeneration: number | null;
+    startedAt: string;
+    profileImage?: string;
+  }>,
+  stats: { dangam: 0, injeolmi: 0, eoheung: 0 },
+  rating: 0,
   review: REVIEW_COMMENT_DEFAULT,
   reviewLink: "",
   circles: {
-    weekUsage: 27, // TODO: 더미 데이터 — 자릿수 테스트용 (8/30)
-    scheduleReliability: 13, // TODO: 더미 데이터 — 자릿수 테스트용 (125/999)
-    seasonGrowth: 100, // TODO: 더미 데이터 — 자릿수 테스트용 (5/5)
-    approvedWeeks: 8, // TODO: 더미 데이터 — 자릿수 테스트용
-    totalOperatingWeeks: 30, // TODO: 더미 데이터 — 자릿수 테스트용
-    totalWeeksReliability: 999, // TODO: 더미 데이터 — 자릿수 테스트용 (일정 신뢰도 분모)
-    reliableWeeks: 125, // TODO: 더미 데이터 — 자릿수 테스트용
-    completedActivities: 5, // TODO: 더미 데이터 — 자릿수 테스트용
-    totalActivities: 5, // TODO: 더미 데이터 — 자릿수 테스트용
+    weekUsage: 0,
+    scheduleReliability: 0,
+    seasonGrowth: 0,
+    approvedWeeks: 0,
+    totalOperatingWeeks: 0,
+    totalWeeksReliability: 0,
+    reliableWeeks: 0,
+    completedActivities: 0,
+    totalActivities: 0,
   },
   progress: {
-    info: { total: 150, completed: 120, rate: 80 }, // TODO: 더미 데이터 — 자릿수 테스트용
-    competency: { total: 999, completed: 999, rate: 100 }, // TODO: 더미 데이터 — 자릿수 테스트용
-    experience: { total: 50, completed: 9, rate: 18 }, // TODO: 더미 데이터 — 자릿수 테스트용
-    career: { total: 200, completed: 187, rate: 94 }, // TODO: 더미 데이터 — 자릿수 테스트용
+    info: { total: 0, completed: 0, rate: 0 },
+    competency: { total: 0, completed: 0, rate: 0 },
+    experience: { total: 0, completed: 0, rate: 0 },
+    career: { total: 0, completed: 0, rate: 0 },
   },
 };
 
@@ -1267,41 +1144,29 @@ const Cluster4Content = () => {
   }, [isDemoMode, urlUserId, session?.user?.id]);
 
   // 성장 종료 정보
+  // 운영 데이터: /api/profile 응답으로 채워진다. 로딩 전에는 null →
+  //   화면은 "-" 빈 상태를 렌더(`growthEndInfo ? ... : ...`, `?? "-"`). 더미 초기값 금지.
   const [growthEndInfo, setGrowthEndInfo] = useState<{
     year: number | null;
     seasonName: string | null;
     weekNumber: number | null;
     isBreak?: boolean;
-  } | null>({
-    year: 2024,
-    seasonName: "가을",
-    weekNumber: 14,
-    isBreak: false,
-  });
+  } | null>(null);
 
-  // 성장 시작 정보
+  // 성장 시작 정보 — /api/profile 로딩 전 null (빈 상태), 더미 초기값 금지.
   const [growthStartInfo, setGrowthStartInfo] = useState<{
     year: number | null;
     seasonName: string | null;
     weekNumber: number | null;
     isBreak?: boolean;
-  } | null>({
-    year: 2024,
-    seasonName: "가을",
-    weekNumber: 14,
-    isBreak: false,
-  });
+  } | null>(null);
 
-  // 성장 기간 통계 (시즌 기반)
+  // 성장 기간 통계 (시즌 기반) — /api/profile 로딩 전 null (빈 상태), 더미 초기값 금지.
   const [growthPeriodStats, setGrowthPeriodStats] = useState<{
     availableSeasons: number;
     approvedSeasons: number;
     restSeasons: number;
-  } | null>({
-    availableSeasons: 5,
-    approvedSeasons: 4,
-    restSeasons: 1,
-  });
+  } | null>(null);
 
   // 시즌 역할 이력 타입
   interface SeasonRoleItem {
