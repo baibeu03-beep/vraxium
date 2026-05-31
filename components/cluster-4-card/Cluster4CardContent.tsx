@@ -12,6 +12,7 @@ import { usePopup } from "@/components/ui/popup";
 import { supabase } from "@/lib/supabase";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
+import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
 import { isPxRoute, isEcRoute, withPxRoute, getThemeClass } from "@/lib/cluster-route";
 import { formatSeasonLabel, formatSeasonWeekTitle } from "@/lib/cluster4-types";
@@ -274,7 +275,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const { mask } = useDataMasking();
   const searchParams = useSearchParams();
   const popup = usePopup();
-  const urlUserId = searchParams.get("userId") || searchParams.get("userID");
+  // 테스트 유저 모드: ?demoUserId={userId} 가 있으면 해당 테스트 유저 기준으로 카드/저장 흐름을 렌더한다.
+  const demoUserId = searchParams.get("demoUserId");
+  // 표시 대상 유저: admin-view(userId) → 없으면 테스트 유저(demoUserId).
+  // urlUserId 는 모든 사용자 기준 조회(프로필/career-records/평판/동료/weekly-cards)의 타깃이므로,
+  // 여기서 demoUserId 로 fallback 시키면 페이지 전체가 테스트 유저 데이터로 일관되게 표시된다(혼합 방지).
+  const urlUserId = searchParams.get("userId") || searchParams.get("userID") || demoUserId;
+  // 조회 API 에 붙일 demoUserId 쿼리 suffix (백엔드 테스트 유저 판정용).
+  const demoQS = demoUserId ? `&demoUserId=${encodeURIComponent(demoUserId)}` : "";
+  // 네비게이션 쿼리: 테스트 유저 모드면 demoUserId+admin 을 유지(다음 페이지에서도 테스트 유저 모드 지속).
+  const demoUserName = searchParams.get("demoUserName");
+  const userLinkQuery = demoUserId
+    ? `?demoUserId=${encodeURIComponent(demoUserId)}&admin=true${demoUserName ? `&demoUserName=${encodeURIComponent(demoUserName)}` : ""}`
+    : (urlUserId ? `?userId=${urlUserId}` : "");
   // EC(encre) 라우트(/cluster-4-card-ec/...) 판정 — section1-header info-group right
   // 의 단감/인절미/어흥 라벨·아이콘을 별/방패/번개로 치환할 때만 사용.
   // 숫자 값(headerDangam 등)·className·PX/default 분기는 미터치.
@@ -317,8 +330,31 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     return t.length > maxLen ? t.slice(0, maxLen) + ".." : t;
   };
   // 어드민(마더) 계정은 모든 프로필 편집 가능
-  const isOwner = session?.user?.isAdmin || !urlUserId || session?.user?.id === urlUserId;
+  // 테스트 유저(데모) 모드면 편집 UX 검증을 위해 owner 로 취급 (실제 저장은 demoUserId 로 백엔드 검증).
+  const isOwner = session?.user?.isAdmin || !!demoUserId || !urlUserId || session?.user?.id === urlUserId;
   const isAdmin = !!session?.user?.isAdmin;
+
+  // [진단] 테스트 유저 모드 위클리 리뷰 버튼 활성화 추적 — 콘솔에서 런타임 값 확인용.
+  // 버튼 disabled 는 `!isOwner` 단일 조건이므로 isOwner=true 면 활성이어야 한다.
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log("[weekly-review-button-diag]", {
+      pathname: typeof window !== "undefined" ? window.location.pathname : null,
+      rawQuery: typeof window !== "undefined" ? window.location.search : null,
+      demoUserId,
+      urlUserId,
+      sessionUserId: session?.user?.id ?? null,
+      sessionIsAdmin: !!session?.user?.isAdmin,
+      isOwner,
+      weeklyReviewEditButtonDisabled: !isOwner,
+      weekId,
+      permissionUrl: apiUrl(
+        `/api/edit-windows/permission?resource_key=cluster4.weekly_reviews` +
+          (weekId ? `&week_id=${encodeURIComponent(weekId)}` : ""),
+      ),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demoUserId, urlUserId, session?.user?.id, session?.user?.isAdmin, isOwner, weekId]);
 
   // 로그인한 본인의 display_name (From 라벨 등에 사용)
   const [myDisplayName, setMyDisplayName] = useState<string>("");
@@ -341,7 +377,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     let cancelled = false;
     (async () => {
       try {
-        const [profileRes, eduRes] = await Promise.all([fetch(`/api/profile/?userId=${targetId}`), fetch(`/api/educations?userId=${targetId}`)]);
+        const [profileRes, eduRes] = await Promise.all([fetch(`/api/profile/?userId=${targetId}${demoQS}`), fetch(`/api/educations?userId=${targetId}`)]);
         const profileJson = await profileRes.json().catch(() => null);
         const eduJson = await eduRes.json().catch(() => null);
         if (cancelled) return;
@@ -376,10 +412,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     };
   }, [session?.user?.id, urlUserId]);
 
-  // 어드민이 다른 유저 편집 시 targetUserId를 API URL에 추가
+  // 어드민이 다른 유저 편집 시 targetUserId를, 테스트 유저 모드면 demoUserId를 API URL에 추가
   const apiUrl = (path: string) => {
+    const separator = path.includes("?") ? "&" : "?";
+    if (demoUserId) {
+      return `${path}${separator}demoUserId=${encodeURIComponent(demoUserId)}`;
+    }
     if (urlUserId && session?.user?.isAdmin) {
-      const separator = path.includes("?") ? "&" : "?";
       return `${path}${separator}targetUserId=${urlUserId}`;
     }
     return path;
@@ -406,10 +445,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   // 수정 버튼 클릭 핸들러 (승인 상태 체크)
   const handleEditClick = async (openModalFn: () => void) => {
-    if (isDemoMode) {
+    if (isDemoMode || demoUserId) {
       openModalFn();
       return;
-    } // 더미 모드: 체크 스킵
+    } // 더미 모드 / 테스트 유저(데모) 모드: 세션 체크 스킵 (저장은 demoUserId 로 백엔드 검증)
     if (!session) {
       alert("로그인이 필요합니다.");
       return;
@@ -453,6 +492,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const [roleLabel, setRoleLabel] = useState<string | null>(null);
   // 해당 주차 시점의 raw 역할 코드 (예: crew_partleader / crew_agent / crew_regular ...) — 매니징 라인 적용 여부 판단용
   const [userWeekRole, setUserWeekRole] = useState<string | null>(null);
+  // 멤버십 등급 (profile.membership_level) — 이력서 카드 "심화/일반/운영진" 표시와 동일 source.
+  // 실무 경험 관리(5번) 슬롯 잠금 판단을 이력서 표시와 일치시키기 위해 사용.
+  const [membershipLevel, setMembershipLevel] = useState<string | null>(null);
   const [weekPoints, setWeekPoints] = useState<{ star: number; lightning: number; shield: number }>({ star: 0, lightning: 0, shield: 0 });
   const [cumulativeInjeolmi, setCumulativeInjeolmi] = useState<number>(0);
   const [cumulativeApprovedWeeks, setCumulativeApprovedWeeks] = useState<number>(0);
@@ -463,6 +505,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   // 현재 유저 ID (저장 시 사용)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  // 카드 소유자(현재 보고 있는 프로필)의 조직 slug — 연계동료 후보를 동일 조직으로 제한하는
+  // 필터 기준. 로그인 사용자가 아니라 "이 카드의 주인" 기준이다(어드민이 타 크루 카드를 봐도
+  // 그 크루의 조직 후보만 노출). /api/profile?context=card 응답의 data.organization_slug.
+  // 내부 slug(phalanx/encre/oranke) 이며 /api/crews?org= 가 그대로 받는 값이다.
+  const [cardOwnerOrg, setCardOwnerOrg] = useState<string | null>(null);
 
   // 주간 활동 데이터 (실무정보 모달용)
   interface WeeklyActivity {
@@ -1059,7 +1106,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       if (urlUserId) {
         (async () => {
           try {
-            const res = await fetch(`/api/profile/?userId=${urlUserId}`);
+            const res = await fetch(`/api/profile/?userId=${urlUserId}${demoQS}`);
             const json = await res.json();
             const name = json.data?.display_name || null;
             const compMap: Record<string, string[]> = {
@@ -1093,7 +1140,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         setIsLoadingWeek(true);
 
         // ========== 1단계: 프로필 API (weekId 번들) + 보조 API 최대 병렬 로드 ==========
-        const profileUrl = urlUserId ? `/api/profile?userId=${urlUserId}&context=card&weekId=${weekId}` : `/api/profile?context=card&weekId=${weekId}`;
+        const profileUrl = urlUserId ? `/api/profile?userId=${urlUserId}${demoQS}&context=card&weekId=${weekId}` : `/api/profile?context=card&weekId=${weekId}`;
         const earlyUserId = urlUserId || null;
 
         // 프로필 API (주차 번들 포함) + 보조 API 동시 시작
@@ -1124,6 +1171,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
         const userId = profileResult.data.id;
         setCurrentUserId(userId);
+        // 카드 소유자 조직 — 연계동료 후보를 동일 조직으로 제한하는 필터 기준.
+        setCardOwnerOrg(profileResult.data.organization_slug ?? null);
         const apiActivityWeekIds = profileResult.activityWeekIds || [];
         const apiRestWeekIds = profileResult.restWeekIds || [];
         const apiApprovedActivities = profileResult.approvedActivities || [];
@@ -1304,6 +1353,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           setRoleLabel(roleLabels[profileResult.data.role] || profileResult.data.role);
           setUserWeekRole(profileResult.data.role || null);
         }
+        // 멤버십 등급(membership_level) — 이력서 카드 "심화" 표시와 동일 source. 관리 슬롯 잠금 판단용.
+        setMembershipLevel((profileResult.data?.membership_level as string | null | undefined) ?? null);
 
         // 포인트 정보 처리
         const weekPointsData = allPointsData.filter((p: any) => p.week_id === weekId);
@@ -1680,13 +1731,36 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 크루 목록 가져오기 (모달 열릴 때 lazy load) — 데모 모드에서도 실제 API 호출
   const fetchCrewListIfNeeded = async () => {
     if (allCrewList.length > 0) return; // 이미 로드됨
+    // 정책 A: 연계동료 후보는 카드 소유자와 같은 조직만 노출. org 가 없으면 전체 조직이
+    // 섞여 나오므로 후보 조회 자체를 막고 진단 로그를 남긴다(잘못된 cross-org 노출 방지).
+    if (!cardOwnerOrg) {
+      console.warn("[colleague-org-filter] 카드 소유자 org 미확정 — 후보 조회 차단", {
+        cardOwnerOrg,
+        urlUserId,
+        sessionUserId: session?.user?.id ?? null,
+        weekId,
+      });
+      return;
+    }
     try {
       const excludeId = urlUserId || session?.user?.id || "";
-      const res = await fetch(`/api/crews?excludeUserId=${excludeId}`);
+      // &org=<카드 소유자 organization_slug> — 서버(user_profiles.organization_slug)에서 1차 필터.
+      const res = await fetch(`/api/crews?excludeUserId=${encodeURIComponent(excludeId)}&org=${encodeURIComponent(cardOwnerOrg)}`);
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.data) {
           setAllCrewList(json.data);
+          // [진단] 카드 소유자 org vs 후보 org/name 샘플 10건 — cross-org 혼입 여부 확인용.
+          console.log("[colleague-org-filter] 후보 로드", {
+            "currentUser.org (카드 소유자)": cardOwnerOrg,
+            총후보수: json.data.length,
+            샘플10: (json.data as any[]).slice(0, 10).map((c) => ({
+              userId: c.id,
+              name: c.name,
+              org: c.organizationSlug ?? null,
+            })),
+            "다른 조직 혼입": (json.data as any[]).some((c) => (c.organizationSlug ?? null) !== cardOwnerOrg),
+          });
         }
       }
     } catch (error) {
@@ -1829,16 +1903,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   // reputation-view-modal [수정] 버튼 승인 상태 — 4개 모달 canEditWorkInfo 패턴 동기화
   // 데모 모드 = true(수정 가능), 일반 = false(관리자 승인 필요)
-  const [canEditReputation, setCanEditReputation] = useState<boolean>(isDemoMode);
+  // 테스트 유저(데모) 모드도 owner 기준 활성 — 실제 작성기간은 클릭 시 demoUserId 권한으로 검증.
+  const [canEditReputation, setCanEditReputation] = useState<boolean>(isDemoMode || !!demoUserId);
   useEffect(() => {
-    setCanEditReputation(isDemoMode);
-  }, [isDemoMode]);
+    setCanEditReputation(isDemoMode || !!demoUserId);
+  }, [isDemoMode, demoUserId]);
 
-  // 연계 동료 — 평판/주차 리뷰와 동일하게 데모 모드에서 true, 일반 모드에서 승인 상태 따름
-  const [canEditColleague, setCanEditColleague] = useState<boolean>(isDemoMode);
+  // 연계 동료 — 평판/주차 리뷰와 동일하게 데모/테스트 유저 모드에서 활성, 일반 모드에서 승인 상태 따름
+  const [canEditColleague, setCanEditColleague] = useState<boolean>(isDemoMode || !!demoUserId);
   useEffect(() => {
-    setCanEditColleague(isDemoMode);
-  }, [isDemoMode]);
+    setCanEditColleague(isDemoMode || !!demoUserId);
+  }, [isDemoMode, demoUserId]);
 
   // Weekly Review / 연계동료 작성 시간 윈도우
   // 앵커 = weekData.startDate (= N주차 월요일 00:00 KST)
@@ -1847,7 +1922,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 데모/어드민은 우회.
   const requireWriteWindow = async (): Promise<boolean> => {
     if (isDemoMode) return true;
-    if (session?.user?.isAdmin) return true;
+    if (session?.user?.isAdmin && !demoUserId) return true;
     if (!weekData?.startDate) {
       await popup.alert("주차 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.");
       return false;
@@ -1868,6 +1943,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 어드민(마더) 계정은 승인/소유 무관하게 모든 라인 카드 수정 가능
   useEffect(() => {
     if (isDemoMode) return; // 데모 모드는 위 useEffect들이 true로 셋업
+    // 테스트 유저(데모) 모드: rep/colleague 는 위 init effect 가 owner 기준 활성으로 셋업했고,
+    // 4hub canEdit* 는 weekly-cards DTO(데모 스코프)가 단일 출처이므로 세션/승인 기반 override 를 하지 않는다.
+    if (demoUserId) return;
     if (session?.user?.isAdmin) {
       setCanEditReputation(true);
       setCanEditColleague(true);
@@ -1918,7 +1996,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       return;
     }
 
-    const fetchUrl = `/api/cluster4/weekly-cards?userId=${targetUserId}`;
+    const fetchUrl = `/api/cluster4/weekly-cards?userId=${targetUserId}${demoQS}`;
     const controller = new AbortController();
     (async () => {
       try {
@@ -2136,11 +2214,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const [selectedColleagueIndex, setSelectedColleagueIndex] = useState<number>(0);
 
   const handleDeleteColleague = async () => {
-    if (!isDemoMode && !canEditColleague) {
-      await popup.alert("관리자 승인 후 수정할 수 있습니다.");
-      return;
-    }
-    if (!(await requireWriteWindow())) return;
+    // 삭제도 동일 POST(주차 전체 교체) 엔드포인트를 쓰므로 저장과 같은 게이트를 적용.
+    if (!(await requireWeeklyColleaguesWriteAccess())) return;
     if (!selectedColleagueCard) return;
 
     const remaining = selectedColleagues.filter((c) => c.id !== selectedColleagueCard.id);
@@ -2204,15 +2279,27 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         activityTypeKey: (selectedWorkInfoCard.activityType as string | null | undefined) ?? null,
       })
     : undefined;
+  // 실무 역량 matchedLine — 카드가 들고 있는 실제 lineTargetId 로 직접 매칭(가장 신뢰 가능한 키).
+  // 카드가 DTO competency 라인에서 생성되므로 lineTargetId 가 곧 selected line. lineTargetId 가 없을
+  // 때만 legacy key(competencyLineMasterId/lineCode) 매칭으로 fallback. submission=null 은 라인 없음이 아님.
   const workAbilityMatchedLine = selectedWorkAbilityCard
-    ? findCluster4Line({
-        partType: "competency",
-        competencyLineMasterId: (selectedWorkAbilityCard.competencyLineMasterId as string | null | undefined) ?? null,
-        lineCode:
-          (selectedWorkAbilityCard.lineCode as string | null | undefined) ??
-          (selectedWorkAbilityCard.code as string | null | undefined) ??
-          null,
-      })
+    ? (() => {
+        const ltid = (selectedWorkAbilityCard.lineTargetId as string | null | undefined) ?? null;
+        if (ltid) {
+          const byId = cluster4Lines.find(
+            (l) => (l.weekId ?? null) === weekId && l.lineTargetId === ltid && normalizePartType(l.partType) === "competency",
+          );
+          if (byId) return byId;
+        }
+        return findCluster4Line({
+          partType: "competency",
+          competencyLineMasterId: (selectedWorkAbilityCard.competencyLineMasterId as string | null | undefined) ?? null,
+          lineCode:
+            (selectedWorkAbilityCard.lineCode as string | null | undefined) ??
+            (selectedWorkAbilityCard.code as string | null | undefined) ??
+            null,
+        });
+      })()
     : undefined;
   // ── 실무 경험 matchedLine (preview·modal 공유 resolver) ──
   // 카드 key(experienceLineMasterId/lineCode/activityTypeId)가 null·"-"·빈값으로 내려오는
@@ -2263,6 +2350,41 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       : infoStatsAdmin.total > 0
         ? Math.round((infoStatsAdmin.success / infoStatsAdmin.total) * 100)
         : 0;
+
+  // ── 실무 역량 카운트/달성률 단일 출처(어드민 weekly-cards DTO) — infoStatsAdmin 와 동일 패턴 ──
+  // A(total) = 해당 주차 해당 사용자에게 배정된 competency 라인 수, B(success) = 그중 강화 성공 라인 수.
+  // 기준은 백엔드에서 이미 보정 완료(A=0→0). 프론트 재계산 금지.
+  // 1) weeklyCardMeta.competencyRate{rate,count,total} 우선(count=B, total=A).
+  // 2) 미수신 시에만 DTO competency 라인 배열(enhancementStatus==="success")로 재계산.
+  // 3) 라인도 미수신 시에만 기존 로컬 competencyStats 로 fallback(회귀 방지).
+  const competencyLinesForStats: Cluster4WeeklyLineDto[] = weekId
+    ? cluster4Lines.filter((l) => (l.weekId ?? null) === weekId && normalizePartType(l.partType) === "competency")
+    : [];
+  const competencyStatsAdmin = (() => {
+    const competencyRate =
+      (weeklyCardMeta as (AdminCluster4WeeklyCardDto & { competencyRate?: Cluster4RateDto | null }) | null)?.competencyRate ?? null;
+    if (competencyRate && typeof competencyRate.total === "number" && typeof competencyRate.count === "number") {
+      return {
+        total: Number(competencyRate.total) || 0,
+        success: Number(competencyRate.count) || 0,
+        rate: typeof competencyRate.rate === "number" ? competencyRate.rate : null,
+      };
+    }
+    if (competencyLinesForStats.length === 0) {
+      return { total: Number(competencyStats.total) || 0, success: Number(competencyStats.success) || 0, rate: null };
+    }
+    const total = competencyLinesForStats.length;
+    const success = competencyLinesForStats.filter(
+      (l) => String(l.enhancementStatus ?? "").toLowerCase() === "success",
+    ).length;
+    return { total: Number(total) || 0, success: Number(success) || 0, rate: null };
+  })();
+  const competencySuccessRate =
+    typeof competencyStatsAdmin.rate === "number"
+      ? competencyStatsAdmin.rate
+      : competencyStatsAdmin.total > 0
+        ? Math.round((competencyStatsAdmin.success / competencyStatsAdmin.total) * 100)
+        : 0;
   // 카드(legacy or built) 1개 → matchedLine 결정. cardIndex 가 주어지면(빌드 시) 위치 기반 fallback 사용.
   const resolveExpMatchedLine = (card: any, cardIndex?: number): { line: Cluster4WeeklyLineDto | undefined; by: ExpSelectedBy } => {
     if (!card) return { line: undefined, by: "none" };
@@ -2290,17 +2412,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       });
       if (l) return { line: l, by: "lineKey" };
     }
-    // 3) 위치(index) 기반 — 빌드 시 카드 순서 ↔ DTO 라인 순서 대응 (여러 라인 구분)
+    // 3) 위치(index) 기반 — 빌드 시 카드 순서 ↔ DTO 라인 순서 대응 (여러 라인 구분).
+    //    빌드(cardIndex 명시) 경로에서만 사용. 모달 경로(cardIndex 없음)는 타지 않음.
     if (typeof cardIndex === "number" && experienceLinesInWeek[cardIndex]) {
       return { line: experienceLinesInWeek[cardIndex], by: "positional" };
     }
-    // 4) canEdit=true 인 experience 라인 우선 (lineTargetId 보유 우선)
-    const canEditLine =
-      experienceLinesInWeek.find((x) => x.canEdit === true && !!x.lineTargetId) ??
-      experienceLinesInWeek.find((x) => x.canEdit === true);
-    if (canEditLine) return { line: canEditLine, by: "canEdit" };
-    // 5) 첫 experience 라인 fallback
-    if (experienceLinesInWeek.length > 0) return { line: experienceLinesInWeek[0], by: "firstExperienceLine" };
+    // ── 매칭 실패 → 해당 슬롯에 라인 없음(undefined) ──
+    // [버그 수정] 이전엔 여기서 canEdit=true 라인 / 첫 experience 라인을 임의로 가져왔다.
+    // 그 결과 미개설(빈) 슬롯의 placeholder 카드를 클릭해도 1번 슬롯 라인이 matchedLine 으로
+    // 잡혀 모달에 1번 값이 그대로 표시되는 누수가 발생했다.
+    // → 정확한 슬롯 라인은 card.matchedLine(빌드 시 슬롯 라인 주입) / lineTargetId / 신뢰 key /
+    //   (빌드 한정) positional 로만 결정한다. 매칭 없으면 라인 없음으로 반환.
     return { line: undefined, by: "none" };
   };
   const { line: workExpMatchedLine, by: workExpSelectedBy } = resolveExpMatchedLine(selectedWorkExpCard);
@@ -2323,6 +2445,39 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     const l = line.outputLinks[idx];
     if (!l) return null;
     return { desc: (l.desc as string | null | undefined) ?? "", url: (l.url as string | null | undefined) ?? "" };
+  };
+  // 사용자 제출 Output Link 단일 출처 — submission.outputLinks[idx] (사용자분만, 어드민 슬롯 제외 후의 인덱스).
+  // ⚠️ top-level outputLinks(어드민 개설값)와 구분 — competency 사용자 슬롯 표시에만 사용한다.
+  const lineSubmissionOutputLinkAt = (line: Cluster4WeeklyLineDto | undefined, idx: number): { desc: string; url: string } | null => {
+    if (idx < 0) return null;
+    const links = (line?.submission as { outputLinks?: Array<{ desc?: string | null; url?: string | null }> | null } | null | undefined)?.outputLinks;
+    if (!Array.isArray(links)) return null;
+    const l = links[idx];
+    if (!l) return null;
+    return { desc: l.desc ?? "", url: l.url ?? "" };
+  };
+  // 실무 역량(competency) 어드민 Output Link 슬롯 수 — adminOutputLinkCount(SoT) → top-level outputLinks 유효
+  // 개수 → legacy(getAdminOutputLinksCount) 순. legacy 헬퍼는 weeklyActivities 만 보므로, 운영진이 DTO 라인
+  // 으로만 개설한 링크(weeklyActivities 미존재)를 0 으로 세어 admin 링크가 누락된다 — 그 회귀를 막는다.
+  const getAbilityAdminLinkCount = (matchedLine: Cluster4WeeklyLineDto | undefined, activityTypeId?: string | null): number => {
+    if (matchedLine?.adminOutputLinkCount != null) return matchedLine.adminOutputLinkCount;
+    if (Array.isArray(matchedLine?.outputLinks)) {
+      const n = matchedLine!.outputLinks!.filter((l) => (l?.url as string | null | undefined)?.trim()).length;
+      if (n > 0) return n;
+    }
+    return activityTypeId ? getAdminOutputLinksCount(activityTypeId, matchedLine) : 0;
+  };
+  // 실무 역량(competency) 어드민 Output Image (top-level outputImages → legacy) — { url, caption }[].
+  const getAbilityAdminImages = (matchedLine: Cluster4WeeklyLineDto | undefined, activityTypeId?: string | null): Array<{ url: string; caption: string }> => {
+    const lineImages = normalizeOutputImages(
+      matchedLine?.outputImages as ReadonlyArray<string | { url?: string | null; caption?: string | null } | null> | null | undefined,
+    );
+    if (lineImages.length > 0) return lineImages;
+    return activityTypeId ? getAdminOutputImages(activityTypeId, matchedLine) : [];
+  };
+  const getAbilityAdminImageCount = (matchedLine: Cluster4WeeklyLineDto | undefined, activityTypeId?: string | null): number => {
+    if (matchedLine?.adminOutputImageCount != null) return matchedLine.adminOutputImageCount;
+    return getAbilityAdminImages(matchedLine, activityTypeId).length;
   };
 
   // ── 강화 상태 status-badge 이미지/라벨 (백엔드 DTO 단일 출처) ──
@@ -2701,6 +2856,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         user_id: currentUserId,
+        // 테스트 유저 모드: demoUserId 가 있으면 백엔드가 이 id 로 저장 대상/작성기간을 고정한다.
+        ...(demoUserId ? { demoUserId } : {}),
         week_id: weekId,
         activity_type_id: params.activityTypeId,
         // 실제 lineTarget 단위 저장 — 백엔드가 line_target_id 로 라인을 식별한다.
@@ -2759,7 +2916,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const newOutputLinks = editingOutputLinks;
       const newGrowthPoint = editingGrowthPoint.trim() || null;
       let persistedImages: (string | null)[] = editingImages;
-      if (isAdminPreview) {
+      if (isAdminPreview && !demoUserId) {
+        // 일반 어드민 미리보기(admin=true, demoUserId 없음)만 저장 스킵.
+        // 테스트 유저 모드(admin=true + demoUserId)는 실제 저장 API 를 호출한다.
         console.log("[AdminPreview] workInfo 저장 — API 호출 생략, local state만 반영");
       } else {
         try {
@@ -2912,8 +3071,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       return;
     }
     const newLink = { desc: desc.trim(), url: trimmedUrl };
-    if (isAdminPreview) {
-      // 프론트 테스트용: API/권한 체크 우회, editing state에만 직접 저장
+    if (isAdminPreview && !demoUserId) {
+      // 프론트 테스트용: API/권한 체크 우회, editing state에만 직접 저장.
+      // 테스트 유저 모드(demoUserId)는 일반 사용자 경로(handleOutputLinkChange)로 흘려 실제 저장에 반영한다.
       const directSet = (setter: React.Dispatch<React.SetStateAction<{ desc: string; url: string }[]>>) => {
         setter((prev) => {
           const next = [...prev];
@@ -3051,8 +3211,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       }
     }
     const card = selectedWorkAbilityCard;
-    const abilityLineLinks = Array.isArray(workAbilityMatchedLine?.outputLinks) ? workAbilityMatchedLine!.outputLinks! : null;
-    const abilitySrcLinks = abilityLineLinks && abilityLineLinks.length > 0 ? abilityLineLinks : card?.outputLinks;
+    // 편집 초기값 = 카드 병합 outputLinks (어드민 top-level + 사용자 submission). 어드민 top-level 만 쓰면
+    // 사용자가 제출한 링크가 편집 진입 시 사라지므로, submission 까지 병합된 card.outputLinks 를 단일 출처로 사용.
+    const abilitySrcLinks = card?.outputLinks;
     const initialOutputLinks = abilitySrcLinks && abilitySrcLinks.length > 0 ? abilitySrcLinks.map((l: { desc?: string | null; url?: string | null }) => ({ desc: l?.desc || "", url: l?.url || "" })) : Array(5).fill({ desc: "", url: "" });
     const initialImages = normalizeWorkInfoImages(card?.images);
     const initialCaptions = normalizeWorkInfoCaptions(card?.imageCaptions);
@@ -3135,7 +3296,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const newOutputLinks = editingAbilityOutputLinks;
       const newGrowthPoint = editingAbilityGrowthPoint.trim() || null;
       let persistedImages: (string | null)[] = editingAbilityImages;
-      if (isAdminPreview) {
+      if (isAdminPreview && !demoUserId) {
+        // 일반 어드민 미리보기만 저장 스킵. 테스트 유저 모드는 실제 저장.
         console.log("[AdminPreview] workAbility 저장 — API 호출 생략, local state만 반영");
       } else {
         try {
@@ -3152,7 +3314,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             growthPoint: newGrowthPoint,
             images: editingAbilityImages,
             imageCaptions: editingAbilityImageCaptions,
-            adminLinkCount: getAdminOutputLinksCount(selectedWorkAbilityCard.activityTypeId, workAbilityMatchedLine),
+            adminLinkCount: getAbilityAdminLinkCount(workAbilityMatchedLine, selectedWorkAbilityCard.activityTypeId),
           });
           persistedImages = persisted.images;
         } catch (err) {
@@ -3188,6 +3350,43 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             }
           : prev,
       );
+      // ── 미리보기 카드/재파생 matchedLine 도 submission 단일 출처로 동기화 (저장 직후 = 새로고침 후 동일) ──
+      // 실무 역량 카드는 user_activity_details 가 아닌 weekly-cards lines[].submission 에서 사용자 제출값을
+      // 읽으므로, 저장 직후 cluster4Lines 의 해당 라인 submission 을 패치해 미리보기가 즉시 갱신되게 한다.
+      // submission.outputLinks 는 "사용자분만" — 어드민 슬롯(adminCount) 을 제외한 뒤쪽 슬롯만 저장.
+      // submission.outputImages/outputImageCaptions 는 비어있지 않은 이미지와 그 캡션만 1:1 정렬해 저장.
+      if (abilitySaveLineTargetId) {
+        const savedAdminCount = getAbilityAdminLinkCount(workAbilityMatchedLine, selectedWorkAbilityCard.activityTypeId);
+        const savedUserLinks = newOutputLinks
+          .slice(savedAdminCount)
+          .map((l: { desc?: string | null; url?: string | null }) => ({ desc: l?.desc || "", url: l?.url || "" }))
+          .filter((l: { url: string }) => l.url.trim() !== "");
+        const savedUserImages: string[] = [];
+        const savedUserCaptions: Array<string | null> = [];
+        (persistedImages || []).forEach((u, i) => {
+          if (u && u.trim()) {
+            savedUserImages.push(u);
+            savedUserCaptions.push(editingAbilityImageCaptions[i] || "");
+          }
+        });
+        setCluster4Lines((prev) =>
+          prev.map((l) =>
+            l.lineTargetId === abilitySaveLineTargetId && normalizePartType(l.partType) === "competency"
+              ? {
+                  ...l,
+                  submission: {
+                    ...((l.submission as Record<string, unknown> | null | undefined) || {}),
+                    subtitle: newSubTitle,
+                    growthPoint: newGrowthPoint,
+                    outputLinks: savedUserLinks,
+                    outputImages: savedUserImages,
+                    outputImageCaptions: savedUserCaptions,
+                  },
+                }
+              : l,
+          ),
+        );
+      }
       workAbilitySnapshot.current = {
         subTitle: newSubTitle || "",
         growthPoint: editingAbilityGrowthPoint,
@@ -3213,7 +3412,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   const handleAbilityOutputLinkChange = (idx: number, field: "desc" | "url", value: string) => {
     if (!selectedWorkAbilityCard?.activityTypeId) return;
-    const adminCount = getAdminOutputLinksCount(selectedWorkAbilityCard.activityTypeId, workAbilityMatchedLine);
+    const adminCount = getAbilityAdminLinkCount(workAbilityMatchedLine, selectedWorkAbilityCard.activityTypeId);
     if (idx < adminCount) return;
     setEditingAbilityOutputLinks((prev) => {
       const next = [...prev];
@@ -3224,7 +3423,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   const handleAbilityOutputLinkDelete = (idx: number) => {
     if (!selectedWorkAbilityCard?.activityTypeId) return;
-    const adminCount = getAdminOutputLinksCount(selectedWorkAbilityCard.activityTypeId, workAbilityMatchedLine);
+    const adminCount = getAbilityAdminLinkCount(workAbilityMatchedLine, selectedWorkAbilityCard.activityTypeId);
     if (idx < adminCount) return;
     setEditingAbilityOutputLinks((prev) => {
       const next = [...prev];
@@ -3407,7 +3606,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const newOutputLinks = editingExpOutputLinks;
       const newGrowthPoint = editingExpGrowthPoint.trim() || null;
       let persistedImages: (string | null)[] = editingExpImages;
-      if (isAdminPreview) {
+      if (isAdminPreview && !demoUserId) {
+        // 일반 어드민 미리보기만 저장 스킵. 테스트 유저 모드는 실제 저장.
         console.log("[AdminPreview] workExp 저장 — API 호출 생략, local state만 반영");
       } else {
         try {
@@ -3483,6 +3683,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
     setWorkExpViewModalOpen(false);
     setWorkExpViewIsEditing(false);
+    // 선택값 누수 방지: 모달 닫을 때 선택 카드 초기화 (다음 슬롯 클릭 시 잔존값 재사용 금지).
+    setSelectedWorkExpCard(null);
   };
 
   const handleExpOutputLinkChange = (idx: number, field: "desc" | "url", value: string) => {
@@ -3706,7 +3908,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const crewImagesToSave = editingCareerImages.slice(adminImgCount);
       const crewCaptionsToSave = editingCareerImageCaptions.slice(adminImgCount);
       let persistedCrewImages: (string | null)[] = crewImagesToSave;
-      if (isAdminPreview) {
+      if (isAdminPreview && !demoUserId) {
+        // 일반 어드민 미리보기만 저장 스킵. 테스트 유저 모드는 실제 저장.
         console.log("[AdminPreview] workCareer 저장 — API 호출 생략, local state만 반영");
       } else {
         try {
@@ -3916,7 +4119,41 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     return CHOSUNG_LIST[idx];
   };
 
-  // 스펙: 이름 startsWith + 마지막 글자가 자음이면 초성 매칭. 숫자 차단. 가나다 순. 최대 5개. 본인 및 이미 선택된 동료 제외.
+  const isJamoConsonant = (ch: string): boolean => /[ㄱ-ㅎ]/.test(ch);
+
+  // 한 글자 매칭: 쿼리 문자가 이름 문자와 정확히 같거나(대소문자 무시·NFC 후),
+  // 쿼리 문자가 단독 자음(ㄱ-ㅎ)이면 이름 문자의 초성과 같으면 매칭.
+  const charMatches = (queryChar: string, nameChar: string): boolean => {
+    if (queryChar === nameChar) return true;
+    if (isJamoConsonant(queryChar)) return getInitialConsonant(nameChar) === queryChar;
+    return false;
+  };
+
+  // 이름 "내부" 부분문자열 매칭 (스펙: 맨 앞 글자만이 아니라 중간 문자열도 매칭).
+  // 슬라이딩 윈도우로 모든 시작 위치를 검사 — 각 위치에서 쿼리 문자열이
+  // charMatches 로 연속 매칭되면 true. 일반 부분문자열 + 내부 초성 + 혼합("김ㅎ") 모두 처리.
+  //   normalize("NFC"): mac/iOS 가 만드는 분해형(NFD) 한글을 합성형으로 보정해
+  //   getInitialConsonant(0xAC00 기반)과 정확 비교가 깨지지 않게 한다.
+  //   toLowerCase(): 라틴 문자(T) 대소문자 무시 — 한글에는 영향 없음.
+  // 예) "T강지아" ← "T","강","강지","지아","ㄱ","ㄱㅈ" 모두 노출.
+  const matchesNameQuery = (rawName: string, rawQuery: string): boolean => {
+    const name = (rawName || "").normalize("NFC").toLowerCase();
+    const query = (rawQuery || "").normalize("NFC").toLowerCase();
+    if (!query || query.length > name.length) return false;
+    for (let i = 0; i + query.length <= name.length; i++) {
+      let ok = true;
+      for (let j = 0; j < query.length; j++) {
+        if (!charMatches(query[j], name[i + j])) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) return true;
+    }
+    return false;
+  };
+
+  // 스펙: 이름 내부 부분문자열 매칭(+초성). 숫자 차단. 가나다 순. 최대 5개. 본인 및 이미 선택된 동료 제외.
   const searchColleagueCandidates = (query: string, pool: any[]): any[] => {
     const q = (query || "").trim();
     if (!q) return [];
@@ -3927,17 +4164,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     const filtered = pool.filter((crew) => {
       if (!crew || !crew.name) return false;
       if (excludedIds.has(crew.id)) return false;
-      const name: string = crew.name;
-      if (name.startsWith(q)) return true;
-      const lastChar = q[q.length - 1];
-      if (/[ㄱ-ㅎ]/.test(lastChar)) {
-        const prefix = q.slice(0, -1);
-        if (name.startsWith(prefix) && name.length > prefix.length) {
-          const nextChar = name[prefix.length];
-          if (getInitialConsonant(nextChar) === lastChar) return true;
-        }
-      }
-      return false;
+      // 정책 A 방어선: 서버(/api/crews?org=)가 이미 동일 조직만 내려주지만, 풀이 어떤 경로로
+      // 오염되더라도 다른 조직 후보가 새지 않도록 클라이언트에서도 한 번 더 막는다.
+      if (cardOwnerOrg && crew.organizationSlug && crew.organizationSlug !== cardOwnerOrg) return false;
+      return matchesNameQuery(crew.name, q);
     });
 
     return filtered.sort((a, b) => (a.name || "").localeCompare(b.name || "", "ko")).slice(0, 5);
@@ -3954,6 +4184,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     await fetchCrewListIfNeeded();
     setHeaderModalType("본인");
     setHeaderModalOpen(true);
+    // 이 모달은 게이트(requireWeeklyColleaguesWriteAccess)를 통과한 편집 진입에서만 열린다.
+    // 곧바로 편집 모드로 둬야 검색창(disabled={!isColleagueEditing})이 열린다 — 평판의
+    // handleReputationEditClick(setIsReputationFormEditing(true)) 와 동일 패턴.
+    setIsColleagueEditing(true);
   };
 
   const handleSelectColleagueCandidate = (crew: any) => {
@@ -3967,12 +4201,61 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     setColleagueSearchQuery("");
   };
 
-  // colleague-view-modal [수정] — 관리자 승인 검증 후 편집 모달 진입
-  const handleColleagueEditClick = async () => {
-    if (!isDemoMode) {
-      await popup.alert("작성할 수 있는 기간이 아닙니다. 😊.");
-      return;
+  // ── 연계동료 쓰기 권한 게이트 (어드민 부여 권한 OR 기본 시간창) ──────────────
+  // requireWeeklyReviewWriteAccess 와 동일 패턴 — resource_key 만 weeklyColleagues 로.
+  //   먼저 /api/edit-windows/permission?resource_key=cluster4.weekly_colleagues&week_id=...
+  //   를 조회해 canEdit===true 면 시간창과 무관하게 허용. 그 외(권한 없음/조회 실패)는
+  //   기존 requireWriteWindow 시간창 게이트로 fallback (실패 팝업도 그쪽에서 처리).
+  // 서버 POST /api/weekly-colleagues 도 동일 (user_id, resource_key, week_id) 로 enforce.
+  //   ⚠ 반드시 week_id 를 포함해 프론트/서버가 동일 주차 기준을 보도록 한다.
+  const requireWeeklyColleaguesWriteAccess = async (): Promise<boolean> => {
+    if (isDemoMode) return true;
+    if (session?.user?.isAdmin && !demoUserId) return true;
+
+    let grantCanEdit = false;
+    let permissionForLog: unknown = null;
+    try {
+      const res = await fetch(
+        apiUrl(
+          `/api/edit-windows/permission?resource_key=${encodeURIComponent(CLUSTER4_EDIT_RESOURCE_KEYS.weeklyColleagues)}` +
+            (weekId ? `&week_id=${encodeURIComponent(weekId)}` : ""),
+        ),
+        { cache: "no-store" },
+      );
+      permissionForLog = await res.json().catch(() => null);
+      const data = (permissionForLog as { success?: boolean; data?: { canEdit?: boolean } } | null);
+      if (res.ok && data?.success && data?.data?.canEdit === true) {
+        grantCanEdit = true;
+      }
+    } catch (err) {
+      // 권한 API 실패 → 보수적으로 시간창 fallback (아래)
+      console.error("[weekly-colleagues-gate] 권한 조회 실패 — 시간창 fallback", err);
     }
+
+    if (grantCanEdit) {
+      // 어드민이 작성기간을 열어준 케이스 — 고정 시간창 무관 허용
+      console.log("[weekly-colleagues-gate] 어드민 부여 권한(cluster4.weekly_colleagues) 으로 허용", {
+        weekId,
+        weekNumber: weekData?.weekNumber ?? null,
+        permission: permissionForLog,
+      });
+      return true;
+    }
+
+    // 권한 없음/조회 실패 → 기존 고정 시간창 게이트로 판정 (실패 시 팝업은 requireWriteWindow 가 처리)
+    const withinWindow = await requireWriteWindow();
+    console.log("[weekly-colleagues-gate] 권한 없음 → 기본 시간창 fallback", {
+      weekId,
+      weekNumber: weekData?.weekNumber ?? null,
+      withinDefaultWindow: withinWindow,
+      permission: permissionForLog,
+    });
+    return withinWindow;
+  };
+
+  // colleague-view-modal [수정] — 어드민 부여 권한(week_id) OR 기본 시간창 검증 후 편집 진입
+  const handleColleagueEditClick = async () => {
+    if (!(await requireWeeklyColleaguesWriteAccess())) return;
     setColleagueViewModalOpen(false);
     handleOpenColleagueEdit();
   };
@@ -3988,10 +4271,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleColleagueEditReset = async () => {
-    if (!isDemoMode && !canEditColleague) {
-      await popup.alert("관리자 승인 후 수정할 수 있습니다.");
-      return;
-    }
+    // 초기화는 이미 게이트(requireWeeklyColleaguesWriteAccess)를 통과해 편집 모달이 열린
+    // 상태에서만 도달하므로 weekly-review 초기화와 동일하게 확인만 받는다.
     const ok = await popup.confirm("입력하신 내용을 모두 초기화하시겠습니까?");
     if (!ok) return;
     if (colleagueFormSnapshot) {
@@ -4008,11 +4289,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleColleagueEditSave = async () => {
-    if (!isDemoMode && !canEditColleague) {
-      await popup.alert("관리자 승인 후 수정할 수 있습니다.");
-      return;
-    }
-    if (!(await requireWriteWindow())) return;
+    // 모달 진입과 동일 게이트 — 어드민 부여 권한(week_id) OR 기본 시간창. 모달은 열렸는데
+    // 저장에서만 막히는 불일치를 방지하기 위해 클릭/저장이 같은 함수를 본다.
+    if (!(await requireWeeklyColleaguesWriteAccess())) return;
     if (!isColleagueEditFormValid()) {
       setColleagueSaveAttemptFailed(true);
       setColleagueFieldErrorFlash(true);
@@ -4064,7 +4343,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     setColleagueSaving(true);
     try {
       const payload = updatedList.map((c) => ({ colleagueId: c.id, rank: c.rank, message: c.message || "" }));
-      const res = await fetch("/api/weekly-colleagues", {
+      const res = await fetch(apiUrl("/api/weekly-colleagues"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ weekCardId: weekId, colleagues: payload }),
@@ -4084,6 +4363,25 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   useEffect(() => {
     if (!headerModalOpen) setIsColleagueEditing(false);
   }, [headerModalOpen]);
+
+  // [임시 진단 — 검색창 disabled 원인 확인용. 확인 후 제거 가능]
+  // search-input 의 disabled 는 오직 !isColleagueEditing 에만 연결돼 있다.
+  // (canEdit*/isLoading/isSaving/권한 플래그와는 무관 — 아래 로그로 확인 가능)
+  useEffect(() => {
+    if (!(headerModalOpen && headerModalType === "본인")) return;
+    console.log("[colleague-search-disabled] 연계동료 모달 열림 — disabled 계산값/플래그", {
+      "disabled (= !isColleagueEditing)": !isColleagueEditing,
+      isColleagueEditing,
+      colleagueSaving, // (= isSaving 역할)
+      canEditColleague, // week 권한 플래그 — disabled 와 연결돼 있지 않음
+      isOwner,
+      isAdmin: session?.user?.isAdmin ?? false,
+      weekId, // (= selectedWeekId)
+      selectedColleagueId: colleagueEditData.selectedColleague?.id ?? null, // (= selectedCrewId)
+      headerModalOpen,
+      headerModalType,
+    });
+  }, [headerModalOpen, headerModalType, isColleagueEditing, colleagueSaving, canEditColleague, isOwner, session?.user?.isAdmin, weekId, colleagueEditData.selectedColleague?.id]);
 
   // 동료 삭제 함수
   const removeColleague = (id: number) => {
@@ -4418,7 +4716,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     try {
       const endpoint = isUpdate ? `/api/weekly-reviews/${weeklyReviewFromDB?.id}` : "/api/weekly-reviews";
       const method = isUpdate ? "PUT" : "POST";
-      const res = await fetch(endpoint, {
+      // 테스트 유저(데모) 모드면 demoUserId 부착 → 저장 대상이 테스트 유저로 고정되어 GET(userId) 과 일치.
+      const res = await fetch(apiUrl(endpoint), {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ weekCardId: weekId, rating: weeklyReviewData.rating, content: weeklyReviewData.content }),
@@ -4501,15 +4800,70 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     setWeeklyReviewModalOpen(false);
   };
 
+  // ── 주차 리뷰 쓰기 권한 게이트 (어드민 부여 권한 OR 기본 시간창) ──────────────
+  // 문제였던 점: 기존엔 requireWriteWindow(고정 시간창)만 검사해서, 어드민이
+  //   user_edit_windows(cluster4.weekly_reviews) 를 열어줘도 프론트가 이를 보지 않아
+  //   시간창 밖이면 "작성할 수 있는 기간이 아닙니다" 로 막혔다.
+  // 수정: 먼저 /api/edit-windows/permission?resource_key=cluster4.weekly_reviews 를 조회해
+  //   canEdit===true 면 시간창과 무관하게 허용. 그 외(권한 없음/조회 실패)는 기존
+  //   requireWriteWindow 시간창 검사로 fallback (실패 시 팝업도 그쪽에서 처리).
+  //   결과: (어드민 권한 있음) OR (기본 작성기간 안) → 허용.
+  // 서버 /api/weekly-reviews 도 동일 resource_key 를 enforce 하므로 프론트/서버 정렬됨.
+  //   ⚠ 시즌 리뷰 키(cluster4.season_review)와 혼동 금지 — 여기서는 weeklyReviews 만 본다.
+  const requireWeeklyReviewWriteAccess = async (): Promise<boolean> => {
+    if (isDemoMode) return true;
+    if (session?.user?.isAdmin && !demoUserId) return true;
+
+    let grantCanEdit = false;
+    let permissionForLog: unknown = null;
+    try {
+      const res = await fetch(
+        apiUrl(
+          `/api/edit-windows/permission?resource_key=${encodeURIComponent(CLUSTER4_EDIT_RESOURCE_KEYS.weeklyReviews)}` +
+            (weekId ? `&week_id=${encodeURIComponent(weekId)}` : ""),
+        ),
+        { cache: "no-store" },
+      );
+      permissionForLog = await res.json().catch(() => null);
+      const data = (permissionForLog as { success?: boolean; data?: { canEdit?: boolean } } | null);
+      if (res.ok && data?.success && data?.data?.canEdit === true) {
+        grantCanEdit = true;
+      }
+    } catch (err) {
+      // 권한 API 실패 → 보수적으로 시간창 fallback (아래)
+      console.error("[weekly-review-gate] 권한 조회 실패 — 시간창 fallback", err);
+    }
+
+    if (grantCanEdit) {
+      // 어드민이 작성기간을 열어준 케이스 — 고정 시간창 무관 허용
+      console.log("[weekly-review-gate] 어드민 부여 권한(cluster4.weekly_reviews) 으로 허용", {
+        weekId,
+        weekNumber: weekData?.weekNumber ?? null,
+        permission: permissionForLog,
+      });
+      return true;
+    }
+
+    // 권한 없음/조회 실패 → 기존 고정 시간창 게이트로 판정 (실패 시 팝업은 requireWriteWindow 가 처리)
+    const withinWindow = await requireWriteWindow();
+    console.log("[weekly-review-gate] 권한 없음 → 기본 시간창 fallback", {
+      weekId,
+      weekNumber: weekData?.weekNumber ?? null,
+      withinDefaultWindow: withinWindow,
+      permission: permissionForLog,
+    });
+    return withinWindow;
+  };
+
   // 주차 리뷰 — 푸터 핸들러
-  // [임시] 주차 리뷰는 관리자 승인 가드 해제 — 본인 회고 영역이라 승인 게이트 없이 작성 허용
-  // 단, 본인 페이지(또는 어드민)에서만 수정 가능 — 타 크루 페이지에서는 열람만
+  // 본인 페이지(또는 어드민)에서만 수정 가능 — 타 크루 페이지에서는 열람만.
+  // 게이트: requireWeeklyReviewWriteAccess = (어드민 부여 권한 cluster4.weekly_reviews) OR (기본 시간창).
   const handleWeeklyReviewEditClick = async () => {
     if (!isOwner) {
       await popup.alert("본인 주차 리뷰만 수정할 수 있습니다.");
       return;
     }
-    if (!(await requireWriteWindow())) return;
+    if (!(await requireWeeklyReviewWriteAccess())) return;
     setWeeklyReviewFormSnapshot({ rating: weeklyReviewData.rating, content: weeklyReviewData.content });
     setWeeklyReviewSaveAttemptFailed(false);
     setWeeklyReviewFieldErrorFlash(false);
@@ -4550,7 +4904,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("본인 주차 리뷰만 저장할 수 있습니다.");
       return;
     }
-    if (!(await requireWriteWindow())) return;
+    if (!(await requireWeeklyReviewWriteAccess())) return;
     if (!isWeeklyReviewValid()) {
       setWeeklyReviewSaveAttemptFailed(true);
       setWeeklyReviewFieldErrorFlash(true);
@@ -4592,13 +4946,63 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     setHelpModalKind("reputation");
   };
 
+  // ── 위클리 평판 쓰기 권한 게이트 (어드민 부여 권한 OR 기본 시간창) ──────────────
+  // requireWeeklyReviewWriteAccess / requireWeeklyColleaguesWriteAccess 와 동일 패턴 —
+  //   resource_key 만 weeklyReputation 으로. 먼저
+  //   /api/edit-windows/permission?resource_key=cluster4.weekly_reputation&week_id=...
+  //   를 조회해 canEdit===true 면 시간창과 무관하게 허용. 그 외(권한 없음/조회 실패)는
+  //   기존 requireWriteWindow 시간창 게이트로 fallback (실패 팝업도 그쪽에서 처리).
+  // 서버 POST/PUT /api/weekly-reputations 도 동일 (user_id, resource_key, week_id) enforce.
+  //   window 는 작성자(reviewer = session user) 기준 — 반드시 week_id 를 포함해 정렬한다.
+  const requireWeeklyReputationWriteAccess = async (): Promise<boolean> => {
+    if (isDemoMode) return true;
+    if (session?.user?.isAdmin && !demoUserId) return true;
+
+    let grantCanEdit = false;
+    let permissionForLog: unknown = null;
+    try {
+      const res = await fetch(
+        apiUrl(
+          `/api/edit-windows/permission?resource_key=${encodeURIComponent(CLUSTER4_EDIT_RESOURCE_KEYS.weeklyReputation)}` +
+            (weekId ? `&week_id=${encodeURIComponent(weekId)}` : ""),
+        ),
+        { cache: "no-store" },
+      );
+      permissionForLog = await res.json().catch(() => null);
+      const data = (permissionForLog as { success?: boolean; data?: { canEdit?: boolean } } | null);
+      if (res.ok && data?.success && data?.data?.canEdit === true) {
+        grantCanEdit = true;
+      }
+    } catch (err) {
+      // 권한 API 실패 → 보수적으로 시간창 fallback (아래)
+      console.error("[weekly-reputation-gate] 권한 조회 실패 — 시간창 fallback", err);
+    }
+
+    if (grantCanEdit) {
+      // 어드민이 작성기간을 열어준 케이스 — 고정 시간창 무관 허용
+      console.log("[weekly-reputation-gate] 어드민 부여 권한(cluster4.weekly_reputation) 으로 허용", {
+        weekId,
+        weekNumber: weekData?.weekNumber ?? null,
+        permission: permissionForLog,
+      });
+      return true;
+    }
+
+    // 권한 없음/조회 실패 → 기존 고정 시간창 게이트로 판정 (실패 시 팝업은 requireWriteWindow 가 처리)
+    const withinWindow = await requireWriteWindow();
+    console.log("[weekly-reputation-gate] 권한 없음 → 기본 시간창 fallback", {
+      weekId,
+      weekNumber: weekData?.weekNumber ?? null,
+      withinDefaultWindow: withinWindow,
+      permission: permissionForLog,
+    });
+    return withinWindow;
+  };
+
   // 편집 진입 — 보기 → 편집 전환 + 현재값으로 스냅샷 업데이트 (롤백 기준점)
   const handleEditMode = async () => {
-    // 승인 체크 — reputation-view-modal [수정] (L3031)과 동일 패턴
-    if (!canEditReputation) {
-      await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
-      return;
-    }
+    // 어드민 부여 권한(week_id) OR 기본 시간창 — review/colleague 와 동일 게이트
+    if (!(await requireWeeklyReputationWriteAccess())) return;
 
     setFormSnapshot({
       rating: reputationEditData.rating,
@@ -4616,10 +5020,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   // 초기화 버튼 → 사용자 요청: window.confirm 사용 (cluster3 동일 패턴)
   const handleFormReset = async () => {
-    if (!isDemoMode && !canEditReputation) {
-      await popup.alert("관리자 승인 후 수정할 수 있습니다.");
-      return;
-    }
+    // 초기화는 이미 게이트(requireWeeklyReputationWriteAccess)를 통과해 편집 모달이 열린
+    // 상태에서만 도달한다. canEditReputation 은 (approved && isOwner) 라 평판 작성자(타 크루)
+    // 에게는 항상 false 라 잘못 차단했었음 — weekly-review 초기화와 동일하게 확인만 받는다.
     const ok = await popup.confirm("입력하신 내용을 모두 초기화하시겠습니까?");
     if (!ok) return;
     if (formSnapshot) {
@@ -4652,12 +5055,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // reputation-view-modal [수정] / [삭제] 핸들러 (작업 1 — 관리자 승인)
   // ========================================================================
 
-  // [수정] — 관리자 승인 검증 + 편집 모달 진입 + 기존 데이터 초기화
+  // [수정] — 어드민 부여 권한(week_id) OR 기본 시간창 검증 후 편집 모달 진입
   const handleReputationEditClick = async () => {
-    if (!canEditReputation) {
-      await popup.alert("작성할 수 있는 기간이 아닙니다. 😊.");
-      return;
-    }
+    if (!(await requireWeeklyReputationWriteAccess())) return;
     if (!selectedReputationCard) return;
 
     // selectedReputationCard에서 reputation-form 데이터로 역매핑
@@ -4690,11 +5090,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const handleReputationDeleteClick = async () => {
     if (!selectedReputationCard) return;
 
-    // 관리자 승인 체크 (데모=통과, 일반=기존 canEditReputation)
-    if (!canEditReputation) {
-      await popup.alert("작성할 수 있는 기간이 아닙니다. 😊.");
-      return;
-    }
+    // 편집/저장과 동일 게이트 — 어드민 부여 권한(week_id) OR 기본 시간창.
+    // (서버 DELETE 는 작성기간 게이트가 없으므로 프론트 정책으로 통일한다.)
+    if (!(await requireWeeklyReputationWriteAccess())) return;
 
     const ok = await popup.confirm("이 평판을 삭제하시겠습니까?");
     if (!ok) return;
@@ -4753,10 +5151,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   // 저장 — 작업 2+3: 검증 → 중복/제한 체크 → 저장 → view 갱신/재조회 → 편집 경로면 view 복귀
   const handleFormSave = async () => {
-    if (!isDemoMode && !canEditReputation) {
-      await popup.alert("관리자 승인 후 수정할 수 있습니다.");
-      return;
-    }
+    // 모달 진입과 동일 게이트 — 어드민 부여 권한(week_id) OR 기본 시간창. 모달은 열렸는데
+    // 저장에서만 막히는 불일치를 방지하기 위해 클릭/저장이 같은 함수를 본다.
+    if (!(await requireWeeklyReputationWriteAccess())) return;
     // 1. 필수필드 검증
     if (!isFormValid()) {
       setSaveAttemptFailed(true);
@@ -4771,7 +5168,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       if (!window.confirm("저장하시겠습니까?")) return;
       setReputationSaving(true);
       try {
-        const res = await fetch("/api/weekly-reputations", {
+        const res = await fetch(apiUrl("/api/weekly-reputations"), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -5567,17 +5964,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         selectedBy: workExpSelectedBy,
         matchedLine: m ?? null,
       });
-      // 라인명/라인평점 매핑 검증용 — lineRating(DTO=user_activity_details.rating, proxy 주입) 확인
+      // 라인명/라인평점 매핑 검증용 — experienceRating(DTO=cluster4_experience_line_evaluations.rating) 확인
       const modalLineName = m?.activityTypeName ?? m?.mainTitle ?? (lookupWorkExpMapping(selectedWorkExpCard.code)?.lineName || selectedWorkExpCard.badge || null);
-      const dtoLineRating = typeof m?.lineRating === "number" ? m.lineRating : null;
+      const dtoExperienceRating = typeof m?.experienceRating === "number" ? m.experienceRating : null;
       console.log("[cluster4-exp-modal-display]", {
         matchedLine: m ?? null,
         modalLineName,
-        modalLineRating: dtoLineRating ?? (selectedWorkExpCard?.rating ?? 0) * 2,
-        modalLineRatingSource: dtoLineRating != null ? "matchedLine.lineRating(DTO=user_activity_details.rating)" : "points(activityRatings) fallback",
+        modalExperienceRating: dtoExperienceRating,
+        modalRatingCount: dtoExperienceRating !== null ? `${dtoExperienceRating} / 10` : "- / 10",
+        modalRatingSource: "matchedLine.experienceRating(DTO=cluster4_experience_line_evaluations.rating)",
         mainTitle: m?.mainTitle ?? null,
         activityTypeName: m?.activityTypeName ?? null,
-        lineRating: m?.lineRating ?? null,
+        experienceRating: m?.experienceRating ?? null,
       });
     }
   }, [workExpViewModalOpen, selectedWorkExpCard, workExpMatchedLine, workExpSelectedBy, experienceLinesInWeek, weekId, cluster4Lines]);
@@ -6012,6 +6410,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_id: currentUserId,
+          // 테스트 유저 모드: demoUserId 가 있으면 백엔드가 이 id 로 저장 대상/작성기간을 고정한다.
+          ...(demoUserId ? { demoUserId } : {}),
           week_id: weekId,
           activity_type_id: activityType,
           sub_title: newSubTitle,
@@ -6186,7 +6586,136 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       }))
     : workInfoCards;
 
-  const workAbilityCards = workAbilityCardLineCodes.map((lineCodeKey, index) => {
+  // ── 미리보기/모달 카드 SoT = 모달과 동일한 DTO competency 라인 ──
+  // (버그 수정) 기존엔 하드코딩 workAbilityLineMap(CP00A-NS00xx)의 lineCode 로만 DTO 라인을 findCluster4Line
+  // 매칭해서, 운영진이 실제 개설한 라인코드(예: CPBS-NN0007)가 맵에 없으면 매칭이 전부 실패 → 카드가 void 로
+  // 표시됐다. → DTO competency 라인(partType==="competency")을 카드 source 로 직접 사용한다.
+  // ⚠️ submission=null 은 '미제출'일 뿐 '라인 없음'이 아니므로 제외하지 않는다(admin 개설값은 그대로 표시).
+  const competencyLinesInWeek: Cluster4WeeklyLineDto[] = weekId
+    ? cluster4Lines.filter((l) => (l.weekId ?? null) === weekId && normalizePartType(l.partType) === "competency")
+    : [];
+
+  // DTO enhancementStatus("success"|"pending"|"fail"|"not_applicable") → 카드 enum 매핑(experience 와 동일 규칙).
+  // 프론트 재계산 금지 — DTO 값만 사용. 휴식/온보딩 특수 주차 또는 DTO 값 부재 시에만 legacy getEnhancementStatus.
+  const mapAbilityEnhancementStatus = (line: Cluster4WeeklyLineDto | null | undefined, activityTypeId: string): EnhancementStatus => {
+    if (isOnboardingWeek || weekData?.isPersonalRest || isRestMode) return getEnhancementStatus(activityTypeId);
+    const raw = String(line?.enhancementStatus ?? "").toLowerCase();
+    if (raw === "success") return "success";
+    if (raw === "pending") return "waiting";
+    if (raw === "fail" || raw === "failed") return "failed";
+    if (raw === "not_applicable") return "not_applicable";
+    if (line) return "waiting";
+    return getEnhancementStatus(activityTypeId);
+  };
+
+  // 어드민 개설값(top-level) + 사용자 제출값(submission.*) 병합으로 Output Link 5슬롯 구성.
+  const buildAbilityOutputLinks = (
+    adminSrc: Array<{ desc?: string | null; url?: string | null }>,
+    adminCount: number,
+    userSrc: Array<{ desc?: string | null; url?: string | null }>,
+  ): { desc: string; url: string }[] => {
+    const merged: { desc: string; url: string }[] = [];
+    for (let i = 0; i < 5; i++) {
+      if (i < adminCount && adminSrc[i]?.url?.trim()) {
+        merged.push({ desc: adminSrc[i].desc || "", url: adminSrc[i].url || "" });
+      } else {
+        const userIdx = i - adminCount;
+        merged.push(userSrc[userIdx]?.url?.trim() ? { desc: userSrc[userIdx].desc || "", url: userSrc[userIdx].url || "" } : { desc: "", url: "" });
+      }
+    }
+    return merged;
+  };
+
+  type WorkAbilityCard = {
+    id: number;
+    lineTargetId: string | null;
+    competencyLineMasterId: string | null;
+    activityTypeId: string;
+    code: string;
+    lineCode: string;
+    lineName: string;
+    badge: string;
+    title: string;
+    subTitle: string;
+    growthPoint: string;
+    outputLinks: { desc: string; url: string }[];
+    images: (string | null)[] | null;
+    imageCaptions: string[] | null;
+    icon: string;
+    status: EnhancementStatus;
+    statusIcon: string;
+    enhancementStatus: EnhancementStatus;
+    isFailed: boolean;
+    isEmpty: boolean;
+    hasActivity: boolean;
+  };
+
+  // 카드 1개를 DTO competency 라인에서 생성. admin 개설값은 top-level(line.*), 사용자 제출값은 submission.*.
+  const buildAbilityCardFromLine = (line: Cluster4WeeklyLineDto, index: number): WorkAbilityCard => {
+    const lineCode = (line.lineCode as string | null | undefined) ?? null;
+    const mapping = lookupWorkAbilityMapping(lineCode);
+    // activityTypeId: DTO 우선, 없으면 lineCode 로 competency activity type 역추적(저장 경로용 best-effort).
+    const activityTypeId =
+      (line.activityTypeId as string | null | undefined) ??
+      (line.activityTypeKey as string | null | undefined) ??
+      workAbilityActivityTypes.find((typeId) => {
+        const lc = activityTypesMap.get(typeId)?.line_code || typeId;
+        return lc.replace(/\s+/g, "") === String(lineCode ?? "").replace(/\s+/g, "");
+      }) ??
+      "";
+    const activity = activityTypeId ? weeklyActivities.find((a) => a.activity_type_id === activityTypeId) : undefined;
+    const enhancementStatus = isRestMode ? ("not_applicable" as EnhancementStatus) : mapAbilityEnhancementStatus(line, activityTypeId);
+
+    const submission = (line.submission as
+      | {
+          subtitle?: string | null;
+          growthPoint?: string | null;
+          outputLinks?: Array<{ desc?: string | null; url?: string | null }> | null;
+          outputImages?: Array<string | null> | null;
+          outputImageCaptions?: Array<string | null> | null;
+        }
+      | null
+      | undefined) ?? null;
+
+    // Output Link 병합: 어드민 개설값(top-level line.outputLinks) + 사용자 제출값(submission.outputLinks).
+    // 어드민 슬롯 수 = adminOutputLinkCount(백엔드 SoT), 없으면 top-level outputLinks 유효 개수 fallback.
+    const adminLinks: Array<{ desc?: string | null; url?: string | null }> = Array.isArray(line.outputLinks)
+      ? line.outputLinks.map((l) => ({ desc: (l?.desc as string | null | undefined) ?? "", url: (l?.url as string | null | undefined) ?? "" }))
+      : [];
+    const adminCount = line.adminOutputLinkCount != null ? line.adminOutputLinkCount : adminLinks.filter((l) => l.url?.trim()).length;
+    const userLinks: Array<{ desc?: string | null; url?: string | null }> = Array.isArray(submission?.outputLinks)
+      ? submission!.outputLinks!.map((l) => ({ desc: l?.desc ?? "", url: l?.url ?? "" }))
+      : [];
+    const lineName = mapping?.lineName ?? (line.activityTypeName as string | null | undefined) ?? "";
+    return {
+      id: index + 1,
+      lineTargetId: (line.lineTargetId as string | null | undefined) ?? null,
+      competencyLineMasterId: (line.competencyLineMasterId as string | null | undefined) ?? null,
+      activityTypeId,
+      code: lineCode ?? mapping?.lineCode ?? "",
+      lineCode: lineCode ?? mapping?.lineCode ?? "",
+      lineName,
+      badge: lineName,
+      // admin 개설값 — top-level mainTitle 우선.
+      title: (line.mainTitle as string | null | undefined) ?? activity?.title ?? mapping?.mainTitle ?? "",
+      // 사용자 제출값 — submission.* 단일 출처. 미제출(submission=null) 시 빈 값 → 화면에서 "-" fallback.
+      subTitle: submission?.subtitle ?? "",
+      growthPoint: submission?.growthPoint ?? "",
+      outputLinks: buildAbilityOutputLinks(adminLinks, adminCount, userLinks),
+      images: normalizeWorkInfoImages((submission?.outputImages as (string | null)[] | undefined) || undefined) as (string | null)[] | null,
+      imageCaptions: normalizeWorkInfoCaptions((submission?.outputImageCaptions as string[] | undefined) || undefined) as string[] | null,
+      icon: getWorkAbilityIcon(lineName),
+      status: enhancementStatus,
+      statusIcon: enhancementStatusIcons[enhancementStatus],
+      enhancementStatus,
+      isFailed: enhancementStatus === "failed",
+      isEmpty: false,
+      hasActivity: true,
+    };
+  };
+
+  // legacy 하드코딩 맵 기반 카드 빌더 — DTO competency 라인이 전혀 없을 때만 fallback(데모/회귀 방지).
+  const buildLegacyAbilityCard = (lineCodeKey: string, index: number): WorkAbilityCard => {
     const mapping = workAbilityLineMap[lineCodeKey];
     const matchedActivityTypeId = workAbilityActivityTypes.find((typeId) => {
       const lineCode = activityTypesMap.get(typeId)?.line_code || typeId;
@@ -6195,34 +6724,38 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     const activityTypeId = matchedActivityTypeId || lineCodeKey;
     const activityTypeInfo = matchedActivityTypeId ? activityTypesMap.get(matchedActivityTypeId) : undefined;
     const activity = weeklyActivities.find((a) => a.activity_type_id === activityTypeId);
-    const detail = weekActivityDetails.find((d) => d.activity_type_id === activityTypeId);
     const enhancementStatus = isRestMode ? ("not_applicable" as EnhancementStatus) : getEnhancementStatus(activityTypeId);
-    const adminLinks = activity?.output_links || [];
-    const userLinks = detail?.output_links || [];
-    const adminCount = adminLinks.filter((l: { url?: string }) => l.url?.trim()).length;
-    const mergedOutputLinks: { desc: string; url: string }[] = [];
-    for (let i = 0; i < 5; i++) {
-      if (i < adminCount && adminLinks[i]?.url?.trim()) {
-        mergedOutputLinks.push(adminLinks[i]);
-      } else {
-        const userLinkIndex = i - adminCount;
-        mergedOutputLinks.push(userLinks[userLinkIndex]?.url?.trim() ? userLinks[userLinkIndex] : { desc: "", url: "" });
-      }
-    }
 
+    const abilityMatchedLine = findCluster4Line(
+      { partType: "competency", competencyLineMasterId: null, lineCode: mapping.lineCode, activityTypeId },
+      { requireLineTargetId: false },
+    );
+    const abilitySubmission = (abilityMatchedLine?.submission as
+      | { subtitle?: string | null; growthPoint?: string | null; outputLinks?: Array<{ desc?: string | null; url?: string | null }> | null; outputImages?: Array<string | null> | null; outputImageCaptions?: Array<string | null> | null }
+      | null
+      | undefined) ?? null;
+    const adminLinks: Array<{ desc?: string | null; url?: string | null }> = Array.isArray(abilityMatchedLine?.outputLinks)
+      ? abilityMatchedLine!.outputLinks!.map((l) => ({ desc: (l?.desc as string | null | undefined) ?? "", url: (l?.url as string | null | undefined) ?? "" }))
+      : (activity?.output_links || []);
+    const adminCount = abilityMatchedLine?.adminOutputLinkCount != null ? abilityMatchedLine.adminOutputLinkCount : adminLinks.filter((l) => l.url?.trim()).length;
+    const userLinks: Array<{ desc?: string | null; url?: string | null }> = Array.isArray(abilitySubmission?.outputLinks)
+      ? abilitySubmission!.outputLinks!.map((l) => ({ desc: l?.desc ?? "", url: l?.url ?? "" }))
+      : [];
     return {
       id: index + 1,
+      lineTargetId: (abilityMatchedLine?.lineTargetId as string | null | undefined) ?? null,
+      competencyLineMasterId: (abilityMatchedLine?.competencyLineMasterId as string | null | undefined) ?? null,
       activityTypeId,
       code: mapping.lineCode,
       lineCode: mapping.lineCode,
       lineName: mapping.lineName,
       badge: mapping.lineName,
       title: activity?.title || mapping.mainTitle,
-      subTitle: detail?.sub_title || "",
-      growthPoint: detail?.growth_point || "",
-      outputLinks: mergedOutputLinks,
-      images: normalizeWorkInfoImages(detail?.image_urls || undefined) as (string | null)[] | null,
-      imageCaptions: normalizeWorkInfoCaptions(detail?.image_captions || undefined) as string[] | null,
+      subTitle: abilitySubmission?.subtitle ?? "",
+      growthPoint: abilitySubmission?.growthPoint ?? "",
+      outputLinks: buildAbilityOutputLinks(adminLinks, adminCount, userLinks),
+      images: normalizeWorkInfoImages((abilitySubmission?.outputImages as (string | null)[] | undefined) || undefined) as (string | null)[] | null,
+      imageCaptions: normalizeWorkInfoCaptions((abilitySubmission?.outputImageCaptions as string[] | undefined) || undefined) as string[] | null,
       icon: getWorkAbilityIcon(mapping.lineName),
       status: enhancementStatus,
       statusIcon: enhancementStatusIcons[enhancementStatus],
@@ -6231,7 +6764,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       isEmpty: false,
       hasActivity: !!activity || !!activityTypeInfo,
     };
-  });
+  };
+
+  const workAbilityCards: WorkAbilityCard[] =
+    competencyLinesInWeek.length > 0
+      ? competencyLinesInWeek.map((line, index) => buildAbilityCardFromLine(line, index))
+      : workAbilityCardLineCodes.map((lineCodeKey, index) => buildLegacyAbilityCard(lineCodeKey, index));
 
   // 휴식 모드(공식/개인) — 본문(Main Title, lineCode, lineName, Sub Title) 모두 강제 '-'.
   // 휴식 주차에는 실무 역량 라인이 의미 없으므로 본문 전부 차폐, 상태도 '해당 없음'.
@@ -6258,8 +6796,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const matchedAbilityCard = isRestMode ? effectiveWorkAbilityCards.find((c) => c.hasActivity) : effectiveWorkAbilityCards.find((c) => c.enhancementStatus !== "not_applicable");
   const isAbilityCardVoid = !matchedAbilityCard;
   const abilityVoidFallbackStatus: EnhancementStatus = isRestMode || isOnboardingWeek ? "not_applicable" : "failed";
-  const displayedAbilityCard = matchedAbilityCard ?? {
+  const displayedAbilityCard: WorkAbilityCard = matchedAbilityCard ?? {
     id: 0,
+    lineTargetId: null,
+    competencyLineMasterId: null,
     activityTypeId: "",
     code: "-",
     lineCode: "-",
@@ -6296,17 +6836,57 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
   });
 
-  const workExpCards = adminProcessedExpTypeIds.map((activityTypeId, index) => {
-    const activityType = activityTypesMap.get(activityTypeId);
-    const activity = weeklyActivities.find((a) => a.activity_type_id === activityTypeId);
-    const detail = weekActivityDetails.find((d) => d.activity_type_id === activityTypeId);
-    const enhStatus = getEnhancementStatus(activityTypeId);
-    const lineCodeKey = (activityType?.line_code || "").replace(/\s+/g, "");
-    const fallbackMapping = workExpLineMap[lineCodeKey];
-    const hasActivity = !!activity;
+  // ── 미리보기 카드 SoT = 모달과 동일한 DTO experience 라인 ──
+  // (버그) 기존엔 user_activity_records(adminProcessedExpTypeIds) 존재 여부로만 카드를 만들어,
+  // 백엔드가 DTO 로 experience 라인을 내려도 user_activity_records 가 없으면 카드가 비어
+  // 미리보기가 전부 void("-")로 보였다(모달은 firstExperienceLine fallback 으로 우연히 표시됨).
+  // → DTO experience 라인(experienceLinesInWeek = 모달이 쓰는 동일 source)을 카드 source 로 우선
+  //   사용하고, DTO 에 없는 legacy 라인만 user_activity_records 로 보강한다(회귀 방지).
+  type ExpCardSeed = { line: Cluster4WeeklyLineDto | null; activityTypeId: string };
+  const expCardSeeds: ExpCardSeed[] = (() => {
+    const seeds: ExpCardSeed[] = [];
+    const seenKeys = new Set<string>();
+    // 1) DTO experience 라인 — 모달과 동일 source
+    for (const line of experienceLinesInWeek) {
+      const activityTypeId = (line.activityTypeId as string | null | undefined) ?? "";
+      const lineTargetId = (line.lineTargetId as string | null | undefined) ?? null;
+      const key = lineTargetId || activityTypeId;
+      if (key && seenKeys.has(key)) continue;
+      if (key) seenKeys.add(key);
+      if (activityTypeId) seenKeys.add(activityTypeId);
+      seeds.push({ line, activityTypeId });
+    }
+    // 2) legacy user_activity_records — DTO 에 없던 라인만 보강
+    for (const activityTypeId of adminProcessedExpTypeIds) {
+      if (activityTypeId && seenKeys.has(activityTypeId)) continue;
+      if (activityTypeId) seenKeys.add(activityTypeId);
+      seeds.push({ line: null, activityTypeId });
+    }
+    return seeds;
+  })();
 
-    // 별점 계산 (points 테이블에서 가져온 평점 사용, 0~10 정수)
-    const ratingScore = activityRatings.get(activityTypeId) || 0; // legacy points fallback (DTO lineRating 우선)
+  // DTO enhancementStatus("success"|"pending"|"fail"|"not_applicable") → 카드 enum 매핑.
+  // 프론트 재계산 금지 — DTO 값만 사용. 휴식/온보딩 특수 주차 또는 DTO 값 부재 시에만 legacy getEnhancementStatus.
+  const mapExpEnhancementStatus = (line: Cluster4WeeklyLineDto | null | undefined, activityTypeId: string): EnhancementStatus => {
+    if (isOnboardingWeek || weekData?.isPersonalRest || isRestMode) return getEnhancementStatus(activityTypeId);
+    const raw = String(line?.enhancementStatus ?? "").toLowerCase();
+    if (raw === "success") return "success";
+    if (raw === "pending") return "waiting";
+    if (raw === "fail" || raw === "failed") return "failed";
+    if (raw === "not_applicable") return "not_applicable";
+    // DTO 라인이 존재하나 강화 상태가 비어있으면(미평가) '강화 대기'로 표시 —
+    // 이 크루에게 개설된 라인이므로 not_applicable 로 숨기지 않는다(미리보기 void 재발 방지).
+    if (line) return "waiting";
+    return getEnhancementStatus(activityTypeId);
+  };
+
+  const workExpCards = expCardSeeds.map((seed, index) => {
+    const activityTypeId = seed.activityTypeId;
+    const activityType = activityTypeId ? activityTypesMap.get(activityTypeId) : undefined;
+    const activity = activityTypeId ? weeklyActivities.find((a) => a.activity_type_id === activityTypeId) : undefined;
+    const detail = activityTypeId ? weekActivityDetails.find((d) => d.activity_type_id === activityTypeId) : undefined;
+    const lineCodeKey = (activityType?.line_code || (seed.line?.lineCode as string | null | undefined) || "").replace(/\s+/g, "");
+    const fallbackMapping = workExpLineMap[lineCodeKey];
 
     // 기존 index === 3 보이드 강제 제거 — workExpLineMap 6개 항목 전부 유효 카드로 처리
 
@@ -6333,15 +6913,22 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     // 어드민 슬롯 우선, 그 다음 크루 슬롯. 레거시로 image_urls 에 어드민 URL 이 같이 저장된 경우 중복 제거.
     // preview·modal 공유 resolver 로 matchedLine 을 결정 (key → 위치(index) → canEdit → [0]).
     // 카드 key(lineCode/activityTypeId)가 비신뢰여도 DTO 라인을 카드에 연결하기 위함.
-    const { line: expMatchedLine } = resolveExpMatchedLine(
-      { lineTargetId: null, experienceLineMasterId: null, code: activityType?.line_code || fallbackMapping?.lineCode || null, activityTypeId },
-      index,
-    );
-    // 라인 평점: weekly-cards DTO 의 lineRating(SoT=user_activity_details.rating) 우선.
-    // 프록시가 주입한 lineRating 이 있으면 그것을 쓰고(별도 points 쿼리 불필요),
-    // 없을 때만 legacy points(activityRatings) fallback.
-    const lineRatingDto = typeof expMatchedLine?.lineRating === "number" ? expMatchedLine.lineRating : null;
-    const effectiveRatingScore = lineRatingDto ?? ratingScore;
+    // matchedLine: DTO 라인(seed.line)이 있으면 그대로 사용 → 모달과 동일 객체(값 일치 보장).
+    // 없을 때만 legacy 카드 키(code/activityTypeId)로 재해석한다.
+    const { line: expMatchedLine } = seed.line
+      ? { line: seed.line as Cluster4WeeklyLineDto }
+      : resolveExpMatchedLine(
+          { lineTargetId: null, experienceLineMasterId: null, code: activityType?.line_code || fallbackMapping?.lineCode || null, activityTypeId },
+          index,
+        );
+    // 강화 상태: DTO enhancementStatus 단일 출처(매핑), 부재 시 legacy. hasActivity: 활동/매칭 라인 존재.
+    const enhStatus = mapExpEnhancementStatus(expMatchedLine, activityTypeId);
+    const hasActivity = !!activity || !!expMatchedLine;
+    // 라인 평점: weekly-cards DTO 의 experienceRating(SoT=cluster4_experience_line_evaluations.rating) 단일 출처.
+    // 프론트 재계산 금지 — number 면 그대로(0 포함), null/undefined 면 미입력("- / 10").
+    const experienceRatingDto = typeof expMatchedLine?.experienceRating === "number" ? expMatchedLine.experienceRating : null;
+    const hasExperienceRating = experienceRatingDto !== null;
+    const effectiveRatingScore = experienceRatingDto ?? 0;
     const effectiveRating = effectiveRatingScore / 2; // 별 표시용 (0~5)
     const expLineImages = normalizeOutputImages(
       expMatchedLine?.outputImages as
@@ -6383,8 +6970,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         previewCode: expMatchedLine?.lineCode || activityType?.line_code || fallbackMapping?.lineCode || "-",
         previewOutputLink1: expMatchedLine?.outputLinks?.[0]?.url ?? null,
         previewOutputImages: Array.isArray(expMatchedLine?.outputImages) ? expMatchedLine!.outputImages!.length : null,
-        previewLineRating: effectiveRatingScore,
-        previewLineRatingSource: lineRatingDto != null ? "matchedLine.lineRating(DTO)" : "points(activityRatings)",
+        previewExperienceRating: hasExperienceRating ? experienceRatingDto : null,
+        previewRatingCount: hasExperienceRating ? `${experienceRatingDto} / 10` : "- / 10",
+        previewRatingSource: "matchedLine.experienceRating(DTO=cluster4_experience_line_evaluations.rating)",
       });
     }
 
@@ -6396,20 +6984,29 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       matchedLine: expMatchedLine ?? null,
       lineTargetId: (expMatchedLine?.lineTargetId as string | null | undefined) ?? null,
       experienceLineMasterId: (expMatchedLine?.experienceLineMasterId as string | null | undefined) ?? null,
+      // 고정 슬롯(1~5) 매핑 키 — 배열 순서가 아니라 이 값으로 슬롯 위치를 결정한다 (백엔드 SoT).
+      experienceCategory: (expMatchedLine?.experienceCategory as string | null | undefined) ?? null,
+      experienceSlotOrder: typeof expMatchedLine?.experienceSlotOrder === "number" ? expMatchedLine.experienceSlotOrder : null,
       canEdit: typeof expMatchedLine?.canEdit === "boolean" ? expMatchedLine.canEdit : null,
       code: expMatchedLine?.lineCode || activityType?.line_code || fallbackMapping?.lineCode || "-",
-      // 라인명(badge): matchedLine.activityTypeName(실제 DTO 라인명 필드) 우선, 없으면 legacy.
-      badge: expMatchedLine?.activityTypeName || activityType?.name || fallbackMapping?.lineName || "-",
+      // 라인명(badge): matchedLine.activityTypeName → matchedLine.lineName → legacy → "-".
+      badge:
+        (expMatchedLine?.activityTypeName as string | null | undefined) ||
+        (expMatchedLine?.lineName as string | null | undefined) ||
+        activityType?.name ||
+        fallbackMapping?.lineName ||
+        "-",
       title: expMatchedLine?.mainTitle || activity?.title || fallbackMapping?.mainTitle || "-",
-      subTitle: detail?.sub_title || "",
-      growthPoint: detail?.growth_point || "",
+      // subtitle/growthPoint: 사용자 제출값(legacy detail) 우선 → matchedLine.submission → "".
+      subTitle: detail?.sub_title || ((expMatchedLine?.submission as { subtitle?: string | null } | null | undefined)?.subtitle ?? "") || "",
+      growthPoint: detail?.growth_point || ((expMatchedLine?.submission as { growthPoint?: string | null } | null | undefined)?.growthPoint ?? "") || "",
       outputLinks: mergedOutputLinks,
       images: normalizeWorkInfoImages(mergedImages),
       imageCaptions: normalizeWorkInfoCaptions(mergedCaptions),
       verified: enhStatus === "success",
-      // 평점: DTO lineRating 우선(effective), 없으면 legacy points.
+      // 평점: DTO experienceRating 단일 출처. number → "n / 10", null/undefined → "- / 10".
       rating: effectiveRating,
-      ratingCount: hasActivity ? `${effectiveRatingScore} / 10` : "- / 10",
+      ratingCount: hasExperienceRating ? `${experienceRatingDto} / 10` : "- / 10",
       hasWeb: (detail?.output_links?.length || 0) > 0,
       icon: getWorkExpIcon((expMatchedLine?.activityTypeName as string | null | undefined) || fallbackMapping?.lineName || activityType?.name || ""),
       isEmpty: false,
@@ -6424,6 +7021,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const buildVoidWorkExpCard = (n: number) => ({
     id: 1000 + n,
     activityTypeId: "",
+    experienceCategory: null as string | null,
+    experienceSlotOrder: null as number | null,
+    experienceLineMasterId: null as string | null,
     code: "-",
     badge: "-",
     title: "-",
@@ -6442,24 +7042,134 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     hasActivity: false,
   });
 
-  // 휴식 모드(공식/개인) — 운영진 개설 여부와 무관하게 Main Title 강제 '-'.
-  // 별점/카테고리 등 본문은 보존, Main Title 만 차폐. 미개설 라인은 void 카드로 패딩.
-  const effectiveWorkExpCards = isRestMode
-    ? [
-        ...workExpCards
-          .filter((c) => c.hasActivity)
-          .map((card) => ({
-            ...card,
-            title: "",
-            enhancementStatus: "not_applicable" as EnhancementStatus,
-            isFailed: false,
-          })),
-        buildVoidWorkExpCard(0),
-        buildVoidWorkExpCard(1),
-        buildVoidWorkExpCard(2),
-        buildVoidWorkExpCard(3),
-      ]
-    : [...workExpCards.filter((c) => c.enhancementStatus !== "not_applicable"), buildVoidWorkExpCard(0), buildVoidWorkExpCard(1), buildVoidWorkExpCard(2), buildVoidWorkExpCard(3)];
+  // 미개설(빈) 슬롯 모달 전용 placeholder — 실제 line/card 를 복사하지 않는 독립 객체.
+  // (버그: 빈 슬롯이 1번 슬롯 카드/ matchedLine 을 공유하던 문제 → 매 클릭마다 새 placeholder 로 분리)
+  // mainTitle/subtitle/growthPoint "-", outputs empty, rating null("- / 10"), canEdit false,
+  // matchedLine/lineTargetId 없음(resolveExpMatchedLine 이 라인 없음으로 처리),
+  // enhancementStatus = DTO 있으면 그대로(slotStatus) 없으면 not_applicable.
+  const buildExpPlaceholderCard = (slotIndex: number, slotStatus?: EnhancementStatus) => ({
+    ...buildVoidWorkExpCard(slotIndex),
+    matchedLine: null as Cluster4WeeklyLineDto | null,
+    lineTargetId: null as string | null,
+    canEdit: false as boolean,
+    isPlaceholder: true as boolean,
+    enhancementStatus: (slotStatus ?? "not_applicable") as EnhancementStatus,
+  });
+
+  // ── 실무 경험 고정 슬롯(1~5) 구조 ──
+  // 요구사항: 데이터 배열 순서가 아니라 experienceSlotOrder(없으면 experienceCategory)를 기준으로
+  // 항상 같은 위치(1 도출 → 2 분석 → 3 평가 → 4 확장 → 5 관리)에 카드를 배치한다.
+  // 라인이 없는 슬롯은 빈/해당없음(void 카드)으로 표시한다. (미리보기 void 문제 해결)
+  const EXPERIENCE_SLOT_DEFS = [
+    { order: 1, category: "derivation", label: "도출" },
+    { order: 2, category: "analysis", label: "분석" },
+    { order: 3, category: "evaluation", label: "평가" },
+    { order: 4, category: "extension", label: "확장" },
+    { order: 5, category: "management", label: "관리" },
+  ] as const;
+  const EXP_CATEGORY_TO_ORDER: Record<string, number> = {
+    derivation: 1,
+    analysis: 2,
+    evaluation: 3,
+    extension: 4,
+    management: 5,
+  };
+  // 카드 → 슬롯 순서(1~5). experienceSlotOrder 우선, 없으면 experienceCategory→order.
+  // 둘 다 없으면 null(슬롯 미배치). 프론트 추론 금지 — 백엔드 SoT 값만 사용.
+  const resolveExpSlotOrder = (card: { experienceSlotOrder?: number | null; experienceCategory?: string | null }): number | null => {
+    const so = card.experienceSlotOrder;
+    if (typeof so === "number" && so >= 1 && so <= 5) return so;
+    const cat = String(card.experienceCategory ?? "").trim().toLowerCase();
+    if (cat && EXP_CATEGORY_TO_ORDER[cat]) return EXP_CATEGORY_TO_ORDER[cat];
+    return null;
+  };
+
+  // ── 현재 단계(일반/심화/운영진) 판정 — 이력서 카드 "심화" 표시와 동일 source/매핑 ──
+  // 이력서(home-career/Sidebar.tsx)는 profile.membership_level 을 roleKorean 으로 매핑한 뒤
+  // "(" 앞부분("일반"|"심화"|"운영진")만 잘라 표시한다. 관리 슬롯 잠금도 정확히 같은 기준을 쓴다.
+  // (버그: 기존엔 userWeekRole(주차별 역할 history) 기준이라, membership_level 이 "심화"여도
+  //  본 주차 role 이 null/일반이면 이력서는 "심화"인데 관리 슬롯은 잠겨 불일치가 났다.)
+  //  - "심화" / "운영진" → 관리 슬롯 open
+  //  - "일반" / 미확정(membership_level 없음) → 관리 슬롯 locked (보수적)
+  const EXP_MEMBERSHIP_ROLE_KOREAN: Record<string, string> = {
+    crew: "일반(정규)",
+    crew_regular: "일반(정규)",
+    crew_normal: "일반(정규)",
+    crew_advanced: "심화(파트장)",
+    crew_partleader: "심화(파트장)",
+    crew_advanced_part_leader: "심화(파트장)",
+    part_leader: "심화(파트장)",
+    crew_agent: "심화(에이전트)",
+    crew_advanced_agent: "심화(에이전트)",
+    admin: "운영진(앰베서더)",
+    admin_team_leader: "운영진(팀장)",
+    crew_team_leader: "운영진(팀장)",
+    admin_ambassador: "운영진(앰배서더)",
+    crew_ambassador: "운영진(앰배서더)",
+    operations_ambassador: "운영진(앰배서더)",
+  };
+  const expMembershipRaw = membershipLevel ?? "";
+  const expStageFull = EXP_MEMBERSHIP_ROLE_KOREAN[expMembershipRaw] || expMembershipRaw || "";
+  const expStagePrefix = expStageFull.split("(")[0] || ""; // "일반" | "심화" | "운영진" | ""
+  const isExpAdvancedStage = expStagePrefix === "심화" || expStagePrefix === "운영진";
+  // 관리 아이콘(에이전트/파트장) 분기 — 매핑된 라벨에 "에이전트"가 포함되면 에이전트 대상.
+  const isExpAgentRole = expStageFull.includes("에이전트");
+  const managementSlotLocked = !isExpAdvancedStage;
+
+  // 슬롯 카테고리 → 고정 아이콘. extension 은 미정 → ""(placeholder), management 는 역할별 분기.
+  const EXP_SLOT_ICON_BASE = "/images/0/cluster4/icon/실무 경험/";
+  const getExperienceSlotIcon = (category: string): string => {
+    switch (category) {
+      case "derivation":
+        return EXP_SLOT_ICON_BASE + "실무 경험 - [커리어]마케터 Launch.png";
+      case "analysis":
+        return EXP_SLOT_ICON_BASE + "실무 경험 - [퍼포먼스]마케팅 실무.png";
+      case "evaluation":
+        return EXP_SLOT_ICON_BASE + "실무 경험 - [생산성]상호 피드백.png";
+      case "management":
+        return EXP_SLOT_ICON_BASE + (isExpAgentRole ? "[매니징] 에이전트.png" : "[매니징] 파트장.png");
+      case "extension":
+      default:
+        return ""; // 아직 미정 — placeholder 유지
+    }
+  };
+
+  // 휴식 모드: Main Title 차폐 + 강화 상태 not_applicable. 슬롯 배치 기준은 동일하게 유지.
+  const slottableWorkExpCards = isRestMode
+    ? workExpCards.map((card) => ({ ...card, title: "", enhancementStatus: "not_applicable" as EnhancementStatus, isFailed: false }))
+    : workExpCards;
+
+  // 슬롯 내부 정렬: 같은 슬롯에 여러 라인이 있으면 lineCode(code) → mainTitle(title) 순으로 표시.
+  const sortWithinExpSlot = (a: { code?: string | null; title?: string | null }, b: { code?: string | null; title?: string | null }) => {
+    const ca = String(a.code ?? ""),
+      cb = String(b.code ?? "");
+    if (ca !== cb) return ca.localeCompare(cb);
+    return String(a.title ?? "").localeCompare(String(b.title ?? ""));
+  };
+
+  // 고정 5슬롯 빌드. 각 슬롯: 카테고리 라인들(정렬) + 대표(primary) + 잠금/아이콘.
+  const workExpSlots = EXPERIENCE_SLOT_DEFS.map((def, slotIndex) => {
+    const cards = slottableWorkExpCards.filter((c) => resolveExpSlotOrder(c) === def.order).sort(sortWithinExpSlot);
+    const primary = cards[0] ?? null;
+    const isLocked = def.category === "management" && managementSlotLocked;
+    return {
+      slotIndex,
+      order: def.order,
+      category: def.category,
+      label: def.label,
+      cards,
+      lineCount: cards.length,
+      // 실제 라인 대표 카드(없으면 null). 클릭 시 이 값이 있을 때만 selectedWorkExpCard 로 세팅.
+      primary,
+      // 대표 카드(없으면 void). 잠금 슬롯은 본문을 가리므로 void 로 둔다.
+      card: isLocked || !primary ? buildVoidWorkExpCard(slotIndex) : primary,
+      // 라인 없음/잠금 → 빈(해당없음) 슬롯. 라인 있으면 정상 표시.
+      isEmpty: isLocked || !primary,
+      isLocked,
+      // 카테고리 고정 아이콘("" = placeholder). 잠금/빈 슬롯에서는 placeholder.
+      slotIcon: getExperienceSlotIcon(def.category),
+    };
+  });
 
   // 실무 경험 통계 — 카드 표시 기준(getEnhancementStatus 결과)에 맞춰 derive.
   // 운영진이 개설한 활동 중 이 크루에게 해당 없음(역할/이력 외)인 라인은 카운트에서 제외.
@@ -6467,6 +7177,50 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     total: workExpCards.filter((c) => c.enhancementStatus !== "not_applicable").length,
     success: workExpCards.filter((c) => c.enhancementStatus === "success").length,
   };
+
+  // ── 실무 경험/경력 카운트·달성률 단일 출처(어드민 weekly-cards DTO) — infoStatsAdmin/competencyStatsAdmin 와 동일 패턴 ──
+  // DTO experienceRate/careerRate{rate,count,total} 가 있으면 우선 사용(count=B, total=A, 백엔드 보정 완료).
+  // 미수신 시에만 기존 프론트 계산값(experienceStatsDisplay / careerStats)으로 fallback → 회귀 없음(영향 없음).
+  const experienceStatsAdmin = (() => {
+    const r = (weeklyCardMeta as (AdminCluster4WeeklyCardDto & { experienceRate?: Cluster4RateDto | null }) | null)?.experienceRate ?? null;
+    if (r && typeof r.total === "number" && typeof r.count === "number") {
+      return { total: Number(r.total) || 0, success: Number(r.count) || 0, rate: typeof r.rate === "number" ? r.rate : null };
+    }
+    return { total: Number(experienceStatsDisplay.total) || 0, success: Number(experienceStatsDisplay.success) || 0, rate: null };
+  })();
+  const experienceSuccessRate =
+    typeof experienceStatsAdmin.rate === "number"
+      ? experienceStatsAdmin.rate
+      : experienceStatsAdmin.total > 0
+        ? Math.round((experienceStatsAdmin.success / experienceStatsAdmin.total) * 100)
+        : 0;
+  const careerStatsAdmin = (() => {
+    const r = (weeklyCardMeta as (AdminCluster4WeeklyCardDto & { careerRate?: Cluster4RateDto | null }) | null)?.careerRate ?? null;
+    if (r && typeof r.total === "number" && typeof r.count === "number") {
+      return { total: Number(r.total) || 0, success: Number(r.count) || 0, rate: typeof r.rate === "number" ? r.rate : null };
+    }
+    return { total: Number(careerStats.total) || 0, success: Number(careerStats.success) || 0, rate: null };
+  })();
+  const careerSuccessRate =
+    typeof careerStatsAdmin.rate === "number"
+      ? careerStatsAdmin.rate
+      : careerStatsAdmin.total > 0
+        ? Math.round((careerStatsAdmin.success / careerStatsAdmin.total) * 100)
+        : 0;
+
+  // ── 상단 주차 성장률(성장 허브) 총합 단일 출처 — 4개 섹션의 어드민 DTO 합산 ──
+  // 각 섹션 헤더가 쓰는 *StatsAdmin 와 동일 값을 합산하므로 섹션 헤더 ↔ 총합이 항상 일치한다.
+  // rate 는 개별 rate 합산이 아니라 합산 total/success 로 재계산(개별 rate 는 합산 불가).
+  const growthStatsAdmin = {
+    total: infoStatsAdmin.total + competencyStatsAdmin.total + experienceStatsAdmin.total + careerStatsAdmin.total,
+    success: infoStatsAdmin.success + competencyStatsAdmin.success + experienceStatsAdmin.success + careerStatsAdmin.success,
+  };
+  const growthSuccessRate =
+    growthStatsAdmin.total > 0
+      ? Math.ceil((growthStatsAdmin.success / growthStatsAdmin.total) * 100)
+      : isOnboardingWeek
+        ? 100
+        : 0;
 
   // 실무 경력 카드 데이터 (DB에서 가져온 프로젝트 기반 데이터 변환)
   const workCareerCards =
@@ -6650,6 +7404,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   return (
     <div className="cluster4-card-content weekly-card-detail" style={{ marginRight: "27px" }}>
+      {demoUserId ? <TestUserBanner /> : null}
       {/* 탭 영역 */}
       <div className="top-tabs-wrapper">
         <div className="top-tabs">
@@ -6662,12 +7417,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             style={{ cursor: "pointer", width: "44px", height: "44px" }}
           >
             <img src="/images/0/cluster4/icon/icon%20-%20%EC%A0%84%EA%B5%AC.png" alt="전구" className="tab-icon" />
-            <Link href={`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}`} className="tab-badge" onClick={(e) => e.stopPropagation()}>
+            <Link href={withPxRoute(`/cluster-4${userLinkQuery}`, pathname)} className="tab-badge" onClick={(e) => e.stopPropagation()}>
               <span className="badge-text">Weekly Growth</span>
               <img src="/images/0/cluster4/icon/icon%20-%20wallet.png" alt="wallet" className="badge-icon" />
             </Link>
           </div>
-          <Link href={`/cluster-4-1${urlUserId ? `?userId=${urlUserId}` : ""}`} className="tab" style={{ width: "44px", height: "44px" }}>
+          <Link href={withPxRoute(`/cluster-4-1${userLinkQuery}`, pathname)} className="tab" style={{ width: "44px", height: "44px" }}>
             <img src="/images/0/cluster4/icon/icon%20-%20book.png" alt="book" className="tab-icon" />
             <div className="tab-badge">
               <span className="badge-text">Season Growth</span>
@@ -6681,7 +7436,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         </div>
         <div className="nav-buttons">
           {prevWeekId ? (
-            <Link href={`/cluster-4-card/${prevWeekId}${urlUserId ? `?userId=${urlUserId}` : ""}`} className="nav-btn-prev">
+            <Link href={withPxRoute(`/cluster-4-card/${prevWeekId}${userLinkQuery}`, pathname)} className="nav-btn-prev">
               <span>이전 주</span>
               <img src="/images/0/cluster4/icon/icon%20-%20arrow%20left.png" alt="left" className="arrow-icon" />
             </Link>
@@ -6692,7 +7447,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             </button>
           )}
           {nextWeekId ? (
-            <Link href={`/cluster-4-card/${nextWeekId}${urlUserId ? `?userId=${urlUserId}` : ""}`} className="nav-btn-next">
+            <Link href={withPxRoute(`/cluster-4-card/${nextWeekId}${userLinkQuery}`, pathname)} className="nav-btn-next">
               <span>다음 주</span>
               <img src="/images/0/cluster4/icon/icon%20-%20arrow%20right.png" alt="right" className="arrow-icon" />
             </Link>
@@ -6702,7 +7457,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <img src="/images/0/cluster4/icon/icon%20-%20arrow%20right.png" alt="right" className="arrow-icon" />
             </button>
           )}
-          <Link href={`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}#weekly-filter-bar`} className="nav-btn-filled">
+          <Link href={withPxRoute(`/cluster-4${userLinkQuery}#weekly-filter-bar`, pathname)} className="nav-btn-filled">
             <img src="/images/0/cluster4/icon/icon%20-%201.png" alt="list" className="list-icon" />
             <span>전체 목록으로 돌아가기</span>
           </Link>
@@ -6717,20 +7472,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             <div
               className="edit-icon"
               onClick={async () => {
-                // 임시: 마더 계정(어드민) 외에는 주차 평판 작성/수정 비활성화
-                if (!isDemoMode && !session?.user?.isAdmin) {
-                  await popup.alert("작성할 수 있는 기간이 아닙니다. 😊");
-                  return;
-                }
+                // 주차 평판은 타 크루만 작성 가능 (본인 카드에는 작성 불가) — 업무 규칙 유지
                 if (!isDemoMode && isOwner && !session?.user?.isAdmin) {
                   await popup.alert("주차 평판은 타 크루만이 작성할 수 있습니다.");
                   return;
                 }
+                // 어드민 부여 권한(week_id) OR 기본 시간창 — weekly-review 와 동일 게이트.
+                // (기존 "어드민 외 비활성화" 고정 차단 + canEditReputation 잔재 팝업 제거)
+                if (!(await requireWeeklyReputationWriteAccess())) return;
                 handleEditClick(() => {
-                  if (!isDemoMode && !canEditReputation) {
-                    alert("관리자 승인 후 작성할 수 있습니다.");
-                    return;
-                  }
                   // 이미 작성한 평판이 있는지 확인 (편집 경로 진입)
                   const myExistingRep = !isDemoMode && session?.user?.id ? weeklyReputations.find((r: any) => r.reviewer_id === session.user.id) : null;
 
@@ -7194,7 +7944,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       await popup.alert("연계 크루는 본인만이 작성할 수 있습니다.");
                       return;
                     }
-                    if (!(await requireWriteWindow())) return;
+                    // 어드민 부여 권한(week_id) OR 기본 시간창 — weekly-review 와 동일 게이트.
+                    // (기존 requireWriteWindow 만 보면 어드민이 열어준 작성기간을 무시해 막혔다.)
+                    if (!(await requireWeeklyColleaguesWriteAccess())) return;
                     handleEditClick(() => {
                       handleOpenColleagueEdit();
                     });
@@ -7379,11 +8131,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <span className="growth-count">
                 <img src="/images/0/cluster4/icon/icon - 0 - 3star.png" alt="star" className="star-icon" /> 총{" "}
                 <span style={{ display: "inline-block", minWidth: "2ch", textAlign: "right", color: "white", fontSize: 19, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>
-                  {isRestMode ? "-" : infoStats.total + competencyStats.total + experienceStatsDisplay.total + careerStats.total}
+                  {isRestMode ? "-" : growthStatsAdmin.total}
                 </span>{" "}
                 개 중{" "}
                 <span className="highlight" style={{ display: "inline-block", minWidth: "2ch", textAlign: "right" }}>
-                  {isRestMode ? "-" : infoStats.success + competencyStats.success + experienceStatsDisplay.success + careerStats.success}
+                  {isRestMode ? "-" : growthStatsAdmin.success}
                 </span>
                 개
               </span>
@@ -7394,7 +8146,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 style={{
                   width: isRestMode
                     ? "100%"
-                    : `${infoStats.total + competencyStats.total + experienceStatsDisplay.total + careerStats.total > 0 ? Math.ceil(((infoStats.success + competencyStats.success + experienceStatsDisplay.success + careerStats.success) / (infoStats.total + competencyStats.total + experienceStatsDisplay.total + careerStats.total)) * 100) : isOnboardingWeek ? 100 : 0}%`,
+                    : `${growthSuccessRate}%`,
                 }}
               ></div>
               {isRestMode && <span className="rest-message">휴식주차로서 집계되지 않습니다</span>}
@@ -7403,13 +8155,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           <div className="growth-center">
             <span className="progress-percent">
               <span className="number">
-                {isRestMode
-                  ? "-"
-                  : infoStats.total + competencyStats.total + experienceStatsDisplay.total + careerStats.total > 0
-                    ? Math.ceil(((infoStats.success + competencyStats.success + experienceStatsDisplay.success + careerStats.success) / (infoStats.total + competencyStats.total + experienceStatsDisplay.total + careerStats.total)) * 100)
-                    : isOnboardingWeek
-                      ? 100
-                      : 0}
+                {isRestMode ? "-" : growthSuccessRate}
               </span>
               <span className="percent">%</span>
             </span>
@@ -7577,11 +8323,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             <span className="section-count">
               총{" "}
               <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>
-                {isOnboardingWeek || isRestMode ? "-" : experienceStatsDisplay.total}
+                {isOnboardingWeek || isRestMode ? "-" : experienceStatsAdmin.total}
               </span>{" "}
               개 중{" "}
               <span className="highlight" style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right" }}>
-                {isOnboardingWeek || isRestMode ? "-" : experienceStatsDisplay.success}
+                {isOnboardingWeek || isRestMode ? "-" : experienceStatsAdmin.success}
               </span>{" "}
               개
             </span>
@@ -7589,31 +8335,38 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <span className="rate-label">허브 강화율</span>
               <span className="rate-value">
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                  {isOnboardingWeek || isRestMode ? "-" : experienceStatsDisplay.total > 0 ? Math.ceil((experienceStatsDisplay.success / experienceStatsDisplay.total) * 100) : 0}
+                  {isOnboardingWeek || isRestMode ? "-" : experienceSuccessRate}
                 </span>
                 %
               </span>
             </div>
           </div>
           <div className="work-exp-cards">
-            {Array.from({ length: 5 }, (_, cardIndex) => {
-              // 슬롯 기반 렌더링: 실제 데이터 개수와 무관하게 항상 5개 슬롯을 만든다.
-              //  - cardIndex 0~3 : 실제 카드 데이터 → 없으면 buildVoidWorkExpCard 로 폴백(empty)
-              //  - cardIndex 4   : 데이터 유무와 무관하게 '잠금 상태' empty 카드 (lock-overlay 부착)
-              //  - cardIndex 5+  : 만들지 않음 (3행 2열 grid 우측 하단 셀은 비워둠)
-              const isLocked = cardIndex === 4;
-              const card = isLocked ? buildVoidWorkExpCard(cardIndex) : (effectiveWorkExpCards[cardIndex] ?? buildVoidWorkExpCard(cardIndex));
-              const isEmpty = isLocked ? true : card.isEmpty;
-              const expActivityType = workExpActivityTypes[cardIndex];
+            {workExpSlots.map((slot) => {
+              // 고정 슬롯 기반 렌더링: 배열 순서가 아니라 카테고리(experienceSlotOrder)로 위치 고정.
+              //  - 슬롯 0~4 = 1 도출 / 2 분석 / 3 평가 / 4 확장 / 5 관리 (항상 동일 위치)
+              //  - 라인이 있는 슬롯 → 대표 카드(slot.card) 표시, 없으면 빈/해당없음
+              //  - 관리(5) 슬롯 = 일반 단계 잠금(slot.isLocked), 심화 이상은 정상 표시
+              const card = slot.card;
+              const isEmpty = slot.isEmpty;
+              const isLocked = slot.isLocked;
               return (
                 <div
-                  key={`work-exp-slot-${cardIndex}`}
+                  key={`work-exp-slot-${slot.order}-${slot.category}`}
                   className={`work-exp-card ${isEmpty ? "empty" : ""}${isLocked ? " locked" : ""}`}
                   onClick={
                     isLocked
                       ? undefined
                       : async () => {
-                          setSelectedWorkExpCard(card);
+                          // 실제 라인이 있는 슬롯(slot.primary)만 그 슬롯의 카드를 세팅한다.
+                          // 미개설(빈) 슬롯은 이전 선택값 누수 방지를 위해 매번 새 placeholder 로 초기화
+                          // (1번 슬롯 line/matchedLine 공유 금지). placeholder 는 키/ matchedLine 이 없어
+                          // resolveExpMatchedLine 이 라인 없음(undefined)으로 처리 → 모달이 "-"/해당없음 표시.
+                          if (slot.primary) {
+                            setSelectedWorkExpCard(slot.primary);
+                          } else {
+                            setSelectedWorkExpCard(buildExpPlaceholderCard(slot.slotIndex, slot.card.enhancementStatus));
+                          }
                           setWorkExpViewModalOpen(true);
                         }
                   }
@@ -7622,7 +8375,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 >
                   <div className="card-top-row">
                     <div className={`card-icon-area ${!isEmpty && card.enhancementStatus === "failed" ? "failed" : ""}`}>
-                      {!isEmpty && card.icon ? <img src={card.icon} alt={card.badge} style={{ opacity: card.enhancementStatus === "failed" ? 0.3 : 1 }} /> : <div className="icon-placeholder"></div>}
+                      {/* 아이콘은 슬롯 카테고리 고정값(slot.slotIcon) 사용. extension("")·잠금·빈 슬롯은 placeholder. */}
+                      {!isEmpty && slot.slotIcon ? <img src={slot.slotIcon} alt={card.badge} style={{ opacity: card.enhancementStatus === "failed" ? 0.3 : 1 }} /> : <div className="icon-placeholder"></div>}
                       {!isRestMode && !isEmpty && card.enhancementStatus === "failed" && (
                         <div className="failed-overlay" style={{ position: "absolute", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
                           <span className="failed-text" style={{ whiteSpace: "nowrap", width: "auto", color: "#ff4444", fontWeight: "800" }}>
@@ -7670,7 +8424,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       {isEmpty
                         ? "-"
                         : (() => {
-                            const text = weekActivityDetails.find((d) => d.activity_type_id === card.activityTypeId)?.sub_title || "-";
+                            // card.subTitle = 사용자 제출값(detail) → matchedLine.submission fallback (모달과 동일 source).
+                            const text = card.subTitle || "-";
                             return text;
                           })()}
                     </span>
@@ -7753,11 +8508,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             <span className="section-count">
               총{" "}
               <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>
-                {isOnboardingWeek || isRestMode ? "-" : competencyStats.total}
+                {isOnboardingWeek || isRestMode ? "-" : competencyStatsAdmin.total}
               </span>{" "}
               개 중{" "}
               <span className="highlight" style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right" }}>
-                {isOnboardingWeek || isRestMode ? "-" : competencyStats.success}
+                {isOnboardingWeek || isRestMode ? "-" : competencyStatsAdmin.success}
               </span>{" "}
               개
             </span>
@@ -7765,7 +8520,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <span className="rate-label">허브 강화율</span>
               <span className="rate-value">
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                  {isOnboardingWeek || isRestMode ? "-" : competencyStats.total > 0 ? Math.ceil((competencyStats.success / competencyStats.total) * 100) : 0}
+                  {isOnboardingWeek || isRestMode ? "-" : competencySuccessRate}
                 </span>
                 %
               </span>
@@ -7877,11 +8632,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             <span className="section-count">
               총{" "}
               <span style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right", color: "white", fontSize: 24, fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, textTransform: "uppercase" as const, lineHeight: "31px" }}>
-                {isOnboardingWeek || isRestMode ? "-" : careerStats.total}
+                {isOnboardingWeek || isRestMode ? "-" : careerStatsAdmin.total}
               </span>{" "}
               개 중{" "}
               <span className="highlight" style={{ display: "inline-block", minWidth: "2.5ch", textAlign: "right" }}>
-                {isOnboardingWeek || isRestMode ? "-" : careerStats.success}
+                {isOnboardingWeek || isRestMode ? "-" : careerStatsAdmin.success}
               </span>{" "}
               개
             </span>
@@ -7889,7 +8644,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <span className="rate-label">허브 강화율</span>
               <span className="rate-value">
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
-                  {isOnboardingWeek || isRestMode ? "-" : careerStats.total > 0 ? Math.ceil((careerStats.success / careerStats.total) * 100) : 0}
+                  {isOnboardingWeek || isRestMode ? "-" : careerSuccessRate}
                 </span>
                 %
               </span>
@@ -9042,7 +9797,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       type="button"
                       className="modal-edit-btn"
                       onClick={async () => {
-                        if (!(await requireWriteWindow())) return;
+                        // 어드민 부여 권한(week_id) OR 기본 시간창 — 카드 진입 게이트와 동일.
+                        // (기존 requireWriteWindow 만 보면 어드민이 열어준 작성기간을 무시했다.)
+                        if (!(await requireWeeklyColleaguesWriteAccess())) return;
                         handleEditClick(() => setIsColleagueEditing(true));
                       }}
                     >
@@ -9438,7 +10195,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     onClick={async () => {
                       if (!confirm("이 평판을 삭제하시겠습니까?")) return;
                       try {
-                        const res = await fetch(`/api/weekly-reputations?id=${selectedReputationCard.id}`, { method: "DELETE" });
+                        const res = await fetch(apiUrl(`/api/weekly-reputations?id=${selectedReputationCard.id}`), { method: "DELETE" });
                         const json = await res.json();
                         if (json.success) {
                           alert("삭제되었습니다.");
@@ -10516,12 +11273,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   </div>
                   <span className="line-code image-line-code">{workExpMatchedLine?.lineCode ?? (lookupWorkExpMapping(selectedWorkExpCard.code)?.lineCode || selectedWorkExpCard.code || "")}</span>
 
-                  {/* 라인 평점 — weekly-cards DTO 의 lineRating(SoT=user_activity_details.rating, proxy 주입) 우선.
-                      DTO 에 값이 없을 때만 legacy points(activityRatings) fallback. 프론트 임의 계산 금지. */}
+                  {/* 라인 평점 — weekly-cards DTO 의 experienceRating(SoT=cluster4_experience_line_evaluations.rating) 단일 출처.
+                      프론트 임의 계산 금지. number → "n / 10"(0 포함), null/undefined → "- / 10". */}
                   {(() => {
-                    const dtoRating = typeof workExpMatchedLine?.lineRating === "number" ? workExpMatchedLine.lineRating : null;
-                    const ratingValue = dtoRating ?? (selectedWorkExpCard?.rating ?? 0) * 2;
-                    const halfValue = (ratingValue || 0) / 2;
+                    const dtoRating = typeof workExpMatchedLine?.experienceRating === "number" ? workExpMatchedLine.experienceRating : null;
+                    const hasRating = dtoRating !== null;
+                    const halfValue = hasRating ? dtoRating / 2 : 0;
                     return (
                       <div className="workexp-rating-section" data-field="rating">
                         <span className="rating-label">라인 평점</span>
@@ -10540,7 +11297,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                             );
                           })}
                         </div>
-                        <span className="rating-display">{ratingValue > 0 ? ratingValue : "-"} / 10</span>
+                        <span className="rating-display">{hasRating ? dtoRating : "-"} / 10</span>
                       </div>
                     );
                   })()}
@@ -10759,10 +11516,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       <div className="workinfo-output-links" onWheel={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
                         {[0, 1, 2, 3, 4].map((i) => {
                           const dotColor = ["#FF6B6B", "#4ECDC4", "#FAAB07", "#6BCB77", "#A084DC"][i];
-                          const adminCount = selectedWorkAbilityCard?.activityTypeId ? getAdminOutputLinksCount(selectedWorkAbilityCard.activityTypeId, workAbilityMatchedLine) : 0;
+                          const adminCount = getAbilityAdminLinkCount(workAbilityMatchedLine, selectedWorkAbilityCard?.activityTypeId);
                           const isAdminLink = i < adminCount;
                           const adminOverride = isAdminPreview ? adminSavedOutputLinks["workAbility"]?.[i] : null;
-                          const backendLink = lineOutputLinkAt(workAbilityMatchedLine, i);
+                          // 어드민 슬롯 = top-level outputLinks(어드민 개설값), 사용자 슬롯 = submission.outputLinks(사용자 제출값).
+                          const backendLink = isAdminLink
+                            ? lineOutputLinkAt(workAbilityMatchedLine, i)
+                            : lineSubmissionOutputLinkAt(workAbilityMatchedLine, i - adminCount);
                           const link = workAbilityViewIsEditing
                             ? editingAbilityOutputLinks[i] || { desc: "", url: "" }
                             : (adminOverride?.url?.trim()
@@ -10870,8 +11630,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 <div className="workinfo-right">
                   <div className="workinfo-image-grid images-grid">
                     {Array.from({ length: WORKINFO_IMAGE_SLOT_COUNT }).map((_, imageIdx) => {
-                      const viewImages = normalizeWorkInfoImages(selectedWorkAbilityCard?.images);
-                      const viewCaptions = normalizeWorkInfoCaptions(selectedWorkAbilityCard?.imageCaptions);
+                      // 보기 모드: 어드민 개설 이미지(top-level outputImages) 슬롯을 앞에, 그 뒤 사용자 제출 이미지
+                      // (submission.outputImages = selectedWorkAbilityCard.images). submission=null 이어도 admin 이미지는 표시.
+                      const abilityAdminImages = getAbilityAdminImages(workAbilityMatchedLine, selectedWorkAbilityCard?.activityTypeId);
+                      const abilityAdminImageCount = Math.min(getAbilityAdminImageCount(workAbilityMatchedLine, selectedWorkAbilityCard?.activityTypeId), WORKINFO_IMAGE_SLOT_COUNT);
+                      const userViewImages = normalizeWorkInfoImages(selectedWorkAbilityCard?.images);
+                      const userViewCaptions = normalizeWorkInfoCaptions(selectedWorkAbilityCard?.imageCaptions);
+                      const viewImages = Array.from({ length: WORKINFO_IMAGE_SLOT_COUNT }, (_, s) =>
+                        s < abilityAdminImageCount ? abilityAdminImages[s]?.url || null : userViewImages[s - abilityAdminImageCount] || null,
+                      );
+                      const viewCaptions = Array.from({ length: WORKINFO_IMAGE_SLOT_COUNT }, (_, s) =>
+                        s < abilityAdminImageCount ? abilityAdminImages[s]?.caption || "" : userViewCaptions[s - abilityAdminImageCount] || "",
+                      );
+                      // 어드민 이미지 슬롯은 보기 모드에서만 노출 — 보기 모드 그리드엔 편집/삭제 컨트롤이 없어 자동 read-only.
                       const imagesForState = workAbilityViewIsEditing ? editingAbilityImages : viewImages;
                       const captionsForState = workAbilityViewIsEditing ? editingAbilityImageCaptions : viewCaptions;
                       const image = imagesForState[imageIdx] || null;
@@ -11687,7 +12458,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       {weeklyReviewModalOpen &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="section-modal-overlay">
+          <div className={`section-modal-overlay ${getThemeClass(pathname)}`.trim()}>
             <div className="section-modal section-modal-weekly-review-form">
               {/* 헤더 */}
               <div className="section-modal-header">
@@ -11871,7 +12642,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className="dropdown-options-fixed review-rating-dropdown-options"
+            className={`dropdown-options-fixed review-rating-dropdown-options ${getThemeClass(pathname)}`.trim()}
             style={{
               position: "fixed",
               top: reviewRatingDropdownPos.top,
@@ -11896,7 +12667,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className="dropdown-options-fixed"
+            className={`dropdown-options-fixed ${getThemeClass(pathname)}`.trim()}
             style={{
               position: "fixed",
               top: ratingDropdownPos.top,
@@ -11919,7 +12690,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       {/* Output Link 커스텀 툴팁 — 보기 모드 hover 시 전체 설명 표시 */}
       {olTooltip &&
         createPortal(
-          <div className="ol-custom-tooltip" style={{ left: olTooltip.x, top: olTooltip.y }}>
+          <div className={`ol-custom-tooltip ${getThemeClass(pathname)}`.trim()} style={{ left: olTooltip.x, top: olTooltip.y }}>
             {olTooltip.text}
           </div>,
           document.body,
@@ -11932,7 +12703,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       {outputLinkEditModal &&
         createPortal(
           <div
-            className="output-link-edit-overlay"
+            className={`output-link-edit-overlay ${getThemeClass(pathname)}`.trim()}
             onMouseDown={(e) => e.stopPropagation()}
             onWheel={(e) => {
               e.stopPropagation();

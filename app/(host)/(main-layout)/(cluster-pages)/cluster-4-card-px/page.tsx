@@ -20,7 +20,7 @@ const Cluster4CardPxPage = () => {
       window.localStorage.getItem("demoMode") === "true";
     if (demoOn) {
       const qs = params.toString();
-      router.replace(qs ? `/cluster-4-card-px/dw-01?${qs}` : "/cluster-4-card-px/dw-01");
+      router.replace(qs ? `/cluster-4-card-planning/dw-01?${qs}` : "/cluster-4-card-planning/dw-01");
       return;
     }
 
@@ -48,7 +48,7 @@ const Cluster4CardPxPage = () => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const seasonName = (latestWeek.seasons as any)?.name || "";
             if (!seasonName.toLowerCase().includes("break")) {
-              router.replace(`/cluster-4-card-px/${latestWeek.id}`);
+              router.replace(`/cluster-4-card-planning/${latestWeek.id}`);
               return;
             }
           }
@@ -56,7 +56,7 @@ const Cluster4CardPxPage = () => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const seasonName = (currentWeek.seasons as any)?.name || "";
           if (!seasonName.toLowerCase().includes("break")) {
-            router.replace(`/cluster-4-card-px/${currentWeek.id}`);
+            router.replace(`/cluster-4-card-planning/${currentWeek.id}`);
             return;
           }
         }

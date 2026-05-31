@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getProfileLookupKey, resolveUserProfileAccess } from "@/lib/user-profile-access";
+import { DemoModeError, resolveDemoProfileUserIdFromRequest } from "@/lib/demoMode";
 
 export const dynamic = "force-dynamic";
 
@@ -25,15 +26,6 @@ function errorPayload(step: string, message: string, details?: unknown) {
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        errorPayload("session", "로그인이 필요합니다."),
-        { status: 401 },
-      );
-    }
-
     if (!supabaseAdmin) {
       console.error(TAG, "supabaseAdmin missing — SUPABASE_SERVICE_ROLE_KEY 누락");
       return NextResponse.json(
@@ -42,60 +34,87 @@ export async function POST(request: Request) {
       );
     }
 
-    const access = await resolveUserProfileAccess(supabaseAdmin, {
-      email: session.user.email,
-      name: session.user.name,
-      fallbackProfileId: session.user.id,
-    });
+    // 테스트 유저(데모) 모드: 유효한 demoUserId(test_user_markers 등재 + 데모 활성)면
+    // 세션 없이 그 테스트 유저 폴더/소유자로 업로드한다. 데모 off/미전달 → null → 세션 본인 경로.
+    // 미등재 user_id → 403. (세션보다 먼저 해소해 세션 없이도 통과 가능하게 한다.)
+    let demoUserId: string | null = null;
+    try {
+      demoUserId = await resolveDemoProfileUserIdFromRequest(request);
+    } catch (e) {
+      if (e instanceof DemoModeError) {
+        return NextResponse.json(errorPayload("demo", e.message), { status: e.status });
+      }
+      throw e;
+    }
 
-    if (access.status !== "approved") {
-      console.warn(TAG, "access not approved", {
-        status: access.status,
-        email: session.user.email,
+    const session = await getServerSession(authOptions);
+    // 세션 없으면 401 — 단, 유효한 테스트 유저(demoUserId)면 세션 없이 통과.
+    if (!session?.user?.email && !demoUserId) {
+      return NextResponse.json(
+        errorPayload("session", "로그인이 필요합니다."),
+        { status: 401 },
+      );
+    }
+
+    let profileId: string;
+
+    if (demoUserId) {
+      profileId = demoUserId;
+    } else {
+      const access = await resolveUserProfileAccess(supabaseAdmin, {
+        email: session?.user?.email ?? "",
+        name: session?.user?.name,
+        fallbackProfileId: session?.user?.id,
       });
-      return NextResponse.json(
-        errorPayload("access", "승인된 프로필이 없습니다.", { status: access.status }),
-        { status: 403 },
-      );
-    }
 
-    const lookupKey = getProfileLookupKey(access.profile);
-    if (!lookupKey) {
-      console.warn(TAG, "lookupKey missing", { email: session.user.email });
-      return NextResponse.json(
-        errorPayload("lookupKey", "승인된 프로필이 없습니다."),
-        { status: 403 },
-      );
-    }
+      if (access.status !== "approved") {
+        console.warn(TAG, "access not approved", {
+          status: access.status,
+          email: session?.user?.email,
+        });
+        return NextResponse.json(
+          errorPayload("access", "승인된 프로필이 없습니다.", { status: access.status }),
+          { status: 403 },
+        );
+      }
 
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("user_profiles")
-      .select("user_id")
-      .eq(lookupKey.column, lookupKey.value)
-      .maybeSingle();
+      const lookupKey = getProfileLookupKey(access.profile);
+      if (!lookupKey) {
+        console.warn(TAG, "lookupKey missing", { email: session?.user?.email });
+        return NextResponse.json(
+          errorPayload("lookupKey", "승인된 프로필이 없습니다."),
+          { status: 403 },
+        );
+      }
 
-    if (profileError) {
-      console.error(TAG, "profile lookup failed", profileError);
-      return NextResponse.json(
-        errorPayload("profile_lookup", profileError.message, profileError),
-        { status: 500 },
-      );
-    }
-    if (!profile) {
-      console.warn(TAG, "profile row missing", { lookupKey });
-      return NextResponse.json(
-        errorPayload("profile_missing", "승인된 프로필이 없습니다."),
-        { status: 403 },
-      );
-    }
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from("user_profiles")
+        .select("user_id")
+        .eq(lookupKey.column, lookupKey.value)
+        .maybeSingle();
 
-    const profileId = profile.user_id;
-    if (!profileId) {
-      console.warn(TAG, "profile.user_id missing", { lookupKey });
-      return NextResponse.json(
-        errorPayload("profile_user_id_missing", "승인된 프로필이 없습니다."),
-        { status: 403 },
-      );
+      if (profileError) {
+        console.error(TAG, "profile lookup failed", profileError);
+        return NextResponse.json(
+          errorPayload("profile_lookup", profileError.message, profileError),
+          { status: 500 },
+        );
+      }
+      if (!profile) {
+        console.warn(TAG, "profile row missing", { lookupKey });
+        return NextResponse.json(
+          errorPayload("profile_missing", "승인된 프로필이 없습니다."),
+          { status: 403 },
+        );
+      }
+      if (!profile.user_id) {
+        console.warn(TAG, "profile.user_id missing", { lookupKey });
+        return NextResponse.json(
+          errorPayload("profile_user_id_missing", "승인된 프로필이 없습니다."),
+          { status: 403 },
+        );
+      }
+      profileId = profile.user_id;
     }
 
     const formData = await request.formData();

@@ -8,9 +8,20 @@ import { supabaseAdmin } from "@/lib/supabase";
 //   1) user_edit_windows row 존재
 //   2) resource_key 일치
 //   3) opened_at <= now() < expires_at
+//
+// weekId:
+//   - 주간 자원(cluster4.weekly_reviews / weekly_colleagues / weekly_reputation)은
+//     user_edit_windows 가 (user_id, resource_key, week_id) 단위로 분리되어 있다
+//     (admin 2026-05-31 마이그레이션). 이때 weekId 를 넘기면 해당 주차 행만 검사한다.
+//   - weekId 를 넘기지 않으면 (비주간 자원) week_id 조건 없이 검사한다.
+//   - ⚠ 주간 자원인데 weekId 없이 호출하면 "주차 행 + legacy 전역 행" 이 동시에
+//     매칭되어 .maybeSingle() 이 multiple-rows 에러를 던지고 false 가 된다.
+//     이것이 GET /api/edit-windows/permission 과 동일했던 버그였다 — 저장 게이트도
+//     반드시 동일한 week_id 기준을 쓰도록 weekId 를 함께 넘겨야 한다.
 export async function hasOpenEditWindow(params: {
   userId: string;
   resourceKey: string;
+  weekId?: string | null;
 }): Promise<boolean> {
   if (!supabaseAdmin) {
     console.error("[edit-window] supabaseAdmin not configured");
@@ -18,14 +29,21 @@ export async function hasOpenEditWindow(params: {
   }
 
   const now = new Date().toISOString();
-  const { data, error } = await supabaseAdmin
+  let query = supabaseAdmin
     .from("user_edit_windows")
     .select("id")
     .eq("user_id", params.userId)
     .eq("resource_key", params.resourceKey)
     .lte("opened_at", now)
-    .gt("expires_at", now)
-    .maybeSingle();
+    .gt("expires_at", now);
+
+  // week_id 가 주어지면 해당 주차 행만 — 부분 unique index 가 ≤1행을 보장하므로
+  // maybeSingle() 안전. 주어지지 않으면 비주간 자원으로 보고 기존 동작 유지.
+  if (params.weekId != null) {
+    query = query.eq("week_id", params.weekId);
+  }
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) {
     console.error("[edit-window] query failed", error);

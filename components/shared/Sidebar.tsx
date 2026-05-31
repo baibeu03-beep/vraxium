@@ -12,6 +12,7 @@ import { dedupedJson } from "@/lib/fetch-dedupe";
 import { Autoplay } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { usePopup } from "@/components/ui/popup";
+import { getOrgClusterRouteBase } from "@/lib/cluster-route";
 // Define the type for the game object
 interface Game {
   id: number;
@@ -89,10 +90,13 @@ const Sidebar = () => {
         router.push("/crews");
         return;
       }
+      // 현재 조직 컨텍스트(랜딩 org)를 canonical cluster URL 로 보존.
+      // currentOrg 없으면 marketing 기본. (crewsHref 와 동일한 org 분기 규칙.)
+      const clusterBase = getOrgClusterRouteBase(currentOrg);
       if (myProfileId) {
-        router.push(`/cluster-4/?userId=${myProfileId}`);
+        router.push(`${clusterBase}/?userId=${myProfileId}`);
       } else {
-        router.push("/cluster-4");
+        router.push(clusterBase);
       }
     } else {
       await popup.alert("현재 활동 중이거나 졸업한 크루여야 합니다");

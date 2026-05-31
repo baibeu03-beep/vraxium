@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
-import { extractTargetUserId } from "@/lib/admin";
+import { resolveWriteUserId } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -126,11 +126,9 @@ export async function GET(request: Request) {
 // PUT: 단일 카드 upsert (전체 필드)
 export async function PUT(request: Request) {
   try {
-    const targetUserId = extractTargetUserId(request);
-    const { profile, error } = await getUserProfile("id", targetUserId);
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+    const actor = await resolveWriteUserId(request);
+    if (!actor.ok) {
+      return NextResponse.json({ error: actor.message }, { status: actor.status });
     }
 
     if (!supabaseAdmin) {
@@ -154,7 +152,7 @@ export async function PUT(request: Request) {
     const incomingChannelName =
       typeof body.channelName === "string" ? body.channelName : null;
     console.log("[portfolio-channel-cards PUT]", {
-      userId: profile.id,
+      userId: actor.userId,
       count: 1,
       first: { card_index: cardIndex, channel_name: incomingChannelName },
       ua: request.headers.get("user-agent")?.slice(0, 120) ?? null,
@@ -163,7 +161,7 @@ export async function PUT(request: Request) {
     // 방어: firstCard sample 페이로드는 production DB 에 절대 upsert 하지 않는다.
     if (isFirstCardSamplePayload(body)) {
       console.warn("[portfolio-channel-cards PUT] firstCard sample 차단", {
-        userId: profile.id,
+        userId: actor.userId,
         cardIndex,
       });
       return NextResponse.json(
@@ -173,7 +171,7 @@ export async function PUT(request: Request) {
     }
 
     const row = {
-      user_id: profile.id,
+      user_id: actor.userId,
       card_index: cardIndex,
       channel_name: typeof body.channelName === "string" ? body.channelName : null,
       platform: typeof body.platform === "string" ? body.platform : null,

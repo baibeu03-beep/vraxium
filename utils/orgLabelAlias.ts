@@ -81,8 +81,8 @@ export const getOrgAliasFromPathname = (
   const segs = pathname.split("/");
   let detected: OrgAliasSlug | null = null;
   for (const seg of segs) {
-    if (seg.endsWith("-px")) { detected = "phalanx"; break; }
-    if (seg.endsWith("-ec")) { detected = "encre"; break; }
+    if (seg.endsWith("-planning") || seg.endsWith("-px")) { detected = "phalanx"; break; }
+    if (seg.endsWith("-entertainment") || seg.endsWith("-ec")) { detected = "encre"; break; }
   }
   return getOrgAlias(detected, name);
 };

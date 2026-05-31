@@ -10,6 +10,7 @@ import {
   type Cluster4EditResourceKey,
 } from '@/lib/cluster4EditWindow'
 import { EDIT_WINDOW_LOCKED_MESSAGE } from '@/lib/editWindowMessages'
+import { DemoModeError, resolveDemoProfileUserId } from '@/lib/demoMode'
 
 // 프론트가 보낸 resource_key 가 4개 모달 신규 키 중 하나라면 그 키를 우선 검사하고,
 // 닫혀 있어도 legacy activity_details 가 열려 있으면 통과시킨다 (legacy fallback).
@@ -57,20 +58,32 @@ export async function GET(request: NextRequest) {
     const weekId = searchParams.get('week_id')
     const activityTypeId = searchParams.get('activity_type_id')
 
-    if (!userId || !weekId) {
+    // 테스트 유저(데모) 모드 — query demoUserId 가 유효한 테스트 유저면 조회 대상을 그 id 로 고정.
+    let demoProfileUserId: string | null = null
+    try {
+      demoProfileUserId = await resolveDemoProfileUserId(searchParams.get('demoUserId'))
+    } catch (error) {
+      if (error instanceof DemoModeError) {
+        return NextResponse.json({ error: error.message }, { status: error.status })
+      }
+      throw error
+    }
+    const effectiveUserId = demoProfileUserId ?? userId
+
+    if (!effectiveUserId || !weekId) {
       return NextResponse.json({ error: 'user_id and week_id are required' }, { status: 400 })
     }
 
-    // 로그인만 검증 — peer-view 허용.
+    // 로그인만 검증 — peer-view 허용. 단, 유효한 테스트 유저(demoUserId)면 세션 없이 통과.
     const session = await getServerSession(authOptions)
-    if (!session?.user?.email) {
+    if (!session?.user?.email && !demoProfileUserId) {
       return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
     }
 
     let query = supabaseAdmin
       .from('user_activity_details')
       .select('*')
-      .eq('user_id', userId)
+      .eq('user_id', effectiveUserId)
       .eq('week_id', weekId)
 
     // 특정 activity_type만 조회
@@ -114,17 +127,48 @@ export async function POST(request: NextRequest) {
       resource_key, // optional — cluster4 모달 신규 키 (work_info/ability/exp/career). 없으면 legacy
     } = body
 
+    // 테스트 유저(데모) 모드 주체 해소 — body.demoUserId 우선, 없으면 query demoUserId.
+    //   - 없음 → null (일반 세션 인증 경로, 기존 흐름 그대로)
+    //   - 데모 모드 on + test_user_markers 등재 유저 → 그 profile.user_id
+    //   - 데모 모드 on + 미등재(운영 일반) user_id → DemoModeError(403)
+    //   - 데모 모드 off → null (무시, 일반 경로)
+    const { searchParams: postSearchParams } = new URL(request.url)
+    let demoProfileUserId: string | null = null
+    try {
+      demoProfileUserId = await resolveDemoProfileUserId(
+        body?.demoUserId ?? postSearchParams.get('demoUserId'),
+      )
+    } catch (error) {
+      if (error instanceof DemoModeError) {
+        return NextResponse.json({ error: error.message }, { status: error.status })
+      }
+      throw error
+    }
+    const isDemo = demoProfileUserId !== null
+    // 데모 모드면 저장 대상 user_id 를 테스트 유저로 강제 고정 (body.user_id 가 관리자 id 여도 무시).
+    const effectiveUserId = isDemo ? demoProfileUserId : user_id
+
     // 필수 필드 검증
-    if (!user_id || !week_id || !activity_type_id) {
+    if (!effectiveUserId || !week_id || !activity_type_id) {
       return NextResponse.json(
         { error: 'user_id, week_id, and activity_type_id are required' },
         { status: 400 }
       )
     }
 
-    // owner 본인 또는 관리자만 write 허용
-    const gate = await requireOwnerOrAdmin(user_id)
-    if (!gate.ok) return gate.response
+    // owner 본인 또는 관리자만 write 허용. 데모(테스트 유저) 모드면 세션 없이 그 테스트 유저 id 로 진행.
+    // 데모는 admin 우회 없이(canBypassAsAdmin=false) 작성기간을 일반 고객과 동일하게 강제한다.
+    let ownerUserId: string
+    let canBypassAsAdmin: boolean
+    if (isDemo) {
+      ownerUserId = effectiveUserId as string
+      canBypassAsAdmin = false
+    } else {
+      const gate = await requireOwnerOrAdmin(effectiveUserId)
+      if (!gate.ok) return gate.response
+      ownerUserId = gate.context.targetUserId
+      canBypassAsAdmin = gate.context.isAdmin
+    }
 
     // 작성 기간 게이트 — admin 우회. owner 본인은 user_edit_windows row 가 열려 있어야 함.
     // 프론트가 보낸 resource_key 가 신규 모달 키이면 (신규 키 OR legacy activity_details) 로,
@@ -133,10 +177,10 @@ export async function POST(request: NextRequest) {
     // OR 결합되어 "어드민이 작성기간을 명시적으로 열어줬다 = secondary_info_grants 와 동등 권한"
     // 으로 처리된다.
     let hasOpenWindow = false
-    if (!gate.context.isAdmin) {
+    if (!canBypassAsAdmin) {
       const gateKeys = resolveCluster4GateKeys(resource_key)
       hasOpenWindow = await hasOpenEditWindowAny({
-        userId: gate.context.targetUserId,
+        userId: ownerUserId,
         resourceKeys: gateKeys,
       })
       if (!hasOpenWindow) {
@@ -241,13 +285,13 @@ export async function POST(request: NextRequest) {
       supabaseAdmin
         .from('user_team_parts')
         .select('team_id, left_at')
-        .eq('user_id', user_id)
+        .eq('user_id', ownerUserId)
         .is('left_at', null)
         .maybeSingle(),
       supabaseAdmin
         .from('secondary_info_grants')
         .select('deadline')
-        .eq('user_id', user_id)
+        .eq('user_id', ownerUserId)
         .eq('week_id', week_id)
         .eq('activity_type_id', activity_type_id)
         .maybeSingle(),
@@ -274,7 +318,7 @@ export async function POST(request: NextRequest) {
     // 어드민이 명시적으로 작성기간을 열어줬다 = secondary_info_grants 와 동등 권한 부여.
     // weekly_activities 테이블 부재 / 마감 시간 미설정 환경에서 신규 키 정책으로 통일.
     if (
-      !gate.context.isAdmin &&
+      !canBypassAsAdmin &&
       !hasOpenWindow &&
       !isBeforeDeadline &&
       !hasActiveGrant
@@ -288,7 +332,7 @@ export async function POST(request: NextRequest) {
     // Upsert (있으면 업데이트, 없으면 삽입)
     // 미전달 필드는 기존 값 유지: undefined → 페이로드에서 제외
     const upsertPayload: Record<string, unknown> = {
-      user_id,
+      user_id: ownerUserId,
       week_id,
       activity_type_id,
       updated_at: new Date().toISOString(),
@@ -335,23 +379,45 @@ export async function DELETE(request: NextRequest) {
     const activityTypeId = searchParams.get('activity_type_id')
     const resourceKeyHint = searchParams.get('resource_key') // optional — 신규 모달 키 hint
 
-    if (!userId || !weekId || !activityTypeId) {
+    // 테스트 유저(데모) 모드 — query demoUserId 가 유효한 테스트 유저면 삭제 대상을 그 id 로 고정.
+    let demoProfileUserId: string | null = null
+    try {
+      demoProfileUserId = await resolveDemoProfileUserId(searchParams.get('demoUserId'))
+    } catch (error) {
+      if (error instanceof DemoModeError) {
+        return NextResponse.json({ error: error.message }, { status: error.status })
+      }
+      throw error
+    }
+    const isDemo = demoProfileUserId !== null
+    const effectiveUserId = isDemo ? demoProfileUserId : userId
+
+    if (!effectiveUserId || !weekId || !activityTypeId) {
       return NextResponse.json(
         { error: 'user_id, week_id, and activity_type_id are required' },
         { status: 400 }
       )
     }
 
-    // owner 본인 또는 관리자만 delete 허용
-    const gate = await requireOwnerOrAdmin(userId)
-    if (!gate.ok) return gate.response
+    // owner 본인 또는 관리자만 delete 허용. 데모(테스트 유저) 모드면 세션 없이 그 테스트 유저 id 로 진행.
+    let ownerUserId: string
+    let canBypassAsAdmin: boolean
+    if (isDemo) {
+      ownerUserId = effectiveUserId as string
+      canBypassAsAdmin = false
+    } else {
+      const gate = await requireOwnerOrAdmin(effectiveUserId)
+      if (!gate.ok) return gate.response
+      ownerUserId = gate.context.targetUserId
+      canBypassAsAdmin = gate.context.isAdmin
+    }
 
     // 작성 기간 게이트 — admin 우회. 신규 키 hint 가 있으면 (신규 키 OR legacy) 로,
     // 없으면 legacy activity_details 단독으로 검사 (POST 와 동일 규칙).
-    if (!gate.context.isAdmin) {
+    if (!canBypassAsAdmin) {
       const gateKeys = resolveCluster4GateKeys(resourceKeyHint)
       const open = await hasOpenEditWindowAny({
-        userId: gate.context.targetUserId,
+        userId: ownerUserId,
         resourceKeys: gateKeys,
       })
       if (!open) {
@@ -369,7 +435,7 @@ export async function DELETE(request: NextRequest) {
     const { error } = await supabaseAdmin
       .from('user_activity_details')
       .delete()
-      .eq('user_id', gate.context.targetUserId)
+      .eq('user_id', ownerUserId)
       .eq('week_id', weekId)
       .eq('activity_type_id', activityTypeId)
 

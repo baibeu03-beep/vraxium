@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
-import { extractTargetUserId } from "@/lib/admin";
+import { resolveWriteUserId } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -144,14 +144,9 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: Request) {
   try {
-    const targetUserId = extractTargetUserId(request);
-    const { profile, error } = await getUserProfile<{ user_id: string }>(
-      "user_id",
-      targetUserId,
-    );
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+    const actor = await resolveWriteUserId(request);
+    if (!actor.ok) {
+      return NextResponse.json({ error: actor.message }, { status: actor.status });
     }
 
     if (!supabaseAdmin) {
@@ -175,12 +170,12 @@ export async function PUT(request: Request) {
     }
     if (strippedCount > 0) {
       console.warn(TAG, "stripped local preview URLs", {
-        userId: profile.user_id,
+        userId: actor.userId,
         count: strippedCount,
       });
     }
 
-    const userId = profile.user_id;
+    const userId = actor.userId;
     const nowIso = new Date().toISOString();
 
     // 1) Sidebar → user_profiles.profile_photo_url (blob/data/file → null)

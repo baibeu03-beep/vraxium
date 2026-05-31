@@ -33,7 +33,7 @@ const AccessPage = () => {
                   <h2 className="title-lg fw-8 stroked-text transform-none title-animation mt-8">{copy.title}</h2>
                   <p className="text-xl text-alter mt-12">{copy.description}</p>
                   <div className="btn-wrapper mt-40" style={{ display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap" }}>
-                    <Link href="/cluster-4" className="btn--secondary">
+                    <Link href="/cluster-4-marketing" className="btn--secondary">
                       메인으로 이동
                     </Link>
                     <Link href="/contact-us" className="btn--tertiary">

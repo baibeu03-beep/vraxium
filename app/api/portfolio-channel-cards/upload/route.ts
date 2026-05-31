@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getUserProfile } from "@/lib/get-user-profile";
-import { extractTargetUserId } from "@/lib/admin";
+import { resolveWriteUserId } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -11,11 +10,9 @@ const BUCKET = "portfolio-channel-images";
 
 export async function POST(request: Request) {
   try {
-    const targetUserId = extractTargetUserId(request);
-    const { profile, error } = await getUserProfile("id", targetUserId);
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+    const actor = await resolveWriteUserId(request);
+    if (!actor.ok) {
+      return NextResponse.json({ error: actor.message }, { status: actor.status });
     }
 
     if (!supabaseAdmin) {
@@ -56,7 +53,7 @@ export async function POST(request: Request) {
     }
 
     const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-    const fileName = `${profile.id}/card-${cardIndex}/slot-${slotIndex}_${Date.now()}.${ext}`;
+    const fileName = `${actor.userId}/card-${cardIndex}/slot-${slotIndex}_${Date.now()}.${ext}`;
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = new Uint8Array(arrayBuffer);

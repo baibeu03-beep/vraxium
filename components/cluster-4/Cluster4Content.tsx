@@ -15,7 +15,7 @@ import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { DUMMY_SEASON_DATA, DUMMY_SEASON_HISTORIES, REVIEW_COMMENT_DEFAULT } from "@/constants/dummyData";
 import { dedupedJson } from "@/lib/fetch-dedupe";
-import { isPxRoute, isEcRoute, withPxRoute, getThemeClass } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getOrgConfigFromPathname } from "@/lib/cluster-route";
 import { formatSeasonLabel, formatSeasonWeekTitle } from "@/lib/cluster4-types";
 import { REPUTATION_KEYWORDS } from "@/lib/reputation-keywords";
 import { isAdminEmail } from "@/lib/admin";
@@ -255,15 +255,28 @@ const Cluster4Content = () => {
   const { mask } = useDataMasking();
   const searchParams = useSearchParams();
   const popup = usePopup();
-  const urlUserId = searchParams.get("userId") || searchParams.get("userID");
+  // 테스트 유저(데모) 모드: admin → 고객 앱 이동 시 ?demoUserId={id} 만 붙고 userId/userID 는 비어 있다
+  // (진입: /admin/test-users → /cluster-4?admin=true&demoUserId={id}).
+  // Sidebar / profile API 와 동일한 우선순위 규칙으로 표시 대상을 resolve 해야
+  // 상단 이력서뿐 아니라 cluster-4 본문도 테스트 유저 기준으로 로드된다.
+  // 일반 로그인 사용자는 demoUserId 부재 → 기존 동작 그대로.
+  const demoUserId = searchParams.get("demoUserId");
+  const urlUserId =
+    searchParams.get("userId") || searchParams.get("userID") || demoUserId;
   const isDemoMode = checkDemoMode();
   // 어드민(마더) 계정은 모든 프로필 편집 가능
-  const isOwner = session?.user?.isAdmin || !urlUserId || (session?.user?.id === urlUserId);
+  // 테스트 유저(데모) 모드면 편집 UX 검증을 위해 owner 로 취급 (실제 저장은 demoUserId 로 백엔드 검증).
+  const isOwner = session?.user?.isAdmin || !!demoUserId || !urlUserId || (session?.user?.id === urlUserId);
 
   // 어드민이 다른 유저 편집 시 targetUserId를 API URL에 추가
+  // (urlUserId 는 위에서 demoUserId 까지 fold-in 되어 있어 테스트 유저 모드도 동일 경로로 흐른다.)
   const apiUrl = (path: string) => {
+    const separator = path.includes('?') ? '&' : '?';
+    // 테스트 유저 모드면 demoUserId 부착(백엔드가 test_user_markers 검증 후 작성자/대상 고정).
+    if (demoUserId) {
+      return `${path}${separator}demoUserId=${encodeURIComponent(demoUserId)}`;
+    }
     if (urlUserId && session?.user?.isAdmin) {
-      const separator = path.includes('?') ? '&' : '?';
       return `${path}${separator}targetUserId=${urlUserId}`;
     }
     return path;
@@ -381,6 +394,9 @@ const Cluster4Content = () => {
   const pathname = usePathname();
   const isPX = isPxRoute(pathname);
   const isEC = isEcRoute(pathname);
+  // 현재 조직 대표 강조색 — ORGANIZATION_CONFIG(단일 정의소). marketing #FAAB07 /
+  // entertainment #FF4B70 / planning #1E9503. 인라인 분기 하드코딩 대체.
+  const orgAccent = getOrgConfigFromPathname(pathname).themeColor;
   const headerRef = useRef<HTMLElement>(null);
   const [section3Page, setSection3Page] = useState(0);
   const [isFlipping, setIsFlipping] = useState(false);
@@ -419,7 +435,7 @@ const Cluster4Content = () => {
   const [seasonReputationSaveAttemptFailed, setSeasonReputationSaveAttemptFailed] = useState(false);
   const [seasonReputationFieldErrorFlash, setSeasonReputationFieldErrorFlash] = useState(false);
   // TODO: [백엔드 작업 필요] 일반 모드에서 API 응답의 canEdit 값을 setCanEditSeasonReputation으로 반영
-  const [canEditSeasonReputation, setCanEditSeasonReputation] = useState(isDemoMode);
+  const [canEditSeasonReputation, setCanEditSeasonReputation] = useState(isDemoMode || !!demoUserId);
   useEffect(() => {
     setCanEditSeasonReputation(isDemoMode);
   }, [isDemoMode]);
@@ -536,7 +552,7 @@ const Cluster4Content = () => {
   const [seasonReviewRatingDropdownOpen, setSeasonReviewRatingDropdownOpen] = useState(false);
   const [seasonReviewRatingDropdownPos, setSeasonReviewRatingDropdownPos] = useState({ top: 0, left: 0, width: 0 });
   const seasonReviewRatingDropdownTriggerRef = useRef<HTMLDivElement>(null);
-  const [canEditSeasonReview, setCanEditSeasonReview] = useState(isDemoMode);
+  const [canEditSeasonReview, setCanEditSeasonReview] = useState(isDemoMode || !!demoUserId);
   useEffect(() => {
     setCanEditSeasonReview(isDemoMode);
   }, [isDemoMode]);
@@ -562,7 +578,8 @@ const Cluster4Content = () => {
     const unlockSeasonReview =
       searchParams?.get("unlockCluster4SeasonReview") === "1";
 
-    if (isDemoMode || isAdminCombined) {
+    // 테스트 유저(데모) 모드에서는 admin 우회하지 않고 테스트 유저(demoUserId)의 작성기간으로 판정.
+    if (isDemoMode || (isAdminCombined && !demoUserId)) {
       setSeasonReviewWindowOpen(true);
       return;
     }
@@ -578,7 +595,7 @@ const Cluster4Content = () => {
     (async () => {
       try {
         const response = await fetch(
-          `/api/edit-windows/permission?resource_key=${encodeURIComponent(CLUSTER4_EDIT_RESOURCE_KEYS.seasonReview)}`,
+          apiUrl(`/api/edit-windows/permission?resource_key=${encodeURIComponent(CLUSTER4_EDIT_RESOURCE_KEYS.seasonReview)}`),
           { cache: "no-store" }
         );
         const result = await response.json();
@@ -624,7 +641,8 @@ const Cluster4Content = () => {
     const unlockSeasonReputation =
       searchParams?.get("unlockCluster4SeasonReputation") === "1";
 
-    if (isDemoMode || isAdminCombined) {
+    // 테스트 유저(데모) 모드에서는 admin 우회하지 않고 테스트 유저(demoUserId)의 작성기간으로 판정.
+    if (isDemoMode || (isAdminCombined && !demoUserId)) {
       setSeasonReputationWindowOpen(true);
       return;
     }
@@ -640,7 +658,7 @@ const Cluster4Content = () => {
     (async () => {
       try {
         const response = await fetch(
-          `/api/edit-windows/permission?resource_key=${encodeURIComponent(CLUSTER4_EDIT_RESOURCE_KEYS.seasonReputation)}`,
+          apiUrl(`/api/edit-windows/permission?resource_key=${encodeURIComponent(CLUSTER4_EDIT_RESOURCE_KEYS.seasonReputation)}`),
           { cache: "no-store" }
         );
         const result = await response.json();
@@ -673,6 +691,9 @@ const Cluster4Content = () => {
   // 어드민(마더) 계정은 승인 체크를 건너뛰고 항상 편집 가능
   useEffect(() => {
     if (isDemoMode) return; // 데모 모드는 위 useEffect들이 true로 셋업
+    // 테스트 유저(데모) 모드: canEditSeason* 는 init 에서 owner 기준 활성. 세션/승인 기반 override 금지
+    // (실제 작성기간은 seasonReputationWindowOpen / seasonReviewWindowOpen = demoUserId 권한으로 판정).
+    if (demoUserId) return;
     if (session?.user?.isAdmin) {
       setCanEditSeasonReputation(true);
       setCanEditSeasonReview(true);
@@ -710,7 +731,7 @@ const Cluster4Content = () => {
     // 일반 모드: 백엔드 DELETE 호출 (데모 모드는 로컬만)
     if (!isDemoMode) {
       try {
-        const res = await fetch(`/api/season-reputations?id=${encodeURIComponent(targetId)}`, {
+        const res = await fetch(apiUrl(`/api/season-reputations?id=${encodeURIComponent(targetId)}`), {
           method: "DELETE",
         });
         if (!res.ok) {
@@ -1378,8 +1399,22 @@ const Cluster4Content = () => {
     const fetchCurrentSeason = async () => {
       const today = new Date().toISOString().split("T")[0];
 
-      // 현재 주차 정보 가져오기 (is_club_break, holiday_name 포함)
-      const { data: currentWeekData } = await supabase.from("weeks").select("id, week_number, is_club_break, holiday_name, seasons (id, name, season_label, season_type, year)").lte("start_date", today).gte("end_date", today).maybeSingle();
+      // 현재 주차 정보 가져오기 (신규 schema: is_official_rest + season_key → season_definitions)
+      const { data: currentWeekData, error: currentWeekError } = await supabase
+        .from("weeks")
+        .select("id, week_number, is_official_rest, holiday_name, season_key, season_definitions(season_key, season_type, season_label, year)")
+        .lte("start_date", today)
+        .gte("end_date", today)
+        .maybeSingle();
+
+      if (currentWeekError) {
+        console.error("주차 데이터 로드 오류:", {
+          query: "weeks select id,week_number,is_official_rest,holiday_name,season_key,season_definitions(season_key,season_type,season_label,year) where start_date<=today and end_date>=today",
+          message: currentWeekError.message,
+          error: currentWeekError,
+        });
+        return;
+      }
 
       if (currentWeekData) {
         // 시즌 이름 변환 (spring -> 봄, summer -> 여름, fall -> 가을, winter -> 겨울)
@@ -1390,8 +1425,8 @@ const Cluster4Content = () => {
           winter: "겨울",
         };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const seasonData = currentWeekData.seasons as any;
-        const rawSeasonName = seasonData?.name || "";
+        const seasonData = currentWeekData.season_definitions as any;
+        const rawSeasonName = seasonData?.season_type || "";
 
         // break 시즌인지 확인 (예: spring_summer_break, fall_winter_break)
         const isBreakSeason = rawSeasonName.toLowerCase().includes("break");
@@ -1415,7 +1450,7 @@ const Cluster4Content = () => {
           seasonLabel: seasonData?.season_label || null,
           seasonType: seasonData?.season_type || rawSeasonName || null,
           currentWeek: currentWeekData.week_number,
-          isClubBreak: currentWeekData.is_club_break || false,
+          isClubBreak: currentWeekData.is_official_rest || false,
           holidayName: currentWeekData.holiday_name || null,
           isBreakSeason,
           fromSeason,
@@ -1436,13 +1471,22 @@ const Cluster4Content = () => {
       const today = new Date().toISOString().split("T")[0];
       const targetUserId = urlUserId || session?.user?.id;
 
-      // 1. 현재 주차 정보 가져오기
-      const { data: currentWeekData } = await supabase
+      // 1. 현재 주차 정보 가져오기 (신규 schema: season_key → season_definitions)
+      const { data: currentWeekData, error: currentWeekError } = await supabase
         .from("weeks")
-        .select("id, end_date, week_number, seasons(year, name)")
+        .select("id, end_date, week_number, season_key, season_definitions(season_key, season_type, season_label, year)")
         .lte("start_date", today)
         .gte("end_date", today)
         .maybeSingle();
+
+      if (currentWeekError) {
+        console.error("활동 통계용 주차 데이터 로드 오류:", {
+          query: "weeks select id,end_date,week_number,season_key,season_definitions(season_key,season_type,season_label,year) where start_date<=today and end_date>=today",
+          message: currentWeekError.message,
+          error: currentWeekError,
+        });
+        return;
+      }
 
       if (!currentWeekData) return;
 
@@ -2405,7 +2449,7 @@ const Cluster4Content = () => {
     if (editingReputationId && session?.user?.isAdmin) {
       setSeasonReputationSaving(true);
       try {
-        const response = await fetch("/api/season-reputations", {
+        const response = await fetch(apiUrl("/api/season-reputations"), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2858,7 +2902,7 @@ const Cluster4Content = () => {
               // /cluster-4-1 (season detail) 에서 "book" 탭이 활성 (yellow).
               // org-suffix 라우트별 active accent 톤. base SCSS 의
               // `.top-tabs .tab:first-child` 룰은 첫 탭만 잡으므로 여기서 분기.
-              background: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07",
+              background: orgAccent,
             }}
             onClick={() => router.push(withPxRoute(`/cluster-4-1${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname))}
           >
@@ -2907,10 +2951,10 @@ const Cluster4Content = () => {
               </div>
               <div className="season-badge">
                 <svg className="badge-outline" viewBox="0 0 124 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M0.84668 0.846558H122.847V26.7666L98.4467 48.8466H0.84668V0.846558Z" stroke={isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07"} strokeWidth="1.69311" fill="none" />
+                  <path d="M0.84668 0.846558H122.847V26.7666L98.4467 48.8466H0.84668V0.846558Z" stroke={orgAccent} strokeWidth="1.69311" fill="none" />
                 </svg>
                 <svg className="badge-border" viewBox="0 0 124 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M0.84668 0.846558H122.847V26.7666L98.4467 48.8466H0.84668V0.846558Z" fill={isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07"} stroke={isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07"} strokeWidth="1.69311" />
+                  <path d="M0.84668 0.846558H122.847V26.7666L98.4467 48.8466H0.84668V0.846558Z" fill={orgAccent} stroke={orgAccent} strokeWidth="1.69311" />
                 </svg>
                 <span className="badge-text">{getGrowthBadgeText(userStatus, growthStatus)}</span>
               </div>
@@ -3074,7 +3118,7 @@ const Cluster4Content = () => {
                 </span>{" "}
                 시즌
               </div>
-              <span className="bullet-dot" style={{ display: "inline-block", width: "2px", height: "2px", background: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07", borderRadius: "50%", marginLeft: "15px", transform: "translateY(0px)" }}></span>
+              <span className="bullet-dot" style={{ display: "inline-block", width: "2px", height: "2px", background: orgAccent, borderRadius: "50%", marginLeft: "15px", transform: "translateY(0px)" }}></span>
               <div className="date-status" style={{ display: "flex", alignItems: "center", flexShrink: 0, whiteSpace: "nowrap" }}>
                 <span className="date-range">{currentSeason.dateRange}</span>
                 <button className={`status-badge ${currentSeason.statusClass}`}>{currentSeason.status}</button>
@@ -3610,7 +3654,7 @@ const Cluster4Content = () => {
                                   height: "15px",
                                   padding: "5px",
                                   flexShrink: 0,
-                                  background: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07",
+                                  background: orgAccent,
                                   borderRadius: "5px",
                                   display: "flex",
                                   alignItems: "center",
@@ -3938,7 +3982,7 @@ const Cluster4Content = () => {
                       onClick={async () => {
                         if (!confirm('이 평판을 삭제하시겠습니까?')) return;
                         try {
-                          const res = await fetch(`/api/season-reputations?id=${selectedReputation.id}`, { method: 'DELETE' });
+                          const res = await fetch(apiUrl(`/api/season-reputations?id=${selectedReputation.id}`), { method: 'DELETE' });
                           const json = await res.json();
                           if (json.success) {
                             alert('삭제되었습니다.');
@@ -4341,7 +4385,7 @@ const Cluster4Content = () => {
           <div className="edit-modal-content season-review-modal">
             {/* Header */}
             <div className="edit-modal-header">
-              <h3 style={{ margin: 0, fontSize: "22px", fontWeight: 700, color: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07" }}>✦ 시즌 리뷰</h3>
+              <h3 style={{ margin: 0, fontSize: "22px", fontWeight: 700, color: orgAccent }}>✦ 시즌 리뷰</h3>
               <span className="modal-subtitle" style={{ color: "#999", fontSize: "14px" }}>
                 이번 시즌에 대한 나의 평가를 남겨주세요
               </span>
@@ -4351,7 +4395,7 @@ const Cluster4Content = () => {
             <div className="edit-modal-body">
               {/* 평점 선택 */}
               <div className="slogan-rating-row" style={{ marginBottom: "20px" }}>
-                <label className="slogan-rating-label" style={{ color: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07", fontSize: "14px", fontWeight: 600 }}>
+                <label className="slogan-rating-label" style={{ color: orgAccent, fontSize: "14px", fontWeight: 600 }}>
                   평점
                 </label>
                 <div className="slogan-star-rating">
@@ -4392,7 +4436,7 @@ const Cluster4Content = () => {
 
               {/* 리뷰 입력 */}
               <div>
-                <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07", marginBottom: "10px" }}>
+                <label style={{ display: "block", fontSize: "14px", fontWeight: 600, color: orgAccent, marginBottom: "10px" }}>
                   한줄평 <span style={{ fontWeight: 400, color: "rgba(255,255,255,0.4)", fontSize: "12px" }}>(최대 300자)</span>
                 </label>
                 <div style={{ position: "relative" }}>

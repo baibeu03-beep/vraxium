@@ -7,7 +7,7 @@ import Breadcrumb from "@/components/shared/Breadcrumb";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { DEMO_CREW_MEMBERS } from "@/constants/dummyData";
-import { getOrgClusterRouteBase } from "@/lib/cluster-route";
+import { getOrgClusterRouteBase, getOrgConfigForSlug } from "@/lib/cluster-route";
 import { getOrgAlias } from "@/utils/orgLabelAlias";
 
 interface Crew {
@@ -33,10 +33,11 @@ interface Crew {
 const KNOWN_ORGS = ["phalanx", "encre", "oranke"] as const;
 type OrgSlug = typeof KNOWN_ORGS[number];
 
+// 조직 한글 표시명은 ORGANIZATION_CONFIG(단일 정의소)에서 가져온다.
 const ORG_LABEL: Record<OrgSlug, string> = {
-  phalanx: "팔랑크스",
-  encre: "엥크레",
-  oranke: "오랑캐",
+  phalanx: getOrgConfigForSlug("phalanx").displayNameKo,
+  encre: getOrgConfigForSlug("encre").displayNameKo,
+  oranke: getOrgConfigForSlug("oranke").displayNameKo,
 };
 
 const statusLabel = (status: string, growthStatus: string) => {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireOwnerOrAdmin } from "@/lib/api-auth";
+import { DemoModeError, resolveDemoProfileUserIdFromRequest } from "@/lib/demoMode";
 import { hasOpenEditWindow } from "@/lib/editWindow";
 import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
@@ -74,6 +75,17 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "시즌 기록 ID가 필요합니다." }, { status: 400 });
     }
 
+    // 테스트 유저(데모) 모드: 유효한 demoUserId 면 대상 시즌기록이 그 테스트 유저 소유인지 검증하고,
+    // 관리자라도 작성 기간을 우회하지 않는다. 데모 off/미전달 → null. 미등재 user_id → 403.
+    let demoUserId: string | null = null;
+    try {
+      demoUserId = await resolveDemoProfileUserIdFromRequest(request, body);
+    } catch (e) {
+      if (e instanceof DemoModeError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
+    const isDemo = demoUserId !== null;
+
     if (rating < 0 || rating > 5 || (rating * 2) % 1 !== 0) {
       return NextResponse.json({ error: "평점은 0.0~5.0 사이의 0.5 단위여야 합니다." }, { status: 400 });
     }
@@ -97,15 +109,28 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "시즌 기록을 찾을 수 없습니다." }, { status: 404 });
     }
 
+    // 데모 모드: 대상 시즌 기록이 테스트 유저 소유인지 확인 (관리자가 데모로 타 유저 리뷰를 편집 방지).
+    if (isDemo && seasonHistory.user_id !== demoUserId) {
+      return NextResponse.json(
+        { error: "demoUserId 와 시즌 기록 소유자가 일치하지 않습니다." },
+        { status: 403 }
+      );
+    }
+
     // 2) owner 본인 또는 관리자만 write 허용
-    //    - owner → 통과
-    //    - admin → 어떤 user 든 통과
-    //    - 그 외 → 403
-    const gate = await requireOwnerOrAdmin(seasonHistory.user_id);
-    if (!gate.ok) return gate.response;
+    //    - 데모 모드: 위에서 seasonHistory.user_id === demoUserId 를 이미 검증했으므로
+    //      세션/owner 게이트 없이 통과(세션 없음). admin 권한은 부여하지 않는다(gateIsAdmin=false).
+    //    - 비-데모: requireOwnerOrAdmin 으로 owner 본인 또는 admin 만 통과.
+    let gateIsAdmin = false;
+    if (!isDemo) {
+      const gate = await requireOwnerOrAdmin(seasonHistory.user_id);
+      if (!gate.ok) return gate.response;
+      gateIsAdmin = gate.context.isAdmin;
+    }
 
     // 3) 작성 기간 게이트 — admin 우회. owner 본인은 user_edit_windows 가 열려 있어야 함.
-    if (!gate.context.isAdmin) {
+    //    데모(테스트 유저) 모드에서는 gateIsAdmin=false 이므로 일반 고객과 동일하게 강제된다.
+    if (!gateIsAdmin) {
       const open = await hasOpenEditWindow({
         userId: seasonHistory.user_id,
         resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.seasonReview,

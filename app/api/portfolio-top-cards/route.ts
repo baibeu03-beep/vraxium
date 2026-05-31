@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
-import { extractTargetUserId, isAdminEmail } from "@/lib/admin";
+import { isAdminEmail } from "@/lib/admin";
+import { resolveWriteUserId } from "@/lib/api-auth";
 import { hasOpenTopCardEditWindow } from "@/lib/topCardsEditWindow";
 
 export const dynamic = "force-dynamic";
@@ -140,12 +143,13 @@ export async function GET(request: Request) {
 // PUT: 단일 카드 upsert
 export async function PUT(request: Request) {
   try {
-    const targetUserId = extractTargetUserId(request);
-    const { session, profile, error } = await getUserProfile("id", targetUserId);
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+    // 테스트 유저(데모) 모드: 유효한 demoUserId 면 저장 대상을 그 유저로 고정(세션 없이).
+    // 데모 off/미전달 → 기존 세션 게이트. 미등재 user_id → 403.
+    const actor = await resolveWriteUserId(request);
+    if (!actor.ok) {
+      return NextResponse.json({ error: actor.message }, { status: actor.status });
     }
+    const isDemo = actor.isDemo;
 
     if (!supabaseAdmin) {
       return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
@@ -177,11 +181,15 @@ export async function PUT(request: Request) {
     //     작성 기간 관리에서 별개 row 로 운영되므로 cardType 별로 독립 체크.
     //   - 프론트의 ?unlockCluster3* QA 쿼리는 UI 테스트용일 뿐이며
     //     서버 PUT 권한에는 영향을 주지 않는다.
-    const isAdmin = !!session.user.isAdmin || isAdminEmail(session.user.email);
+    // 데모(테스트 유저) 모드에서는 관리자라도 작성 기간을 우회하지 않는다.
+    // 데모 모드에서는 세션이 없으므로 admin 판정도 false → 작성 기간 강제.
+    const session = await getServerSession(authOptions);
+    const isAdmin =
+      !isDemo && (!!session?.user?.isAdmin || isAdminEmail(session?.user?.email));
     const canEdit =
       isAdmin ||
       (await hasOpenTopCardEditWindow({
-        userId: profile.id,
+        userId: actor.userId,
         cardType,
       }));
     if (!canEdit) {
@@ -196,7 +204,7 @@ export async function PUT(request: Request) {
     }
 
     const row = {
-      user_id: profile.id,
+      user_id: actor.userId,
       card_type: cardType,
       card_index: cardIndex,
       main_title: typeof body.mainTitle === "string" ? body.mainTitle : null,

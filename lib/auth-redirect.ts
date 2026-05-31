@@ -1,15 +1,16 @@
-export const DEFAULT_APPROVED_CALLBACK_URL = "/cluster-4";
+export const DEFAULT_APPROVED_CALLBACK_URL = "/cluster-4-marketing";
 
 // 로그인 직후 사용자의 본인 카드 페이지 base path.
 // userId 는 user_profiles.user_id 기준 — /crews "보기" 버튼이 사용하는 crew.id 와 동일.
 // (crews/page.tsx:resolveHref → ?userId=${crew.id}, /api/crews 의 id 는 profile.user_id)
 //
-// oranke 는 별도 suffix 라우트(/cluster-4-ok) 가 없고 원본 /cluster-4 를 그대로 사용한다.
-// lib/cluster-route.ts:getOrgClusterRouteBase("oranke") 도 동일하게 /cluster-4 로 떨어진다.
+// cluster URL suffix 표시명: planning(=phalanx) / entertainment(=encre) / marketing(=oranke).
+// 내부 org slug 는 유지하고 canonical cluster URL 로만 매핑한다.
+// lib/cluster-route.ts:getOrgClusterRouteBase 와 동일 매핑(단일 정의소).
 export const ORG_TO_CARD_ROUTE = {
-  phalanx: "/cluster-4-px",
-  encre: "/cluster-4-ec",
-  oranke: "/cluster-4",
+  phalanx: "/cluster-4-planning",
+  encre: "/cluster-4-entertainment",
+  oranke: "/cluster-4-marketing",
 } as const;
 
 export type RedirectOrgSlug = keyof typeof ORG_TO_CARD_ROUTE;

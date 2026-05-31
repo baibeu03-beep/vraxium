@@ -7,7 +7,8 @@ import { getFixedDropdownPosition } from "@/utils/documentZoom";
 
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
-import { isPxRoute, isEcRoute, withPxRoute } from "@/lib/cluster-route";
+import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
+import { isPxRoute, isEcRoute, withPxRoute, getOrgConfigFromPathname } from "@/lib/cluster-route";
 import type { AdminCluster4WeeklyCardDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
 import type { Cluster3StatsCards } from "@/lib/cluster3StatsCardsTypes";
 
@@ -235,7 +236,19 @@ const seasonOfLabel = (label: string | null | undefined): string => {
 
 const Cluster41Content = () => {
   const searchParams = useSearchParams();
-  const targetUserId = searchParams.get('userId') || searchParams.get('userID');
+  // 테스트 유저 모드: ?demoUserId={userId} 가 있으면 해당 테스트 유저 기준으로 페이지를 렌더한다.
+  // (진입: /admin/test-users → /cluster-4?admin=true&demoUserId={userId})
+  const demoUserId = searchParams.get('demoUserId');
+  // 표시 대상 유저: 기존 admin-view(userId) → 없으면 테스트 유저(demoUserId).
+  // 이렇게 하면 userId 키로 동작하는 모든 사용자 기준 조회가 자동으로 테스트 유저를 가리킨다(데이터 혼합 방지).
+  const targetUserId = searchParams.get('userId') || searchParams.get('userID') || demoUserId;
+  // 조회 API 에 붙일 demoUserId 쿼리 suffix (백엔드 테스트 유저 판정용). 없으면 빈 문자열.
+  const demoQS = demoUserId ? `&demoUserId=${encodeURIComponent(demoUserId)}` : '';
+  // 페이지 내 네비게이션에 붙일 쿼리: 테스트 유저 모드면 demoUserId+admin 을 유지(저장 흐름이 테스트 유저 모드로 이어지도록).
+  const demoUserName = searchParams.get('demoUserName');
+  const userLinkQuery = demoUserId
+    ? `?demoUserId=${encodeURIComponent(demoUserId)}&admin=true${demoUserName ? `&demoUserName=${encodeURIComponent(demoUserName)}` : ''}`
+    : (targetUserId ? `?userId=${targetUserId}` : '');
   const isDemoMode = checkDemoMode();
 
   const [dbWeeklyData, setDbWeeklyData] = useState<AdminCluster4WeeklyCardDto[]>([]);
@@ -244,7 +257,8 @@ const Cluster41Content = () => {
   const pathname = usePathname();
   const isPX = isPxRoute(pathname);
   const isEC = isEcRoute(pathname);
-  const filterAccent = isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FFA500";
+  // 현재 조직 대표 강조색 — ORGANIZATION_CONFIG(단일 정의소).
+  const filterAccent = getOrgConfigFromPathname(pathname).themeColor;
   const filterAccentBg = isPX
     ? "rgba(30, 149, 3, 0.1)"
     : isEC
@@ -370,7 +384,7 @@ const Cluster41Content = () => {
       try {
         setIsLoadingWeeks(true);
 
-        const profileUrl = targetUserId ? `/api/profile?userId=${targetUserId}` : '/api/profile';
+        const profileUrl = targetUserId ? `/api/profile?userId=${targetUserId}${demoQS}` : '/api/profile';
         const profileRes = await fetch(profileUrl, { signal: abortController.signal });
         const profileResult = await profileRes.json();
 
@@ -427,7 +441,7 @@ const Cluster41Content = () => {
         }
         setIsLoadingSeasons(false);
 
-        const weeklyRes = await fetch(`/api/cluster4/weekly-cards?userId=${userId}`, { signal: abortController.signal });
+        const weeklyRes = await fetch(`/api/cluster4/weekly-cards?userId=${userId}${demoQS}`, { signal: abortController.signal });
         const weeklyResult = await weeklyRes.json() as Cluster4WeeklyCardsResponseDto;
         console.log('[weekly-cards] raw json', weeklyResult);
         console.log('[weekly-cards] json.data length', Array.isArray(weeklyResult.data) ? weeklyResult.data.length : 'not array');
@@ -480,7 +494,7 @@ const Cluster41Content = () => {
     const fetchStatsCards = async () => {
       try {
         const url = targetUserId
-          ? `/api/cluster3/stats-cards?userId=${targetUserId}`
+          ? `/api/cluster3/stats-cards?userId=${targetUserId}${demoQS}`
           : "/api/cluster3/stats-cards";
         const response = await fetch(url, { signal: abortController.signal });
         if (!response.ok) {
@@ -637,6 +651,7 @@ const Cluster41Content = () => {
         }
       `}</style>
 
+    {demoUserId ? <TestUserBanner /> : null}
     <div className="cluster4-content cluster4-content--week">
       {/* Section 1: CLUB CHALLENGE GROWTH */}
       <section className="cluster4-section1" ref={headerRef}>
@@ -644,14 +659,14 @@ const Cluster41Content = () => {
         <div className="top-tabs">
           <div className="tab" style={{ width: '44px', height: '44px', background: isPX ? '#1E9503' : isEC ? '#FF4B70' : '#FAAB07' }}>
             <img src="/images/0/cluster4/icon/icon%20-%20%EC%A0%84%EA%B5%AC.png" alt="전구" className="tab-icon" />
-            <div className="tab-badge" onClick={() => router.push(withPxRoute(`/cluster-4${targetUserId ? `?userId=${targetUserId}` : ''}`, pathname))}>
+            <div className="tab-badge" onClick={() => router.push(withPxRoute(`/cluster-4${userLinkQuery}`, pathname))}>
               <span className="badge-text">Weekly Growth</span>
               <img src="/images/0/cluster4/icon/icon%20-%20wallet.png" alt="wallet" className="badge-icon" />
             </div>
           </div>
           <div className="tab" style={{ width: '44px', height: '44px', background: '#161816' }}>
             <img src="/images/0/cluster4/icon/icon%20-%20book.png" alt="book" className="tab-icon" />
-            <div className="tab-badge" onClick={() => router.push(withPxRoute(`/cluster-4-1${targetUserId ? `?userId=${targetUserId}` : ''}`, pathname))}>
+            <div className="tab-badge" onClick={() => router.push(withPxRoute(`/cluster-4-1${userLinkQuery}`, pathname))}>
               <span className="badge-text">Season Growth</span>
               <img src="/images/0/cluster4/icon/icon%20-%20wallet.png" alt="wallet" className="badge-icon" />
             </div>
@@ -1168,7 +1183,7 @@ const Cluster41Content = () => {
             </div>
           ) : (
             visibleCards.map((week) => {
-              const weekHref = withPxRoute(`/cluster-4-card/${week.weekId}${targetUserId ? `?userId=${targetUserId}` : ''}`, pathname);
+              const weekHref = withPxRoute(`/cluster-4-card/${week.weekId}${userLinkQuery}`, pathname);
               const isExpanded = expandedWeekId === week.weekId;
 
               // ── 백엔드 DTO → 기존 프론트 카드 위치 값 매핑 (재계산 금지, 단순 주입) ──

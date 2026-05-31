@@ -1,75 +1,52 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { withPxRoute, isPxRoute, isEcRoute } from "@/lib/cluster-route";
+import { withThemeRoute, getRouteOrgSuffix } from "@/lib/cluster-route";
+import { useDemoUserMode } from "@/hooks/useDemoUserMode";
 
 const ClusterTabs = () => {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const userId = searchParams.get("userId") || searchParams.get("userID");
   const demoName = searchParams.get("demoName");
+  // 테스트 유저(데모) 모드면 클러스터 이동 시 demoUserId/demoUserName/admin 을 유지한다.
+  const demo = useDemoUserMode();
 
-  // org-suffix 라우트 컨텍스트 — pathname segment 중 하나라도 -px / -ec 로
-  // 끝나면 해당 org 변형이 존재하는 cluster 만 withPxRoute (현재 일반화되어
-  // -px / -ec 양쪽 자동 처리) 로 라우팅.
-  //
-  // 변형 지원:
-  //   PX (2,3,4 full design + 5~10 placeholder PX 변형): 노란 shimmer accent
-  //     만 PX Green 으로 치환 + 공사중-px.png image swap.
-  //   EC (2,3,4 full design + 5~10 placeholder EC 변형): 노란 shimmer accent
-  //     만 Encre pink soft accent 로 치환 + 공사중-ec.png image swap.
-  const PX_AVAILABLE = new Set([2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  const EC_AVAILABLE = new Set([2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  const pxCtx = isPxRoute(pathname);
-  const ecCtx = !pxCtx && isEcRoute(pathname);
-  const orgAwarePath = (cluster: number, originalPath: string) => {
-    if (pxCtx && PX_AVAILABLE.has(cluster)) {
-      return withPxRoute(originalPath, pathname);
-    }
-    if (ecCtx && EC_AVAILABLE.has(cluster)) {
-      return withPxRoute(originalPath, pathname);
-    }
-    return originalPath;
-  };
-
+  // org 컨텍스트 보존 — 현재 pathname 의 org suffix(canonical)를 각 cluster
+  // 링크에 그대로 전파한다. marketing / entertainment / planning 모두 자동
+  // 처리되며, 비-cluster 컨텍스트에선 withThemeRoute 가 no-op 이다.
   const tabs = [
-    { name: "PERSONAL PROFILE", path: orgAwarePath(2, "/cluster-2"), cluster: 2 },
-    { name: "CLUB FINAL INDEX", path: orgAwarePath(3, "/cluster-3"), cluster: 3 },
-    { name: "CLUB CHALLENGE GROWTH", path: orgAwarePath(4, "/cluster-4"), cluster: 4 },
-    { name: "SOCIETAL REPUTATION", path: orgAwarePath(5, "/cluster-5"), cluster: 5 },
-    { name: "WORKING LEVEL - EXPERIENCE", path: orgAwarePath(6, "/cluster-6"), cluster: 6 },
-    { name: "WORKING LEVEL - ABILITY", path: orgAwarePath(7, "/cluster-7"), cluster: 7 },
-    { name: "WORKING LEVEL - CAREER", path: orgAwarePath(8, "/cluster-8"), cluster: 8 },
-    { name: "WORKING LEVEL - INFORMATION", path: orgAwarePath(9, "/cluster-9"), cluster: 9 },
-    { name: "WORKING LEVEL - SKILL & TOOLS", path: orgAwarePath(10, "/cluster-10"), cluster: 10 },
+    { name: "PERSONAL PROFILE", path: withThemeRoute("/cluster-2", pathname), cluster: 2 },
+    { name: "CLUB FINAL INDEX", path: withThemeRoute("/cluster-3", pathname), cluster: 3 },
+    { name: "CLUB CHALLENGE GROWTH", path: withThemeRoute("/cluster-4", pathname), cluster: 4 },
+    { name: "SOCIETAL REPUTATION", path: withThemeRoute("/cluster-5", pathname), cluster: 5 },
+    { name: "WORKING LEVEL - EXPERIENCE", path: withThemeRoute("/cluster-6", pathname), cluster: 6 },
+    { name: "WORKING LEVEL - ABILITY", path: withThemeRoute("/cluster-7", pathname), cluster: 7 },
+    { name: "WORKING LEVEL - CAREER", path: withThemeRoute("/cluster-8", pathname), cluster: 8 },
+    { name: "WORKING LEVEL - INFORMATION", path: withThemeRoute("/cluster-9", pathname), cluster: 9 },
+    { name: "WORKING LEVEL - SKILL & TOOLS", path: withThemeRoute("/cluster-10", pathname), cluster: 10 },
     { name: "-", path: "", cluster: 0, isPlaceholder: true },
   ];
 
   const row1 = tabs.slice(0, 5);
   const row2 = tabs.slice(5);
 
+  // active 매칭 — org suffix(canonical/legacy)를 제거한 cluster family 로 비교.
+  // cluster-4 / cluster-4-1 / cluster-4-card 는 모두 cluster-4 family 로 본다.
+  const clusterFamily = (p: string): string => {
+    const clean = p.split("?")[0].split("#")[0].replace(/\/+$/, "");
+    const seg = clean.split("/").filter(Boolean)[0] ?? "";
+    const suf = getRouteOrgSuffix("/" + seg);
+    const base = suf ? seg.slice(0, seg.length - suf.length) : seg;
+    const m = base.match(/^(cluster-\d+)/);
+    return m ? m[1] : base;
+  };
+
   const isActive = (tabPath: string) => {
-    // tabPath 가 -px / -ec 변형이면 해당 org 라우트 매칭, 아니면 기존 매칭 그대로.
-    if (tabPath === "/cluster-2" || tabPath === "/cluster-2-px" || tabPath === "/cluster-2-ec") {
-      const root = tabPath;
-      return pathname === root || pathname === root + "/" ||
-        (root === "/cluster-2" && (pathname === "/" || pathname === "/career" || pathname === "/career/"));
-    }
-    if (tabPath === "/cluster-4" || tabPath === "/cluster-4-px" || tabPath === "/cluster-4-ec") {
-      // tabPath 의 org suffix 를 그대로 cluster-4-1 / cluster-4-card 에 전파해
-      // 동일 family 의 active 매칭을 일관 처리.
-      const suffix = tabPath === "/cluster-4-px" ? "-px"
-                   : tabPath === "/cluster-4-ec" ? "-ec"
-                   : "";
-      const base = `/cluster-4${suffix}`;
-      const one  = `/cluster-4-1${suffix}`;
-      const card = `/cluster-4-card${suffix}`;
-      return pathname === base || pathname === base + "/" ||
-             pathname === one  || pathname === one  + "/" ||
-             pathname === card || pathname === card + "/" ||
-             pathname.startsWith(card + "/");
-    }
-    return pathname === tabPath || pathname === tabPath + "/";
+    const target = clusterFamily(tabPath);
+    const isHome = pathname === "/" || pathname === "/career" || pathname === "/career/";
+    if (target === "cluster-2" && isHome) return true;
+    return clusterFamily(pathname ?? "") === target;
   };
 
   const DiamondDecos = () => (
@@ -94,8 +71,13 @@ const ClusterTabs = () => {
   );
 
   const renderTab = (tab: typeof tabs[0], index: number) => {
-    const tabHref = tab.path && userId
-      ? `${tab.path}?userId=${userId}${demoName ? `&demoName=${encodeURIComponent(demoName)}` : ''}`
+    // 테스트 유저 모드면 demoUserId+demoUserName+admin 유지(userLinkQuery), 그 외엔 기존 userId/demoName 유지.
+    const tabHref = tab.path
+      ? demo.isDemo
+        ? `${tab.path}${demo.userLinkQuery}`
+        : userId
+          ? `${tab.path}?userId=${userId}${demoName ? `&demoName=${encodeURIComponent(demoName)}` : ''}`
+          : tab.path
       : tab.path;
     const active = tab.path ? isActive(tab.path) : false;
 

@@ -11,9 +11,11 @@ import { useModalScroll } from "@/utils/useModalScroll";
 import { useProfile } from "@/contexts/ProfileContext";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
-import { isPxRoute, isEcRoute, getThemeClass } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, getThemeClass, ORGANIZATION_CONFIG } from "@/lib/cluster-route";
 import type { Cluster3StatsCards } from "@/lib/cluster3StatsCardsTypes";
 import { usePopup } from "@/components/ui/popup";
+import { useDemoUserMode } from "@/hooks/useDemoUserMode";
+import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
 import {
   CLUSTER3_DUMMY_PROFILE,
   CLUSTER3_DUMMY_ARCHIVES,
@@ -204,15 +206,13 @@ const PeriodRangePicker = ({
   );
 };
 
-// PX (Phalanx) 테마 hex 토큰. _px-tokens.scss 의 --px-* 변수와 동일 값 유지.
-// inline style 분기에서만 사용. CSS 매칭은 var(--px-*) 토큰을 우선.
-const PX_ACCENT = "#1E9503";
-const PX_ACCENT_SOFT = "#B2FF8F";
+// PX/EC 테마 hex 토큰 — ORGANIZATION_CONFIG(단일 정의소)에서 가져온다.
+// SCSS 토큰(_px-tokens / _theme-tokens)과 값이 일치한다. inline style 분기 전용.
+const PX_ACCENT = ORGANIZATION_CONFIG.planning.themeColor;
+const PX_ACCENT_SOFT = ORGANIZATION_CONFIG.planning.accentSoft;
 
-// Encre (EC) 테마 hex 토큰. _theme-tokens.scss 의 --ec-* 변수와 동일 값.
-// inline style 분기에서만 사용. CSS 매칭은 var(--ec-*) 토큰을 우선.
-const EC_ACCENT = "#FF4B70";
-const EC_ACCENT_SOFT = "#FF98A6";
+const EC_ACCENT = ORGANIZATION_CONFIG.entertainment.themeColor;
+const EC_ACCENT_SOFT = ORGANIZATION_CONFIG.entertainment.accentSoft;
 
 const Cluster3Content = () => {
   // 세션 및 본인 프로필 여부 확인
@@ -226,15 +226,22 @@ const Cluster3Content = () => {
   const isPX = isPxRoute(pathname);
   const isEC = isEcRoute(pathname);
   const popup = usePopup();
-  const urlUserId = searchParams.get("userId") || searchParams.get("userID");
+  // 테스트 유저(데모) 모드 — ?demoUserId={id}&demoUserName={name} (공통 훅).
+  const demo = useDemoUserMode();
+  const isDemo = demo.isDemo;
+  // 조회/표시/저장 대상: admin-view(userId) 우선 → 테스트 유저(demoUserId).
+  const urlUserId = searchParams.get("userId") || searchParams.get("userID") || demo.demoUserId;
   const demoNameParam = searchParams.get("demoName");
   const demoLookupName = demoNameParam || urlUserId;
-  // 어드민(마더) 계정은 모든 프로필 편집 가능
-  const isOwner = session?.user?.isAdmin || !urlUserId || session?.user?.id === urlUserId;
+  // 어드민(마더) 계정은 모든 프로필 편집 가능. 테스트 유저 모드면 편집 UX 검증을 위해 owner 로 취급.
+  const isOwner = session?.user?.isAdmin || isDemo || !urlUserId || session?.user?.id === urlUserId;
   const isDemoMode = checkDemoMode();
 
-  // 어드민이 다른 유저 편집 시 targetUserId를 API URL에 추가
+  // 저장/조회 API URL 빌더.
+  //   - 테스트 유저 모드: demoUserId 부착(백엔드가 test_user_markers 검증 후 대상 고정).
+  //   - 어드민 타유저 편집: targetUserId 부착.
   const apiUrl = (path: string) => {
+    if (isDemo) return demo.appendDemoUserParams(path);
     if (urlUserId && session?.user?.isAdmin) {
       const separator = path.includes('?') ? '&' : '?';
       return `${path}${separator}targetUserId=${urlUserId}`;
@@ -279,6 +286,11 @@ const Cluster3Content = () => {
 
   // 수정 버튼 클릭 핸들러 (승인 상태 체크)
   const handleEditClick = async (openModalFn: () => void) => {
+    // 테스트 유저(데모) 모드면 세션 없이도 모달을 연다 (저장은 demoUserId 로 백엔드 검증).
+    if (isDemo) {
+      openModalFn();
+      return;
+    }
     if (!session) {
       await popup.alert("로그인이 필요합니다.");
       return;
@@ -1146,8 +1158,9 @@ const Cluster3Content = () => {
     const unlockOutput = searchParams.get("unlockCluster3Output") === "1";
     const unlockDetail = searchParams.get("unlockCluster3Detail") === "1";
 
-    // admin / demo 는 fetch 없이 즉시 허용.
-    if (isDemoMode || isAdmin) {
+    // admin / demo(localStorage) 는 fetch 없이 즉시 허용. 단, 테스트 유저(데모) 모드는
+    // admin 우회하지 않고 아래 permission fetch(demoUserId)로 테스트 유저 작성기간을 판정.
+    if (isDemoMode || (isAdmin && !isDemo)) {
       const reason: TopCardPermissionReason = isAdmin ? "admin" : "open";
       setCanEditOutput(true);
       setCanEditDetail(true);
@@ -1185,7 +1198,7 @@ const Cluster3Content = () => {
     ): Promise<{ canEdit: boolean; reason: TopCardPermissionReason; expiresAt: string | null }> => {
       try {
         const response = await fetch(
-          `/api/edit-windows/permission?resource_key=${encodeURIComponent(resourceKey)}`,
+          apiUrl(`/api/edit-windows/permission?resource_key=${encodeURIComponent(resourceKey)}`),
           { cache: "no-store" },
         );
         const result = await response.json();
@@ -1231,13 +1244,13 @@ const Cluster3Content = () => {
     if (permissionRefreshTick === 0) return;
     if (sessionStatus === "loading") return;
     const isAdmin = !!session?.user?.isAdmin || isAdminEmail(session?.user?.email);
-    if (isDemoMode || isAdmin || !session?.user) return;
+    if (isDemoMode || (isAdmin && !isDemo) || !session?.user) return;
     let cancelled = false;
     (async () => {
       try {
         const [outputRes, detailRes] = await Promise.all([
-          fetch("/api/edit-windows/permission?resource_key=cluster3.output_cards", { cache: "no-store" }).then((r) => r.json()),
-          fetch("/api/edit-windows/permission?resource_key=cluster3.detail_cards", { cache: "no-store" }).then((r) => r.json()),
+          fetch(apiUrl("/api/edit-windows/permission?resource_key=cluster3.output_cards"), { cache: "no-store" }).then((r) => r.json()),
+          fetch(apiUrl("/api/edit-windows/permission?resource_key=cluster3.detail_cards"), { cache: "no-store" }).then((r) => r.json()),
         ]);
         if (cancelled) return;
         const unlockAll = searchParams.get("unlockCluster3") === "1";
@@ -2183,6 +2196,7 @@ const Cluster3Content = () => {
 
   return (
     <div className="cluster3-content">
+      {isDemo ? <TestUserBanner /> : null}
       {/* Section 1: CLUB FINAL INDEX - 새 디자인 */}
       <section className="cluster3-section1">
         {/* 플로팅 아이콘 */}

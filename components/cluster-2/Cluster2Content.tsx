@@ -10,8 +10,10 @@ import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
-import { isPxRoute, isEcRoute } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, getOrgConfigFromPathname } from "@/lib/cluster-route";
 import { usePopup } from "@/components/ui/popup";
+import { useDemoUserMode } from "@/hooks/useDemoUserMode";
+import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
 import { logEvent } from "@/utils/blackScreenDiagnostics";
 import { CLUSTER2_DUMMY_PHOTOS, CLUSTER2_DUMMY_SLOGANS, CLUSTER2_DUMMY_VIDEOS, CLUSTER2_DUMMY_EDUCATIONS, CLUSTER2_DUMMY_REVIEWS, CLUSTER2_DUMMY_INTRO, CLUSTER2_DUMMY_BY_USER, DEFAULT_DEMO_USER } from "@/constants/dummyData";
 import { SECTION1_PHOTO_DEFAULTS } from "@/constants/dummyData/cluster2-section1-default";
@@ -121,9 +123,9 @@ const Cluster2Content = () => {
   const pathname = usePathname();
   const isPX = isPxRoute(pathname);
   const isEC = isEcRoute(pathname);
-  // 라우트별 인라인 강조색 — non-themed 는 기존 #FAAB07 (gold) 유지.
-  // PX → PX green #1E9503, EC → Encre strong pink #FF4B70.
-  const accentInline = isPX ? "#1E9503" : isEC ? "#FF4B70" : "#FAAB07";
+  // 라우트별 인라인 강조색 — ORGANIZATION_CONFIG(단일 정의소)에서 가져온다.
+  // marketing #FAAB07 / entertainment #FF4B70 / planning #1E9503.
+  const accentInline = getOrgConfigFromPathname(pathname).themeColor;
   const { alert: showAlert, confirm: popupConfirm } = usePopup();
   const showConfirm = useCallback(
     async (message: string, onConfirm: () => void | Promise<void>) => {
@@ -133,17 +135,24 @@ const Cluster2Content = () => {
     },
     [popupConfirm],
   );
-  const urlUserId = searchParams.get("userId") || searchParams.get("userID");
+  // 테스트 유저(데모) 모드 — ?demoUserId={id}&demoUserName={name} (공통 훅).
+  const demo = useDemoUserMode();
+  const isDemo = demo.isDemo;
+  // 조회/표시/저장 대상: admin-view(userId) 우선 → 테스트 유저(demoUserId).
+  const urlUserId = searchParams.get("userId") || searchParams.get("userID") || demo.demoUserId;
   const demoNameParam = searchParams.get("demoName");
   const demoLookupName = demoNameParam || urlUserId;
 
   // 본인 프로필인지 확인: URL에 userId가 없거나, 로그인한 사용자 ID와 같으면 본인
-  // 어드민(마더) 계정은 모든 프로필 편집 가능
-  const isOwner = session?.user?.isAdmin || !urlUserId || (session?.user?.id === urlUserId);
+  // 어드민(마더) 계정은 모든 프로필 편집 가능. 테스트 유저 모드면 편집 UX 검증을 위해 owner 로 취급.
+  const isOwner = session?.user?.isAdmin || isDemo || !urlUserId || (session?.user?.id === urlUserId);
   const isDemoMode = checkDemoMode();
 
-  // 어드민이 다른 유저 편집 시 targetUserId를 API URL에 추가
+  // 저장/조회 API URL 빌더.
+  //   - 테스트 유저 모드: demoUserId 부착(백엔드가 test_user_markers 검증 후 대상 고정).
+  //   - 어드민 타유저 편집: targetUserId 부착.
   const apiUrl = (path: string) => {
+    if (isDemo) return demo.appendDemoUserParams(path);
     if (urlUserId && session?.user?.isAdmin) {
       const separator = path.includes('?') ? '&' : '?';
       return `${path}${separator}targetUserId=${urlUserId}`;
@@ -179,7 +188,9 @@ const Cluster2Content = () => {
 
   // 수정 버튼 클릭 핸들러 (승인 상태 체크)
   const handleEditClick = async (openModalFn: () => void) => {
-    if (isDemoMode) {
+    // 테스트 유저(데모) 모드 또는 로컬 데모 모드면 세션 없이도 모달을 연다.
+    // (저장은 demoUserId 를 백엔드로 보내 test_user_markers 검증 후 대상 유저로 기록된다.)
+    if (isDemoMode || isDemo) {
       openModalFn();
       return;
     }
@@ -1340,18 +1351,23 @@ const Cluster2Content = () => {
   // 비-어드민의 canEditClubReview 는 /api/edit-windows/permission 응답으로만 갱신한다.
   useEffect(() => {
     const isAdmin = session?.user?.isAdmin || isAdminEmail(session?.user?.email);
-    if (isAdmin) {
+    // 테스트 유저(데모) 모드에서는 admin baseline 우회 금지 — Club Review 편집권은 demoUserId 권한(fetch)으로 판정.
+    if (isAdmin && !isDemo) {
       setCanChangePrimary(true);
       setCanEditClubReview(true);
       setReviewPermissionLoading(false);
       setClubReviewPermissionReason("admin");
+    } else if (isDemo) {
+      // 대표학력 변경은 owner 기준 허용(작성기간 게이트 아님). Club Review 는 아래 fetch 로 판정.
+      setCanChangePrimary(true);
     }
-  }, [session?.user?.isAdmin, session?.user?.email]);
+  }, [session?.user?.isAdmin, session?.user?.email, isDemo]);
 
   const fetchClubReviewPermission = useCallback(async () => {
     const isAdmin = session?.user?.isAdmin || isAdminEmail(session?.user?.email);
 
-    if (isAdmin) {
+    // 데모 모드는 admin 우회하지 않고 아래 permission fetch(demoUserId)로 판정.
+    if (isAdmin && !isDemo) {
       setCanEditClubReview(true);
       setReviewPermissionLoading(false);
       setClubReviewPermissionReason("admin");
@@ -1377,7 +1393,7 @@ const Cluster2Content = () => {
 
     setReviewPermissionLoading(true);
     try {
-      const response = await fetch("/api/edit-windows/permission?resource_key=cluster2.review_links", {
+      const response = await fetch(apiUrl("/api/edit-windows/permission?resource_key=cluster2.review_links"), {
         cache: "no-store",
       });
       const result = await response.json();
@@ -1928,6 +1944,7 @@ const Cluster2Content = () => {
 
   return (
     <div className="cluster2-content">
+      {isDemo ? <TestUserBanner /> : null}
       {/* PROFILE 헤더 */}
       <div className="cluster2-title-wrapper">
         <div className="title-inner">

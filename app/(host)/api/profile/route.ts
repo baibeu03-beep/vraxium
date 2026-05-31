@@ -6,6 +6,8 @@ import { getCachedTeams, getCachedParts, getCachedActivityTypes } from "@/lib/ca
 import { getProfileLookupKey, resolveUserProfileAccess } from "@/lib/user-profile-access";
 import { seasonLabel } from "@/lib/cluster4-types";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
+import { DemoModeError, resolveDemoProfileUserId } from "@/lib/demoMode";
+import { requireOwnerOrAdmin } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -225,7 +227,10 @@ async function fetchClubRankAvgPercentile(request: NextRequest, userId: string |
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const targetUserId = searchParams.get('userId');
+    // 조회 대상: userId(어드민/공개 조회) → demoUserId(테스트 유저 모드).
+    // GET 은 공개 read 경로이므로 demoUserId 도 동일하게 user_id 조회 키로 사용한다
+    // (test_user_markers 게이트는 쓰기 경로 전용 — 읽기는 어떤 userId 든 공개).
+    const targetUserId = searchParams.get('userId') || searchParams.get('demoUserId');
 
     if (!supabaseAdmin) {
       return NextResponse.json(
@@ -1026,11 +1031,35 @@ export async function GET(request: NextRequest) {
     }
 
     // user_season_histories raw 데이터에 seasons 객체 attach (client-side merge).
-    // nested seasons() 를 제거했으므로 allSeasons 의 매핑된 shape 를 사용한다.
+    // ⚠ user_season_histories.season_id 는 seasons(uuid) 테이블 FK 다.
+    //   (season_definitions.season_key 텍스트 공간과 별개 — 두 시즌 시스템이 공존.)
+    //   과거 이 맵을 allSeasons(=season_definitions, season_key 텍스트로 키잉)로
+    //   만들어 UUID season_id 로 .get() 하면 절대 매칭되지 않아 seasons:null →
+    //   afterSeasonsNotNull:0 → seasonHistories 빈 배열 → 주간 리뷰 수정 권한 팝업
+    //   버그가 발생했다. seasons 테이블을 id(uuid)로 키잉하고, 소비자
+    //   (Cluster41Content: seasons.{id,year,name,start_date,end_date})가 기대하는
+    //   shape 로 매핑한다.
     // 실제 schema 에 없는 컬럼(role_in_season / approved_weeks / total_weeks /
     // progress_status / review_status / is_qualified) 은 Front 가 기대하는 기본값으로 채움.
+    const { data: seasonsRows, error: seasonsRowsError } = await supabaseAdmin
+      .from("seasons")
+      .select("id, name, season_index, started_at, ended_at");
+    if (seasonsRowsError) {
+      console.error('[Profile API] seasons 테이블 조회 실패', seasonsRowsError);
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const seasonsMap = new Map<string, any>(allSeasons.map((s) => [s.id, s]));
+    const seasonsMap = new Map<string, any>(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (seasonsRows || []).map((s: any) => [s.id, {
+        id: s.id,
+        name: s.name,
+        season_label: s.name,
+        season_index: s.season_index ?? null,
+        year: s.started_at ? new Date(s.started_at).getFullYear() : null,
+        start_date: s.started_at ?? null,
+        end_date: s.ended_at ?? null,
+      }])
+    );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const attachSeasons = (rows: any[] | null | undefined): any[] =>
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1117,13 +1146,164 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    // cluster_id 기반으로 카운트
+    // 실무 정보 습득(info) SoT — 어드민 practicalStats.infoCount 와 동일 기준으로 통일.
+    //   기존: activity_records(is_completed) 기반 → cluster4 전환 후 미적재로 0 표기되던 문제.
+    //   변경: cluster4 실무정보 라인 "강화 성공"(배정 + 마감 경과) 누적.
+    //     cluster4_lines(part_type='info', is_active) ∩
+    //     cluster4_line_targets(target_mode='user', target_user_id=유저, week ∈ 유저 주차)
+    //     중 submission_closes_at < now 개수. 제출 유무 무관.
+    //   ⚠ cluster4_line_submissions / subtitle / growth_point / output_links / output_images 등
+    //     실무정보 DTO 테이블은 일절 접근하지 않는다(읽기는 라인 메타 + 배정 + 마감시각뿐).
+    //   info 키만 교체하며 competency/experience/career 는 기존 activity_records 기준 유지.
+    let infoLineSuccessCount = 0;
+    {
+      const infoUserId = (profile.user_id ?? profile.id) as string | undefined;
+      const weekIdByStart = new Map<string, string>();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (allWeeks as any[]).forEach((w) => {
+        if (w?.start_date && w?.id) weekIdByStart.set(w.start_date, w.id);
+      });
+      const infoWeekIds = (
+        ((userWeeklyGrowthResult as { data: Array<{ week_start_date: string }> | null })?.data) ?? []
+      )
+        .map((w) => weekIdByStart.get(w.week_start_date))
+        .filter((id): id is string => !!id);
+
+      if (infoUserId && infoWeekIds.length > 0) {
+        const { data: infoLines } = await supabaseAdmin
+          .from("cluster4_lines")
+          .select("id, submission_closes_at")
+          .eq("part_type", "info")
+          .eq("is_active", true);
+        const closesById = new Map<string, string>();
+        for (const l of (infoLines ?? []) as Array<{ id: string; submission_closes_at: string }>) {
+          closesById.set(l.id, l.submission_closes_at);
+        }
+        if (closesById.size > 0) {
+          const { data: infoTargets } = await supabaseAdmin
+            .from("cluster4_line_targets")
+            .select("week_id, line_id")
+            .eq("target_mode", "user")
+            .eq("target_user_id", infoUserId)
+            .in("line_id", Array.from(closesById.keys()))
+            .in("week_id", infoWeekIds);
+          const now = Date.now();
+          for (const t of (infoTargets ?? []) as Array<{ week_id: string; line_id: string }>) {
+            const closes = closesById.get(t.line_id);
+            // success = 마감(submission_closes_at) 지남. 제출 유무 무관 — 어드민과 동일.
+            if (closes && new Date(closes).getTime() < now) infoLineSuccessCount++;
+          }
+        }
+      }
+    }
+
+    // 실무 경험 축적(experience) SoT — 어드민 practicalStats.experienceCount 와 동일 기준으로 통일.
+    //   info 와 완전히 동일한 방식: cluster4 실무경험 라인 "강화 성공"(배정 + 마감 경과) 누적.
+    //     cluster4_lines(part_type='experience', is_active) ∩
+    //     cluster4_line_targets(target_mode='user', target_user_id=유저, week ∈ 유저 주차)
+    //     중 submission_closes_at < now 개수. 제출 유무 무관.
+    //   기존 activity_records(is_completed) 기준은 cluster4 전환 후 미적재로 0 표기되던 문제.
+    //   experience 키만 교체하며 competency/career 는 기존 activity_records 기준 유지.
+    //   ⚠ info 블록(위)은 일절 건드리지 않고 동일 로직을 별도 블록으로 분리한다.
+    let experienceLineSuccessCount = 0;
+    {
+      const experienceUserId = (profile.user_id ?? profile.id) as string | undefined;
+      const weekIdByStart = new Map<string, string>();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (allWeeks as any[]).forEach((w) => {
+        if (w?.start_date && w?.id) weekIdByStart.set(w.start_date, w.id);
+      });
+      const experienceWeekIds = (
+        ((userWeeklyGrowthResult as { data: Array<{ week_start_date: string }> | null })?.data) ?? []
+      )
+        .map((w) => weekIdByStart.get(w.week_start_date))
+        .filter((id): id is string => !!id);
+
+      if (experienceUserId && experienceWeekIds.length > 0) {
+        const { data: experienceLines } = await supabaseAdmin
+          .from("cluster4_lines")
+          .select("id, submission_closes_at")
+          .eq("part_type", "experience")
+          .eq("is_active", true);
+        const closesById = new Map<string, string>();
+        for (const l of (experienceLines ?? []) as Array<{ id: string; submission_closes_at: string }>) {
+          closesById.set(l.id, l.submission_closes_at);
+        }
+        if (closesById.size > 0) {
+          const { data: experienceTargets } = await supabaseAdmin
+            .from("cluster4_line_targets")
+            .select("week_id, line_id")
+            .eq("target_mode", "user")
+            .eq("target_user_id", experienceUserId)
+            .in("line_id", Array.from(closesById.keys()))
+            .in("week_id", experienceWeekIds);
+          const now = Date.now();
+          for (const t of (experienceTargets ?? []) as Array<{ week_id: string; line_id: string }>) {
+            const closes = closesById.get(t.line_id);
+            // success = 마감(submission_closes_at) 지남. 제출 유무 무관 — 어드민과 동일.
+            if (closes && new Date(closes).getTime() < now) experienceLineSuccessCount++;
+          }
+        }
+      }
+    }
+
+    // 실무 역량 성장(competency) SoT — 어드민 practicalStats.abilityUnitCount 와 동일 기준으로 통일.
+    //   info/experience 와 완전히 동일한 방식: cluster4 실무역량 라인 "강화 성공"(배정 + 마감 경과) 누적.
+    //     cluster4_lines(part_type='competency', is_active) ∩
+    //     cluster4_line_targets(target_mode='user', target_user_id=유저, week ∈ 유저 주차)
+    //     중 submission_closes_at < now 개수. 제출 유무 무관.
+    //   기존 activity_records(cluster_id='practical_competency') 카운트는 cluster4 전환 후 미적재로
+    //   0 표기되던 문제. competency 키만 교체하며 info/experience/career 는 건드리지 않는다.
+    //   ⚠ info/experience 블록은 일절 건드리지 않고 동일 로직을 별도 블록으로 분리한다.
+    let competencyLineSuccessCount = 0;
+    {
+      const competencyUserId = (profile.user_id ?? profile.id) as string | undefined;
+      const weekIdByStart = new Map<string, string>();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (allWeeks as any[]).forEach((w) => {
+        if (w?.start_date && w?.id) weekIdByStart.set(w.start_date, w.id);
+      });
+      const competencyWeekIds = (
+        ((userWeeklyGrowthResult as { data: Array<{ week_start_date: string }> | null })?.data) ?? []
+      )
+        .map((w) => weekIdByStart.get(w.week_start_date))
+        .filter((id): id is string => !!id);
+
+      if (competencyUserId && competencyWeekIds.length > 0) {
+        const { data: competencyLines } = await supabaseAdmin
+          .from("cluster4_lines")
+          .select("id, submission_closes_at")
+          .eq("part_type", "competency")
+          .eq("is_active", true);
+        const closesById = new Map<string, string>();
+        for (const l of (competencyLines ?? []) as Array<{ id: string; submission_closes_at: string }>) {
+          closesById.set(l.id, l.submission_closes_at);
+        }
+        if (closesById.size > 0) {
+          const { data: competencyTargets } = await supabaseAdmin
+            .from("cluster4_line_targets")
+            .select("week_id, line_id")
+            .eq("target_mode", "user")
+            .eq("target_user_id", competencyUserId)
+            .in("line_id", Array.from(closesById.keys()))
+            .in("week_id", competencyWeekIds);
+          const now = Date.now();
+          for (const t of (competencyTargets ?? []) as Array<{ week_id: string; line_id: string }>) {
+            const closes = closesById.get(t.line_id);
+            // success = 마감(submission_closes_at) 지남. 제출 유무 무관 — 어드민과 동일.
+            if (closes && new Date(closes).getTime() < now) competencyLineSuccessCount++;
+          }
+        }
+      }
+    }
+
+    // cluster_id 기반으로 카운트 (info / experience / competency 는 cluster4 라인 SoT 로 대체)
     const practicalCounts = activitiesData ? {
-      competency: activitiesData.filter(a => typeToClusterMap.get(a.activity_type_id) === 'practical_competency').length,
-      experience: activitiesData.filter(a => typeToClusterMap.get(a.activity_type_id) === 'practical_experience').length,
-      info: activitiesData.filter(a => typeToClusterMap.get(a.activity_type_id) === 'practical_info').length,
+      competency: competencyLineSuccessCount,
+      experience: experienceLineSuccessCount,
+      info: infoLineSuccessCount,
       career: activitiesData.filter(a => typeToClusterMap.get(a.activity_type_id) === 'practical_career').length
-    } : { competency: 0, experience: 0, info: 0, career: 0 };
+    } : { competency: competencyLineSuccessCount, experience: experienceLineSuccessCount, info: infoLineSuccessCount, career: 0 };
 
     // completionRate 계산: (R / P) × 100
     // P = 가입 주차 이후 열린 모든 활동 수 (weekly_activities, break 시즌 제외)
@@ -1681,100 +1861,162 @@ export async function GET(request: NextRequest) {
 }
 
 // PUT: 프로필 수정
+// 프로필 쓰기(PUT/PATCH) 공통 — "명시적 저장 대상" user_id 해소 규칙.
+// Sidebar / Cluster4Content / GET 과 동일한 우선순위: userId/userID(어드민 타유저) → demoUserId(테스트 유저).
+//   - 둘 다 없음            → { ok:true, targetUserId:null } (호출부가 세션 본인 lookup 진행)
+//   - demoUserId            → resolveDemoProfileUserId(데모 활성 env + test_user_markers 등재) 검증 후,
+//                             requireOwnerOrAdmin(세션 admin/본인) 이중 게이트 통과 시 그 id
+//   - userId/userID         → requireOwnerOrAdmin(admin) 게이트 통과 시 그 id, 비-admin 은 403
+//   - 데모 off / 미등재      → DemoModeError(403)
+// 검증 실패 시 그대로 return 할 NextResponse 를 돌려준다(관리자 본인 row 오저장 방지).
+async function resolveExplicitWriteTarget(
+  request: Request,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  body: any,
+): Promise<
+  | { ok: true; targetUserId: string | null }
+  | { ok: false; response: NextResponse }
+> {
+  const { searchParams } = new URL(request.url);
+  const rawTargetUserId = searchParams.get("userId") || searchParams.get("userID");
+  let demoProfileUserId: string | null = null;
+  try {
+    demoProfileUserId = await resolveDemoProfileUserId(
+      body?.demoUserId ?? searchParams.get("demoUserId"),
+    );
+  } catch (error) {
+    if (error instanceof DemoModeError) {
+      return {
+        ok: false,
+        response: NextResponse.json({ error: error.message }, { status: error.status }),
+      };
+    }
+    throw error;
+  }
+
+  const explicitTargetUserId = demoProfileUserId ?? rawTargetUserId;
+  if (!explicitTargetUserId) {
+    return { ok: true, targetUserId: null };
+  }
+
+  // 데모(테스트 유저) 모드면 세션/owner 게이트 없이 그 테스트 유저로 고정(세션 없이 허용).
+  // (resolveDemoProfileUserId 가 이미 env + test_user_markers 등재를 검증.)
+  if (demoProfileUserId) {
+    return { ok: true, targetUserId: demoProfileUserId };
+  }
+
+  const gate = await requireOwnerOrAdmin(explicitTargetUserId);
+  if (!gate.ok) return { ok: false, response: gate.response };
+  return { ok: true, targetUserId: gate.context.targetUserId };
+}
+
 export async function PUT(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { error: "로그인이 필요합니다." },
-        { status: 401 }
-      );
-    }
-
-    const email = session.user.email;
-    const body = await request.json();
-
     if (!supabaseAdmin) {
       return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
     }
 
-    // user_profiles에서 기존 프로필 확인 (1차: email, 2차: auth_email)
-    // user_profiles는 user_id 컬럼을 PK로 사용
-    const access = await resolveUserProfileAccess(supabaseAdmin, {
-      email,
-      name: session.user.name,
-      fallbackProfileId: session.user.id,
-    });
+    const body = await request.json();
+    const session = await getServerSession(authOptions);
 
-    if (access.status !== "approved") {
-      return NextResponse.json(
-        { error: "?뱀씤???꾨줈?꾩씠 ?놁뒿?덈떎. ?대뱶誘??뱀씤??湲곕떎?ㅼ＜?몄슂." },
-        { status: 403 }
-      );
-    }
+    // 저장 대상 user_id 결정 (공통 규칙) — 데모(테스트 유저)면 세션 없이 demoUserId,
+    // 어드민 타유저(userId)면 owner/admin 게이트(세션 필요), 둘 다 없으면 아래 세션 본인 경로.
+    const writeTarget = await resolveExplicitWriteTarget(request, body);
+    if (!writeTarget.ok) return writeTarget.response;
 
-    const approvedLookupKey = getProfileLookupKey(access.profile);
-    let existingProfile: { user_id: string } | null = approvedLookupKey?.column === "user_id" && approvedLookupKey.value
-      ? { user_id: approvedLookupKey.value }
-      : null;
+    let saveTargetUserId: string;
 
-    if (!existingProfile) {
-      const { data: profileByAuth } = await supabaseAdmin
-        .from("user_profiles")
-        .select("user_id")
-        .eq("auth_email", email)
-        .maybeSingle();
-
-      if (profileByAuth) {
-        existingProfile = profileByAuth;
+    if (writeTarget.targetUserId) {
+      saveTargetUserId = writeTarget.targetUserId;
+    } else {
+      // 명시적 대상이 없으면(일반 사용자 본인) 세션 필수.
+      if (!session?.user?.email) {
+        return NextResponse.json(
+          { error: "로그인이 필요합니다." },
+          { status: 401 }
+        );
       }
-    }
+      const email = session.user.email;
+      // ── 세션 본인 프로필 확인 (기존 lookup 체인, 변경 없음) ──
+      // user_profiles에서 기존 프로필 확인 (1차: email, 2차: auth_email)
+      // user_profiles는 user_id 컬럼을 PK로 사용
+      const access = await resolveUserProfileAccess(supabaseAdmin, {
+        email,
+        name: session.user.name,
+        fallbackProfileId: session.user.id,
+      });
 
-    // 3차: 카카오 이름으로 display_name 매칭
-    if (!existingProfile && session.user?.name) {
-      const cleanName = session.user.name.replace(/\s+/g, "");
-      const { data: profileByName } = await supabaseAdmin
-        .from("user_profiles")
-        .select("user_id")
-        .eq("display_name", cleanName)
-        .maybeSingle();
-
-      if (profileByName) {
-        existingProfile = profileByName;
-        await supabaseAdmin
-          .from("user_profiles")
-          .update({ auth_email: email })
-          .eq("user_id", profileByName.user_id);
+      if (access.status !== "approved") {
+        return NextResponse.json(
+          { error: "?뱀씤???꾨줈?꾩씠 ?놁뒿?덈떎. ?대뱶誘??뱀씤??湲곕떎?ㅼ＜?몄슂." },
+          { status: 403 }
+        );
       }
-    }
 
-    // 4차: JWT에서 매칭된 profile UUID로 직접 조회 (카카오 이름/이메일이 모두 다른 경우)
-    if (!existingProfile && session.user?.id) {
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (uuidRegex.test(session.user.id)) {
-        const { data: profileById } = await supabaseAdmin
+      const approvedLookupKey = getProfileLookupKey(access.profile);
+      let existingProfile: { user_id: string } | null = approvedLookupKey?.column === "user_id" && approvedLookupKey.value
+        ? { user_id: approvedLookupKey.value }
+        : null;
+
+      if (!existingProfile) {
+        const { data: profileByAuth } = await supabaseAdmin
           .from("user_profiles")
           .select("user_id")
-          .eq("user_id", session.user.id)
+          .eq("auth_email", email)
           .maybeSingle();
 
-        if (profileById) {
-          existingProfile = profileById;
+        if (profileByAuth) {
+          existingProfile = profileByAuth;
+        }
+      }
+
+      // 3차: 카카오 이름으로 display_name 매칭
+      if (!existingProfile && session.user?.name) {
+        const cleanName = session.user.name.replace(/\s+/g, "");
+        const { data: profileByName } = await supabaseAdmin
+          .from("user_profiles")
+          .select("user_id")
+          .eq("display_name", cleanName)
+          .maybeSingle();
+
+        if (profileByName) {
+          existingProfile = profileByName;
           await supabaseAdmin
             .from("user_profiles")
             .update({ auth_email: email })
-            .eq("user_id", profileById.user_id)
-            .is("auth_email", null);
+            .eq("user_id", profileByName.user_id);
         }
       }
-    }
 
-    if (!existingProfile) {
-      return NextResponse.json(
-        { error: "승인된 프로필이 없습니다. 어드민 승인을 기다려주세요." },
-        { status: 403 }
-      );
+      // 4차: JWT에서 매칭된 profile UUID로 직접 조회 (카카오 이름/이메일이 모두 다른 경우)
+      if (!existingProfile && session.user?.id) {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidRegex.test(session.user.id)) {
+          const { data: profileById } = await supabaseAdmin
+            .from("user_profiles")
+            .select("user_id")
+            .eq("user_id", session.user.id)
+            .maybeSingle();
+
+          if (profileById) {
+            existingProfile = profileById;
+            await supabaseAdmin
+              .from("user_profiles")
+              .update({ auth_email: email })
+              .eq("user_id", profileById.user_id)
+              .is("auth_email", null);
+          }
+        }
+      }
+
+      if (!existingProfile) {
+        return NextResponse.json(
+          { error: "승인된 프로필이 없습니다. 어드민 승인을 기다려주세요." },
+          { status: 403 }
+        );
+      }
+
+      saveTargetUserId = existingProfile.user_id;
     }
 
     // 프로필 업데이트 데이터 준비
@@ -1796,11 +2038,11 @@ export async function PUT(request: Request) {
     if (body.portfolio_files !== undefined) updateData.portfolio_files = body.portfolio_files;
     if (body.contact_available !== undefined) updateData.contact_available = body.contact_available;
 
-    // 프로필 업데이트
+    // 프로필 업데이트 — 위에서 권한 게이트를 통과해 확정된 대상 user_id 기준.
     const { data, error } = await supabaseAdmin
       .from("user_profiles")
       .update(updateData)
-      .eq("user_id", existingProfile.user_id)
+      .eq("user_id", saveTargetUserId)
       .select()
       .single();
 
@@ -1831,20 +2073,11 @@ export async function PUT(request: Request) {
 // 요청 body: { contactAvailable: string | null }  ← API/Frontend 컨벤션은 camelCase.
 export async function PATCH(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { error: "로그인이 필요합니다." },
-        { status: 401 }
-      );
-    }
-
     if (!supabaseAdmin) {
       return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
     }
 
-    const email = session.user.email;
+    const session = await getServerSession(authOptions);
     const body = await request.json().catch(() => ({}));
 
     if (!Object.prototype.hasOwnProperty.call(body, "contactAvailable")) {
@@ -1869,40 +2102,60 @@ export async function PATCH(request: Request) {
       );
     }
 
-    // 본인 프로필 식별 (PUT 와 동일한 다단 lookup)
-    const access = await resolveUserProfileAccess(supabaseAdmin, {
-      email,
-      name: session.user.name,
-      fallbackProfileId: session.user.id,
-    });
+    // 저장 대상 user_id 결정 (PUT 와 동일한 공통 규칙) — 테스트 유저 모드면 demoUserId 로 게이트 후 그 id.
+    const writeTarget = await resolveExplicitWriteTarget(request, body);
+    if (!writeTarget.ok) return writeTarget.response;
 
-    if (access.status !== "approved") {
-      return NextResponse.json(
-        { error: "승인된 프로필이 없습니다." },
-        { status: 403 }
-      );
-    }
+    let patchTargetUserId: string;
 
-    const approvedLookupKey = getProfileLookupKey(access.profile);
-    let existingProfile: { user_id: string } | null =
-      approvedLookupKey?.column === "user_id" && approvedLookupKey.value
-        ? { user_id: approvedLookupKey.value }
-        : null;
+    if (writeTarget.targetUserId) {
+      patchTargetUserId = writeTarget.targetUserId;
+    } else {
+      // 명시적 대상이 없으면(일반 사용자 본인) 세션 필수.
+      if (!session?.user?.email) {
+        return NextResponse.json(
+          { error: "로그인이 필요합니다." },
+          { status: 401 }
+        );
+      }
+      const email = session.user.email;
+      // 본인 프로필 식별 (PUT 와 동일한 다단 lookup)
+      const access = await resolveUserProfileAccess(supabaseAdmin, {
+        email,
+        name: session.user.name,
+        fallbackProfileId: session.user.id,
+      });
 
-    if (!existingProfile) {
-      const { data: profileByAuth } = await supabaseAdmin
-        .from("user_profiles")
-        .select("user_id")
-        .eq("auth_email", email)
-        .maybeSingle();
-      if (profileByAuth) existingProfile = profileByAuth;
-    }
+      if (access.status !== "approved") {
+        return NextResponse.json(
+          { error: "승인된 프로필이 없습니다." },
+          { status: 403 }
+        );
+      }
 
-    if (!existingProfile) {
-      return NextResponse.json(
-        { error: "승인된 프로필이 없습니다." },
-        { status: 403 }
-      );
+      const approvedLookupKey = getProfileLookupKey(access.profile);
+      let existingProfile: { user_id: string } | null =
+        approvedLookupKey?.column === "user_id" && approvedLookupKey.value
+          ? { user_id: approvedLookupKey.value }
+          : null;
+
+      if (!existingProfile) {
+        const { data: profileByAuth } = await supabaseAdmin
+          .from("user_profiles")
+          .select("user_id")
+          .eq("auth_email", email)
+          .maybeSingle();
+        if (profileByAuth) existingProfile = profileByAuth;
+      }
+
+      if (!existingProfile) {
+        return NextResponse.json(
+          { error: "승인된 프로필이 없습니다." },
+          { status: 403 }
+        );
+      }
+
+      patchTargetUserId = existingProfile.user_id;
     }
 
     const { data, error } = await supabaseAdmin
@@ -1911,7 +2164,7 @@ export async function PATCH(request: Request) {
         contact_available: nextValue,
         updated_at: new Date().toISOString(),
       })
-      .eq("user_id", existingProfile.user_id)
+      .eq("user_id", patchTargetUserId)
       .select("user_id, contact_available")
       .single();
 

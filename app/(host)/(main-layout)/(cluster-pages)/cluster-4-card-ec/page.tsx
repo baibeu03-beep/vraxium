@@ -20,7 +20,7 @@ const Cluster4CardEcPage = () => {
       window.localStorage.getItem("demoMode") === "true";
     if (demoOn) {
       const qs = params.toString();
-      router.replace(qs ? `/cluster-4-card-ec/dw-01?${qs}` : "/cluster-4-card-ec/dw-01");
+      router.replace(qs ? `/cluster-4-card-entertainment/dw-01?${qs}` : "/cluster-4-card-entertainment/dw-01");
       return;
     }
 
@@ -48,7 +48,7 @@ const Cluster4CardEcPage = () => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const seasonName = (latestWeek.seasons as any)?.name || "";
             if (!seasonName.toLowerCase().includes("break")) {
-              router.replace(`/cluster-4-card-ec/${latestWeek.id}`);
+              router.replace(`/cluster-4-card-entertainment/${latestWeek.id}`);
               return;
             }
           }
@@ -56,7 +56,7 @@ const Cluster4CardEcPage = () => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const seasonName = (currentWeek.seasons as any)?.name || "";
           if (!seasonName.toLowerCase().includes("break")) {
-            router.replace(`/cluster-4-card-ec/${currentWeek.id}`);
+            router.replace(`/cluster-4-card-entertainment/${currentWeek.id}`);
             return;
           }
         }

@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getUserProfile } from "@/lib/get-user-profile";
-import { extractTargetUserId, isAdminEmail } from "@/lib/admin";
+import { isAdminEmail } from "@/lib/admin";
+import { resolveWriteUserId } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -310,18 +310,16 @@ type IncomingLink = {
 
 export async function PUT(request: Request) {
   try {
-    const targetUserId = extractTargetUserId(request);
-    const { session, profile, error } = await getUserProfile<{ user_id: string }>(
-      "user_id",
-      targetUserId,
-    );
-
-    if (error) {
+    // 테스트 유저(데모) 모드: 유효한 demoUserId 면 저장 대상을 그 유저로 고정(세션 없이).
+    // 데모 off/미전달 → 기존 세션 게이트(getUserProfile). 미등재 user_id → 403.
+    const actor = await resolveWriteUserId(request);
+    if (!actor.ok) {
       return NextResponse.json(
-        errorPayload("session_profile", error.message),
-        { status: error.status },
+        errorPayload("session_profile", actor.message),
+        { status: actor.status },
       );
     }
+    const isDemo = actor.isDemo;
 
     if (!supabaseAdmin) {
       console.error(TAG, "supabaseAdmin missing — SUPABASE_SERVICE_ROLE_KEY 누락");
@@ -342,10 +340,13 @@ export async function PUT(request: Request) {
       );
     }
 
-    const userId = profile.user_id;
-    const isAdmin = isAdminEmail(session.user?.email);
+    const userId = actor.userId;
+    // 데모 모드에서는 세션이 없으므로 admin 판정도 false. 비-데모에서만 세션 기준 admin 판정.
+    const session = await getServerSession(authOptions);
+    const isAdmin = !isDemo && isAdminEmail(session?.user?.email);
 
-    // 권한 검사 (admin 우회)
+    // 권한 검사 (admin 우회). 단, 데모(테스트 유저) 모드에서는 isAdmin=false 이므로
+    // 작성 기간(edit window)이 일반 고객과 동일하게 강제된다.
     if (!isAdmin) {
       const { data: permRow, error: permError } = await supabaseAdmin
         .from("user_edit_windows")

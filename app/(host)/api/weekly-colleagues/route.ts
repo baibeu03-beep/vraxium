@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-server";
 import { getCachedTeams, getCachedParts } from "@/lib/cached-data";
-import { extractTargetUserId } from "@/lib/admin";
-import { requireOwnerOrAdmin } from "@/lib/api-auth";
+import { resolveWriteActor } from "@/lib/api-auth";
+import { DemoModeError, resolveDemoProfileUserIdFromRequest } from "@/lib/demoMode";
 import { getUserProfile } from "@/lib/get-user-profile";
 import { hasOpenEditWindow } from "@/lib/editWindow";
 import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
@@ -42,9 +42,16 @@ export async function GET(request: Request) {
       );
     }
 
-    // 로그인만 검증.
+    // 로그인만 검증. 단, 유효한 테스트 유저(demoUserId)면 세션 없이 통과(데모 UX 읽기).
+    let demoBypass: string | null = null;
+    try {
+      demoBypass = await resolveDemoProfileUserIdFromRequest(request);
+    } catch (e) {
+      if (e instanceof DemoModeError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
+    if (!session?.user?.email && !demoBypass) {
       return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
     }
 
@@ -194,11 +201,12 @@ export async function GET(request: Request) {
 // POST: 연계 동료 저장(전체 덮어쓰기)
 export async function POST(request: Request) {
   try {
-    const adminTargetUserId = extractTargetUserId(request);
-    const gate = await requireOwnerOrAdmin(adminTargetUserId);
-    if (!gate.ok) return gate.response;
+    // 테스트 유저(데모) 모드: 유효한 demoUserId 면 작성자(writer)를 그 테스트 유저로 고정(세션 없이).
+    // 데모 off/미전달 → 기존 owner/admin 세션 게이트. 미등재 user_id → 403.
+    const actor = await resolveWriteActor(request);
+    if (!actor.ok) return actor.response;
 
-    const writerUserId = gate.context.targetUserId;
+    const writerUserId = actor.userId;
     const supabase = createAdminClient();
 
     const body = await request.json();
@@ -248,10 +256,14 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!gate.context.isAdmin) {
+    // 데모(테스트 유저) 모드에서는 actor.isAdmin=false 이므로 일반 고객과 동일하게 강제된다.
+    if (!actor.isAdmin) {
+      // 주간 동료는 (user_id, resource_key, week_id) 단위로 권한이 분리되므로 대상
+      // weekCardId 를 함께 넘긴다 (프론트 permission API 와 동일 기준, multi-row 방지).
       const open = await hasOpenEditWindow({
         userId: writerUserId,
         resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.weeklyColleagues,
+        weekId: weekCardId,
       });
       if (!open) {
         return NextResponse.json(

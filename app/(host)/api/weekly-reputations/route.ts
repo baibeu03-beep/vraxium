@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase-server";
 import { getCachedTeams, getCachedParts } from "@/lib/cached-data";
 import { getUserProfile } from "@/lib/get-user-profile";
 import { extractTargetUserId, isAdminEmail } from "@/lib/admin";
+import { DemoModeError, resolveDemoProfileUserIdFromRequest } from "@/lib/demoMode";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { hasOpenEditWindow } from "@/lib/editWindow";
@@ -36,9 +37,16 @@ export async function GET(request: Request) {
       }
     }
 
-    // 로그인만 검증 — peer-view 허용. owner/admin 차단 제거.
+    // 로그인만 검증 — peer-view 허용. 단, 유효한 테스트 유저(demoUserId)면 세션 없이 통과.
+    let demoBypass: string | null = null;
+    try {
+      demoBypass = await resolveDemoProfileUserIdFromRequest(request);
+    } catch (e) {
+      if (e instanceof DemoModeError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
+    if (!session?.user?.email && !demoBypass) {
       return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
     }
 
@@ -183,16 +191,33 @@ export async function GET(request: Request) {
 // POST: 주차 평판 작성 (다른 사람에게 평판 남기기)
 export async function POST(request: Request) {
   try {
-    const adminTargetUserId = extractTargetUserId(request);
-    const { profile: reviewerProfile, error } = await getUserProfile<{ user_id: string }>("user_id", adminTargetUserId);
+    const body = await request.json();
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+    // 테스트 유저(데모) 모드: 유효한 demoUserId 면 reviewer(작성자)를 그 테스트 유저로 고정.
+    // 데모 off/미전달 → null → admin targetUserId 폴백. 미등재 user_id → 403.
+    let demoUserId: string | null = null;
+    try {
+      demoUserId = await resolveDemoProfileUserIdFromRequest(request, body);
+    } catch (e) {
+      if (e instanceof DemoModeError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
+    const isDemo = demoUserId !== null;
+
+    let reviewerProfile: { user_id: string };
+    if (isDemo) {
+      reviewerProfile = { user_id: demoUserId! };
+    } else {
+      const adminTargetUserId = extractTargetUserId(request);
+      const { profile, error } = await getUserProfile<{ user_id: string }>("user_id", adminTargetUserId);
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: error.status });
+      }
+      reviewerProfile = profile;
     }
 
     const supabase = createAdminClient();
 
-    const body = await request.json();
     const { targetUserId, weekCardId, rating, content, keyword } = body;
 
     if (!targetUserId || !weekCardId) {
@@ -244,11 +269,14 @@ export async function POST(request: Request) {
     // 정책: window 는 작성자(reviewer = session user) 기준으로 검사 — target 기준 아님.
     const postSession = await getServerSession(authOptions);
     const isPostAdmin =
-      !!postSession?.user?.email && isAdminEmail(postSession.user.email);
+      !isDemo && !!postSession?.user?.email && isAdminEmail(postSession.user.email);
     if (!isPostAdmin) {
+      // 주간 평판은 (user_id, resource_key, week_id) 단위로 권한이 분리되므로 대상
+      // weekCardId 를 함께 넘긴다 (프론트 permission API 와 동일 기준, multi-row 방지).
       const hasOpenWindow = await hasOpenEditWindow({
         userId: reviewerProfile.user_id,
         resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.weeklyReputation,
+        weekId: weekCardId,
       });
       if (!hasOpenWindow) {
         return NextResponse.json(
@@ -348,20 +376,34 @@ export async function POST(request: Request) {
 // DELETE: 주차 평판 삭제 (본인이 작성한 것만, 어드민은 모두 삭제 가능)
 export async function DELETE(request: Request) {
   try {
+    let demoUserId: string | null = null;
+    try {
+      demoUserId = await resolveDemoProfileUserIdFromRequest(request);
+    } catch (e) {
+      if (e instanceof DemoModeError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
+    const isDemo = demoUserId !== null;
+
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
+    if (!session?.user?.email && !isDemo) {
       return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
     }
 
-    const isAdmin = isAdminEmail(session.user.email);
+    const isAdmin = !isDemo && isAdminEmail(session?.user?.email);
 
+    let reviewerProfileId: string | undefined;
     if (!isAdmin) {
-      const adminTargetUserId = extractTargetUserId(request);
-      const { profile, error } = await getUserProfile<{ user_id: string }>("user_id", adminTargetUserId);
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: error.status });
+      if (isDemo) {
+        reviewerProfileId = demoUserId!;
+      } else {
+        const adminTargetUserId = extractTargetUserId(request);
+        const { profile, error } = await getUserProfile<{ user_id: string }>("user_id", adminTargetUserId);
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: error.status });
+        }
+        reviewerProfileId = profile.user_id;
       }
-      var reviewerProfileId = profile.user_id;
     }
 
     const supabase = createAdminClient();
@@ -412,8 +454,17 @@ export async function DELETE(request: Request) {
 // PUT: 주차 평판 수정 (어드민은 모두, 일반 유저는 본인 작성분만)
 export async function PUT(request: Request) {
   try {
+    let demoUserId: string | null = null;
+    try {
+      demoUserId = await resolveDemoProfileUserIdFromRequest(request);
+    } catch (e) {
+      if (e instanceof DemoModeError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
+    const isDemo = demoUserId !== null;
+
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
+    if (!session?.user?.email && !isDemo) {
       return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
     }
 
@@ -425,34 +476,42 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "평판 ID가 필요합니다." }, { status: 400 });
     }
 
-    const isAdmin = isAdminEmail(session.user.email);
+    const isAdmin = !isDemo && isAdminEmail(session?.user?.email);
 
     // 일반 유저는 본인이 작성한 평판인지 확인 + 작성 기간 게이트
     if (!isAdmin) {
-      const adminTargetUserId = extractTargetUserId(request);
-      const { profile, error: profileError } = await getUserProfile<{ user_id: string }>("user_id", adminTargetUserId);
-      if (profileError) {
-        return NextResponse.json({ error: profileError.message }, { status: profileError.status });
+      let reviewerUserId: string;
+      if (isDemo) {
+        reviewerUserId = demoUserId!;
+      } else {
+        const adminTargetUserId = extractTargetUserId(request);
+        const { profile, error: profileError } = await getUserProfile<{ user_id: string }>("user_id", adminTargetUserId);
+        if (profileError) {
+          return NextResponse.json({ error: profileError.message }, { status: profileError.status });
+        }
+        reviewerUserId = profile.user_id;
       }
 
       const { data: existing } = await supabase
         .from("weekly_reputations")
-        .select("reviewer_id")
+        .select("reviewer_id, week_card_id")
         .eq("id", id)
         .maybeSingle();
 
       if (!existing) {
         return NextResponse.json({ error: "평판을 찾을 수 없습니다." }, { status: 404 });
       }
-      if (existing.reviewer_id !== profile.user_id) {
+      if (existing.reviewer_id !== reviewerUserId) {
         return NextResponse.json({ error: "본인이 작성한 평판만 수정할 수 있습니다." }, { status: 403 });
       }
 
       // 작성 기간 게이트 (PUT 도 동일 키로 enforce — admin 우회는 위 isAdmin 분기로 처리됨).
-      // 정책: reviewer(=session user) 기준 window.
+      // 정책: reviewer(=session user) 기준 window. 주간 단위 권한이므로 대상 평판의
+      // week_card_id 를 함께 넘긴다 (프론트 permission API 와 동일 기준, multi-row 방지).
       const hasOpenWindow = await hasOpenEditWindow({
-        userId: profile.user_id,
+        userId: reviewerUserId,
         resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.weeklyReputation,
+        weekId: existing.week_card_id,
       });
       if (!hasOpenWindow) {
         return NextResponse.json(

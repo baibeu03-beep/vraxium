@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { isAdminEmail } from "@/lib/admin";
+import { isAdminEmail, extractTargetUserId } from "@/lib/admin";
 import { getUserProfile } from "@/lib/get-user-profile";
+import { DemoModeError, resolveDemoProfileUserIdFromRequest } from "@/lib/demoMode";
 
 // owner/admin 권한 게이트 — Cluster4 등 user-facing API에서 재사용.
 // `getUserProfile()` + `isAdminEmail()` 위에 얇은 래퍼를 둬서, 라우트마다
@@ -39,6 +40,77 @@ export type OwnerOrAdminResult =
  *     - 403: 본인도 admin도 아닌데 타인 데이터에 접근
  *     - 500: 서버 설정 오류 (Supabase admin client 등)
  */
+// =============================================================
+// 쓰기(POST/PUT/PATCH/DELETE) 핸들러용 — 테스트 유저(데모) 모드 세션 우회 포함.
+//
+// 정책:
+//   - demoUserId 가 유효(= ENABLE_DEMO_MODE 또는 NODE_ENV!==production AND
+//     test_user_markers 등재)하면 고객 앱 "세션 없이" 그 테스트 유저를 acting user 로 사용.
+//   - demoUserId 미등재 → 403 (resolveDemoProfileUserId 가 throw).
+//   - demoUserId 없음/데모 off → 기존 세션 게이트(requireOwnerOrAdmin / getUserProfile) 그대로 → 세션 필수.
+// 데모 모드는 "관리자 편집"이 아니라 "테스트 유저 UX 검증"이므로 isAdmin=false 로 내려
+// 작성기간(edit window) 우회가 일어나지 않게 한다(운영진 lock 도 admin 권한 미부여).
+// =============================================================
+
+export type WriteActorResult =
+  | { ok: true; userId: string; isDemo: boolean; isAdmin: boolean }
+  | { ok: false; response: NextResponse };
+
+// requireOwnerOrAdmin 의 데모 인지 버전. 데모면 세션 없이 demoUserId 반환, 아니면 동일 게이트.
+export async function resolveWriteActor(
+  request: Request,
+  body?: unknown,
+): Promise<WriteActorResult> {
+  let demoUserId: string | null = null;
+  try {
+    demoUserId = await resolveDemoProfileUserIdFromRequest(request, body);
+  } catch (e) {
+    if (e instanceof DemoModeError) {
+      return { ok: false, response: NextResponse.json({ error: e.message }, { status: e.status }) };
+    }
+    throw e;
+  }
+  if (demoUserId) {
+    return { ok: true, userId: demoUserId, isDemo: true, isAdmin: false };
+  }
+  const gate = await requireOwnerOrAdmin(extractTargetUserId(request));
+  if (!gate.ok) return { ok: false, response: gate.response };
+  return { ok: true, userId: gate.context.targetUserId, isDemo: false, isAdmin: gate.context.isAdmin };
+}
+
+export type WriteUserResult =
+  | { ok: true; userId: string; isDemo: boolean }
+  | { ok: false; status: number; message: string };
+
+// getUserProfile("user_id"/"id", targetUserId) 패턴의 데모 인지 버전.
+// 데모면 세션 없이 demoUserId, 아니면 기존 getUserProfile(session/admin-target). 비-데모 동작 불변.
+// 반환 status/message 는 호출 라우트가 자신의 error shape(errorPayload 등)로 감싸 응답한다.
+export async function resolveWriteUserId(
+  request: Request,
+  body?: unknown,
+): Promise<WriteUserResult> {
+  let demoUserId: string | null = null;
+  try {
+    demoUserId = await resolveDemoProfileUserIdFromRequest(request, body);
+  } catch (e) {
+    if (e instanceof DemoModeError) {
+      return { ok: false, status: e.status, message: e.message };
+    }
+    throw e;
+  }
+  if (demoUserId) {
+    return { ok: true, userId: demoUserId, isDemo: true };
+  }
+  const { profile, error } = await getUserProfile<{ user_id: string }>(
+    "user_id",
+    extractTargetUserId(request),
+  );
+  if (error) {
+    return { ok: false, status: error.status, message: error.message };
+  }
+  return { ok: true, userId: profile.user_id, isDemo: false };
+}
+
 export async function requireOwnerOrAdmin(
   targetUserId: string | null | undefined,
 ): Promise<OwnerOrAdminResult> {

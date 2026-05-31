@@ -74,6 +74,13 @@ export interface Cluster4WeeklyLineDto {
   competencyLineMasterId?: string | null;
   // 실무 경험 — experience master id 또는 lineCode 로 매칭
   experienceLineMasterId?: string | null;
+  // ── 실무 경험 고정 슬롯(1~5) 매핑 (백엔드 SoT — 프론트 추론/재계산 금지) ──
+  // SoT: cluster4_experience_line_masters.experience_category / experience_slot_order.
+  // 미리보기·모달이 배열 순서가 아니라 슬롯 기준으로 카드를 1~5 위치에 고정 배치하기 위한 키.
+  // experienceCategory: "derivation"(도출) | "analysis"(분석) | "evaluation"(평가) | "extension"(확장) | "management"(관리)
+  experienceCategory?: string | null;
+  // experienceSlotOrder: 1~5 고정 슬롯 순서. category 와 1:1 대응(1=도출…5=관리). 우선 사용.
+  experienceSlotOrder?: number | null;
   // 실무 경력 — career project id 또는 projectCode 로 매칭
   careerProjectId?: string | null;
   // competency / experience 공통 코드
@@ -81,10 +88,14 @@ export interface Cluster4WeeklyLineDto {
   // career 프로젝트 코드
   projectCode?: string | null;
   // ── 라인 평점 (실무 경험 전용) ──
-  // Work Exp 라인 자체 평점 (0~10 정수, NULL=미입력). SoT: user_activity_details.rating.
-  // 강화율(rate/numerator/denominator)과 무관 — 별개 개념.
-  // weekly-cards proxy 가 user_activity_details.rating 을 (user_id, week_id, activity_type_id)
-  // 기준으로 join 해 experience line 에만 주입한다. 다른 허브는 null/미설정.
+  // Work Exp 라인 자체 평점 (0~10 정수, NULL=미입력). 강화율(rate/numerator/denominator)과 무관 — 별개 개념.
+  //
+  // [신규 SoT] experienceRating — SoT: cluster4_experience_line_evaluations.rating.
+  // 백엔드 DTO 가 weekly-cards lines[].experienceRating / detail API 로 직접 내려준다.
+  // 프론트는 이 값을 그대로 표시만 한다(재계산 금지). number → "n / 10", null/undefined → "- / 10".
+  experienceRating?: number | null;
+  // [legacy] lineRating — SoT: user_activity_details.rating. weekly-cards proxy 가 주입.
+  // experienceRating 도입 이후 표시에는 사용하지 않음(append-only 보존). 신규 코드는 experienceRating 사용.
   lineRating?: number | null;
   // ── 표시 데이터 단일 출처 (legacy/dummy 대체) ──
   // 라인 제목 (matchedLine 존재 시 제목 표시 우선 출처)
@@ -104,6 +115,28 @@ export interface Cluster4WeeklyLineDto {
   // index < adminOutputImageCount → 관리자 이미지 슬롯 (read-only, preview only)
   adminOutputLinkCount?: number | null;
   adminOutputImageCount?: number | null;
+  // ── 크루원(사용자) 제출값 단일 출처 (백엔드 SoT) ──
+  // ⚠️ top-level outputLinks/outputImages(어드민 개설값)와 별개 — 혼동 금지.
+  // 실무 역량(competency) 카드/모달의 Sub Title·Growth Point·Output Link·Output Image 사용자
+  // 제출값은 이 submission.* 만 출처로 사용한다(프론트는 user_activity_details 를 보지 않는다).
+  // legacy 별칭 infoSubtitle/infoGrowthPoint 는 information 전용 운영자 필드 — competency 에서 읽지 말 것.
+  submission?: Cluster4WeeklyLineSubmissionDto | null;
+  [key: string]: unknown;
+}
+
+// 크루원(사용자) 제출값 DTO — weekly-cards lines[].submission.
+// 미제출 라인은 submission = null. 프론트는 값이 없으면 "-"/빈 상태로 fallback 표시.
+export interface Cluster4WeeklyLineSubmissionDto {
+  // Sub Title (사용자 제출)
+  subtitle?: string | null;
+  // Growth Point (사용자 제출)
+  growthPoint?: string | null;
+  // 사용자 제출 Output Link 배열(어드민 슬롯 제외, 사용자분만).
+  outputLinks?: Cluster4LineOutputLinkDto[] | null;
+  // 사용자 제출 Output Image URL 배열.
+  outputImages?: Array<string | null> | null;
+  // outputImages 와 1:1 정렬되는 캡션 배열.
+  outputImageCaptions?: Array<string | null> | null;
   [key: string]: unknown;
 }
 

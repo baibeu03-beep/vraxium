@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
 import { extractTargetUserId, isAdminEmail } from "@/lib/admin";
+import { DemoModeError, resolveDemoProfileUserIdFromRequest } from "@/lib/demoMode";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 // requireOwnerOrAdmin 은 더 이상 사용하지 않음 — Season Reputation 은 peer-review 이므로
@@ -32,9 +33,16 @@ export async function GET(request: Request) {
       );
     }
 
-    // 최소 게이트 — 로그인만 확인. owner/admin 차단 제거 (peer-review 가시화).
+    // 최소 게이트 — 로그인만 확인. 단, 유효한 테스트 유저(demoUserId)면 세션 없이 통과(데모 UX 읽기).
+    let demoBypass: string | null = null;
+    try {
+      demoBypass = await resolveDemoProfileUserIdFromRequest(request);
+    } catch (e) {
+      if (e instanceof DemoModeError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
+    if (!session?.user?.email && !demoBypass) {
       return NextResponse.json(
         { error: "로그인이 필요합니다.", route: "GET /api/season-reputations" },
         { status: 401 }
@@ -186,18 +194,35 @@ export async function GET(request: Request) {
 // POST: 시즌 평판 작성 (다른 사람에게 평판 남기기)
 export async function POST(request: Request) {
   try {
-    const adminTargetUserId = extractTargetUserId(request);
-    const { profile: reviewerProfile, error } = await getUserProfile<{ user_id: string }>("user_id", adminTargetUserId);
+    const body = await request.json();
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+    // 테스트 유저(데모) 모드: 유효한 demoUserId 면 reviewer(작성자)를 그 테스트 유저로 고정.
+    // 데모 off/미전달 → null → admin targetUserId 폴백. 미등재 user_id → 403.
+    let demoUserId: string | null = null;
+    try {
+      demoUserId = await resolveDemoProfileUserIdFromRequest(request, body);
+    } catch (e) {
+      if (e instanceof DemoModeError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
+    const isDemo = demoUserId !== null;
+
+    let reviewerProfile: { user_id: string };
+    if (isDemo) {
+      reviewerProfile = { user_id: demoUserId! };
+    } else {
+      const adminTargetUserId = extractTargetUserId(request);
+      const { profile, error } = await getUserProfile<{ user_id: string }>("user_id", adminTargetUserId);
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: error.status });
+      }
+      reviewerProfile = profile;
     }
 
     if (!supabaseAdmin) {
       return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
     }
 
-    const body = await request.json();
     const { targetUserId, seasonHistoryId, rating, content, keyword1, keyword2, keyword3 } = body;
 
     if (!targetUserId || !seasonHistoryId) {
@@ -264,7 +289,7 @@ export async function POST(request: Request) {
     // 정책: window 는 작성자(reviewer = session user) 기준으로 검사. target user_id 기준 아님.
     const postSession = await getServerSession(authOptions);
     const isPostAdmin =
-      !!postSession?.user?.email && isAdminEmail(postSession.user.email);
+      !isDemo && !!postSession?.user?.email && isAdminEmail(postSession.user.email);
     if (!isPostAdmin) {
       // [임시 진단 로깅 — 403 원인 추적용. 원인 확정 후 hasOpenEditWindow 단일 호출로 복귀]
       // maybeSingle() 대신 list 쿼리로 중복 row 케이스도 진단 가능하게 처리.
@@ -410,21 +435,34 @@ export async function POST(request: Request) {
 // DELETE: 시즌 평판 삭제 (본인이 작성한 것만, 어드민은 모두 삭제 가능)
 export async function DELETE(request: Request) {
   try {
+    let demoUserId: string | null = null;
+    try {
+      demoUserId = await resolveDemoProfileUserIdFromRequest(request);
+    } catch (e) {
+      if (e instanceof DemoModeError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
+    const isDemo = demoUserId !== null;
+
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
+    if (!session?.user?.email && !isDemo) {
       return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
     }
 
-    const isAdmin = isAdminEmail(session.user.email);
+    const isAdmin = !isDemo && isAdminEmail(session?.user?.email);
 
+    let reviewerProfileId: string | undefined;
     if (!isAdmin) {
-      const targetUserId = extractTargetUserId(request);
-      const { profile, error } = await getUserProfile<{ user_id: string }>("user_id", targetUserId);
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: error.status });
+      if (isDemo) {
+        reviewerProfileId = demoUserId!;
+      } else {
+        const targetUserId = extractTargetUserId(request);
+        const { profile, error } = await getUserProfile<{ user_id: string }>("user_id", targetUserId);
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: error.status });
+        }
+        reviewerProfileId = profile.user_id;
       }
-      // profile.user_id를 아래에서 사용
-      var reviewerProfileId = profile.user_id;
     }
 
     if (!supabaseAdmin) {
@@ -477,8 +515,17 @@ export async function DELETE(request: Request) {
 // PUT: 시즌 평판 수정 (어드민은 모두, 일반 유저는 본인 작성분만)
 export async function PUT(request: Request) {
   try {
+    let demoUserId: string | null = null;
+    try {
+      demoUserId = await resolveDemoProfileUserIdFromRequest(request);
+    } catch (e) {
+      if (e instanceof DemoModeError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
+    const isDemo = demoUserId !== null;
+
     const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
+    if (!session?.user?.email && !isDemo) {
       return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
     }
 
@@ -493,14 +540,20 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "평판 ID가 필요합니다." }, { status: 400 });
     }
 
-    const isAdmin = isAdminEmail(session.user.email);
+    const isAdmin = !isDemo && isAdminEmail(session?.user?.email);
 
     // 일반 유저는 본인이 작성한 평판인지 확인 + 작성 기간 게이트
     if (!isAdmin) {
-      const adminTargetUserId = extractTargetUserId(request);
-      const { profile, error: profileError } = await getUserProfile<{ user_id: string }>("user_id", adminTargetUserId);
-      if (profileError) {
-        return NextResponse.json({ error: profileError.message }, { status: profileError.status });
+      let reviewerUserId: string;
+      if (isDemo) {
+        reviewerUserId = demoUserId!;
+      } else {
+        const adminTargetUserId = extractTargetUserId(request);
+        const { profile, error: profileError } = await getUserProfile<{ user_id: string }>("user_id", adminTargetUserId);
+        if (profileError) {
+          return NextResponse.json({ error: profileError.message }, { status: profileError.status });
+        }
+        reviewerUserId = profile.user_id;
       }
 
       const { data: existing } = await supabaseAdmin
@@ -512,7 +565,7 @@ export async function PUT(request: Request) {
       if (!existing) {
         return NextResponse.json({ error: "평판을 찾을 수 없습니다." }, { status: 404 });
       }
-      if (existing.reviewer_id !== profile.user_id) {
+      if (existing.reviewer_id !== reviewerUserId) {
         return NextResponse.json({ error: "본인이 작성한 평판만 수정할 수 있습니다." }, { status: 403 });
       }
 
@@ -523,7 +576,7 @@ export async function PUT(request: Request) {
       const { data: matchedRows, error: windowError } = await supabaseAdmin
         .from("user_edit_windows")
         .select("id, user_id, resource_key, opened_at, expires_at, created_at, updated_at")
-        .eq("user_id", profile.user_id)
+        .eq("user_id", reviewerUserId)
         .eq("resource_key", resourceKey)
         .order("opened_at", { ascending: false });
 
@@ -540,7 +593,7 @@ export async function PUT(request: Request) {
       const snapshot = {
         sessionUserId: session?.user?.id ?? null,
         sessionEmail: session?.user?.email ?? null,
-        reviewerId: profile.user_id,
+        reviewerId: reviewerUserId,
         targetUserId: null, // PUT 은 body 에 targetUserId 없음 (id 기준 수정)
         reputationId: id,
         resourceKey,

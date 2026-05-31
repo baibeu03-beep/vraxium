@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-server";
-import { getUserProfile } from "@/lib/get-user-profile";
-import { extractTargetUserId, isAdminEmail } from "@/lib/admin";
+import { isAdminEmail } from "@/lib/admin";
+import { resolveWriteUserId } from "@/lib/api-auth";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { hasOpenEditWindow } from "@/lib/editWindow";
@@ -52,18 +52,12 @@ export async function PUT(
       );
     }
 
-    const adminTargetUserId = extractTargetUserId(request);
-    const { profile, error: profileError } = await getUserProfile(
-      "id",
-      adminTargetUserId
-    );
-
-    if (profileError) {
-      return NextResponse.json(
-        { error: profileError.message },
-        { status: profileError.status }
-      );
+    // 테스트 유저(데모) 모드: 유효한 demoUserId 면 대상 작성자를 그 테스트 유저로 고정(세션 없이).
+    const actor = await resolveWriteUserId(request);
+    if (!actor.ok) {
+      return NextResponse.json({ error: actor.message }, { status: actor.status });
     }
+    const isDemo = actor.isDemo;
 
     const body = await request.json();
     const { rating, content } = body ?? {};
@@ -96,13 +90,13 @@ export async function PUT(
 
     const supabase = createAdminClient();
 
-    // 본인 작성 여부 확인 (어드민은 우회)
+    // 본인 작성 여부 확인 (어드민은 우회). 단, 데모 모드면 admin 우회 없이 테스트 유저 기준으로 검증.
     const session = await getServerSession(authOptions);
-    const isAdmin = isAdminEmail(session?.user?.email);
+    const isAdmin = isAdminEmail(session?.user?.email) && !isDemo;
 
     const { data: existing, error: existingError } = await supabase
       .from("weekly_reviews")
-      .select("id, user_id")
+      .select("id, user_id, week_card_id")
       .eq("id", reviewId)
       .maybeSingle();
 
@@ -121,7 +115,7 @@ export async function PUT(
       );
     }
 
-    if (!isAdmin && existing.user_id !== profile.id) {
+    if (!isAdmin && existing.user_id !== actor.userId) {
       return NextResponse.json(
         { error: "본인의 리뷰만 수정할 수 있습니다." },
         { status: 403 }
@@ -129,10 +123,13 @@ export async function PUT(
     }
 
     // 작성 기간 게이트 — admin 우회. owner 는 user_edit_windows row 가 열려 있어야 함.
+    // 주간 회고는 (user_id, resource_key, week_id) 단위로 권한이 분리되므로 반드시
+    // 이 리뷰가 속한 week_card_id 를 함께 넘긴다 (프론트 permission API 와 동일 기준).
     if (!isAdmin) {
       const open = await hasOpenEditWindow({
         userId: existing.user_id,
         resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.weeklyReviews,
+        weekId: existing.week_card_id,
       });
       if (!open) {
         return NextResponse.json(
@@ -192,14 +189,15 @@ export async function DELETE(
       );
     }
 
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { error: "로그인이 필요합니다." },
-        { status: 401 }
-      );
+    // 테스트 유저(데모) 모드: 세션 없이 테스트 유저 기준으로 삭제 대상/작성기간 검증.
+    // 비-데모: resolveWriteUserId 내부 getUserProfile 가 세션을 요구한다(로그인 필수).
+    const actor = await resolveWriteUserId(request);
+    if (!actor.ok) {
+      return NextResponse.json({ error: actor.message }, { status: actor.status });
     }
-    const isAdmin = isAdminEmail(session.user.email);
+    const isDemo = actor.isDemo;
+    const session = await getServerSession(authOptions);
+    const isAdmin = isAdminEmail(session?.user?.email) && !isDemo;
 
     const supabase = createAdminClient();
 
@@ -209,23 +207,37 @@ export async function DELETE(
       .eq("id", reviewId);
 
     if (!isAdmin) {
-      const adminTargetUserId = extractTargetUserId(request);
-      const { profile, error: profileError } = await getUserProfile(
-        "id",
-        adminTargetUserId
-      );
-      if (profileError) {
+      deleteQuery = deleteQuery.eq("user_id", actor.userId);
+
+      // 게이트는 (user_id, resource_key, week_id) 단위이므로 이 리뷰의 week_card_id 를
+      // 먼저 조회해 함께 넘긴다 (week_id 없이 호출하면 maybeSingle multi-row 로 깨짐).
+      const { data: target, error: targetError } = await supabase
+        .from("weekly_reviews")
+        .select("week_card_id")
+        .eq("id", reviewId)
+        .eq("user_id", actor.userId)
+        .maybeSingle();
+
+      if (targetError) {
+        console.error("[weekly-reviews] 삭제 조회 오류:", targetError);
         return NextResponse.json(
-          { error: profileError.message },
-          { status: profileError.status }
+          { error: "리뷰 정보를 확인할 수 없습니다." },
+          { status: 500 }
         );
       }
-      deleteQuery = deleteQuery.eq("user_id", profile.id);
+
+      if (!target) {
+        return NextResponse.json(
+          { error: "해당 리뷰를 찾을 수 없습니다." },
+          { status: 404 }
+        );
+      }
 
       // 작성 기간 게이트 — owner 가 직접 삭제하려면 user_edit_windows 가 열려 있어야 함.
       const open = await hasOpenEditWindow({
-        userId: profile.id,
+        userId: actor.userId,
         resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.weeklyReviews,
+        weekId: target.week_card_id,
       });
       if (!open) {
         return NextResponse.json(

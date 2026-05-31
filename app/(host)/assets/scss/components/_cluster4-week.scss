@@ -14858,7 +14858,9 @@
 
 .output-link-edit-modal {
   background: #1e1e1e;
-  border: 1px solid rgba(255, 165, 0, 0.35);
+  // 조직 테마: portal root(.output-link-edit-overlay)에 부착된 theme class가
+  // --org-accent 를 정의 → marketing 은 미정의이므로 fallback(#faab07) 유지.
+  border: 1px solid color-mix(in srgb, var(--org-accent, #faab07) 35%, transparent);
   border-radius: 12px;
   padding: 24px 28px;
   width: 420px;
@@ -14868,7 +14870,7 @@
   .output-link-edit-title {
     font-size: 19px;
     font-weight: 600;
-    color: #faab07;
+    color: var(--org-accent, #faab07);
     margin: 0 0 20px 0;
     display: flex;
     align-items: center;
@@ -14904,7 +14906,7 @@
 
       &:focus {
         outline: none;
-        border-color: #faab07;
+        border-color: var(--org-accent, #faab07);
       }
 
       &::placeholder {
@@ -14958,14 +14960,14 @@
     }
 
     .btn-save {
-      background: #faab07;
-      border: 1px solid #faab07;
+      background: var(--org-accent, #faab07);
+      border: 1px solid var(--org-accent, #faab07);
       color: #1a1a1a;
       font-weight: 600;
 
       &:hover {
-        background: #e09e06;
-        border-color: #e09e06;
+        background: color-mix(in srgb, var(--org-accent, #faab07) 88%, #000);
+        border-color: color-mix(in srgb, var(--org-accent, #faab07) 88%, #000);
       }
     }
   }

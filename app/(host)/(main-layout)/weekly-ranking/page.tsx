@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import Animations from "@/components/shared/Animations";
 import Breadcrumb from "@/components/shared/Breadcrumb";
+import { getOrgConfigForSlug } from "@/lib/cluster-route";
 
 const WeeklyRankingContent = dynamic(
   () => import("@/components/weekly-ranking/WeeklyRankingContent"),
@@ -14,10 +15,11 @@ const WeeklyRankingContent = dynamic(
 const KNOWN_ORGS = ["phalanx", "encre", "oranke"] as const;
 type OrgSlug = typeof KNOWN_ORGS[number];
 
+// 조직 한글 표시명은 ORGANIZATION_CONFIG(단일 정의소)에서 가져온다.
 const ORG_LABEL: Record<OrgSlug, string> = {
-  phalanx: "팔랑크스",
-  encre: "엥크레",
-  oranke: "오랑캐",
+  phalanx: getOrgConfigForSlug("phalanx").displayNameKo,
+  encre: getOrgConfigForSlug("encre").displayNameKo,
+  oranke: getOrgConfigForSlug("oranke").displayNameKo,
 };
 
 const isOrgSlug = (value: string | null | undefined): value is OrgSlug =>

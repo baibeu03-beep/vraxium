@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
-import { extractTargetUserId } from "@/lib/admin";
+import { resolveWriteUserId } from "@/lib/api-auth";
 import { normalizeSchool, normalizeMajor } from "@/lib/schoolNormalize";
 
 export const dynamic = "force-dynamic";
@@ -346,16 +346,11 @@ export async function GET(request: Request) {
 // ─────────────────────────────────────────────────────────────────────
 export async function PUT(request: Request) {
   try {
-    const targetUserId = extractTargetUserId(request);
-    const { profile, error } = await getUserProfile<{ user_id: string }>(
-      "user_id",
-      targetUserId,
-    );
-
-    if (error) {
+    const actor = await resolveWriteUserId(request);
+    if (!actor.ok) {
       return NextResponse.json(
-        errorPayload("session_profile", error.message),
-        { status: error.status },
+        errorPayload("session_profile", actor.message),
+        { status: actor.status },
       );
     }
 
@@ -386,7 +381,7 @@ export async function PUT(request: Request) {
       );
     }
 
-    const userId = profile.user_id;
+    const userId = actor.userId;
     const nowIso = new Date().toISOString();
 
     // 1) user 의 모든 user_educations row 삭제

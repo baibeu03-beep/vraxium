@@ -16,7 +16,7 @@ import { useModalScroll } from "@/utils/useModalScroll";
 import { usePopup } from "@/components/ui/popup";
 import { logEvent } from "@/utils/blackScreenDiagnostics";
 import koreaRegionsData from "@/data/korea-regions.json";
-import { isPxRoute, isEcRoute, getThemeClass, withPxRoute } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, getThemeClass, withPxRoute, ORGANIZATION_CONFIG, type Organization } from "@/lib/cluster-route";
 
 const koreaRegions: { [key: string]: string[] } = koreaRegionsData;
 const DEFAULT_PHONE_COMMENT = "평일 오전 10시 ~ 오후 20시 사이에 언제든지 연락가능합니다. 주말은 문자나 텍스트로만 부탁드려요! 😊";
@@ -229,7 +229,17 @@ const Sidebar = () => {
     return "";
   }, [pathname, searchParams]);
   const router = useRouter();
-  const targetUserId = searchParams.get("userId") || searchParams.get("userID");
+  // 테스트 유저(데모) 모드: admin → 고객 앱 이동 시 ?demoUserId={userId} 만 붙고
+  // userId/userID 는 비어 있다(진입: /admin/test-users → /cluster-4?admin=true&demoUserId={id}).
+  // resume-card(이력서/Identity-Core)도 Cluster41Content / Cluster4CardContent 와 동일하게
+  // 표시 대상 = admin-view(userId) → 없으면 테스트 유저(demoUserId) 로 resolve 한다.
+  // 이 fallback 이 없으면 targetUserId=null 로 떨어져 로그인 세션(보통 관리자) 프로필/기본값을
+  // 보게 되어 테스트 유저 이력서 영역이 전부 void 로 표시된다.
+  // Sidebar 는 cluster-4 / cluster-4-ec / cluster-4-px 등 모든 cluster route 의 공용 컴포넌트라
+  // 본 한 줄로 세 라우트가 동일하게 demoUserId 를 처리한다(일반 로그인 사용자는 demoUserId 부재 → 기존 동작).
+  const demoUserId = searchParams.get("demoUserId");
+  const targetUserId =
+    searchParams.get("userId") || searchParams.get("userID") || demoUserId;
   const sessionUserId = session?.user?.id ?? null;
   const shouldFetchProfile = !!targetUserId || sessionStatus === "authenticated";
   const hasFetchIdentity = !!targetUserId || !!sessionUserId;
@@ -255,6 +265,21 @@ const Sidebar = () => {
   const [practicalCompetency, setPracticalCompetency] = useState<number>(0); // 실무 역량 성장
   const [practicalExperience, setPracticalExperience] = useState<number>(0); // 실무 경험 축적
   const [practicalInfo, setPracticalInfo] = useState<number>(0); // 실무 정보 습득
+  // 실무 정보 습득(실무정보 라인 강화 성공 누적 횟수) 전용 SoT.
+  // /api/profile 의 practicalCounts.info 를 가공 없이 그대로 보관 — 어드민 표기상
+  // practicalStats.infoCount 와 동일 값. resume-card skill-num 표시에 사용한다.
+  // number 면 그대로(0 포함) 표시, API 미제공(null·undefined) 이면 "-".
+  const [practicalInfoCount, setPracticalInfoCount] = useState<number | null>(null);
+  // 실무 경험 축적(실무경험 라인 강화 성공 누적 횟수) 전용 SoT — info 와 동일 패턴.
+  // /api/profile 의 practicalCounts.experience 를 가공 없이 그대로 보관 — 어드민 표기상
+  // practicalStats.experienceCount 와 동일 값. resume-card skill-num 표시에 사용한다.
+  // number 면 그대로(0 포함) 표시, API 미제공(null·undefined) 이면 "-".
+  const [practicalExperienceCount, setPracticalExperienceCount] = useState<number | null>(null);
+  // 실무 역량 성장(실무역량 라인 강화 성공 누적 횟수) 전용 SoT — info/experience 와 동일 패턴.
+  // /api/profile 의 practicalCounts.competency 를 가공 없이 그대로 보관 — 어드민 표기상
+  // practicalStats.abilityUnitCount 와 동일 값. resume-card skill-num 표시에 사용한다.
+  // number 면 그대로(0 포함) 표시, API 미제공(null·undefined) 이면 "-".
+  const [practicalCompetencyCount, setPracticalCompetencyCount] = useState<number | null>(null);
   const [practicalCareer, setPracticalCareer] = useState<number>(0); // 실무 경력 누적
   const [hasActivityData, setHasActivityData] = useState<boolean>(false);
   const [stat1, setStat1] = useState(0);
@@ -317,6 +342,85 @@ const Sidebar = () => {
     admin_ambassador: "운영진(앰배서더)",
     crew_ambassador: "운영진(앰배서더)",
     operations_ambassador: "운영진(앰배서더)",
+  };
+
+  // 활동 이력(activity-line) 표시용 정규화.
+  // 백엔드 DTO 필드명/시즌 시스템 편차(두 시즌 시스템: seasons(uuid) vs season_definitions)를
+  // 흡수해 프론트 표시값(displaySeasonYear / displaySeasonName / displayTotalWeeks / displayRoleLabel)을 생성한다.
+  // 하드코딩 대신 렌더 직전에 사용 가능한 필드를 우선순위로 선택한다.
+  const normalizeActivityDisplay = (
+    history: SeasonHistory,
+    fallbackMembershipLevel?: string
+  ) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const h = history as any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const season: any = history.seasons || {};
+
+    // ── 연도(2자리): year 우선, 없으면 name/label 에서 4자리 연도 추출 ──
+    let yearNum: number | null = typeof season.year === "number" ? season.year : null;
+    if (yearNum == null) {
+      const m = `${season.name ?? ""} ${season.season_label ?? ""}`.match(/(20\d{2})/);
+      if (m) yearNum = parseInt(m[1], 10);
+    }
+    const displaySeasonYear = yearNum != null ? String(yearNum).slice(-2) : "";
+
+    // ── 시즌 이름(봄/여름/가을/겨울): 한글 직접 추출 → english 매핑 → 원본 ──
+    const nameSources = [season.name, season.season_label, season.season_type]
+      .filter(Boolean)
+      .map(String);
+    let displaySeasonName = "";
+    for (const s of nameSources) {
+      const kr = s.match(/봄|여름|가을|겨울/)?.[0];
+      if (kr) { displaySeasonName = kr; break; }
+      const lower = s.toLowerCase();
+      const mapped =
+        seasonNameKorean[lower] ||
+        (lower.includes("spring") ? "봄"
+          : lower.includes("summer") ? "여름"
+          : lower.includes("fall") || lower.includes("autumn") ? "가을"
+          : lower.includes("winter") ? "겨울"
+          : "");
+      if (mapped) { displaySeasonName = mapped; break; }
+    }
+    if (!displaySeasonName) {
+      displaySeasonName = seasonNameKorean[season.name] || season.name || "";
+    }
+
+    // ── 전체 주차 분모: DTO 사용가능 값 우선 → start/end_date 계산 → 0 회피 ──
+    const dtoWeeks = [
+      h.total_weeks,
+      h.totalWeeks,
+      h.seasonWeeks,
+      h.expectedWeeks,
+      h.durationWeeks,
+    ].find((v: unknown) => typeof v === "number" && (v as number) > 0) as number | undefined;
+    let displayTotalWeeks = typeof dtoWeeks === "number" ? dtoWeeks : 0;
+    if (!displayTotalWeeks && season.start_date && season.end_date) {
+      const start = new Date(season.start_date).getTime();
+      const end = new Date(season.end_date).getTime();
+      if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+        displayTotalWeeks = Math.round((end - start) / (7 * 24 * 60 * 60 * 1000));
+      }
+    }
+
+    // ── 역할 라벨: 회원 구분 후보 필드 → roleKorean 매핑/한글 통과 → 기본값 ──
+    const roleCandidates = [
+      history.role_in_season,
+      h.roleLabel,
+      h.membershipTypeLabel,
+      h.memberTypeLabel,
+      h.planLabel,
+      fallbackMembershipLevel,
+    ].filter((v: unknown): v is string => typeof v === "string" && v.trim() !== "");
+    let displayRoleLabel = "";
+    for (const c of roleCandidates) {
+      if (roleKorean[c]) { displayRoleLabel = roleKorean[c]; break; }
+      if (/[가-힣]/.test(c)) { displayRoleLabel = c; break; } // 이미 한글 라벨이면 그대로
+    }
+    if (!displayRoleLabel) displayRoleLabel = "일반(정규)";
+
+    return { displaySeasonYear, displaySeasonName, displayTotalWeeks, displayRoleLabel };
   };
 
   // 진행 상태 변환
@@ -545,7 +649,9 @@ const Sidebar = () => {
       setHasCompletionData(true);
       setPracticalCompetency(DUMMY_SIDEBAR_EXTRA.practicalCompetency);
       setPracticalExperience(DUMMY_SIDEBAR_EXTRA.practicalExperience);
+      setPracticalExperienceCount(DUMMY_SIDEBAR_EXTRA.practicalExperience);
       setPracticalInfo(DUMMY_SIDEBAR_EXTRA.practicalInfo);
+      setPracticalInfoCount(DUMMY_SIDEBAR_EXTRA.practicalInfo);
       setPracticalCareer(DUMMY_SIDEBAR_EXTRA.practicalCareer);
       setHasActivityData(true);
       setBadgeData(DUMMY_SIDEBAR_EXTRA.badgeData);
@@ -605,8 +711,14 @@ const Sidebar = () => {
     if (cachedProfile.practicalCounts) {
       const { competency, experience, info, career } = cachedProfile.practicalCounts;
       setPracticalCompetency(competency);
+      // 실무역량 라인 강화 성공 누적 횟수 — API 응답값 그대로(0 포함). 재계산 금지.
+      setPracticalCompetencyCount(typeof competency === "number" ? competency : null);
       setPracticalExperience(experience);
+      // 실무경험 라인 강화 성공 누적 횟수 — API 응답값 그대로(0 포함). 재계산 금지.
+      setPracticalExperienceCount(typeof experience === "number" ? experience : null);
       setPracticalInfo(info);
+      // 실무정보 라인 강화 성공 누적 횟수 — API 응답값 그대로(0 포함). 재계산 금지.
+      setPracticalInfoCount(typeof info === "number" ? info : null);
       setPracticalCareer(career);
       setHasActivityData(competency > 0 || experience > 0 || info > 0 || career > 0);
     }
@@ -814,15 +926,16 @@ const Sidebar = () => {
   const [isDebugPanelOpen, setIsDebugPanelOpen] = useState(false);
   const [debugProfileType, setDebugProfileType] = useState<"본인" | "타크루">("본인");
   const [debugPanelType, setDebugPanelType] = useState<"OK" | "EC" | "PX">("OK");
-  // 라우트 기반 자동 theme: pathname segment 중 하나라도 -px / -ec 로 끝나면 톤 전환.
-  // segment 기준이라 trailing slash 와 dynamic subpath 모두 매칭.
-  // 결과: .resume-card 에 px-theme/ec-theme 클래스 부착 → notice fallback,
-  // medal 이미지, hexagon 아이콘 자동 전환.
+  // 라우트 기반 자동 theme — 판정은 lib/cluster-route 로 일원화한다.
+  // isPxRoute/isEcRoute 는 canonical(-planning/-entertainment) 과 legacy(-px/-ec)
+  // 를 모두 인식하므로 어느 표기로 진입해도 일관된 톤이 적용된다. marketing(기본)
+  // 으로 이동하면 "OK" 로 리셋되어 이전 조직 톤이 잔류하지 않는다.
+  // 결과: .resume-card 의 medal 이미지/hexagon 아이콘이 현재 조직과 항상 일치.
   useEffect(() => {
     if (!pathname) return;
-    const segs = pathname.split("/");
-    if (segs.some((s) => s.endsWith("-px"))) setDebugPanelType("PX");
-    else if (segs.some((s) => s.endsWith("-ec"))) setDebugPanelType("EC");
+    if (isPxRoute(pathname)) setDebugPanelType("PX");
+    else if (isEcRoute(pathname)) setDebugPanelType("EC");
+    else setDebugPanelType("OK");
   }, [pathname]);
   const [crewStatus, setCrewStatus] = useState<"Running" | "Complete" | "On Rest" | "Recharging" | "Next Challenge">("Running");
   const [approvedWeeksCount, setApprovedWeeksCount] = useState<number | null>(null);
@@ -1127,12 +1240,21 @@ const Sidebar = () => {
         if (result.practicalCounts) {
           const { competency, experience, info, career } = result.practicalCounts;
           setPracticalCompetency(competency);
+          // 실무역량 라인 강화 성공 누적 횟수 — API 응답값 그대로(0 포함). 재계산 금지.
+          setPracticalCompetencyCount(typeof competency === "number" ? competency : null);
           setPracticalExperience(experience);
+          // 실무경험 라인 강화 성공 누적 횟수 — API 응답값 그대로(0 포함). 재계산 금지.
+          setPracticalExperienceCount(typeof experience === "number" ? experience : null);
           setPracticalInfo(info);
+          // 실무정보 라인 강화 성공 누적 횟수 — API 응답값 그대로(0 포함). 재계산 금지.
+          setPracticalInfoCount(typeof info === "number" ? info : null);
           setPracticalCareer(career);
           setHasActivityData(competency > 0 || experience > 0 || info > 0 || career > 0);
         } else {
           setHasActivityData(false);
+          setPracticalCompetencyCount(null);
+          setPracticalExperienceCount(null);
+          setPracticalInfoCount(null);
         }
 
         // 배지 데이터 설정 (별, 번개, 방패)
@@ -1533,7 +1655,9 @@ const Sidebar = () => {
 
   // 프로필 수정 버튼 클릭 핸들러
   const handleEditButtonClick = async () => {
-    if (demoMode) {
+    // 로컬 데모 모드 또는 테스트 유저(데모) 모드면 세션 없이도 편집 모달을 연다.
+    // (저장은 PUT/PATCH 가 demoUserId 를 받아 test_user_markers 검증 후 대상 유저로 기록.)
+    if (demoMode || demoUserId) {
       profileFormSnapshotRef.current = formData;
       setIsEditModalOpen(true);
       return;
@@ -1624,6 +1748,9 @@ const Sidebar = () => {
         vision: formData.vision || null,
         portfolio_files: iconLink3 || null,
         contact_available: formData.phoneComment || null,
+        // 테스트 유저(데모) 모드: demoUserId 를 함께 보내면 백엔드가 (데모 활성 + test_user_markers +
+        // owner/admin) 검증 후 저장 대상을 테스트 유저로 고정한다. demoUserId 부재 시 일반 경로(본인 저장).
+        ...(demoUserId ? { demoUserId } : {}),
       };
 
       const response = await fetch(apiUrl("/api/profile/"), {
@@ -2526,13 +2653,12 @@ const Sidebar = () => {
             <div className={`resume-medal ${crewStatus === "Complete" ? "no-overlay" : ""}`}>
               <div className="medal-image-wrapper">
                 {(() => {
-                  // medalTheme admin override → 기존 debugPanelType fallback
-                  const theme = resumeCardSettings?.medalTheme || debugPanelType;
-                  const medalSrc = theme === "EC"
-                    ? "/images/0/cluster 1/금장_EC.png"
-                    : theme === "PX"
-                    ? "/images/0/cluster 1/금장_PX.png"
-                    : "/images/0/cluster 1/금장_OK.png";
+                  // medalTheme admin override → 기존 debugPanelType fallback.
+                  // 메달 파일명은 ORGANIZATION_CONFIG 단일 정의소에서 가져온다.
+                  const themeCode = resumeCardSettings?.medalTheme || debugPanelType;
+                  const orgKey: Organization =
+                    themeCode === "PX" ? "planning" : themeCode === "EC" ? "entertainment" : "marketing";
+                  const medalSrc = `/images/0/cluster 1/${ORGANIZATION_CONFIG[orgKey].medalFile}`;
                   return <Image src={medalSrc} alt="Medal" width={512} height={512} />;
                 })()}
                 <span className="medal-week-num">{resumeCardSettings?.medalWeekOverride ?? (demoMode ? 12 : (approvedWeeksCount ?? 0))}</span>
@@ -2572,9 +2698,12 @@ const Sidebar = () => {
                     seasonHistories.map((history, index) => {
                       const progressStatus = getProgressStatus(history.progress_status);
                       const reviewStatus = getReviewStatus(history.review_status);
-                      const yearShort = String(history.seasons.year).slice(-2);
-                      const seasonKorean = seasonNameKorean[history.seasons.name] || history.seasons.name;
-                      const roleText = roleKorean[history.role_in_season] || history.role_in_season;
+                      const {
+                        displaySeasonYear,
+                        displaySeasonName,
+                        displayTotalWeeks,
+                        displayRoleLabel,
+                      } = normalizeActivityDisplay(history, currentProfile.membershipLevel);
                       const avatarImage = getAvatarImage(index);
 
                       return (
@@ -2585,13 +2714,13 @@ const Sidebar = () => {
                           <div className="activity-content">
                             <div className="activity-line">
                               <span className="activity-season">
-                                {yearShort}, {seasonKorean}
+                                {displaySeasonYear}, {displaySeasonName}
                                 <span style={{ color: "#767676" }}>시즌</span>
                               </span>
                               <span className="activity-period">
-                                {history.approved_weeks}주 <span style={{ color: "#767676" }}>/ {history.total_weeks}주</span>
+                                {history.approved_weeks}주 <span style={{ color: "#767676" }}>/ {displayTotalWeeks}주</span>
                               </span>
-                              <span className="activity-role">{roleText}</span>
+                              <span className="activity-role">{displayRoleLabel}</span>
                               <span className={`activity-badge ${progressStatus.className}`}>{progressStatus.text}</span>
                               <span className={`activity-check ${reviewStatus.className}`}>{reviewStatus.text}</span>
                             </div>
@@ -2689,7 +2818,7 @@ const Sidebar = () => {
               <div className="skill-card">
                 <Image src="/images/0/cluster 1/Sheriff Badge1 3.png" alt="" width={34} height={34} className="skill-icon" />
                 <div className="skill-num-row">
-                  <span className="skill-num">{hasActivityData ? practicalInfo : "-"}</span>
+                  <span className="skill-num">{typeof practicalInfoCount === "number" ? practicalInfoCount : "-"}</span>
                   <span className="skill-unit">회</span>
                 </div>
                 <span className="skill-label">실무 정보 습득</span>
@@ -2697,7 +2826,7 @@ const Sidebar = () => {
               <div className="skill-card">
                 <Image src="/images/0/cluster 1/Sheriff Badge1.png" alt="" width={34} height={34} className="skill-icon" />
                 <div className="skill-num-row">
-                  <span className="skill-num">{hasActivityData ? practicalExperience : "-"}</span>
+                  <span className="skill-num">{typeof practicalExperienceCount === "number" ? practicalExperienceCount : "-"}</span>
                   <span className="skill-unit">건</span>
                 </div>
                 <span className="skill-label">실무 경험 축적</span>
@@ -2705,7 +2834,7 @@ const Sidebar = () => {
               <div className="skill-card">
                 <Image src="/images/0/cluster 1/Sheriff Badge1 2.png" alt="" width={34} height={34} className="skill-icon" />
                 <div className="skill-num-row">
-                  <span className="skill-num">{hasActivityData ? practicalCompetency : "-"}</span>
+                  <span className="skill-num">{typeof practicalCompetencyCount === "number" ? practicalCompetencyCount : "-"}</span>
                   <span className="skill-unit">unit</span>
                 </div>
                 <span className="skill-label">실무 역량 성장</span>
@@ -4262,7 +4391,11 @@ const Sidebar = () => {
                               const response = await fetch("/api/profile/", {
                                 method: "PATCH",
                                 headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ contactAvailable: formData.phoneComment || null }),
+                                body: JSON.stringify({
+                                  contactAvailable: formData.phoneComment || null,
+                                  // 테스트 유저 모드: demoUserId 동봉 시 백엔드가 권한 검증 후 대상 고정.
+                                  ...(demoUserId ? { demoUserId } : {}),
+                                }),
                               });
                               const result = await response.json();
                               if (result.success) {
