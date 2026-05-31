@@ -30,6 +30,29 @@ async function resolveSessionProfileId(): Promise<string | null> {
 
 const UPSTREAM_TIMEOUT_MS = 8000;
 
+function redactUrlForLog(url: URL) {
+  return {
+    host: url.host,
+    protocol: url.protocol,
+    pathname: url.pathname,
+    hasUserId: url.searchParams.has("userId"),
+  };
+}
+
+function extractResponseExcerpt(body: string) {
+  if (!body) return "";
+  try {
+    const json = JSON.parse(body) as { error?: unknown; message?: unknown; detail?: unknown };
+    return {
+      error: typeof json.error === "string" ? json.error.slice(0, 300) : undefined,
+      message: typeof json.message === "string" ? json.message.slice(0, 300) : undefined,
+      detail: typeof json.detail === "string" ? json.detail.slice(0, 300) : undefined,
+    };
+  } catch {
+    return body.slice(0, 300);
+  }
+}
+
 // Cluster3 stats-cards proxy.
 // admin canonical route GET /api/cluster3/stats-cards (ADMIN_API_BASE_URL)로 그대로 forward 한다.
 // weekly-cards proxy 와 동일한 x-internal-api-key 인증 패턴.
@@ -38,7 +61,12 @@ export async function GET(request: NextRequest) {
   const adminApiBaseUrl = await resolveAdminBaseUrl();
 
   if (!adminApiBaseUrl) {
-    console.error("[cluster3/stats-cards] admin backend not discovered (env + localhost probe failed)");
+    console.error("[cluster3/stats-cards] admin backend URL unavailable", {
+      nodeEnv: process.env.NODE_ENV,
+      hasAdminApiBaseUrl: Boolean(process.env.ADMIN_API_BASE_URL),
+      hasAdminAppUrl: Boolean(process.env.ADMIN_APP_URL),
+      hasNextPublicAdminAppUrl: Boolean(process.env.NEXT_PUBLIC_ADMIN_APP_URL),
+    });
     return NextResponse.json(
       { success: false, error: "admin backend not available" },
       { status: 502 },
@@ -68,7 +96,8 @@ export async function GET(request: NextRequest) {
   // 값은 절대 로그하지 않고 length 와 존재 여부만 진단 출력.
   console.log("[cluster3/stats-cards] env diag", {
     cwd: process.cwd(),
-    adminBaseUrl: adminApiBaseUrl,
+    adminHost: targetUrl.host,
+    upstreamPath: targetUrl.pathname,
     hasKey: Boolean(internalApiKey),
     keyLength: internalApiKey?.length ?? 0,
   });
@@ -95,6 +124,11 @@ export async function GET(request: NextRequest) {
   const startedAt = Date.now();
 
   try {
+    console.log("[cluster3/stats-cards] fetch START", {
+      upstream: redactUrlForLog(targetUrl),
+      timeoutMs: UPSTREAM_TIMEOUT_MS,
+    });
+
     const upstream = await fetch(targetUrlString, {
       method: "GET",
       headers,
@@ -105,9 +139,11 @@ export async function GET(request: NextRequest) {
     const body = await upstream.text();
 
     console.log("[cluster3/stats-cards] fetch SUCCESS", {
+      upstream: redactUrlForLog(targetUrl),
       status: upstream.status,
       statusText: upstream.statusText,
       bodyLen: body.length,
+      bodyExcerpt: upstream.ok ? undefined : extractResponseExcerpt(body),
       elapsedMs: Date.now() - startedAt,
     });
 
@@ -120,10 +156,11 @@ export async function GET(request: NextRequest) {
     const e = err as { name?: string; message?: string };
     const isAbort = e?.name === "AbortError";
     console.error("[cluster3/stats-cards] fetch FAILURE", {
-      url: targetUrlString,
+      upstream: redactUrlForLog(targetUrl),
       isAbort,
       name: e?.name,
       message: e?.message || String(err),
+      elapsedMs: Date.now() - startedAt,
     });
 
     if (isAbort) {
