@@ -1976,6 +1976,47 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             });
           });
         });
+
+        // ── 라인 칸 N-1 노출 정책 (어드민 N-1 개설 ↔ 고객 현재 주차 카드 즉시 노출) ──
+        // 운영 정책상 라인은 현재 주차 N 의 직전 주차(N-1)에 개설될 수 있다(admin: cluster4WeekPolicy).
+        // 그 경우 라인 타깃 week_id 는 N-1 이라 N 카드의 라인 칸이 비어 보인다.
+        // 대상자가 현재 주차(N) 카드에서 즉시 보도록, "N 에 해당 part 의 실제 라인이 없고 N-1 에
+        // 실제 라인이 있으면" 그 라인을 N 으로 끌어와(weekId 재태깅) 라인 칸에 노출한다.
+        //   - N 에 실제 라인이 있으면 그대로 유지 → 현재 주차(N)로 개설된 라인은 영향 없음.
+        //   - 집계(infoRate/careerRate 등)는 카드 DTO(현재 주차) 단일 출처라 영향 없음(라인 칸만 보정).
+        //   - canEdit/제출기간은 끌어온 라인(N-1) 값 그대로 → N-1 마감이면 읽기 전용으로 보인다.
+        const normPart = (p: unknown): string => {
+          const r = String(p ?? "").toLowerCase();
+          return (
+            { info: "information", information: "information", comp: "competency", competency: "competency", exp: "experience", experience: "experience", career: "career" } as Record<string, string>
+          )[r] ?? r;
+        };
+        const orderedWeekIds = cards
+          .filter((c) => c.weekId && c.startDate)
+          .slice()
+          .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)))
+          .map((c) => c.weekId as string);
+        const curIdx = weekId ? orderedWeekIds.indexOf(weekId) : -1;
+        const prevWeekId = curIdx > 0 ? orderedWeekIds[curIdx - 1] : null;
+        if (weekId && prevWeekId) {
+          const hasRealLine = (wid: string, part: string) =>
+            allLines.some((l) => (l.weekId ?? null) === wid && !!l.lineTargetId && normPart(l.partType) === part);
+          for (const part of ["information", "competency", "experience", "career"]) {
+            if (hasRealLine(weekId, part)) continue; // 현재 주차에 실제 라인 존재 → 직전 주차 끌어오지 않음
+            const carried = allLines.filter(
+              (l) => (l.weekId ?? null) === prevWeekId && !!l.lineTargetId && normPart(l.partType) === part,
+            );
+            for (const l of carried) {
+              console.log("[cluster4-canEdit] N-1 라인 현재 주차로 노출", {
+                part,
+                fromWeekId: prevWeekId,
+                toWeekId: weekId,
+                lineTargetId: l.lineTargetId ?? null,
+              });
+              allLines.push({ ...l, weekId });
+            }
+          }
+        }
         setCluster4Lines(allLines);
 
         // 진단: 현재 주차 카드/라인 가시성
