@@ -116,6 +116,8 @@ const statusIconPath = (statusLabel: string, className: string): string => {
 };
 
 const PART_LINE_ORDER = ["information", "competency", "experience", "career"] as const;
+// weekly-card-stats 영역은 표시 순서를 정보→경험→역량→경력으로 노출 (집계 로직/데이터는 PART_LINE_ORDER와 동일)
+const WEEKLY_STATS_LINE_ORDER = ["information", "experience", "competency", "career"] as const;
 const PART_LINE_LABEL: Record<(typeof PART_LINE_ORDER)[number], string> = {
   information: "정보",
   competency: "역량",
@@ -1485,7 +1487,7 @@ const Cluster41Content = () => {
                     {/* 네 번째/다섯 번째 줄: 실무 정보/역량/경험/경력 강화율 + 주차 평판/명성도(FM)/연계 동료 */}
                     <div className={`weekly-card-stats-wrapper ${badgeToneClass}`}>
                       <div className="weekly-card-stats">
-                        {PART_LINE_ORDER.map((partType) => {
+                        {WEEKLY_STATS_LINE_ORDER.map((partType) => {
                           const line = linesByPart.get(partType);
                           const numerator = lineNumerator(line);
                           const denominator = lineDenominator(line);
