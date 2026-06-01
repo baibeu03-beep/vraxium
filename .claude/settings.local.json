@@ -266,7 +266,11 @@
       "Bash(Select-String -Pattern \"Cluster4CardContent\")",
       "Bash(Select-Object -First 30)",
       "PowerShell(git cherry-pick *)",
-      "PowerShell(npx tsc --noEmit 2>&1 | Out-String)"
+      "PowerShell(npx tsc --noEmit 2>&1 | Out-String)",
+      "Bash(ps -W)",
+      "Bash(echo \"tsc-exit:$?\")",
+      "Bash(python -)",
+      "Bash(echo \"tsc-cluster41-exit=$? \\(1=no errors in file\\)\")"
     ],
     "deny": [],
     "ask": []

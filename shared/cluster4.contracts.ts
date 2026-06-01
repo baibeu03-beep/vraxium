@@ -87,6 +87,27 @@ export interface Cluster4WeeklyLineDto {
   lineCode?: string | null;
   // career 프로젝트 코드
   projectCode?: string | null;
+  // ── 실무 경력(career) 평점/등급 (백엔드 단일 출처 — 프론트 재계산 금지, 값 그대로 표시만) ──
+  // SoT: 백엔드 career 평가 결과. 카드/모달은 이 값을 표시만 한다.
+  // careerGrade: "S"|"A"|"B"|"C"|"D" | null(미평가). careerGradePoints: 10/8/6/4/2 | null.
+  // careerRatingStatus: "success"(평가 성공) | "fail"(평가 실패) | "unevaluated"(평가 대기) | null.
+  // 강화 상태/사유는 위 공통 enhancementStatus / enhancementReason 필드를 그대로 사용한다.
+  //   enhancementReason(career): "career_not_submitted"(미제출) | "career_grade_fail"(D등급) |
+  //                              "career_grade_success"(평가 통과) | "career_unevaluated_after_deadline"(평가 대기)
+  careerGrade?: string | null;
+  careerGradePoints?: number | null;
+  careerRatingStatus?: string | null;
+  // ── 실무 경력(career) sponsor-card 기업/감독자 정보 (백엔드 DTO 단일 출처 — 2026-06-01, snapshot v2) ──
+  // SoT: 백엔드 weekly-cards/detail career line. 카드 미리보기·모달 sponsor-card 는 이 값을 1순위로 표시한다.
+  // legacy careerRecords(company_*/supervisor_*)는 DTO 값 부재 시 fallback 보강용으로만 사용.
+  // 부재(null/빈값) 시 프론트 fallback: companyName→"기업명", companyLogoUrl→default-company.png,
+  //   supervisorPhotoUrl→기본 감독자 이미지, supervisorName/Department/Position→"-".
+  companyName?: string | null;
+  companyLogoUrl?: string | null;
+  supervisorName?: string | null;
+  supervisorDepartment?: string | null;
+  supervisorPosition?: string | null;
+  supervisorPhotoUrl?: string | null;
   // ── 라인 평점 (실무 경험 전용) ──
   // Work Exp 라인 자체 평점 (0~10 정수, NULL=미입력). 강화율(rate/numerator/denominator)과 무관 — 별개 개념.
   //
@@ -141,7 +162,10 @@ export interface Cluster4WeeklyLineSubmissionDto {
 }
 
 export interface Cluster4LineOutputLinkDto {
+  // 링크 표시 라벨(설명). 업스트림이 `label` 로 내려주는 경우가 있어 별칭으로 함께 수용한다.
+  // ⚠️ 프론트 표시 텍스트는 desc ?? label 우선, 둘 다 없을 때만 url fallback (href 는 항상 url).
   desc?: string | null;
+  label?: string | null;
   url?: string | null;
   [key: string]: unknown;
 }

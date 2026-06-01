@@ -4656,9 +4656,21 @@
       .work-career-card {
         .grade-row {
           display: flex;
+          align-items: center;
           gap: 5px;
           margin-top: 16px;
           margin-bottom: 10px;
+
+          // career line score (DTO careerGradePoints): 10/8/6/4/2 점, unevaluated -> "-"
+          .grade-points {
+            margin-left: 4px;
+            font-family: "Chakra Petch", sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            line-height: 1;
+            color: #faab07;
+            white-space: nowrap;
+          }
 
           .grade {
             width: 36px;
@@ -12605,20 +12617,28 @@
   // grade/grade-row ?먰삎 ?ㅽ??쇱? L6732??.work-view-title-section ?ㅼ퐫?꾩? 遺꾨━?섏뼱 ?덉쑝誘濡?
   // ?ш린???숈씪 ?ㅽ럺?쇰줈 ?ъ꽑?명븳??(? ?곸뿭 ?곹뼢 ?놁쓬)
   // ??????????????????????????????????????????????????????????????????????
+  // 하단 정렬 행: 좌측 .image-line-code + 우측 .workcareer-grade-section 를 한 줄에 두고
+  // align-items:flex-end 로 WCBS-NL0000 하단선과 등급 버튼 하단선을 일치시킨다(absolute 보정 제거).
+  .workcareer-bottom-row {
+    display: flex;
+    align-items: flex-end; // 두 영역의 하단 기준선 일치
+    justify-content: space-between; // 좌: line-code, 우: grade-section
+    gap: 8px;
+    width: 100%;
+  }
+
   .workcareer-grade-section {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     justify-content: flex-end !important; // ?곗륫 ?뺣젹 (?대?吏 洹몃━??醫낅즺 x醫뚰몴 ?쇱튂)
     gap: 6px; // workCareer downsize: 8 -> 6 (label <-> grade-row tighter)
     width: auto; // shrink to content (was 100% as flex item; now absolute-positioned)
     border: none !important;
     background: transparent !important;
     margin: 0 !important; // 紐⑤뱺 margin 由ъ뀑
-    // bottom: -12px — grade circles (28px) are 12px taller than (image-line-code.height + .workinfo-right gap = 16px).
-    // Hanging the wrapper 12px below .workinfo-right bottom moves grade.top down to exactly meet imageGrid.bottom.
-    // The 12px hang sits inside .section-modal-body's 20px bottom padding, so it doesn't visually overflow the modal.
-    // Grade is now positioned independently of line-code's bottom (per the explicit allowance to decouple).
-    position: absolute !important; right: 0; bottom: -12px; // anchor to .workinfo-right bottom-right (== .image-line-code bottom). Out of flex flow so .workinfo-image-grid flex: 1 1 0 stretches normally.
+    // (제거됨) position:absolute + bottom:-12px 임시 보정 — 이제 .workcareer-bottom-row 의
+    // flex(align-items:flex-end) 정렬로 line-code 와 하단선을 맞춘다. 정상 flow 로 복귀.
+    flex: 0 0 auto; // .workcareer-bottom-row 안에서 내용 폭만큼만 차지 (우측 고정)
     padding: 0 !important; // 紐⑤뱺 padding 由ъ뀑
     flex-shrink: 0 !important;
 
@@ -12629,6 +12649,10 @@
       color: #ddd !important;
       white-space: nowrap;
     }
+
+    // (제거됨) .grade-points / .grade-rating-status / .grade-reason-note — 점수·평가 상태·강화 사유는
+    // 노출 정책상 렌더하지 않으므로 스타일도 함께 삭제. 모달은 "라인 평점" 라벨 + S/A/B/C/D 등급만 유지.
+    // ※ 카드 미리보기의 .grade-points(.work-career-card .grade-row 하위)는 별개 스코프 — 그대로 유지.
 
     .grade-row {
       display: flex;
@@ -12675,7 +12699,7 @@
 
   // ?곗륫 而щ읆??醫뚯륫 ?꾩껜 ?믪씠??留욎떠 stretch (workexp? ?듭씪)
   .workinfo-right {
-    position: relative; // workcareer-only: positioning context for absolute-positioned .workcareer-grade-section
+    position: relative; // (legacy) grade-section 이 absolute 였을 때의 containing block — 현재 absolute 자식 없음, 무해하게 유지
     display: flex;
     flex-direction: column;
     gap: 22px !important; // L10822 selector .workinfo-content-layout .workinfo-right has higher specificity (0,6,0) and applies gap:8px. !important needed to win over that.
@@ -12692,8 +12716,8 @@
     grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) !important;
   }
 
-  // workCareer only: .workcareer-grade-section uses absolute positioning (right:0 bottom:0) inside .workinfo-right (position: relative).
-  // Removed from flex flow so .workinfo-image-grid (flex:1 1 0) can stretch and grid-template-rows resolve to equal heights.
+  // workCareer only: line-code + grade-section 은 .workcareer-bottom-row(flex, align-items:flex-end) 한 줄에 정렬한다.
+  // grade-section 이 정상 flow 로 복귀했지만 .workinfo-image-grid(flex:1 1 0)가 남은 높이를 흡수하므로 stretch/equal-rows 유지.
 
 
   .workinfo-text-section {

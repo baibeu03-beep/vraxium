@@ -2367,17 +2367,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     if (!line || !Array.isArray(line.outputLinks)) return null;
     const l = line.outputLinks[idx];
     if (!l) return null;
-    return { desc: (l.desc as string | null | undefined) ?? "", url: (l.url as string | null | undefined) ?? "" };
+    // 표시 라벨 단일 출처: desc ?? label (업스트림이 label 로 줄 수 있어 별칭 수용). 둘 다 없으면 표시단에서 url fallback.
+    const label = (l.desc as string | null | undefined) ?? (l.label as string | null | undefined) ?? "";
+    return { desc: label, url: (l.url as string | null | undefined) ?? "" };
   };
   // 사용자 제출 Output Link 단일 출처 — submission.outputLinks[idx] (사용자분만, 어드민 슬롯 제외 후의 인덱스).
   // ⚠️ top-level outputLinks(어드민 개설값)와 구분 — competency 사용자 슬롯 표시에만 사용한다.
   const lineSubmissionOutputLinkAt = (line: Cluster4WeeklyLineDto | undefined, idx: number): { desc: string; url: string } | null => {
     if (idx < 0) return null;
-    const links = (line?.submission as { outputLinks?: Array<{ desc?: string | null; url?: string | null }> | null } | null | undefined)?.outputLinks;
+    const links = (line?.submission as { outputLinks?: Array<{ desc?: string | null; label?: string | null; url?: string | null }> | null } | null | undefined)?.outputLinks;
     if (!Array.isArray(links)) return null;
     const l = links[idx];
     if (!l) return null;
-    return { desc: l.desc ?? "", url: l.url ?? "" };
+    // 표시 라벨 단일 출처: desc ?? label (업스트림 별칭 수용). 둘 다 없으면 표시단에서 url fallback.
+    return { desc: l.desc ?? l.label ?? "", url: l.url ?? "" };
   };
   // 실무 역량(competency) 어드민 Output Link 슬롯 수 — adminOutputLinkCount(SoT) → top-level outputLinks 유효
   // 개수 → legacy(getAdminOutputLinksCount) 순. legacy 헬퍼는 weeklyActivities 만 보므로, 운영진이 DTO 라인
@@ -2433,6 +2436,48 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       return { src: "/images/0/cluster4/icon/8 해당 없음.png", alt: "not_applicable", text, toneClass: "not_applicable" };
     }
     return null;
+  };
+
+  // ── 실무 경력(career) 등급/점수/평가 상태 표시 (백엔드 DTO 단일 출처) ──
+  // 프론트 재계산 금지: line.careerGrade / careerGradePoints / careerRatingStatus / enhancementReason 값만 사용한다.
+  // DTO 라인이 없을 때만 careerRecords 기반 카드(legacy: card.grade / card.gradePoints)로 fallback 한다.
+  // 어떤 상태(fail/미제출 포함)에서도 라인 내용은 계속 표시되며, 이 헬퍼는 표시 값만 결정한다.
+  const careerGradeInfo = (
+    line: Cluster4WeeklyLineDto | undefined,
+    card?: { grade?: string | null; gradePoints?: number | null } | null,
+  ): {
+    grade: string | null; // "S"|"A"|"B"|"C"|"D" | null(미평가 → 활성 등급 없음)
+    points: number | null; // 10/8/6/4/2 | null
+    ratingStatus: string | null; // "success"|"fail"|"unevaluated"|null
+    ratingLabel: string | null; // 평가 성공/평가 실패/평가 대기
+    reasonLabel: string | null; // 미제출/D등급/평가 통과/평가 대기
+  } => {
+    // DTO careerGrade 우선, "" / null 이면 legacy card.grade fallback (그래도 없으면 null = 미평가)
+    const grade = (line?.careerGrade as string | null | undefined) || (card?.grade ?? null) || null;
+    // 점수: DTO careerGradePoints 우선. 부재 시 등급 고정 환산표(S=10/A=8/B=6/C=4/D=2)로 fallback —
+    // legacy card.gradePoints 는 스케일이 불명확(데모는 랜덤)하므로 등급 기준 환산을 사용한다. 미평가 → null.
+    const GRADE_POINTS: Record<string, number> = { S: 10, A: 8, B: 6, C: 4, D: 2 };
+    const points =
+      typeof line?.careerGradePoints === "number"
+        ? line.careerGradePoints
+        : grade && GRADE_POINTS[grade] != null
+          ? GRADE_POINTS[grade]
+          : null;
+    const ratingStatus = (line?.careerRatingStatus as string | null | undefined) ?? null;
+    const ratingLabel =
+      ratingStatus === "success" ? "평가 성공" : ratingStatus === "fail" ? "평가 실패" : ratingStatus === "unevaluated" ? "평가 대기" : null;
+    const reason = (line?.enhancementReason as string | null | undefined) ?? null;
+    const reasonLabel =
+      reason === "career_not_submitted"
+        ? "미제출"
+        : reason === "career_grade_fail"
+          ? "D등급"
+          : reason === "career_grade_success"
+            ? "평가 통과"
+            : reason === "career_unevaluated_after_deadline"
+              ? "평가 대기"
+              : null;
+    return { grade, points, ratingStatus, ratingLabel, reasonLabel };
   };
 
   // workInfo 푸터 안내문 상태 (cluster2/cluster3 표준 — 필수필드 누락 시 error)
@@ -7175,8 +7220,125 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         : 0;
 
   // 실무 경력 카드 데이터 (DB에서 가져온 프로젝트 기반 데이터 변환)
+  // ── 실무 경력(career) 카드 단일 출처 = weekly-cards lines[] (partType==="career", weekId 일치) ──
+  // (원인) 이전엔 careerRecords(/api/career-records)만 source 였다. 백엔드가 career 를 cluster4_lines
+  //   (weekly-cards DTO lines[])로 내려주는 사용자는 careerRecords 가 비어 카드가 전부 empty 로 떨어졌다.
+  // (수정) 현재 주차 career 라인이 있으면 그 라인을 카드 source 로 사용한다.
+  //   - 매칭은 weekId 기준(주차 번호 금지 — weekNumber 중복 가능).
+  //   - submission=null 은 "미제출"일 뿐 라인 없음이 아니다. top-level(mainTitle/projectCode/careerGrade/
+  //     enhancementStatus/outputLinks/outputImages)은 그대로 표시한다.
+  //   - status / enhancementStatus === "fail" 이어도 카드를 숨기지 않는다(강화 실패도 내용 표시).
+  //   - company/supervisor 등 DTO 에 없는 legacy 필드는 매칭되는 careerRecord 가 있으면 보강, 없으면 "-".
+  const careerLinesForWeek = cluster4Lines.filter(
+    (l) => (l.weekId ?? null) === weekId && normalizePartType(l.partType) === "career",
+  );
+  const findCareerRecordForLine = (line: Cluster4WeeklyLineDto): CareerRecord | null =>
+    careerRecords.find(
+      (r) =>
+        (line.careerProjectId != null && r.project_id === line.careerProjectId) ||
+        (line.projectCode != null && r.line_code != null && normLineKey(r.line_code) === normLineKey(line.projectCode)) ||
+        (line.lineCode != null && r.line_code != null && normLineKey(r.line_code) === normLineKey(line.lineCode)),
+    ) ?? null;
+  const buildCareerCardFromLine = (line: Cluster4WeeklyLineDto, index: number, record: CareerRecord | null) => {
+    const enh = (line.enhancementStatus as string | null | undefined) ?? null;
+    // statusBadge 는 미리보기 enhancementStatusBadge() 가 null 일 때만 쓰는 fallback. enh 값 그대로 매핑.
+    const statusBadge =
+      enh === "success"
+        ? "/images/0/cluster4/icon/5 강화 성공.png"
+        : enh === "pending"
+          ? "/images/0/cluster4/icon/6 강화 대기.png"
+          : enh === "fail"
+            ? "/images/0/cluster4/icon/7 강화 실패.png"
+            : "/images/0/cluster4/icon/8 해당 없음.png";
+    // 이미지 3슬롯: 어드민(top-level outputImages) 우선 + 크루(submission.outputImages) 이어붙임.
+    const adminImgs = normalizeOutputImages(line.outputImages);
+    const adminUrlSet = new Set(adminImgs.map((i) => i.url));
+    const sub = line.submission ?? null;
+    const subImgsRaw = (sub?.outputImages ?? []) as Array<string | null>;
+    const subCapsRaw = (sub?.outputImageCaptions ?? []) as Array<string | null>;
+    const crewImgs: (string | null)[] = [];
+    const crewCaps: string[] = [];
+    for (let i = 0; i < subImgsRaw.length; i++) {
+      const u = subImgsRaw[i];
+      if (u && adminUrlSet.has(u)) continue;
+      crewImgs.push(u || null);
+      crewCaps.push(subCapsRaw[i] || "");
+    }
+    const mergedImages: (string | null)[] = [];
+    const mergedCaptions: string[] = [];
+    for (let i = 0; i < WORKCAREER_IMAGE_SLOT_COUNT; i++) {
+      if (i < adminImgs.length) {
+        mergedImages.push(adminImgs[i].url);
+        mergedCaptions.push(adminImgs[i].caption || "");
+      } else {
+        const c = i - adminImgs.length;
+        mergedImages.push(crewImgs[c] || null);
+        mergedCaptions.push(crewCaps[c] || "");
+      }
+    }
+    const cardOutputLinks = Array.isArray(line.outputLinks)
+      ? line.outputLinks.map((l) => ({ desc: (l?.desc as string | null | undefined) ?? "", url: (l?.url as string | null | undefined) ?? "" }))
+      : [];
+    const dateSrc =
+      (line.submissionOpensAt as string | null | undefined) ??
+      (line.submissionClosesAt as string | null | undefined) ??
+      weekData?.startDate ??
+      null;
+    return {
+      id: index + 1,
+      // code-tag: projectCode ?? lineCode
+      code: line.projectCode ?? line.lineCode ?? "-",
+      // ── sponsor-card 기업/감독자: DTO line 필드 1순위, 부재 시 legacy careerRecord 보강 (2026-06-01 v2) ──
+      // badge(=기업명)/icon(=로고)/supervisor* 의 "기업명"/"-"/placeholder 최종 fallback 은 UI 단에서 적용.
+      badge: (line.companyName as string | null | undefined) || record?.company_name || "",
+      // main-desc-white: mainTitle
+      title: line.mainTitle ?? "-",
+      verified: enh === "success",
+      // 날짜: submissionOpensAt → submissionClosesAt → 주차 시작일 순.
+      date: dateSrc ? formatDate(dateSrc) : "0000-00-00 (일)",
+      likes: "0,99",
+      hasWeb: cardOutputLinks.some((l) => l.url.trim() !== "") || (Array.isArray(sub?.outputLinks) && (sub!.outputLinks!.length || 0) > 0),
+      icon: (line.companyLogoUrl as string | null | undefined) || record?.company_logo_url || "/images/0/cluster4/icon/default-company.png",
+      companyHomepageUrl: (record?.company_homepage_links && record.company_homepage_links[0]) || null,
+      supervisorImg: (line.supervisorPhotoUrl as string | null | undefined) || record?.supervisor_profile_img || "/images/0/cluster4/icon/실무 경력/감독자.jpg",
+      supervisorName: (line.supervisorName as string | null | undefined) || record?.supervisor_name || "-",
+      supervisorDept: (line.supervisorDepartment as string | null | undefined) || record?.supervisor_department || "",
+      supervisorCompany: (line.companyName as string | null | undefined) || record?.company_name || record?.supervisor_company || "",
+      supervisorPosition: (line.supervisorPosition as string | null | undefined) || record?.supervisor_position || "",
+      statusBadge,
+      // grade active: careerGrade
+      grade: (line.careerGrade as string | null | undefined) || "",
+      isNotApplicable: enh === "not_applicable",
+      isEmpty: false,
+      // status/enhancementStatus=fail 이어도 카드는 표시 — isFailed 는 오버레이 표기용일 뿐 숨김 아님.
+      isFailed: enh === "fail",
+      // sub-desc 미리보기 = 사용자 제출 subtitle (없으면 record.project_description fallback).
+      projectDescription: (sub?.subtitle as string | null | undefined) ?? record?.project_description ?? null,
+      subTitle: (sub?.subtitle as string | null | undefined) ?? "",
+      growthPoint: (sub?.growthPoint as string | null | undefined) ?? "",
+      // grade-points: careerGradePoints
+      gradePoints: (line.careerGradePoints as number | null | undefined) ?? null,
+      recordId: record?.record_id ?? null,
+      projectId: (line.careerProjectId as string | null | undefined) ?? record?.project_id ?? null,
+      // ── 매칭 키 보존 — findCluster4Line / workCareerMatchedLine 이 동일 라인을 재해석하도록 ──
+      careerProjectId: (line.careerProjectId as string | null | undefined) ?? null,
+      projectCode: (line.projectCode as string | null | undefined) ?? null,
+      lineTargetId: (line.lineTargetId as string | null | undefined) ?? null,
+      lineCode: (line.lineCode as string | null | undefined) ?? null,
+      lineName: line.mainTitle ?? record?.line_name ?? null,
+      outputLinks: cardOutputLinks,
+      secondaryInfoDeadline: record?.secondary_info_deadline ?? null,
+      images: mergedImages,
+      imageCaptions: mergedCaptions,
+      // 미리보기/모달 resolver 가 곧바로 쓸 수 있도록 라인 직접 첨부(단일 출처 보장).
+      matchedLine: line,
+    };
+  };
+
   const workCareerCards =
-    careerRecords.length > 0
+    careerLinesForWeek.length > 0
+      ? careerLinesForWeek.map((line, index) => buildCareerCardFromLine(line, index, findCareerRecordForLine(line)))
+      : careerRecords.length > 0
       ? careerRecords.map((record, index) => {
           // 강화 상태 계산: pending → 결정 시점(N+1 목 12:01 KST) 이후에만 enhanced 로 승격.
           // 2차 정보 / secondary_info_deadline 은 강화 성공/실패 판정에 영향 없음 (2026 정책).
@@ -8605,6 +8767,22 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           <div className="work-career-cards">
             {currentCareerCards.map((card, cardIndex) => {
               const isEmpty = card.isEmpty;
+              // 실무 경력 등급/점수/강화 — 백엔드 DTO 라인 단일 출처 (부재 시 careerRecords legacy fallback).
+              // grade-row 와 아래 status-badge 가 동일 matchedLine 을 공유하도록 여기서 1회만 매칭한다.
+              const careerLine = isEmpty
+                ? undefined
+                : findCluster4Line(
+                    {
+                      partType: "career",
+                      careerProjectId: (card as { careerProjectId?: string | null }).careerProjectId ?? null,
+                      projectCode:
+                        ((card as { projectCode?: string | null }).projectCode ??
+                          (card as { lineCode?: string | null }).lineCode ??
+                          (card.code as string | null | undefined)) ?? null,
+                    },
+                    { requireLineTargetId: false },
+                  );
+              const careerInfo = careerGradeInfo(careerLine, card);
               return (
                 <div key={card.id} className="work-career-card-wrapper">
                   <div
@@ -8635,11 +8813,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           <span className="code-tag">{isEmpty ? "-" : card.code}</span>
                         </div>
                         <div className="grade-row">
-                          <span className={`grade ${!isEmpty && card.grade === "S" ? "active" : ""}`}>S</span>
-                          <span className={`grade ${!isEmpty && card.grade === "A" ? "active" : ""}`}>A</span>
-                          <span className={`grade ${!isEmpty && card.grade === "B" ? "active" : ""}`}>B</span>
-                          <span className={`grade ${!isEmpty && card.grade === "C" ? "active" : ""}`}>C</span>
-                          <span className={`grade ${!isEmpty && card.grade === "D" ? "active" : ""}`}>D</span>
+                          {["S", "A", "B", "C", "D"].map((g) => (
+                            <span key={g} className={`grade ${!isEmpty && careerInfo.grade === g ? "active" : ""}`}>
+                              {g}
+                            </span>
+                          ))}
+                          {/* 점수: DTO careerGradePoints 단일 출처(10/8/6/4/2). 미평가(null) → "-". */}
+                          <span className="grade-points" aria-label="라인 평점 점수">
+                            {!isEmpty && careerInfo.points != null ? `${careerInfo.points}점` : "-"}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -8728,16 +8910,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     </div>
                   </div>
                   {!isEmpty && (() => {
-                    // 미리보기 뱃지(강화 상태): weekId+partType(career)+careerProjectId/projectCode 로 matchedLine 매칭 후
+                    // 미리보기 뱃지(강화 상태): 위에서 매칭한 careerLine(weekId+career+careerProjectId/projectCode) 재사용.
                     // enhancementStatusBadge 헬퍼 재사용 → img src/alt 결정 (프론트 재계산 금지). matchedLine 없으면 legacy fallback.
-                    const matchedLine = findCluster4Line(
-                      {
-                        partType: "career",
-                        careerProjectId: (card as { careerProjectId?: string | null }).careerProjectId ?? null,
-                        projectCode: ((card as { projectCode?: string | null }).projectCode ?? (card as { lineCode?: string | null }).lineCode ?? (card.code as string | null | undefined)) ?? null,
-                      },
-                      { requireLineTargetId: false },
-                    );
+                    const matchedLine = careerLine;
                     const enh = enhancementStatusBadge(matchedLine);
                     const src = enh?.src ?? (card.statusBadge as string | null | undefined);
                     const alt = enh?.alt ?? "status";
@@ -12284,18 +12459,29 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       );
                     })()}
                   </div>
-                  <span className="line-code image-line-code">{workCareerMatchedLine?.projectCode ?? (selectedWorkCareerCard.lineCode || selectedWorkCareerCard.code || "")}</span>
+                  {/* 하단 정렬 행: 좌측 라인코드(.image-line-code) + 우측 라인 평점(.workcareer-grade-section).
+                      flex(align-items:flex-end)로 두 요소의 하단 기준선을 일치시킨다 — absolute/margin 임시 보정 제거. */}
+                  <div className="workcareer-bottom-row">
+                    <span className="line-code image-line-code">{workCareerMatchedLine?.projectCode ?? (selectedWorkCareerCard.lineCode || selectedWorkCareerCard.code || "")}</span>
 
-                  {/* 5단계: 라인 평점 (S/A/B/C/D) — 관리자만 설정, 사용자 읽기전용 */}
-                  <div className="workcareer-grade-section">
-                    <span className="grade-label">라인 평점</span>
-                    <div className="grade-row">
-                      {["S", "A", "B", "C", "D"].map((g) => (
-                        <span key={g} className={`grade ${selectedWorkCareerCard?.grade === g ? "active" : ""}`}>
-                          {g}
-                        </span>
-                      ))}
-                    </div>
+                    {/* 5단계: 라인 평점 — "라인 평점" 라벨 + S/A/B/C/D 등급(active 강조)만 표시.
+                        점수(grade-points)/평가 상태(grade-rating-status)/강화 사유(grade-reason-note)는
+                        노출 정책상 렌더하지 않는다. careerGradeInfo()는 등급 active 계산용으로만 사용. */}
+                    {(() => {
+                      const careerInfo = careerGradeInfo(workCareerMatchedLine, selectedWorkCareerCard);
+                      return (
+                        <div className="workcareer-grade-section">
+                          <span className="grade-label">라인 평점</span>
+                          <div className="grade-row">
+                            {["S", "A", "B", "C", "D"].map((g) => (
+                              <span key={g} className={`grade ${careerInfo.grade === g ? "active" : ""}`}>
+                                {g}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
