@@ -5438,20 +5438,26 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     (weeklyCardMeta?.statusIconKey ? STATUS_ICON_KEY_CLASS[weeklyCardMeta.statusIconKey] : undefined)
     ?? (weeklyCardMeta?.statusTone ? STATUS_TONE_CLASS[weeklyCardMeta.statusTone] : undefined)
     ?? statusBadgeInfo.className;
-  // 아이콘 경로 통일(ASCII 강제):
-  //  1) 어드민 DTO statusIconUrl 이 "유효한 비-레거시" 경로면 그대로 사용.
-  //     단, 옛 한글/공백/괄호 파일명(icon - 성장/휴식 ...)이 내려오면 404 위험이 있어 폐기.
-  //  2) statusIconKey 기반 ASCII 단일 출처 맵으로 폴백.
+  // 아이콘 경로 통일(ASCII 강제) — 우선순위:
+  //  1) statusIconKey → 프론트가 커밋·배포를 보장하는 ASCII 단일 출처 맵. 어떤 DTO url 이 와도
+  //     무시한다(404 면역). statusIconKey 는 userWeekStatus 와 1:1 이라 의미 손실이 없다.
+  //  2) statusIconKey 가 없을 때만, DTO statusIconUrl 이 "명백히 ASCII-safe" 하면 사용.
   //  3) 그래도 없으면 로컬 growthStatus 기반 ASCII 아이콘(statusBadgeInfo.icon)으로 폴백.
   const dtoStatusIconUrl = weeklyCardMeta?.statusIconUrl ?? undefined;
-  const isLegacyKoreanIcon =
-    !!dtoStatusIconUrl && /icon - (?:성장|휴식)/.test(dtoStatusIconUrl);
+  // 한글/공백/괄호 raw 파일명(icon - 성장(성공).png …)뿐 아니라, 그것이 percent-encoding
+  // (%20, %EC%84%B1… )된 형태도 일부 프록시/CDN/정적 핸들러에서 404 가 나므로 모두 폐기한다.
+  // 기존 한글-only 정규식(/icon - (성장|휴식)/)은 인코딩 변형을 통과시켜 깨진 경로가 그대로
+  // 렌더되는 결함이 있었다. 순수 ASCII(공백·제어문자 없음) + 괄호·% 금지로 강하게 차단한다.
+  const isAsciiSafeIconUrl =
+    !!dtoStatusIconUrl &&
+    /^[\x21-\x7E]+$/.test(dtoStatusIconUrl) &&
+    !/[()%]/.test(dtoStatusIconUrl);
   const keyedStatusIconUrl = weeklyCardMeta?.statusIconKey
     ? STATUS_ICON_URL[weeklyCardMeta.statusIconKey]
     : undefined;
   const headerStatusIcon =
-    (dtoStatusIconUrl && !isLegacyKoreanIcon ? dtoStatusIconUrl : undefined)
-    ?? keyedStatusIconUrl
+    keyedStatusIconUrl
+    ?? (isAsciiSafeIconUrl ? dtoStatusIconUrl : undefined)
     ?? statusBadgeInfo.icon;
 
   // 날짜 배지
