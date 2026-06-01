@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
+import { triggerAdminSnapshotRecompute } from "@/lib/triggerAdminSnapshotRecompute";
 import type {
   Cluster4LinePartType,
   Cluster4LineSubmissionDto,
@@ -178,6 +179,9 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     return NextResponse.json({ success: false, error: error?.message ?? "Failed to create submission." }, { status: 500 });
   }
 
+  // 저장 성공 후 제출자 snapshot 재계산 트리거 (best-effort, 실패해도 저장은 성공).
+  await triggerAdminSnapshotRecompute([auth.profileUserId]);
+
   return NextResponse.json({ success: true, data: { submission: toDto(data as unknown as SubmissionRow) } }, { status: 201 });
 }
 
@@ -232,6 +236,9 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
   if (!data) {
     return NextResponse.json({ success: false, error: "Submission not found." }, { status: 404 });
   }
+
+  // 수정 성공 후 제출자 snapshot 재계산 트리거 (best-effort, 실패해도 수정은 성공).
+  await triggerAdminSnapshotRecompute([auth.profileUserId]);
 
   return NextResponse.json({ success: true, data: { submission: toDto(data as unknown as SubmissionRow) } });
 }

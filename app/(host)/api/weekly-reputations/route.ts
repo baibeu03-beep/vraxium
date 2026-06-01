@@ -9,6 +9,7 @@ import { authOptions } from "@/lib/auth";
 import { hasOpenEditWindow } from "@/lib/editWindow";
 import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
+import { triggerAdminSnapshotRecompute } from "@/lib/triggerAdminSnapshotRecompute";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -359,6 +360,9 @@ export async function POST(request: Request) {
       );
     }
 
+    // 저장 성공 후 평판 대상자 snapshot 재계산 트리거 (best-effort, 실패해도 저장은 성공).
+    await triggerAdminSnapshotRecompute([targetUserId]);
+
     return NextResponse.json({
       success: true,
       message: "주차 평판이 성공적으로 저장되었습니다.",
@@ -428,7 +432,8 @@ export async function DELETE(request: Request) {
       deleteQuery = deleteQuery.eq("reviewer_id", reviewerProfileId!);
     }
 
-    const { error: deleteError } = await deleteQuery;
+    // 삭제된 행의 target_user_id 를 받아 snapshot 재계산 대상으로 사용한다.
+    const { data: deletedRows, error: deleteError } = await deleteQuery.select("target_user_id");
 
     if (deleteError) {
       console.error("주차 평판 삭제 오류:", deleteError);
@@ -437,6 +442,11 @@ export async function DELETE(request: Request) {
         { status: 500 }
       );
     }
+
+    // 삭제 성공 후 평판 대상자 snapshot 재계산 트리거 (best-effort, 실패해도 삭제는 성공).
+    await triggerAdminSnapshotRecompute(
+      (deletedRows ?? []).map((row) => row.target_user_id as string | null)
+    );
 
     return NextResponse.json({
       success: true,

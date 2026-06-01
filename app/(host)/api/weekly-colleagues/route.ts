@@ -9,6 +9,7 @@ import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { triggerAdminSnapshotRecompute } from "@/lib/triggerAdminSnapshotRecompute";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -308,6 +309,11 @@ export async function POST(request: Request) {
         );
       }
     }
+
+    // 저장/덮어쓰기(삭제+삽입) 성공 후 카드 소유자 snapshot 재계산 트리거.
+    // weekly_colleagues 는 card 소유자(user_id) 기준으로 집계되므로 writerUserId 가 대상.
+    // best-effort — 실패해도 저장은 성공.
+    await triggerAdminSnapshotRecompute([writerUserId]);
 
     return NextResponse.json({
       success: true,
