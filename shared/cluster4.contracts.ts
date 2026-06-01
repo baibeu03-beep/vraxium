@@ -210,7 +210,7 @@ export interface AdminCluster4WeeklyCardDto {
   // ── section1-header 단일 출처 보강 필드 (어드민 DTO append-only — 2026-05-30) ──
   // status-badge 아이콘 결정. userWeekStatus 와 동일 enum 이지만 "아이콘용" 의도를 명시.
   statusIconKey?: AdminCluster4StatusIconKey | null;
-  // 공개 정적 자산 경로(예: "/images/0/cluster4/icon/icon - 성장(성공).png").
+  // 공개 정적 자산 경로(예: "/images/0/cluster4/icon/icon-growth-success.png").
   statusIconUrl?: string | null;
   // 누적 승인 주차 수 (status='success' 합 — 본 주차 포함, 진행/집계 중 +1 미포함).
   accumulatedApprovedWeeks?: number | null;

@@ -5347,43 +5347,43 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         return {
           className: "success",
           text: "성장 (성공)",
-          icon: "/images/0/cluster4/icon/icon - 성장(성공).png",
+          icon: "/images/0/cluster4/icon/icon-growth-success.png",
         };
       case "실패":
         return {
           className: "fail",
           text: "성장 (실패)",
-          icon: "/images/0/cluster4/icon/icon - 성장(실패).png",
+          icon: "/images/0/cluster4/icon/icon-growth-fail.png",
         };
       case "휴식(개인)":
         return {
           className: "rest-personal",
           text: "휴식 (개인)",
-          icon: "/images/0/cluster4/icon/icon - 휴식(개인).png",
+          icon: "/images/0/cluster4/icon/icon-rest-personal.png",
         };
       case "휴식(공식)":
         return {
           className: "rest-official",
           text: "휴식 (공식)",
-          icon: "/images/0/cluster4/icon/icon - 휴식(공식).png",
+          icon: "/images/0/cluster4/icon/icon-rest-official.png",
         };
       case "진행 중":
         return {
           className: "in-progress",
           text: "성장 (진행 중)",
-          icon: "/images/0/cluster4/icon/icon - 성장 (진행 중).png",
+          icon: "/images/0/cluster4/icon/icon-growth-running.png",
         };
       case "집계 중":
         return {
           className: "counting",
           text: "성장 (집계 중)",
-          icon: "/images/0/cluster4/icon/icon - 성장 (집계 중).png",
+          icon: "/images/0/cluster4/icon/icon-growth-tallying.png",
         };
       default:
         return {
           className: "success",
           text: "성장 (성공)",
-          icon: "/images/0/cluster4/icon/icon - 성장(성공).png",
+          icon: "/images/0/cluster4/icon/icon-growth-success.png",
         };
     }
   };
@@ -5408,6 +5408,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     personal_rest: "rest-personal",
     official_rest: "rest-official",
   };
+  // statusIconKey(어드민 DTO) → ASCII 정적 자산 경로 단일 출처.
+  // 한글/공백/괄호 파일명은 일부 환경(프록시/CDN/정적 핸들러)에서 404 가 나므로 ASCII 파일명으로 통일.
+  const STATUS_ICON_URL: Record<string, string> = {
+    running: "/images/0/cluster4/icon/icon-growth-running.png",
+    tallying: "/images/0/cluster4/icon/icon-growth-tallying.png",
+    success: "/images/0/cluster4/icon/icon-growth-success.png",
+    fail: "/images/0/cluster4/icon/icon-growth-fail.png",
+    personal_rest: "/images/0/cluster4/icon/icon-rest-personal.png",
+    official_rest: "/images/0/cluster4/icon/icon-rest-official.png",
+  };
   // statusTone(semantic) → status-badge CSS className 보강.
   // 기존 vocab(success/fail/in_progress/...)은 하위 호환 유지하고, 어드민 DTO 의미 톤(neutral/info/warning/danger)을 추가.
   const STATUS_TONE_CLASS: Record<string, string> = {
@@ -5428,8 +5438,21 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     (weeklyCardMeta?.statusIconKey ? STATUS_ICON_KEY_CLASS[weeklyCardMeta.statusIconKey] : undefined)
     ?? (weeklyCardMeta?.statusTone ? STATUS_TONE_CLASS[weeklyCardMeta.statusTone] : undefined)
     ?? statusBadgeInfo.className;
-  // 아이콘: 어드민 DTO statusIconUrl 우선, null/undefined 면 기존 로컬 아이콘 fallback.
-  const headerStatusIcon = weeklyCardMeta?.statusIconUrl ?? statusBadgeInfo.icon;
+  // 아이콘 경로 통일(ASCII 강제):
+  //  1) 어드민 DTO statusIconUrl 이 "유효한 비-레거시" 경로면 그대로 사용.
+  //     단, 옛 한글/공백/괄호 파일명(icon - 성장/휴식 ...)이 내려오면 404 위험이 있어 폐기.
+  //  2) statusIconKey 기반 ASCII 단일 출처 맵으로 폴백.
+  //  3) 그래도 없으면 로컬 growthStatus 기반 ASCII 아이콘(statusBadgeInfo.icon)으로 폴백.
+  const dtoStatusIconUrl = weeklyCardMeta?.statusIconUrl ?? undefined;
+  const isLegacyKoreanIcon =
+    !!dtoStatusIconUrl && /icon - (?:성장|휴식)/.test(dtoStatusIconUrl);
+  const keyedStatusIconUrl = weeklyCardMeta?.statusIconKey
+    ? STATUS_ICON_URL[weeklyCardMeta.statusIconKey]
+    : undefined;
+  const headerStatusIcon =
+    (dtoStatusIconUrl && !isLegacyKoreanIcon ? dtoStatusIconUrl : undefined)
+    ?? keyedStatusIconUrl
+    ?? statusBadgeInfo.icon;
 
   // 날짜 배지
   const headerStartDate = weeklyCardMeta?.startDate ?? weekData?.startDate ?? null;

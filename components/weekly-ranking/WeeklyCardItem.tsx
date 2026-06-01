@@ -282,7 +282,7 @@ export default function WeeklyCardItem({ data }: Props) {
               </div>
 
               <div className="skill-card">
-                <Image src="/images/0/cluster4/icon/icon - 성장 (진행 중).png" alt="" width={34} height={34} className="skill-icon" />
+                <Image src="/images/0/cluster4/icon/icon-growth-running.png" alt="" width={34} height={34} className="skill-icon" />
                 <div className="skill-num-row">
                   <span className="skill-num">{data.leagueRecordStatus === '대전 중' ? 'N' : data.growthChallenge}</span>
                   <span className="skill-unit">명</span>
@@ -291,7 +291,7 @@ export default function WeeklyCardItem({ data }: Props) {
               </div>
 
               <div className="skill-card">
-                <Image src="/images/0/cluster4/icon/icon - 성장(성공).png" alt="" width={34} height={34} className="skill-icon" />
+                <Image src="/images/0/cluster4/icon/icon-growth-success.png" alt="" width={34} height={34} className="skill-icon" />
                 <div className="skill-num-row">
                   <span className="skill-num">{data.leagueRecordStatus === '대전 중' ? 'N' : data.growthSuccess}</span>
                   <span className="skill-unit">명</span>
@@ -300,7 +300,7 @@ export default function WeeklyCardItem({ data }: Props) {
               </div>
 
               <div className="skill-card">
-                <Image src="/images/0/cluster4/icon/icon - 성장(실패).png" alt="" width={34} height={34} className="skill-icon" />
+                <Image src="/images/0/cluster4/icon/icon-growth-fail.png" alt="" width={34} height={34} className="skill-icon" />
                 <div className="skill-num-row">
                   <span className="skill-num">{data.leagueRecordStatus === '대전 중' ? 'N' : data.growthFail}</span>
                   <span className="skill-unit">명</span>
@@ -309,7 +309,7 @@ export default function WeeklyCardItem({ data }: Props) {
               </div>
 
               <div className="skill-card">
-                <Image src="/images/0/cluster4/icon/icon - 휴식(개인).png" alt="" width={34} height={34} className="skill-icon" />
+                <Image src="/images/0/cluster4/icon/icon-rest-personal.png" alt="" width={34} height={34} className="skill-icon" />
                 <div className="skill-num-row">
                   <span className="skill-num">{data.leagueRecordStatus === '대전 중' ? 'N' : data.personalRest}</span>
                   <span className="skill-unit">명</span>
