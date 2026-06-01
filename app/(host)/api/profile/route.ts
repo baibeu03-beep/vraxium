@@ -1136,16 +1136,6 @@ export async function GET(request: NextRequest) {
       reliabilityRate: calculatedReliabilityRate,
     };
 
-    // activity_type_id → cluster_id 매핑 생성
-    const activityTypes = activityTypesResult || [];
-    const typeToClusterMap = new Map<string, string>();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    activityTypes.forEach((at: any) => {
-      if (at.id && at.cluster_id) {
-        typeToClusterMap.set(at.id, at.cluster_id);
-      }
-    });
-
     // 실무 정보 습득(info) SoT — 어드민 practicalStats.infoCount 와 동일 기준으로 통일.
     //   기존: activity_records(is_completed) 기반 → cluster4 전환 후 미적재로 0 표기되던 문제.
     //   변경: cluster4 실무정보 라인 "강화 성공"(배정 + 마감 경과) 누적.
@@ -1298,12 +1288,87 @@ export async function GET(request: NextRequest) {
     }
 
     // cluster_id 기반으로 카운트 (info / experience / competency 는 cluster4 라인 SoT 로 대체)
-    const practicalCounts = activitiesData ? {
+    // Career practical count uses the same success rule as admin weekly-cards:
+    // active career line target + deadline passed + grade S/A/B/C. Tallying weeks are included.
+    let careerLineSuccessCount = 0;
+    {
+      const careerUserId = (profile.user_id ?? profile.id) as string | undefined;
+      const weekIdByStart = new Map<string, string>();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (allWeeks as any[]).forEach((w) => {
+        if (w?.start_date && w?.id) weekIdByStart.set(w.start_date, w.id);
+      });
+      const careerWeekIds = (
+        ((userWeeklyGrowthResult as { data: Array<{ week_start_date: string }> | null })?.data) ?? []
+      )
+        .map((w) => weekIdByStart.get(w.week_start_date))
+        .filter((id): id is string => !!id);
+
+      if (careerUserId && careerWeekIds.length > 0) {
+        const { data: careerLines } = await supabaseAdmin
+          .from("cluster4_lines")
+          .select("id, submission_closes_at")
+          .eq("part_type", "career")
+          .eq("is_active", true);
+
+        const closesById = new Map<string, string>();
+        for (const l of (careerLines ?? []) as Array<{ id: string; submission_closes_at: string }>) {
+          closesById.set(l.id, l.submission_closes_at);
+        }
+
+        if (closesById.size > 0) {
+          const { data: careerTargets } = await supabaseAdmin
+            .from("cluster4_line_targets")
+            .select("id, week_id, line_id")
+            .eq("target_mode", "user")
+            .eq("target_user_id", careerUserId)
+            .in("line_id", Array.from(closesById.keys()))
+            .in("week_id", careerWeekIds);
+
+          const now = Date.now();
+          const deadlinePassedTargets = ((careerTargets ?? []) as Array<{ id: string; week_id: string; line_id: string }>)
+            .filter((t) => {
+              const closes = closesById.get(t.line_id);
+              return Boolean(closes) && new Date(closes as string).getTime() < now;
+            });
+
+          if (deadlinePassedTargets.length > 0) {
+            const { data: careerEvals } = await supabaseAdmin
+              .from("cluster4_career_line_evaluations")
+              .select("line_target_id, grade")
+              .eq("user_id", careerUserId)
+              .in("line_target_id", deadlinePassedTargets.map((t) => t.id));
+
+            const gradeByTarget = new Map<string, string>();
+            for (const e of (careerEvals ?? []) as Array<{ line_target_id: string; grade: string | null }>) {
+              if (e.grade) gradeByTarget.set(e.line_target_id, e.grade);
+            }
+
+            const successGrades = new Set(["S", "A", "B", "C"]);
+            for (const t of deadlinePassedTargets) {
+              if (successGrades.has(gradeByTarget.get(t.id) ?? "")) {
+                careerLineSuccessCount++;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const practicalCounts = {
       competency: competencyLineSuccessCount,
       experience: experienceLineSuccessCount,
       info: infoLineSuccessCount,
-      career: activitiesData.filter(a => typeToClusterMap.get(a.activity_type_id) === 'practical_career').length
-    } : { competency: competencyLineSuccessCount, experience: experienceLineSuccessCount, info: infoLineSuccessCount, career: 0 };
+      career: careerLineSuccessCount,
+    };
+    const practicalStats = {
+      infoCount: infoLineSuccessCount,
+      experienceCount: experienceLineSuccessCount,
+      abilityUnitCount: competencyLineSuccessCount,
+      careerProjectCount: careerLineSuccessCount,
+    };
+    const careerProjectCount = careerLineSuccessCount;
+    const careerActivityCount = careerLineSuccessCount;
 
     // completionRate 계산: (R / P) × 100
     // P = 가입 주차 이후 열린 모든 활동 수 (weekly_activities, break 시즌 제외)
@@ -1779,6 +1844,9 @@ export async function GET(request: NextRequest) {
       success: true,
       data: profile,
       practicalCounts,
+      practicalStats,
+      careerProjectCount,
+      careerActivityCount,
       reliabilityRate: finalGrowthPeriodStats.reliabilityRate,
       completionRate,
       badges: {

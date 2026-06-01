@@ -7177,7 +7177,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   // ── 실무 경험/경력 카운트·달성률 단일 출처(어드민 weekly-cards DTO) — infoStatsAdmin/competencyStatsAdmin 와 동일 패턴 ──
   // DTO experienceRate/careerRate{rate,count,total} 가 있으면 우선 사용(count=B, total=A, 백엔드 보정 완료).
-  // 미수신 시에만 기존 프론트 계산값(experienceStatsDisplay / careerStats)으로 fallback → 회귀 없음(영향 없음).
+  // careerRate 미수신 시에는 legacy careerStats 가 아니라 weekly-cards career line 의 denominator/numerator/rate 를 사용한다.
   const experienceStatsAdmin = (() => {
     const r = (weeklyCardMeta as (AdminCluster4WeeklyCardDto & { experienceRate?: Cluster4RateDto | null }) | null)?.experienceRate ?? null;
     if (r && typeof r.total === "number" && typeof r.count === "number") {
@@ -7196,7 +7196,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     if (r && typeof r.total === "number" && typeof r.count === "number") {
       return { total: Number(r.total) || 0, success: Number(r.count) || 0, rate: typeof r.rate === "number" ? r.rate : null };
     }
-    return { total: Number(careerStats.total) || 0, success: Number(careerStats.success) || 0, rate: null };
+    const careerLines = cluster4Lines.filter(
+      (l) => (l.weekId ?? null) === weekId && normalizePartType(l.partType) === "career",
+    );
+    if (careerLines.length > 0) {
+      const total = careerLines.reduce((sum, line) => sum + (typeof line.denominator === "number" ? line.denominator : 0), 0);
+      const success = careerLines.reduce((sum, line) => sum + (typeof line.numerator === "number" ? line.numerator : 0), 0);
+      const singleLineRate = careerLines.length === 1 && typeof careerLines[0]?.rate === "number" ? careerLines[0].rate : null;
+      return {
+        total,
+        success,
+        rate: singleLineRate ?? (total > 0 ? Math.round((success / total) * 100) : 0),
+      };
+    }
+    return { total: 0, success: 0, rate: 0 };
   })();
   const careerSuccessRate =
     typeof careerStatsAdmin.rate === "number"
@@ -7205,19 +7218,28 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         ? Math.round((careerStatsAdmin.success / careerStatsAdmin.total) * 100)
         : 0;
 
-  // ── 상단 주차 성장률(성장 허브) 총합 단일 출처 — 4개 섹션의 어드민 DTO 합산 ──
-  // 각 섹션 헤더가 쓰는 *StatsAdmin 와 동일 값을 합산하므로 섹션 헤더 ↔ 총합이 항상 일치한다.
-  // rate 는 개별 rate 합산이 아니라 합산 total/success 로 재계산(개별 rate 는 합산 불가).
-  const growthStatsAdmin = {
-    total: infoStatsAdmin.total + competencyStatsAdmin.total + experienceStatsAdmin.total + careerStatsAdmin.total,
-    success: infoStatsAdmin.success + competencyStatsAdmin.success + experienceStatsAdmin.success + careerStatsAdmin.success,
-  };
-  const growthSuccessRate =
-    growthStatsAdmin.total > 0
-      ? Math.ceil((growthStatsAdmin.success / growthStatsAdmin.total) * 100)
-      : isOnboardingWeek
-        ? 100
-        : 0;
+  // ── 상단 주차 성장률(성장 허브) 단일 출처 ──
+  // 1순위: weekly-cards 카드 DTO 의 growthDenominator/growthNumerator/weeklyGrowthRate.
+  // 2순위: DTO 미수신 시 lines[] denominator/numerator 합산. 3순위: 0/0/0.
+  const growthStatsAdmin = (() => {
+    const metaTotal = weeklyCardMeta?.growthDenominator;
+    const metaSuccess = weeklyCardMeta?.growthNumerator;
+    const metaRate = weeklyCardMeta?.weeklyGrowthRate;
+    if (typeof metaTotal === "number" && typeof metaSuccess === "number" && typeof metaRate === "number") {
+      return { total: metaTotal, success: metaSuccess, rate: metaRate };
+    }
+    const growthPartTypes = new Set(["information", "experience", "competency", "career"]);
+    const currentWeekLines = cluster4Lines.filter(
+      (l) => (l.weekId ?? null) === weekId && growthPartTypes.has(normalizePartType(l.partType)),
+    );
+    if (currentWeekLines.length > 0) {
+      const total = currentWeekLines.reduce((sum, line) => sum + (typeof line.denominator === "number" ? line.denominator : 0), 0);
+      const success = currentWeekLines.reduce((sum, line) => sum + (typeof line.numerator === "number" ? line.numerator : 0), 0);
+      return { total, success, rate: total > 0 ? Math.ceil((success / total) * 100) : 0 };
+    }
+    return { total: 0, success: 0, rate: 0 };
+  })();
+  const growthSuccessRate = growthStatsAdmin.rate;
 
   // 실무 경력 카드 데이터 (DB에서 가져온 프로젝트 기반 데이터 변환)
   // ── 실무 경력(career) 카드 단일 출처 = weekly-cards lines[] (partType==="career", weekId 일치) ──

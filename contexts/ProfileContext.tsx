@@ -12,6 +12,14 @@ interface ProfileData {
   // 값이 없으면 null. resume-card phone-comment 모달이 직접 이 필드를 읽음.
   contactAvailable: string | null;
   practicalCounts: { competency: number; experience: number; info: number; career: number } | null;
+  practicalStats: {
+    infoCount: number;
+    experienceCount: number;
+    abilityUnitCount: number;
+    careerProjectCount: number;
+  } | null;
+  careerProjectCount: number | null;
+  careerActivityCount: number | null;
   reliabilityRate: number | null;
   completionRate: number | null;
   badges: { stars: number; lightnings: number; shields: number } | null;
@@ -157,6 +165,11 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
         contactAvailable:
           result.data?.contactAvailable ?? result.data?.contact_available ?? null,
         practicalCounts: result.practicalCounts || null,
+        practicalStats: result.practicalStats || null,
+        careerProjectCount:
+          typeof result.careerProjectCount === "number" ? result.careerProjectCount : null,
+        careerActivityCount:
+          typeof result.careerActivityCount === "number" ? result.careerActivityCount : null,
         reliabilityRate: result.reliabilityRate ?? null,
         completionRate: result.completionRate ?? null,
         badges: result.badges || null,

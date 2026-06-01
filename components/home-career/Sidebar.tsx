@@ -33,6 +33,22 @@ const toPointNum = (value: unknown): number => {
   return 0;
 };
 
+const resolveCareerSkillCount = (source: {
+  practicalStats?: { careerProjectCount?: unknown } | null;
+  practicalCounts?: { career?: unknown } | null;
+  careerActivityCount?: unknown;
+}): number | null => {
+  const candidates = [
+    source.practicalStats?.careerProjectCount,
+    source.practicalCounts?.career,
+    source.careerActivityCount,
+  ];
+  for (const value of candidates) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return null;
+};
+
 const IDENTITY_TAB_IMAGES = [
   { src: "/images/0/cluster 1/identity-tab-bg-1.png", overlay: 0.45 },
   { src: "/images/0/cluster 1/identity-tab-bg-2.png", overlay: 0.45 },
@@ -280,7 +296,10 @@ const Sidebar = () => {
   // practicalStats.abilityUnitCount 와 동일 값. resume-card skill-num 표시에 사용한다.
   // number 면 그대로(0 포함) 표시, API 미제공(null·undefined) 이면 "-".
   const [practicalCompetencyCount, setPracticalCompetencyCount] = useState<number | null>(null);
-  const [practicalCareer, setPracticalCareer] = useState<number>(0); // 실무 경력 누적
+  // 실무 경력 누적 프로젝트 수 — practicalStats.careerProjectCount 를 우선 사용하고
+  // 없을 때만 practicalCounts.career / careerActivityCount 로 폴백한다.
+  // number 면 0 포함 표시, null/undefined 일 때만 "-".
+  const [practicalCareerCount, setPracticalCareerCount] = useState<number | null>(null);
   const [hasActivityData, setHasActivityData] = useState<boolean>(false);
   const [stat1, setStat1] = useState(0);
   const [stat2, setStat2] = useState(0);
@@ -622,7 +641,7 @@ const Sidebar = () => {
           setPracticalInfo(s.info);
           setPracticalCompetency(s.competency);
           setPracticalExperience(s.experience);
-          setPracticalCareer(s.career);
+          setPracticalCareerCount(s.career);
           setCrewStatus(s.status);
         }
     };
@@ -652,7 +671,7 @@ const Sidebar = () => {
       setPracticalExperienceCount(DUMMY_SIDEBAR_EXTRA.practicalExperience);
       setPracticalInfo(DUMMY_SIDEBAR_EXTRA.practicalInfo);
       setPracticalInfoCount(DUMMY_SIDEBAR_EXTRA.practicalInfo);
-      setPracticalCareer(DUMMY_SIDEBAR_EXTRA.practicalCareer);
+      setPracticalCareerCount(DUMMY_SIDEBAR_EXTRA.practicalCareer);
       setHasActivityData(true);
       setBadgeData(DUMMY_SIDEBAR_EXTRA.badgeData);
       setHasBadgeData(true);
@@ -709,7 +728,8 @@ const Sidebar = () => {
       setReliabilityRate(cachedProfile.reliabilityRate);
     }
     if (cachedProfile.practicalCounts) {
-      const { competency, experience, info, career } = cachedProfile.practicalCounts;
+      const { competency, experience, info } = cachedProfile.practicalCounts;
+      const careerSkillCount = resolveCareerSkillCount(cachedProfile);
       setPracticalCompetency(competency);
       // 실무역량 라인 강화 성공 누적 횟수 — API 응답값 그대로(0 포함). 재계산 금지.
       setPracticalCompetencyCount(typeof competency === "number" ? competency : null);
@@ -719,8 +739,9 @@ const Sidebar = () => {
       setPracticalInfo(info);
       // 실무정보 라인 강화 성공 누적 횟수 — API 응답값 그대로(0 포함). 재계산 금지.
       setPracticalInfoCount(typeof info === "number" ? info : null);
-      setPracticalCareer(career);
-      setHasActivityData(competency > 0 || experience > 0 || info > 0 || career > 0);
+      // 실무경력 누적 프로젝트 수 — API 응답값 그대로(0 포함). 재계산 금지.
+      setPracticalCareerCount(careerSkillCount);
+      setHasActivityData(competency > 0 || experience > 0 || info > 0 || (careerSkillCount ?? 0) > 0);
     }
     if (cachedProfile.badges) {
       setBadgeData(cachedProfile.badges);
@@ -1164,6 +1185,9 @@ const Sidebar = () => {
         completionRate: cachedResult.completionRate,
         reliabilityRate: cachedResult.reliabilityRate,
         practicalCounts: cachedResult.practicalCounts,
+        practicalStats: cachedResult.practicalStats,
+        careerProjectCount: cachedResult.careerProjectCount,
+        careerActivityCount: cachedResult.careerActivityCount,
         badges: cachedResult.badges,
         point: cachedResult.point,
         seasonHistories: cachedResult.seasonHistories,
@@ -1238,7 +1262,8 @@ const Sidebar = () => {
 
         // 스킬 카드 데이터 - API 응답에서 가져오기 (중복 호출 제거)
         if (result.practicalCounts) {
-          const { competency, experience, info, career } = result.practicalCounts;
+          const { competency, experience, info } = result.practicalCounts;
+          const careerSkillCount = resolveCareerSkillCount(result);
           setPracticalCompetency(competency);
           // 실무역량 라인 강화 성공 누적 횟수 — API 응답값 그대로(0 포함). 재계산 금지.
           setPracticalCompetencyCount(typeof competency === "number" ? competency : null);
@@ -1248,13 +1273,15 @@ const Sidebar = () => {
           setPracticalInfo(info);
           // 실무정보 라인 강화 성공 누적 횟수 — API 응답값 그대로(0 포함). 재계산 금지.
           setPracticalInfoCount(typeof info === "number" ? info : null);
-          setPracticalCareer(career);
-          setHasActivityData(competency > 0 || experience > 0 || info > 0 || career > 0);
+          // 실무경력 누적 프로젝트 수 — API 응답값 그대로(0 포함). 재계산 금지.
+          setPracticalCareerCount(careerSkillCount);
+          setHasActivityData(competency > 0 || experience > 0 || info > 0 || (careerSkillCount ?? 0) > 0);
         } else {
           setHasActivityData(false);
           setPracticalCompetencyCount(null);
           setPracticalExperienceCount(null);
           setPracticalInfoCount(null);
+          setPracticalCareerCount(null);
         }
 
         // 배지 데이터 설정 (별, 번개, 방패)
@@ -2842,7 +2869,7 @@ const Sidebar = () => {
               <div className="skill-card">
                 <Image src="/images/0/cluster 1/Sheriff Badge1 4.png" alt="" width={34} height={34} className="skill-icon" />
                 <div className="skill-num-row">
-                  <span className="skill-num">{hasActivityData ? practicalCareer : "-"}</span>
+                  <span className="skill-num">{typeof practicalCareerCount === "number" ? practicalCareerCount : "-"}</span>
                   <span className="skill-unit">proj</span>
                 </div>
                 <span className="skill-label">실무 경력 누적</span>
