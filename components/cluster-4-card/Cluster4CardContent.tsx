@@ -328,7 +328,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // NICKNAME_COLOR_OFFSET도 Math.random() 호출이 SSR/client 다른 값을 만들어 hydration mismatch 발생 → stateful
   const [nicknameColorOffset, setNicknameColorOffset] = useState(0);
   useEffect(() => {
-    const demo = checkDemoMode();
+    // 로컬 더미(localStorage demoMode)는 테스트 유저(?demoUserId=) 모드에서는 끈다 —
+    // 테스트 모드는 실제 DB 를 source of truth 로 읽어야 하므로 더미가 응답을 덮으면 안 된다.
+    const demo = checkDemoMode() && !demoUserId;
     setIsDemoMode(demo);
     setIsMounted(true);
     setNicknameColorOffset(Math.floor(Math.random() * 4));
@@ -354,6 +356,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 테스트 유저(데모) 모드면 편집 UX 검증을 위해 owner 로 취급 (실제 저장은 demoUserId 로 백엔드 검증).
   const isOwner = session?.user?.isAdmin || !!demoUserId || !urlUserId || session?.user?.id === urlUserId;
   const isAdmin = !!session?.user?.isAdmin;
+  // 4허브 수정 버튼 강제 활성(권한 우회)은 (1) localStorage 더미 데모 모드(isDemoMode: 실제 DTO 없음),
+  // (2) 순수 어드민 프리뷰(demoUserId 없는 admin=true) 에만 적용한다.
+  // 테스트 유저 모드(demoUserId)는 "특정 테스트 유저로 로그인한 일반 모드"처럼 동작 — weekly-cards DTO 의
+  // canEdit/lineTargetId/owner 단일 기준을 그대로 따르며 강제 활성하지 않는다(저장은 demoUserId 로 백엔드 검증).
+  const forceEditUnlock = isDemoMode || (isAdminPreview && !demoUserId);
+  // 순수 어드민 프리뷰(admin=true 이면서 demoUserId 없음)에만 적용되는 플래그.
+  // 운영진 output 이미지 슬롯 렌더는 isAdminPreview 대신 이 플래그를 써서, 테스트 유저 모드(demoUserId)는
+  // 일반 고객과 동일 경로로 운영진 output image/caption 을 표시한다(실고객/순수 프리뷰 동작은 불변).
+  const isPureAdminPreview = isAdminPreview && !demoUserId;
 
   // [진단] 테스트 유저 모드 위클리 리뷰 버튼 활성화 추적 — 콘솔에서 런타임 값 확인용.
   // 버튼 disabled 는 `!isOwner` 단일 조건이므로 isOwner=true 면 활성이어야 한다.
@@ -1090,13 +1101,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         // 프로필 API (주차 번들 포함) + 보조 API 동시 시작
         const earlyApiPromise = earlyUserId
           ? Promise.all([
-              fetch(`/api/career-records?week_id=${weekId}&user_id=${earlyUserId}`, { cache: "no-store" })
+              fetch(`/api/career-records?week_id=${weekId}&user_id=${earlyUserId}${demoQS}`, { cache: "no-store" })
                 .then((r) => r.json())
                 .catch(() => null),
-              fetch(`/api/weekly-reputations?targetUserId=${earlyUserId}&weekCardId=${weekId}`)
+              fetch(`/api/weekly-reputations?targetUserId=${earlyUserId}&weekCardId=${weekId}${demoQS}`)
                 .then((r) => r.json())
                 .catch(() => null),
-              fetch(`/api/weekly-colleagues?userId=${earlyUserId}&weekCardId=${weekId}`)
+              fetch(`/api/weekly-colleagues?userId=${earlyUserId}&weekCardId=${weekId}${demoQS}`)
                 .then((r) => r.json())
                 .catch(() => null),
             ])
@@ -1654,7 +1665,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const fetchWeeklyReputations = async () => {
     if (!urlUserId || !weekId) return;
     try {
-      const res = await fetch(`/api/weekly-reputations?targetUserId=${urlUserId}&weekCardId=${weekId}`);
+      const res = await fetch(`/api/weekly-reputations?targetUserId=${urlUserId}&weekCardId=${weekId}${demoQS}`);
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.data) {
@@ -1717,7 +1728,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     const targetUserId = urlUserId || session?.user?.id;
     if (!targetUserId || !weekId) return;
     try {
-      const res = await fetch(`/api/weekly-colleagues?userId=${targetUserId}&weekCardId=${weekId}`);
+      const res = await fetch(`/api/weekly-colleagues?userId=${targetUserId}&weekCardId=${weekId}${demoQS}`);
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.data) {
@@ -1966,12 +1977,35 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         });
         // 전체 카드의 lines 평탄화 — 각 line 에 소속 카드의 weekId 를 보존
         // (line.weekId 가 이미 있으면 그대로, 없으면 카드 weekId 로 채움)
+        // admin(top-level) 이미지 캡션 coalesce — admin DTO 는 outputImages(URL string[]) 와
+        // outputImageCaptions(string[]) 를 분리해 내려준다(submission.* 와 동일 형태). 하지만 프론트의
+        // 모든 운영진 이미지 소비처는 normalizeOutputImages(line.outputImages)[i].caption 만 읽으므로,
+        // 분리 배열인 채로는 캡션이 유실된다. ingestion 단계에서 [{url,caption}] 단일 형태로 합쳐
+        // 다운스트림(4 part 카드/모달 + N-1 gap-fill spread)이 캡션을 그대로 표시하도록 한다.
+        // 이미 객체({url,caption}) 형태로 온 경우(레거시/호환)는 caption 이 비어있을 때만 별도 배열로 보강.
+        const coalesceAdminOutputImages = (
+          line: Cluster4WeeklyLineDto,
+        ): Cluster4WeeklyLineDto["outputImages"] => {
+          const imgs = line.outputImages as
+            | ReadonlyArray<string | { url?: string | null; caption?: string | null } | null>
+            | null
+            | undefined;
+          if (!Array.isArray(imgs)) return line.outputImages;
+          const caps = Array.isArray(line.outputImageCaptions) ? line.outputImageCaptions : [];
+          return imgs.map((img, i) => {
+            if (typeof img === "string") return { url: img, caption: caps[i] ?? null };
+            const url = (img?.url as string | null | undefined) ?? "";
+            const caption = (img?.caption as string | null | undefined) ?? caps[i] ?? null;
+            return { url, caption };
+          });
+        };
         const allLines: Cluster4WeeklyLineDto[] = [];
         cards.forEach((c) => {
           const cardLines = Array.isArray(c?.lines) ? c.lines! : [];
           cardLines.forEach((line) => {
             allLines.push({
               ...line,
+              outputImages: coalesceAdminOutputImages(line),
               weekId: (line.weekId as string | null | undefined) ?? c.weekId ?? null,
             });
           });
@@ -2601,15 +2635,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const [canEditWorkInfo, setCanEditWorkInfo] = useState<boolean>(isDemoMode);
   useEffect(() => {
     // 편집 진입(handleEditWorkInfo)·수정 버튼 disabled·저장 핸들러(handleSaveWorkInfo) 차단 기준을
-    // 단일 기준으로 통일한다: 데모/어드민 프리뷰는 항상 true, 일반 모드는
+    // 단일 기준으로 통일한다: 더미/순수 어드민 프리뷰(forceEditUnlock)는 항상 true, 그 외(일반·테스트 유저)는
     // workInfoMatchedLine.canEdit === true && lineTargetId 존재 (백엔드 단일 출처, 프론트 재계산 금지).
-    if (isDemoMode || isAdminPreview) {
+    if (forceEditUnlock) {
       setCanEditWorkInfo(true);
       return;
     }
     const lineTargetId = (workInfoMatchedLine?.lineTargetId as string | null | undefined) ?? null;
     setCanEditWorkInfo(workInfoMatchedLine?.canEdit === true && !!lineTargetId);
-  }, [isDemoMode, isAdminPreview, workInfoMatchedLine]);
+  }, [forceEditUnlock, workInfoMatchedLine]);
 
   // ========== workAbility View 모달 전용 state (workInfo 패턴 복제, 완전 독립) ==========
   const [workAbilityFooterNotice, setWorkAbilityFooterNotice] = useState<"default" | "error">("default");
@@ -2628,8 +2662,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const [showAbilityHelpModal, setShowAbilityHelpModal] = useState(false);
   const [canEditWorkAbility, setCanEditWorkAbility] = useState<boolean>(isDemoMode);
   useEffect(() => {
-    setCanEditWorkAbility(isDemoMode);
-  }, [isDemoMode]);
+    // 강제 활성(더미/순수 어드민 프리뷰)은 true. 테스트 유저(demoUserId)는 일반 모드와 동일하게
+    // workAbilityMatchedLine.canEdit + lineTargetId 단일 출처. 일반 모드는 상위 통합 effect(승인 기준)가 셋업.
+    if (forceEditUnlock) { setCanEditWorkAbility(true); return; }
+    if (demoUserId) {
+      const lineTargetId = (workAbilityMatchedLine?.lineTargetId as string | null | undefined) ?? null;
+      setCanEditWorkAbility(workAbilityMatchedLine?.canEdit === true && !!lineTargetId);
+    }
+  }, [forceEditUnlock, demoUserId, workAbilityMatchedLine]);
 
   // ========== workExp View 모달 전용 state (workInfo 패턴 복제, 완전 독립) ==========
   const [workExpFooterNotice, setWorkExpFooterNotice] = useState<"default" | "error">("default");
@@ -2648,8 +2688,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const [showExpHelpModal, setShowExpHelpModal] = useState(false);
   const [canEditWorkExp, setCanEditWorkExp] = useState<boolean>(isDemoMode);
   useEffect(() => {
-    setCanEditWorkExp(isDemoMode);
-  }, [isDemoMode]);
+    // 강제 활성(더미/순수 어드민 프리뷰)은 true. 테스트 유저(demoUserId)는 일반 모드와 동일하게
+    // workExpMatchedLine.canEdit + lineTargetId 단일 출처. 일반 모드는 상위 통합 effect(승인 기준)가 셋업.
+    if (forceEditUnlock) { setCanEditWorkExp(true); return; }
+    if (demoUserId) {
+      const lineTargetId = (workExpMatchedLine?.lineTargetId as string | null | undefined) ?? null;
+      setCanEditWorkExp(workExpMatchedLine?.canEdit === true && !!lineTargetId);
+    }
+  }, [forceEditUnlock, demoUserId, workExpMatchedLine]);
   // workExp 전용: 라인 평점 (0~10, 0=미입력)
   const [editingExpRating, setEditingExpRating] = useState<number>(0);
 
@@ -2677,8 +2723,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   const [canEditWorkCareer, setCanEditWorkCareer] = useState<boolean>(isDemoMode);
   useEffect(() => {
-    setCanEditWorkCareer(isDemoMode);
-  }, [isDemoMode]);
+    // 강제 활성(더미/순수 어드민 프리뷰)은 true. 테스트 유저(demoUserId)는 일반 모드와 동일하게
+    // workCareerMatchedLine.canEdit + lineTargetId 단일 출처. 일반 모드는 상위 통합 effect(승인 기준)가 셋업.
+    if (forceEditUnlock) { setCanEditWorkCareer(true); return; }
+    if (demoUserId) {
+      const lineTargetId = (workCareerMatchedLine?.lineTargetId as string | null | undefined) ?? null;
+      setCanEditWorkCareer(workCareerMatchedLine?.canEdit === true && !!lineTargetId);
+    }
+  }, [forceEditUnlock, demoUserId, workCareerMatchedLine]);
 
   // Weekly Review 박스 — scroll + getBoundingClientRect (1회성 unfurl)
   // clip-path: inset(0 100% 0 0)로 IntersectionObserver dead-lock 회피
@@ -2752,7 +2804,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     {
       const lineTargetId = (workInfoMatchedLine?.lineTargetId as string | null | undefined) ?? null;
       const backendEditable = workInfoMatchedLine?.canEdit === true && !!lineTargetId;
-      if (!isDemoMode && !isAdminPreview && !backendEditable) {
+      if (!forceEditUnlock && !backendEditable) {
         await popup.alert(!workInfoMatchedLine ? "개설된 라인이 없습니다." : ((workInfoMatchedLine.editReason as string | null | undefined) || "작성할 수 있는 기간이 아닙니다. 😊"));
         return;
       }
@@ -2765,7 +2817,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     const initialOutputLinks = infoSrcLinks && infoSrcLinks.length > 0 ? infoSrcLinks.map((l: { desc?: string | null; url?: string | null }) => ({ desc: l?.desc || "", url: l?.url || "" })) : Array(5).fill({ desc: "", url: "" });
     let initialImages = normalizeWorkInfoImages(card?.images);
     let initialCaptions = normalizeWorkInfoCaptions(card?.imageCaptions);
-    if (isAdminPreview) {
+    if (isPureAdminPreview) {
       const adminImgs = card?.activityType ? getAdminOutputImages(card.activityType, workInfoMatchedLine) : [];
       const adminImgCount = Math.min(getAdminOutputImagesCount(card?.activityType ?? "", workInfoMatchedLine), WORKINFO_IMAGE_SLOT_COUNT);
       const crewImages = normalizeWorkInfoImages(card?.images);
@@ -2807,7 +2859,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleResetWorkInfo = async () => {
-    if (!isDemoMode && !canEditWorkInfo && !isAdminPreview) {
+    if (!forceEditUnlock && !canEditWorkInfo) {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
@@ -2921,7 +2973,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleSaveWorkInfo = async () => {
-    if (!isDemoMode && !canEditWorkInfo && !isAdminPreview) {
+    if (!forceEditUnlock && !canEditWorkInfo) {
       console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkInfo" });
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
@@ -2931,7 +2983,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     const infoActivityTypeKey = (selectedWorkInfoCard?.activityType as string | null | undefined) ?? null;
     const infoSaveLine = findCluster4Line({ partType: "information", activityTypeKey: infoActivityTypeKey });
     const infoSaveLineTargetId = (infoSaveLine?.lineTargetId as string | null | undefined) ?? null;
-    if (!isDemoMode && !isAdminPreview && !infoSaveLineTargetId) {
+    if (!forceEditUnlock && !infoSaveLineTargetId) {
       console.warn("[cluster4-canEdit] workInfo 저장 차단 — lineTargetId 없음", {
         weekId,
         activityTypeKey: infoActivityTypeKey,
@@ -3245,7 +3297,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     {
       const lineTargetId = (workAbilityMatchedLine?.lineTargetId as string | null | undefined) ?? null;
       const backendEditable = workAbilityMatchedLine?.canEdit === true && !!lineTargetId;
-      if (!isDemoMode && !isAdminPreview && !backendEditable) {
+      if (!forceEditUnlock && !backendEditable) {
         await popup.alert(!workAbilityMatchedLine ? "개설된 라인이 없습니다." : ((workAbilityMatchedLine.editReason as string | null | undefined) || "작성할 수 있는 기간이 아닙니다. 😊"));
         return;
       }
@@ -3290,7 +3342,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleResetWorkAbility = async () => {
-    if (!isDemoMode && !canEditWorkAbility && !isAdminPreview) {
+    if (!forceEditUnlock && !canEditWorkAbility) {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
@@ -3304,14 +3356,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleSaveWorkAbility = async () => {
-    if (!isDemoMode && !canEditWorkAbility && !isAdminPreview) {
+    if (!forceEditUnlock && !canEditWorkAbility) {
       console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkAbility" });
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
     // 백엔드 lineTarget 단위 저장 — matchedLine.lineTargetId 없으면 저장 차단 (legacy fallback 금지).
     const abilitySaveLineTargetId = (workAbilityMatchedLine?.lineTargetId as string | null | undefined) ?? null;
-    if (!isDemoMode && !isAdminPreview && !abilitySaveLineTargetId) {
+    if (!forceEditUnlock && !abilitySaveLineTargetId) {
       console.warn("[cluster4-canEdit] workAbility 저장 차단 — lineTargetId 없음", {
         weekId,
         competencyLineMasterId: (selectedWorkAbilityCard?.competencyLineMasterId as string | null | undefined) ?? null,
@@ -3553,7 +3605,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     {
       const lineTargetId = (workExpMatchedLine?.lineTargetId as string | null | undefined) ?? null;
       const backendEditable = workExpMatchedLine?.canEdit === true && !!lineTargetId;
-      if (!isDemoMode && !isAdminPreview && !backendEditable) {
+      if (!forceEditUnlock && !backendEditable) {
         await popup.alert(!workExpMatchedLine ? "개설된 라인이 없습니다." : ((workExpMatchedLine.editReason as string | null | undefined) || "작성할 수 있는 기간이 아닙니다. 😊"));
         return;
       }
@@ -3600,7 +3652,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleResetWorkExp = async () => {
-    if (!isDemoMode && !canEditWorkExp && !isAdminPreview) {
+    if (!forceEditUnlock && !canEditWorkExp) {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
@@ -3614,14 +3666,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleSaveWorkExp = async () => {
-    if (!isDemoMode && !canEditWorkExp && !isAdminPreview) {
+    if (!forceEditUnlock && !canEditWorkExp) {
       console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkExp" });
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
     // 백엔드 lineTarget 단위 저장 — matchedLine.lineTargetId 없으면 저장 차단 (legacy fallback 금지).
     const expSaveLineTargetId = (workExpMatchedLine?.lineTargetId as string | null | undefined) ?? null;
-    if (!isDemoMode && !isAdminPreview && !expSaveLineTargetId) {
+    if (!forceEditUnlock && !expSaveLineTargetId) {
       console.warn("[cluster4-canEdit] workExp 저장 차단 — lineTargetId 없음", {
         weekId,
         experienceLineMasterId: (selectedWorkExpCard?.experienceLineMasterId as string | null | undefined) ?? null,
@@ -3825,7 +3877,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     {
       const lineTargetId = (workCareerMatchedLine?.lineTargetId as string | null | undefined) ?? null;
       const backendEditable = workCareerMatchedLine?.canEdit === true && !!lineTargetId;
-      if (!isDemoMode && !isAdminPreview && !backendEditable) {
+      if (!forceEditUnlock && !backendEditable) {
         await popup.alert(!workCareerMatchedLine ? "개설된 라인이 없습니다." : ((workCareerMatchedLine.editReason as string | null | undefined) || "작성할 수 있는 기간이 아닙니다. 😊"));
         return;
       }
@@ -3869,7 +3921,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleResetWorkCareer = async () => {
-    if (!isDemoMode && !canEditWorkCareer && !isAdminPreview) {
+    if (!forceEditUnlock && !canEditWorkCareer) {
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
@@ -3906,14 +3958,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleSaveWorkCareer = async () => {
-    if (!isDemoMode && !canEditWorkCareer && !isAdminPreview) {
+    if (!forceEditUnlock && !canEditWorkCareer) {
       console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkCareer" });
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
       return;
     }
     // 백엔드 lineTarget 단위 저장 — matchedLine.lineTargetId 없으면 저장 차단 (legacy fallback 금지).
     const careerSaveLineTargetId = (workCareerMatchedLine?.lineTargetId as string | null | undefined) ?? null;
-    if (!isDemoMode && !isAdminPreview && !careerSaveLineTargetId) {
+    if (!forceEditUnlock && !careerSaveLineTargetId) {
       console.warn("[cluster4-canEdit] workCareer 저장 차단 — lineTargetId 없음", {
         weekId,
         careerProjectId: (selectedWorkCareerCard?.careerProjectId as string | null | undefined) ?? null,
@@ -5144,8 +5196,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         // 데모 모드: 로컬 filter로 weeklyReputations에서 제거
         setWeeklyReputations((prev) => prev.filter((r) => r.id !== repId));
       } else {
-        // 일반 모드: DELETE API 호출 후 재조회
-        const res = await fetch(`/api/weekly-reputations/${repId}`, { method: "DELETE" });
+        // 일반 모드: DELETE API 호출 후 재조회.
+        //   - 엔드포인트는 ?id= 쿼리 형태(=[repId] 서브라우트 없음).
+        //   - 테스트 유저(데모) 모드면 apiUrl 이 demoUserId 를 부착해 세션 없이 대상 유저 기준 삭제.
+        const res = await fetch(
+          apiUrl(`/api/weekly-reputations?id=${encodeURIComponent(repId)}`),
+          { method: "DELETE" },
+        );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         await fetchWeeklyReputations();
       }
@@ -5455,6 +5512,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   // 주차 기간 문자열 생성
   const weekDateRange = weekData ? `${formatDateWithDay(weekData.startDate)} ~ ${formatDateWithDay(weekData.endDate)}` : "날짜 로딩 중...";
+
+  // 기입(작성 가능) 기간 표기는 고객 앱에 노출하지 않는다(어드민 UI 전용).
+  // 작성 가능 여부 제어는 기존 canEdit·작성기간 검증 로직을 그대로 따르며, 고객 앱은
+  // 시즌/주차/주차 기간(weekDateRange)만 표시한다.
 
   // 성장 상태에 따른 뱃지 정보 — '성장 (xxx)' / '휴식 (xxx)' 통일
   // TODO: [백엔드 작업 필요] '진행 중' / '집계 중' 상태 결정 로직 추가 — 현재는 더미 맨 위 2장에서 진입 시 표시
@@ -10846,8 +10907,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const crewCaptionsForState = workInfoViewIsEditing ? editingImageCaptions : viewCaptions;
                       let image: string | null = null;
                       let caption = "";
-                      const effectiveIsAdmin = !isAdminPreview && isAdminSlot;
-                      if (isAdminPreview) {
+                      const effectiveIsAdmin = !isPureAdminPreview && isAdminSlot;
+                      if (isPureAdminPreview) {
                         image = crewImagesForState[imageIdx] || null;
                         caption = crewCaptionsForState[imageIdx] || "";
                       } else if (isAdminSlot) {
@@ -10859,9 +10920,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         image = crewImagesForState[crewSlotIdx] || null;
                         caption = crewCaptionsForState[crewSlotIdx] || "";
                       }
-                      const slotIsEditable = workInfoViewIsEditing && (isAdminPreview || !isAdminSlot);
+                      const slotIsEditable = workInfoViewIsEditing && (isPureAdminPreview || !isAdminSlot);
                       const crewSlotIdx = imageIdx - adminCount;
-                      const effectiveIdx = isAdminPreview ? imageIdx : crewSlotIdx;
+                      const effectiveIdx = isPureAdminPreview ? imageIdx : crewSlotIdx;
                       return (
                         <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${effectiveIsAdmin && !image ? " disabled" : ""}${effectiveIsAdmin ? " admin-slot" : ""}`} style={{ position: "relative" }}>
                           {image ? (
@@ -10900,7 +10961,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                             <div
                               className="image-preview"
                               onClick={async () => {
-                                if (isAdminPreview && workInfoViewIsEditing) {
+                                if (isPureAdminPreview && workInfoViewIsEditing) {
                                   triggerImageUpload(effectiveIdx);
                                 } else if (isAdminSlot && workInfoViewIsEditing) {
                                   await popup.alert("이 영역은 관리자가 입력한 자료입니다. 사용자는 수정할 수 없습니다.");
@@ -11004,7 +11065,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const lineTargetId = (infoLine?.lineTargetId as string | null | undefined) ?? null;
                       const backendEditable = infoLine?.canEdit === true && !!lineTargetId;
 
-                      const disabled = (isAdminPreview || isDemoMode) ? false : !backendEditable;
+                      const disabled = forceEditUnlock ? false : !backendEditable;
 
                       const disabledReason: string | null = !disabled
                         ? null
@@ -11362,7 +11423,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const captionsForState = workExpViewIsEditing ? editingExpImageCaptions : viewCaptions;
                       const image = imagesForState[imageIdx] || null;
                       const caption = captionsForState[imageIdx] || "";
-                      const isEnabled = isAdminPreview || imageIdx === 0 || !!imagesForState[imageIdx - 1];
+                      const isEnabled = isPureAdminPreview || imageIdx === 0 || !!imagesForState[imageIdx - 1];
                       const isRequired = imageIdx < 2;
                       return (
                         <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${!isEnabled ? " disabled" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
@@ -11540,7 +11601,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const expLine = workExpMatchedLine;
                       const lineTargetId = (expLine?.lineTargetId as string | null | undefined) ?? null;
                       const backendEditable = expLine?.canEdit === true && !!lineTargetId;
-                      const disabled = (isAdminPreview || isDemoMode) ? false : !backendEditable;
+                      const disabled = forceEditUnlock ? false : !backendEditable;
                       const title = !disabled
                         ? "수정"
                         : !expLine
@@ -11868,7 +11929,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const captionsForState = workAbilityViewIsEditing ? editingAbilityImageCaptions : viewCaptions;
                       const image = imagesForState[imageIdx] || null;
                       const caption = captionsForState[imageIdx] || "";
-                      const isEnabled = isAdminPreview || imageIdx === 0 || !!imagesForState[imageIdx - 1];
+                      const isEnabled = isPureAdminPreview || imageIdx === 0 || !!imagesForState[imageIdx - 1];
                       const isRequired = imageIdx < 2;
                       return (
                         <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${!isEnabled ? " disabled" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
@@ -12005,7 +12066,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const abilityLine = workAbilityMatchedLine;
                       const lineTargetId = (abilityLine?.lineTargetId as string | null | undefined) ?? null;
                       const backendEditable = abilityLine?.canEdit === true && !!lineTargetId;
-                      const disabled = (isAdminPreview || isDemoMode) ? false : !backendEditable;
+                      const disabled = forceEditUnlock ? false : !backendEditable;
                       const title = !disabled
                         ? "수정"
                         : !abilityLine
@@ -12340,9 +12401,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         const captionsForState = workCareerViewIsEditing ? editingCareerImageCaptions : viewCaptions;
                         const image = imagesForState[imageIdx] || null;
                         const caption = captionsForState[imageIdx] || "";
-                        const isEnabled = isAdminPreview || imageIdx === 0 || !!imagesForState[imageIdx - 1];
+                        const isEnabled = isPureAdminPreview || imageIdx === 0 || !!imagesForState[imageIdx - 1];
                         const isRequired = imageIdx < 2;
-                        const isAdminLocked = !isAdminPreview && imageIdx < adminImgCountForLock;
+                        const isAdminLocked = !isPureAdminPreview && imageIdx < adminImgCountForLock;
                         const showEditingActions = workCareerViewIsEditing && !isAdminLocked;
                         return (
                           <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${!isEnabled ? " disabled" : ""}${isAdminLocked ? " admin-locked" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
@@ -12594,7 +12655,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const careerLine = workCareerMatchedLine;
                       const lineTargetId = (careerLine?.lineTargetId as string | null | undefined) ?? null;
                       const backendEditable = careerLine?.canEdit === true && !!lineTargetId;
-                      const disabled = (isAdminPreview || isDemoMode) ? false : !backendEditable;
+                      const disabled = forceEditUnlock ? false : !backendEditable;
                       const title = !disabled
                         ? "수정"
                         : !careerLine
