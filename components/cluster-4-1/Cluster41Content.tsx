@@ -378,17 +378,31 @@ const Cluster41Content = () => {
   const [isNotLoggedIn, setIsNotLoggedIn] = useState(false);
 
   const [joinedWeekStartDate, setJoinedWeekStartDate] = useState<string | null>(null);
+  // weekly-cards 로드 실패(504/비-JSON/네트워크) 시 기존 데이터를 유지하면서 표시할 에러 상태.
+  const [weeklyLoadError, setWeeklyLoadError] = useState(false);
+  // 최신 요청만 state 에 반영(latest-wins). targetUserId 변경/재마운트로 fetch 가 여러 번 떠도
+  // 늦게 도착한 stale 응답(특히 실패 응답)이 최신 성공 데이터를 덮어쓰지 못하게 한다.
+  const weeklyReqSeqRef = useRef(0);
 
   useEffect(() => {
     const abortController = new AbortController();
+    const myReq = ++weeklyReqSeqRef.current;
+    // 이 응답이 더 이상 최신이 아니거나(다른 userId 요청이 뒤늦게 떴거나) 언마운트되면 stale.
+    const isStale = () => abortController.signal.aborted || myReq !== weeklyReqSeqRef.current;
 
     const fetchData = async () => {
       try {
         setIsLoadingWeeks(true);
+        // userId 전환 경계(effect deps=[targetUserId])에서만 카드 초기화 — 이전 유저 카드가
+        // 새 유저 화면에 잘못 남지 않게 한다. 전환 중에는 isLoadingWeeks=true 가 로딩 화면을 보여준다.
+        // (동일 userId 의 중도 실패는 effect 가 재실행되지 않으므로 여기서 초기화되지 않고 기존 데이터가 보존된다.)
+        setDbWeeklyData([]);
+        setWeeklyLoadError(false);
 
         const profileUrl = targetUserId ? `/api/profile?userId=${targetUserId}${demoQS}` : '/api/profile';
         const profileRes = await fetch(profileUrl, { signal: abortController.signal });
         const profileResult = await profileRes.json();
+        if (isStale()) return;
 
         if (!profileRes.ok || !profileResult.data?.id) {
           if (!targetUserId) {
@@ -444,42 +458,58 @@ const Cluster41Content = () => {
         setIsLoadingSeasons(false);
 
         const weeklyRes = await fetch(`/api/cluster4/weekly-cards?userId=${userId}${demoQS}`, { signal: abortController.signal });
+        if (isStale()) return;
+
+        // ★ 504(Gateway Timeout)/HTML 에러 페이지 등 비정상 응답은 json() 이 throw 하거나
+        //   data 가 배열이 아닐 수 있다. res.ok + content-type 를 먼저 검사하고,
+        //   실패 시 기존 dbWeeklyData 를 절대 [] 로 덮어쓰지 않는다(이미 보이던 목록 보존).
+        const contentType = weeklyRes.headers.get('content-type') || '';
+        if (!weeklyRes.ok || !contentType.includes('application/json')) {
+          console.error('[weekly-cards] 응답 실패 — 기존 데이터 유지(덮어쓰기 안 함):', {
+            status: weeklyRes.status,
+            contentType,
+          });
+          setWeeklyLoadError(true);
+          return; // setDbWeeklyData([]) 하지 않음
+        }
+
         const weeklyResult = await weeklyRes.json() as Cluster4WeeklyCardsResponseDto;
+        if (isStale()) return;
         console.log('[weekly-cards] raw json', weeklyResult);
         console.log('[weekly-cards] json.data length', Array.isArray(weeklyResult.data) ? weeklyResult.data.length : 'not array');
 
-        if (abortController.signal.aborted) return;
-
-        if (!weeklyRes.ok) {
-          console.error("주차 데이터 로드 오류:", {
-            status: weeklyRes.status,
-            error: weeklyResult?.error,
-            message: weeklyResult?.detail || weeklyResult?.message || weeklyResult?.error,
-          });
-          setDbWeeklyData([]);
-        } else {
-          const cards = Array.isArray(weeklyResult.data) ? weeklyResult.data : [];
-          console.log('[weekly-cards] state cards length', cards.length);
-          if (cards.length > 0) {
-            // DTO 원본 1장 — 위치별 매핑 검증용
-            console.log('[weekly-cards] sample card (raw DTO)', cards[0]);
-            console.log('[weekly-cards] sample card lines', cards[0]?.lines);
-            // W12 raw DTO 출력 — 매핑 검증용
-            const w12 = cards.find((c) => c.weekNumber === 12);
-            if (w12) {
-              console.log('[weekly-cards] W12 raw DTO', w12);
-              console.log('[weekly-cards] W12 lines', w12.lines);
-            } else {
-              console.log('[weekly-cards] W12 not found in response');
-            }
-          }
-          setDbWeeklyData(cards);
+        if (!Array.isArray(weeklyResult.data)) {
+          // 200 이지만 data 가 배열이 아닌 경우(에러 페이로드 등)도 기존 데이터 보존.
+          console.error('[weekly-cards] data 가 배열이 아님 — 기존 데이터 유지', weeklyResult);
+          setWeeklyLoadError(true);
+          return;
         }
+
+        const cards = weeklyResult.data;
+        console.log('[weekly-cards] state cards length', cards.length);
+        if (cards.length > 0) {
+          // DTO 원본 1장 — 위치별 매핑 검증용
+          console.log('[weekly-cards] sample card (raw DTO)', cards[0]);
+          console.log('[weekly-cards] sample card lines', cards[0]?.lines);
+          // W12 raw DTO 출력 — 매핑 검증용
+          const w12 = cards.find((c) => c.weekNumber === 12);
+          if (w12) {
+            console.log('[weekly-cards] W12 raw DTO', w12);
+            console.log('[weekly-cards] W12 lines', w12.lines);
+          } else {
+            console.log('[weekly-cards] W12 not found in response');
+          }
+        }
+        // 정상 응답(빈 배열 포함)만 데이터를 갱신한다.
+        setWeeklyLoadError(false);
+        setDbWeeklyData(cards);
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return;
-        console.error("주차 데이터 로드 오류:", err);
+        // 네트워크 예외/JSON 파싱 실패 — 기존 데이터 유지, 에러만 표시.
+        console.error("[weekly-cards] 로드 예외 — 기존 데이터 유지:", err);
+        if (!isStale()) setWeeklyLoadError(true);
       } finally {
-        if (!abortController.signal.aborted) setIsLoadingWeeks(false);
+        if (!isStale()) setIsLoadingWeeks(false);
       }
     };
 
@@ -1178,6 +1208,11 @@ const Cluster41Content = () => {
           ) : (isNotLoggedIn || isPendingApproval) && !targetUserId ? (
             <div style={{ padding: '40px 20px', textAlign: 'center', color: '#aaa' }}>
               <p style={{ fontSize: '16px' }}>현재 해당 하는 시즌이 없습니다.</p>
+            </div>
+          ) : visibleCards.length === 0 && weeklyLoadError && dbWeeklyData.length === 0 ? (
+            // 데이터가 한 번도 도착하지 못한 채 로드 실패(예: 첫 진입부터 504) — '없음'이 아니라 '오류'로 안내.
+            <div style={{ padding: '40px 20px', textAlign: 'center', color: '#aaa' }}>
+              <p style={{ fontSize: '16px' }}>주차 데이터를 불러오지 못했습니다. 잠시 후 새로고침해 주세요.</p>
             </div>
           ) : visibleCards.length === 0 ? (
             <div style={{ padding: '40px 20px', textAlign: 'center', color: '#aaa' }}>
