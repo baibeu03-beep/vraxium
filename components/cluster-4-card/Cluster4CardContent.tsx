@@ -2006,6 +2006,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             const carried = allLines.filter(
               (l) => (l.weekId ?? null) === prevWeekId && !!l.lineTargetId && normPart(l.partType) === part,
             );
+            if (carried.length === 0) continue;
+            // 현재 주차의 빈 placeholder(lineTargetId 없음)는 제거한다.
+            // (placeholder 가 남으면 careerLinesForWeek 등 "weekId 일치 라인 전체 map" 소비처에서
+            //  끌어온 실제 라인과 함께 빈 카드가 렌더되거나 placeholder 가 실제 라인을 가린다.)
+            for (let i = allLines.length - 1; i >= 0; i--) {
+              const l = allLines[i];
+              if ((l.weekId ?? null) === weekId && !l.lineTargetId && normPart(l.partType) === part) {
+                allLines.splice(i, 1);
+              }
+            }
             for (const l of carried) {
               console.log("[cluster4-canEdit] N-1 라인 현재 주차로 노출", {
                 part,
