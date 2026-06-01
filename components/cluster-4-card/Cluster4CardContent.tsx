@@ -299,6 +299,27 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     인절미: { label: "방패", icon: "/images/0/Shield.png" },
     어흥: { label: "번개", icon: "/images/0/Graphic13.png" },
   };
+  // section1-header info-group right 의 포인트 용어/아이콘은 ?org= 쿼리 기준으로 치환.
+  // 라벨은 utils/orgLabelAlias 의 ORG_LABEL_ALIAS 와 동일(투구/방패/화살, 별/방패/번개),
+  // 아이콘은 헤더가 <img src> 를 쓰므로 동일 의미의 PNG 경로로 매핑한다.
+  // phalanx → PX 아이콘, encre → EC 아이콘, oranke·미지정 → 기본 단감/인절미/어흥.
+  type HeaderPointKey = "단감" | "인절미" | "어흥";
+  const ORG_HEADER_POINT: Record<string, Record<HeaderPointKey, { label: string; icon: string }>> = {
+    phalanx: {
+      단감: { label: "투구", icon: "/images/0/cluster 1/PX01.png" },
+      인절미: { label: "방패", icon: "/images/0/cluster 1/pX02.png" },
+      어흥: { label: "화살", icon: "/images/0/cluster 1/PX03.png" },
+    },
+    encre: EC_HEADER_POINT,
+  };
+  const headerOrg = searchParams.get("org");
+  // 1순위 ?org= 쿼리(phalanx/encre) → 2순위 EC 라우트 폴백 → 기본(단감/인절미/어흥).
+  const resolveHeaderPoint = (key: HeaderPointKey): { label: string; icon: string } => {
+    const byOrg = headerOrg ? ORG_HEADER_POINT[headerOrg] : undefined;
+    if (byOrg) return byOrg[key];
+    if (isEC) return EC_HEADER_POINT[key];
+    return { label: key, icon: `/images/0/cluster4/icon/icon - ${key}.png` };
+  };
   // ?admin=true — Output Link 2차 모달 UI 테스트용 프론트 전용 override (DB/API/권한 변경 없음)
   const isAdminPreview = searchParams.get("admin") === "true";
   // SSR/client hydration 일관성을 위해 stateful — 첫 렌더 SSR=client=false, 마운트 후 localStorage 값 반영
@@ -7836,8 +7857,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <div className="info-group right" style={{ gap: "8px", fontSize: "16px", fontFamily: "'Pretendard', sans-serif", marginLeft: "0px" }}>
                 <span className="info-divider">·</span>
                 <span className="info-item with-icon">
-                  {isEC ? EC_HEADER_POINT.단감.label : "단감"}
-                  <img src={isEC ? EC_HEADER_POINT.단감.icon : "/images/0/cluster4/icon/icon - 단감.png"} alt={isEC ? EC_HEADER_POINT.단감.label : "단감"} className="item-icon" />
+                  {resolveHeaderPoint("단감").label}
+                  <img src={resolveHeaderPoint("단감").icon} alt={resolveHeaderPoint("단감").label} className="item-icon" />
                   <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
                     {headerDangam}
                   </strong>
@@ -7845,8 +7866,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 </span>
                 <span className="info-divider">·</span>
                 <span className="info-item with-icon">
-                  {isEC ? EC_HEADER_POINT.인절미.label : "인절미"}
-                  <img src={isEC ? EC_HEADER_POINT.인절미.icon : "/images/0/cluster4/icon/icon - 인절미.png"} alt={isEC ? EC_HEADER_POINT.인절미.label : "인절미"} className="item-icon" />
+                  {resolveHeaderPoint("인절미").label}
+                  <img src={resolveHeaderPoint("인절미").icon} alt={resolveHeaderPoint("인절미").label} className="item-icon" />
                   <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
                     {headerInjeolmi}
                   </strong>
@@ -7854,8 +7875,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 </span>
                 <span className="info-divider">·</span>
                 <span className="info-item with-icon">
-                  {isEC ? EC_HEADER_POINT.어흥.label : "어흥"}
-                  <img src={isEC ? EC_HEADER_POINT.어흥.icon : "/images/0/cluster4/icon/icon - 어흥.png"} alt={isEC ? EC_HEADER_POINT.어흥.label : "어흥"} className="item-icon" />
+                  {resolveHeaderPoint("어흥").label}
+                  <img src={resolveHeaderPoint("어흥").icon} alt={resolveHeaderPoint("어흥").label} className="item-icon" />
                   <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
                     {headerEoheung}
                   </strong>
