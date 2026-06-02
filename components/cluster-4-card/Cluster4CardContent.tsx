@@ -384,6 +384,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 테스트 유저 모드(demoUserId)는 weekly-cards DTO 의 canEdit/lineTargetId/owner 단일 기준을 그대로 따른다.
   const forceEditUnlock = isDemoMode || isPureAdminPreview;
 
+  // ── 뷰어 ↔ 페이지 주인 분리 (테스트 유저 모드 권한 단일 기준) ──
+  // 테스트 모드에서 demoUserId 는 "지금 접속한 사용자(viewer/current user)", urlUserId 는
+  // "보고 있는 페이지의 주인(page owner/target)" 이다. 둘이 다르면 타 크루 카드를 열람 중인
+  // 상태이므로, 정책상 위클리 평판(= 타 크루 전용 작성) 외 4허브 입력/수정은 전면 차단해야 한다.
+  // ⚠️ admin=true 가 붙어도 demoUserId 가 있으면 isPureAdminPreview=false → forceEditUnlock 로
+  //    우회되지 않으므로 이 가드가 admin 우회보다 우선한다(정책: admin 으로도 못 깬다).
+  const viewerUserId = demoUserId || session?.user?.id || null;
+  const pageOwnerUserId = urlUserId || null;
+  const isForeignViewer = !!demoUserId && !!pageOwnerUserId && viewerUserId !== pageOwnerUserId;
+
   // [진단] 테스트 유저 모드 위클리 리뷰 버튼 활성화 추적 — 콘솔에서 런타임 값 확인용.
   // 버튼 disabled 는 `!isOwner` 단일 조건이므로 isOwner=true 면 활성이어야 한다.
   useEffect(() => {
@@ -2387,14 +2397,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           );
           if (byId) return byId;
         }
-        return findCluster4Line({
-          partType: "competency",
+        const criteria = {
+          partType: "competency" as const,
           competencyLineMasterId: (selectedWorkAbilityCard.competencyLineMasterId as string | null | undefined) ?? null,
           lineCode:
             (selectedWorkAbilityCard.lineCode as string | null | undefined) ??
             (selectedWorkAbilityCard.code as string | null | undefined) ??
             null,
-        });
+        };
+        // strict(배정 라인=lineTargetId 보유) 우선 → canEdit 회귀 방지. 없으면 미배정(lineTargetId=null)
+        // 개설 라인도 매칭한다 — Step2 "강화 실패(미배정)" 카드의 개설 라인 메타(mainTitle/lineCode/
+        // outputLinks/outputImages)를 모달에서 읽기 전용으로 보여주기 위함. (수정은 canEdit=false 로 차단.)
+        return findCluster4Line(criteria) ?? findCluster4Line(criteria, { requireLineTargetId: false });
       })()
     : undefined;
   // ── 실무 경험 matchedLine (preview·modal 공유 resolver) ──
@@ -2638,6 +2652,22 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     line: Cluster4WeeklyLineDto | undefined,
   ): { src: string; alt: string; text: string; toneClass: string } | null => {
     const s = (line?.enhancementStatus as string | null | undefined) ?? null;
+    // (정책 2026-06-02 개정) 강화 상태 뱃지는 백엔드 enhancementStatus 를 우선 사용한다.
+    //   - competency + lineTargetId 없음 + fail            → 아래에서 '강화 실패'(개설+본인 미배정)
+    //   - competency + lineTargetId 없음 + not_applicable  → 아래에서 '해당 없음/미배정'(미개설)
+    // 단 '강화 대기'(pending)는 실제 배정 라인(lineTargetId 보유)에만 허용한다 — lineTargetId=null
+    // competency 가 pending(또는 상태 미상)으로 내려와도 '강화 대기'로 렌더하지 않고 '해당 없음/미배정'
+    // 으로만 표시한다. (information/experience/career 는 별도 표시 정책이 있어 제외.)
+    if (
+      line &&
+      normalizePartType(line.partType) === "competency" &&
+      !line.lineTargetId &&
+      (s === "pending" || s == null || s === "")
+    ) {
+      const reason = (line?.enhancementReason as string | null | undefined) ?? null;
+      const text = reason === "target_missing_not_required_non_career" ? "미배정" : "해당 없음";
+      return { src: "/images/0/cluster4/icon/8 해당 없음.png", alt: "not_applicable", text, toneClass: "not_applicable" };
+    }
     if (process.env.NODE_ENV !== "production" && line) {
       console.log("[cluster4-enhancement]", {
         partType: line.partType,
@@ -2759,9 +2789,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       setCanEditWorkInfo(true);
       return;
     }
+    // 타 크루 카드 열람(viewer ≠ page owner)에서는 4허브 수정 불가.
+    if (isForeignViewer) {
+      setCanEditWorkInfo(false);
+      return;
+    }
     const lineTargetId = (workInfoMatchedLine?.lineTargetId as string | null | undefined) ?? null;
     setCanEditWorkInfo(workInfoMatchedLine?.canEdit === true && !!lineTargetId);
-  }, [forceEditUnlock, workInfoMatchedLine]);
+  }, [forceEditUnlock, isForeignViewer, workInfoMatchedLine]);
 
   // ========== workAbility View 모달 전용 state (workInfo 패턴 복제, 완전 독립) ==========
   const [workAbilityFooterNotice, setWorkAbilityFooterNotice] = useState<"default" | "error">("default");
@@ -2783,11 +2818,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     // 강제 활성(더미/순수 어드민 프리뷰)은 true. 테스트 유저(demoUserId)는 일반 모드와 동일하게
     // workAbilityMatchedLine.canEdit + lineTargetId 단일 출처. 일반 모드는 상위 통합 effect(승인 기준)가 셋업.
     if (forceEditUnlock) { setCanEditWorkAbility(true); return; }
+    if (isForeignViewer) { setCanEditWorkAbility(false); return; }
     if (demoUserId) {
       const lineTargetId = (workAbilityMatchedLine?.lineTargetId as string | null | undefined) ?? null;
       setCanEditWorkAbility(workAbilityMatchedLine?.canEdit === true && !!lineTargetId);
     }
-  }, [forceEditUnlock, demoUserId, workAbilityMatchedLine]);
+  }, [forceEditUnlock, isForeignViewer, demoUserId, workAbilityMatchedLine]);
 
   // ========== workExp View 모달 전용 state (workInfo 패턴 복제, 완전 독립) ==========
   const [workExpFooterNotice, setWorkExpFooterNotice] = useState<"default" | "error">("default");
@@ -2809,11 +2845,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     // 강제 활성(더미/순수 어드민 프리뷰)은 true. 테스트 유저(demoUserId)는 일반 모드와 동일하게
     // workExpMatchedLine.canEdit + lineTargetId 단일 출처. 일반 모드는 상위 통합 effect(승인 기준)가 셋업.
     if (forceEditUnlock) { setCanEditWorkExp(true); return; }
+    if (isForeignViewer) { setCanEditWorkExp(false); return; }
     if (demoUserId) {
       const lineTargetId = (workExpMatchedLine?.lineTargetId as string | null | undefined) ?? null;
       setCanEditWorkExp(workExpMatchedLine?.canEdit === true && !!lineTargetId);
     }
-  }, [forceEditUnlock, demoUserId, workExpMatchedLine]);
+  }, [forceEditUnlock, isForeignViewer, demoUserId, workExpMatchedLine]);
   // workExp 전용: 라인 평점 (0~10, 0=미입력)
   const [editingExpRating, setEditingExpRating] = useState<number>(0);
 
@@ -2844,11 +2881,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     // 강제 활성(더미/순수 어드민 프리뷰)은 true. 테스트 유저(demoUserId)는 일반 모드와 동일하게
     // workCareerMatchedLine.canEdit + lineTargetId 단일 출처. 일반 모드는 상위 통합 effect(승인 기준)가 셋업.
     if (forceEditUnlock) { setCanEditWorkCareer(true); return; }
+    if (isForeignViewer) { setCanEditWorkCareer(false); return; }
     if (demoUserId) {
       const lineTargetId = (workCareerMatchedLine?.lineTargetId as string | null | undefined) ?? null;
       setCanEditWorkCareer(workCareerMatchedLine?.canEdit === true && !!lineTargetId);
     }
-  }, [forceEditUnlock, demoUserId, workCareerMatchedLine]);
+  }, [forceEditUnlock, isForeignViewer, demoUserId, workCareerMatchedLine]);
 
   // Weekly Review 박스 — scroll + getBoundingClientRect (1회성 unfurl)
   // clip-path: inset(0 100% 0 0)로 IntersectionObserver dead-lock 회피
@@ -2922,7 +2960,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     {
       const lineTargetId = (workInfoMatchedLine?.lineTargetId as string | null | undefined) ?? null;
       const backendEditable = workInfoMatchedLine?.canEdit === true && !!lineTargetId;
-      if (!forceEditUnlock && !backendEditable) {
+      if (!forceEditUnlock && (!backendEditable || isForeignViewer)) {
         await popup.alert(!workInfoMatchedLine ? "개설된 라인이 없습니다." : ((workInfoMatchedLine.editReason as string | null | undefined) || "작성할 수 있는 기간이 아닙니다. 😊"));
         return;
       }
@@ -3041,8 +3079,28 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   // user_activity_details 저장 (모달 저장 공용 헬퍼). 데모 모드에서는 API 호출 스킵.
   const persistActivityDetailToServer = async (params: { activityTypeId: string; lineTargetId?: string | null; subTitle: string | null; outputLinks: { desc: string; url: string }[] | null; growthPoint: string | null; images: (string | null)[]; imageCaptions: string[]; adminLinkCount?: number }): Promise<{ images: (string | null)[] }> => {
-    if (isDemoMode) return { images: params.images };
-    if (!currentUserId || !weekId) return { images: params.images };
+    // [진단] 저장 분기 추적 — 어느 경로로 빠지는지 콘솔로 확정 (isDemoMode/스킵/currentUserId/lineTargetId).
+    console.log("[cluster4-save-diag] persist 진입", {
+      isDemoMode,
+      isPureAdminPreview,
+      forceEditUnlock,
+      currentUserId,
+      demoUserId,
+      weekId,
+      activityTypeId: params.activityTypeId,
+      lineTargetId: params.lineTargetId ?? null,
+    });
+    // localStorage 더미 데모(실제 DTO 없음)만 저장 스킵 — 의도된 동작. demoUserId 테스트유저 모드는 여기 안 걸림.
+    if (isDemoMode) {
+      console.warn("[cluster4-save-diag] SKIP: isDemoMode(localStorage 더미)=true → API 호출 생략");
+      return { images: params.images };
+    }
+    // 저장 대상(currentUserId)·주차(weekId)가 없으면 실제 저장 불가.
+    // (과거엔 조용히 success 처럼 return → "저장되었습니다"만 뜨고 DB 미반영. 이제 throw 로 false-success 차단.)
+    if (!currentUserId || !weekId) {
+      console.error("[cluster4-save-diag] ABORT: currentUserId/weekId 없음 — 저장 불가", { currentUserId, weekId });
+      throw new Error("저장 대상 사용자를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.");
+    }
     const persistedImages = await persistImageUrls(params.images, params.activityTypeId);
     // 렌더/가드와 동일한 adminLinkCount 사용 — 호출부가 matchedLine 기준 값을 넘기면 그걸 쓰고,
     // 없을 때만 legacy(local) getAdminOutputLinksCount 로 fallback. (관리자 prefix 만큼 slice 후 크루 슬롯만 저장)
@@ -3061,7 +3119,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       url: (l.url ?? "").trim(),
       label: l.desc?.trim() ? l.desc.trim() : null,
     }));
-    const res = await fetch(apiUrl("/api/activity-details"), {
+    const postUrl = apiUrl("/api/activity-details");
+    console.log("[cluster4-save-diag] POST 발사", {
+      url: postUrl,
+      user_id: currentUserId,
+      demoUserId: demoUserId ?? null,
+      week_id: weekId,
+      activity_type_id: params.activityTypeId,
+      line_target_id: params.lineTargetId ?? null,
+    });
+    const res = await fetch(postUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -3085,6 +3152,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     });
     // res.ok 뿐 아니라 body.success === false 도 실패로 처리 (백엔드가 200+success:false 를 내도 안내 오인 방지).
     const body = await res.json().catch(() => ({} as { success?: boolean; error?: string }));
+    console.log("[cluster4-save-diag] POST 응답", {
+      status: res.status,
+      ok: res.ok,
+      success: (body as { success?: boolean })?.success,
+      hasSubmission: !!(body as { submission?: unknown })?.submission,
+      error: (body as { error?: string })?.error ?? null,
+    });
     if (!res.ok || body?.success === false) {
       throw new Error(body?.error || "저장에 실패했습니다.");
     }
@@ -3436,7 +3510,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     {
       const lineTargetId = (workAbilityMatchedLine?.lineTargetId as string | null | undefined) ?? null;
       const backendEditable = workAbilityMatchedLine?.canEdit === true && !!lineTargetId;
-      if (!forceEditUnlock && !backendEditable) {
+      if (!forceEditUnlock && (!backendEditable || isForeignViewer)) {
         await popup.alert(!workAbilityMatchedLine ? "개설된 라인이 없습니다." : ((workAbilityMatchedLine.editReason as string | null | undefined) || "작성할 수 있는 기간이 아닙니다. 😊"));
         return;
       }
@@ -3741,7 +3815,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     {
       const lineTargetId = (workExpMatchedLine?.lineTargetId as string | null | undefined) ?? null;
       const backendEditable = workExpMatchedLine?.canEdit === true && !!lineTargetId;
-      if (!forceEditUnlock && !backendEditable) {
+      if (!forceEditUnlock && (!backendEditable || isForeignViewer)) {
         await popup.alert(!workExpMatchedLine ? "개설된 라인이 없습니다." : ((workExpMatchedLine.editReason as string | null | undefined) || "작성할 수 있는 기간이 아닙니다. 😊"));
         return;
       }
@@ -4029,7 +4103,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     {
       const lineTargetId = (workCareerMatchedLine?.lineTargetId as string | null | undefined) ?? null;
       const backendEditable = workCareerMatchedLine?.canEdit === true && !!lineTargetId;
-      if (!forceEditUnlock && !backendEditable) {
+      if (!forceEditUnlock && (!backendEditable || isForeignViewer)) {
         await popup.alert(!workCareerMatchedLine ? "개설된 라인이 없습니다." : ((workCareerMatchedLine.editReason as string | null | undefined) || "작성할 수 있는 기간이 아닙니다. 😊"));
         return;
       }
@@ -7088,12 +7162,22 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 프론트 재계산 금지 — DTO 값만 사용. 휴식/온보딩 특수 주차 또는 DTO 값 부재 시에만 legacy getEnhancementStatus.
   const mapAbilityEnhancementStatus = (line: Cluster4WeeklyLineDto | null | undefined, activityTypeId: string): EnhancementStatus => {
     if (isOnboardingWeek || weekData?.isPersonalRest || isRestMode) return getEnhancementStatus(activityTypeId);
+    // (정책 2026-06-02 개정) 백엔드 enhancementStatus 를 우선 사용한다 — lineTargetId 유무로 상태를
+    // 덮어쓰지 않는다. success/fail/not_applicable 은 그대로 반영:
+    //   - lineTargetId 없음 + fail            → 강화 실패 (개설됐지만 본인 미배정)
+    //   - lineTargetId 없음 + not_applicable  → 해당 없음 (해당 주차 competency 미개설)
+    //   - lineTargetId 있음 + success/fail    → 강화 성공/실패
+    // 단 '강화 대기'(pending/waiting)는 실제 배정 라인(lineTargetId 보유)에만 허용한다.
+    //   lineTargetId=null 이 pending(또는 상태 미상)으로 내려와도 절대 '강화 대기'로 렌더하지 않는다
+    //   ('if (line) return "waiting"' 식 blanket fallback 금지 — competency 보이드 정책).
+    const ltid = (line?.lineTargetId as string | null | undefined) ?? null;
     const raw = String(line?.enhancementStatus ?? "").toLowerCase();
     if (raw === "success") return "success";
-    if (raw === "pending") return "waiting";
     if (raw === "fail" || raw === "failed") return "failed";
     if (raw === "not_applicable") return "not_applicable";
-    if (line) return "waiting";
+    if (raw === "pending") return ltid ? "waiting" : "not_applicable";
+    // enhancementStatus 미상/빈 값: 배정 라인(ltid 보유)만 미평가 → 강화 대기, 미배정이면 해당 없음.
+    if (line) return ltid ? "waiting" : "not_applicable";
     return getEnhancementStatus(activityTypeId);
   };
 
@@ -11515,7 +11599,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const lineTargetId = (infoLine?.lineTargetId as string | null | undefined) ?? null;
                       const backendEditable = infoLine?.canEdit === true && !!lineTargetId;
 
-                      const disabled = forceEditUnlock ? false : !backendEditable;
+                      const disabled = forceEditUnlock ? false : (!backendEditable || isForeignViewer);
 
                       const disabledReason: string | null = !disabled
                         ? null
@@ -12052,7 +12136,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const expLine = workExpMatchedLine;
                       const lineTargetId = (expLine?.lineTargetId as string | null | undefined) ?? null;
                       const backendEditable = expLine?.canEdit === true && !!lineTargetId;
-                      const disabled = forceEditUnlock ? false : !backendEditable;
+                      const disabled = forceEditUnlock ? false : (!backendEditable || isForeignViewer);
                       const title = !disabled
                         ? "수정"
                         : !expLine
@@ -12518,7 +12602,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const abilityLine = workAbilityMatchedLine;
                       const lineTargetId = (abilityLine?.lineTargetId as string | null | undefined) ?? null;
                       const backendEditable = abilityLine?.canEdit === true && !!lineTargetId;
-                      const disabled = forceEditUnlock ? false : !backendEditable;
+                      const disabled = forceEditUnlock ? false : (!backendEditable || isForeignViewer);
                       const title = !disabled
                         ? "수정"
                         : !abilityLine
@@ -13108,7 +13192,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const careerLine = workCareerMatchedLine;
                       const lineTargetId = (careerLine?.lineTargetId as string | null | undefined) ?? null;
                       const backendEditable = careerLine?.canEdit === true && !!lineTargetId;
-                      const disabled = forceEditUnlock ? false : !backendEditable;
+                      const disabled = forceEditUnlock ? false : (!backendEditable || isForeignViewer);
                       const title = !disabled
                         ? "수정"
                         : !careerLine

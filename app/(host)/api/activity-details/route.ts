@@ -72,7 +72,10 @@ export async function GET(request: NextRequest) {
       }
       throw error
     }
-    const effectiveUserId = demoProfileUserId ?? userId
+    // (정책) GET/read 는 user_id(pageOwner) 우선, 없을 때만 demoUserId(viewer) fallback.
+    // demoUserId 는 세션 없는 데모 인증 통과에만 쓰고(아래 401 게이트), 조회 대상은 항상 pageOwner.
+    // foreign viewer(테스트유저가 타 유저 페이지 조회) 시 viewer 데이터가 섞이지 않도록 한다.
+    const effectiveUserId = userId ?? demoProfileUserId
 
     if (!effectiveUserId || !weekId) {
       return NextResponse.json({ error: 'user_id and week_id are required' }, { status: 400 })
@@ -197,6 +200,11 @@ export async function POST(request: NextRequest) {
     // 통과 결과(hasOpenWindow)는 하단 weekly_activities/secondary_info_grants 게이트와
     // OR 결합되어 "어드민이 작성기간을 명시적으로 열어줬다 = secondary_info_grants 와 동등 권한"
     // 으로 처리된다.
+    // ⚠️ 여기서 곧장 403 으로 early-return 하지 않는다(과거 회귀 버그).
+    // 위 주석(작성기간 게이트) 설명대로 이 결과(hasOpenWindow)는 하단의
+    // (라인 submission window OR weekly_activities 마감 OR secondary_info_grants)
+    // 게이트와 OR 로 결합되어야 한다. early-return 은 그 OR 를 무력화시켜,
+    // canEdit=true(라인 submission window 오픈) 인데도 저장만 403 되는 미스매치를 만들었다.
     let hasOpenWindow = false
     if (!canBypassAsAdmin) {
       const gateKeys = resolveCluster4GateKeys(resource_key)
@@ -204,15 +212,42 @@ export async function POST(request: NextRequest) {
         userId: ownerUserId,
         resourceKeys: gateKeys,
       })
-      if (!hasOpenWindow) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'EDIT_WINDOW_CLOSED',
-            message: EDIT_WINDOW_LOCKED_MESSAGE,
-          },
-          { status: 403 }
+    }
+
+    // 라인 저장(line_target_id) 인가 — canEdit 단일 출처(라인 submission window)와 동일 기준.
+    // 활성 라인이 본인(owner)을 대상으로 하고 submission 기간이 열려 있으면 저장을 허용한다.
+    // (admin 이 "라인을 개설" 하면 cluster4_lines.submission_opens_at/closes_at 가 채워지는데,
+    //  이는 user_edit_windows 와 별개의 메커니즘이라 레거시 게이트만으로는 인가되지 않았다.)
+    let lineSubmissionAuthorized = false
+    if (typeof line_target_id === 'string' && UUID_RE.test(line_target_id)) {
+      const { data: authRow } = await supabaseAdmin
+        .from('cluster4_line_targets')
+        .select(
+          'target_mode, target_user_id, cluster4_lines!inner(is_active, submission_opens_at, submission_closes_at)',
         )
+        .eq('id', line_target_id)
+        .maybeSingle()
+      const aRow = authRow as unknown as {
+        target_mode: 'user' | 'rule'
+        target_user_id: string | null
+        cluster4_lines: {
+          is_active: boolean
+          submission_opens_at: string | null
+          submission_closes_at: string | null
+        } | null
+      } | null
+      if (
+        aRow &&
+        aRow.cluster4_lines?.is_active === true &&
+        aRow.target_mode === 'user' &&
+        aRow.target_user_id === ownerUserId
+      ) {
+        const nowMs = Date.now()
+        const opensAt = aRow.cluster4_lines.submission_opens_at
+        const closesAt = aRow.cluster4_lines.submission_closes_at
+        const afterOpen = !opensAt || nowMs >= new Date(opensAt).getTime()
+        const beforeClose = !closesAt || nowMs < new Date(closesAt).getTime()
+        lineSubmissionAuthorized = afterOpen && beforeClose
       }
     }
 
@@ -341,11 +376,16 @@ export async function POST(request: NextRequest) {
     if (
       !canBypassAsAdmin &&
       !hasOpenWindow &&
+      !lineSubmissionAuthorized &&
       !isBeforeDeadline &&
       !hasActiveGrant
     ) {
       return NextResponse.json(
-        { error: '2차 정보 입력 권한이 없습니다. (마감 시간 경과 또는 권한 미부여)' },
+        {
+          success: false,
+          error: 'EDIT_WINDOW_CLOSED',
+          message: EDIT_WINDOW_LOCKED_MESSAGE,
+        },
         { status: 403 }
       )
     }
@@ -530,6 +570,7 @@ export async function DELETE(request: NextRequest) {
     const weekId = searchParams.get('week_id')
     const activityTypeId = searchParams.get('activity_type_id')
     const resourceKeyHint = searchParams.get('resource_key') // optional — 신규 모달 키 hint
+    const lineTargetId = searchParams.get('line_target_id') // optional — cluster4 라인 단위 초기화 식별자
 
     // 테스트 유저(데모) 모드 — query demoUserId 가 유효한 테스트 유저면 삭제 대상을 그 id 로 고정.
     let demoProfileUserId: string | null = null
@@ -564,24 +605,108 @@ export async function DELETE(request: NextRequest) {
       canBypassAsAdmin = gate.context.isAdmin
     }
 
-    // 작성 기간 게이트 — admin 우회. 신규 키 hint 가 있으면 (신규 키 OR legacy) 로,
-    // 없으면 legacy activity_details 단독으로 검사 (POST 와 동일 규칙).
+    // 작성 기간 게이트 — POST 와 동일한 OR 정책으로 통일한다.
+    // 저장이 (user_edit_windows OR 라인 submission window OR weekly_activities 마감 OR
+    // secondary_info_grants) 중 하나로 인가되면, 같은 열린 기간 안에서는 삭제/초기화도
+    // 동일 기준으로 허용되어야 한다. (과거엔 user_edit_windows 만 보고 early-return 403 →
+    // 저장은 되는데 삭제만 막히는 불일치가 있었다.)
+    let hasOpenWindow = false
     if (!canBypassAsAdmin) {
       const gateKeys = resolveCluster4GateKeys(resourceKeyHint)
-      const open = await hasOpenEditWindowAny({
+      hasOpenWindow = await hasOpenEditWindowAny({
         userId: ownerUserId,
         resourceKeys: gateKeys,
       })
-      if (!open) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'EDIT_WINDOW_CLOSED',
-            message: EDIT_WINDOW_LOCKED_MESSAGE,
-          },
-          { status: 403 }
+    }
+
+    // 라인 인가 — canEdit 단일 출처(라인 submission window)와 동일 기준 (POST 와 동일).
+    // lineTargetsOwner: 활성 라인이 owner 를 대상(target_mode=user)으로 하는가 (window 무관, 소유 검증용).
+    // lineSubmissionAuthorized: 위 + submission 기간 오픈 (작성기간 게이트용).
+    let lineTargetsOwner = false
+    let lineSubmissionAuthorized = false
+    if (typeof lineTargetId === 'string' && UUID_RE.test(lineTargetId)) {
+      const { data: authRow } = await supabaseAdmin
+        .from('cluster4_line_targets')
+        .select(
+          'target_mode, target_user_id, cluster4_lines!inner(is_active, submission_opens_at, submission_closes_at)',
         )
+        .eq('id', lineTargetId)
+        .maybeSingle()
+      const aRow = authRow as unknown as {
+        target_mode: 'user' | 'rule'
+        target_user_id: string | null
+        cluster4_lines: {
+          is_active: boolean
+          submission_opens_at: string | null
+          submission_closes_at: string | null
+        } | null
+      } | null
+      if (
+        aRow &&
+        aRow.cluster4_lines?.is_active === true &&
+        aRow.target_mode === 'user' &&
+        aRow.target_user_id === ownerUserId
+      ) {
+        lineTargetsOwner = true
+        const nowMs = Date.now()
+        const opensAt = aRow.cluster4_lines.submission_opens_at
+        const closesAt = aRow.cluster4_lines.submission_closes_at
+        const afterOpen = !opensAt || nowMs >= new Date(opensAt).getTime()
+        const beforeClose = !closesAt || nowMs < new Date(closesAt).getTime()
+        lineSubmissionAuthorized = afterOpen && beforeClose
       }
+    }
+
+    // weekly_activities 마감 / secondary_info_grants — POST 와 동일하게 OR 에 포함.
+    const [weeklyActivitiesResult, userTeamResult, grantResult] = await Promise.all([
+      supabaseAdmin
+        .from('weekly_activities')
+        .select('is_active, opened_at, deadline, team_id')
+        .eq('week_id', weekId)
+        .eq('activity_type_id', activityTypeId),
+      supabaseAdmin
+        .from('user_team_parts')
+        .select('team_id, left_at')
+        .eq('user_id', ownerUserId)
+        .is('left_at', null)
+        .maybeSingle(),
+      supabaseAdmin
+        .from('secondary_info_grants')
+        .select('deadline')
+        .eq('user_id', ownerUserId)
+        .eq('week_id', weekId)
+        .eq('activity_type_id', activityTypeId)
+        .maybeSingle(),
+    ])
+    const userTeamId: string | null = userTeamResult.data?.team_id || null
+    const candidateRows = weeklyActivitiesResult.data || []
+    const wa =
+      candidateRows.find((r) => r.team_id == null) ||
+      candidateRows.find((r) => r.team_id === userTeamId) ||
+      null
+    const isBeforeDeadline =
+      wa?.is_active &&
+      (wa?.deadline
+        ? Date.now() < new Date(wa.deadline).getTime()
+        : wa?.opened_at && Date.now() - new Date(wa.opened_at).getTime() < 48 * 60 * 60 * 1000)
+    const grant = grantResult.data
+    const hasActiveGrant = grant && new Date(grant.deadline).getTime() > Date.now()
+
+    if (
+      !canBypassAsAdmin &&
+      !hasOpenWindow &&
+      !lineSubmissionAuthorized &&
+      !isBeforeDeadline &&
+      !hasActiveGrant
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'EDIT_WINDOW_CLOSED',
+          message: EDIT_WINDOW_LOCKED_MESSAGE,
+        },
+        { status: 403 }
+      )
     }
 
     const { error } = await supabaseAdmin
@@ -596,7 +721,28 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true })
+    // canonical store(cluster4_line_submissions) 초기화 — line_target_id 가 유효하고 owner 의
+    // 라인일 때만. (user_id=ownerUserId 조건이라 타인 submission 은 건드리지 않는다.
+    //  foreign viewer / wrong-target 은 lineTargetsOwner=false → 스킵, 게이트에서도 이미 403.)
+    // POST 가 두 테이블(user_activity_details + cluster4_line_submissions)을 함께 갱신하므로,
+    // 삭제도 양쪽을 함께 비워 고객앱/어드민 read(submission 단일 출처)가 정합 유지된다.
+    let submissionCleared = false
+    if (lineTargetsOwner && typeof lineTargetId === 'string' && UUID_RE.test(lineTargetId)) {
+      const { error: subErr } = await supabaseAdmin
+        .from('cluster4_line_submissions')
+        .delete()
+        .eq('line_target_id', lineTargetId)
+        .eq('user_id', ownerUserId)
+      if (subErr) {
+        console.error('[activity-details DELETE][cluster4-line] submission delete FAILED', subErr)
+        return NextResponse.json({ error: subErr.message }, { status: 500 })
+      }
+      submissionCleared = true
+      // 어드민 주차 카드 스냅샷 재계산 (best-effort).
+      await triggerAdminSnapshotRecompute([ownerUserId])
+    }
+
+    return NextResponse.json({ success: true, submissionCleared })
   } catch (error) {
     console.error('Activity details DELETE error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
