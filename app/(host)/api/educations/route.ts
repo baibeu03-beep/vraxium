@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
 import { resolveWriteUserId } from "@/lib/api-auth";
+import { isAdminEmail } from "@/lib/admin";
+import { hasOpenEditWindow } from "@/lib/editWindow";
 import { normalizeSchool, normalizeMajor } from "@/lib/schoolNormalize";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +38,13 @@ export const revalidate = 0;
 // status 로부터 재조립한다.
 
 const TAG = "[api/educations]";
+
+// 대표학력(1번 학력) 수정 권한 윈도우 키. 작성기간 관리(admin)에서 열어주며,
+// 프론트(GET /api/edit-windows/permission)와 백엔드(PUT) 게이트가 동일 키를 공유한다.
+const PRIMARY_EDU_RESOURCE_KEY = "cluster2.primary_education";
+
+const EDU_SELECT_COLUMNS =
+  "id, school_name, major_name_1, major_name_2, major_name_3, education_level, status, major_category, admission_year, admission_month, graduation_year, graduation_month, grade_max_type, grade_value, note, sort_order, is_primary";
 
 type EducationInputUI = {
   // client 가 보내는 UI 키 (legacy + 확장)
@@ -227,6 +238,52 @@ function toUiDto(row: EducationRow) {
   };
 }
 
+// canonical 키 우선, legacy UI 키 fallback 으로 1개 insert record 를 만든다.
+// EducationRow(기존 DB 값 보존용)도 canonical 키를 그대로 가지므로 동일 함수로 처리 가능.
+function buildEducationRecord(
+  edu: EducationInputUI,
+  isPrimary: boolean,
+  sortOrder: number,
+  userId: string,
+  nowIso: string,
+) {
+  const rawSchool = edu.school_name ?? edu.school;
+  const rawMajor1 = edu.major_name_1 ?? edu.major1;
+
+  const schoolName =
+    rawSchool && !isBlankInput(rawSchool) ? normalizeSchool(rawSchool) : null;
+  const majorName1 =
+    rawMajor1 && !isBlankInput(rawMajor1) ? normalizeMajor(rawMajor1) : null;
+
+  return {
+    id: crypto.randomUUID(),
+    user_id: userId,
+    school_name: schoolName,
+    major_name_1: majorName1,
+    major_name_2: nullOrTrimmed(edu.major_name_2 ?? edu.major2),
+    major_name_3: nullOrTrimmed(edu.major_name_3 ?? edu.major3),
+    education_level: nullOrTrimmed(edu.education_level ?? edu.eduLevel),
+    status: nullOrTrimmed(edu.status),
+    major_category: nullOrTrimmed(edu.major_category ?? edu.category),
+    admission_year: toYearInt(edu.admission_year ?? edu.startYear),
+    admission_month: normalizeMonth(
+      edu.admission_month ?? edu.admissionMonth ?? edu.startMonth,
+      ADMISSION_MONTHS,
+    ),
+    graduation_year: toYearInt(edu.graduation_year ?? edu.endYear),
+    graduation_month: normalizeMonth(
+      edu.graduation_month ?? edu.graduationMonth ?? edu.endMonth,
+      GRADUATION_MONTHS,
+    ),
+    grade_max_type: nullOrTrimmed(edu.grade_max_type ?? edu.gradeMax),
+    grade_value: nullOrTrimmed(edu.grade_value ?? edu.gradeValue),
+    note: nullOrTrimmed(edu.note ?? edu.description),
+    sort_order: sortOrder,
+    is_primary: isPrimary,
+    updated_at: nowIso,
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // GET — user_educations 의 14 컬럼 select.
 //   target user_educations 가 비어 있고 targetUserId 가 주어진 경우에 한해
@@ -343,6 +400,9 @@ export async function GET(request: Request) {
 //   body.educations 미포함이면 변경 없음. 빈 배열이면 user 의 학력 전체 삭제.
 //   대표학력 동기화: 첫 row 가 sort_order=0 + is_primary=true,
 //                   나머지는 sort_order=1..N + is_primary=false.
+//   대표학력(1번) 보호: admin 또는 cluster2.primary_education 윈도우가 열린 경우에만
+//                   1번 학력 변경 가능. 그 외(일반 고객·demoUserId 테스트 유저)는 기존
+//                   대표학력을 보존하고 2번~ 만 반영한다(프론트 잠금 + 백엔드 이중 차단).
 // ─────────────────────────────────────────────────────────────────────
 export async function PUT(request: Request) {
   try {
@@ -384,6 +444,48 @@ export async function PUT(request: Request) {
     const userId = actor.userId;
     const nowIso = new Date().toISOString();
 
+    // 대표학력(1번 학력) 수정 권한 판정.
+    //   - admin(비-데모) → 1번 포함 전체 수정 가능.
+    //   - 그 외(일반 고객 / demoUserId 테스트 유저) → 작성기간 관리
+    //     (cluster2.primary_education) 윈도우가 열려 있을 때만 1번 수정 가능.
+    // 데모 모드는 세션이 없어 isAdmin=false 로 내려가 일반 고객과 동일하게 게이트된다.
+    const session = await getServerSession(authOptions);
+    const isAdmin = !actor.isDemo && isAdminEmail(session?.user?.email);
+    const canEditPrimary =
+      isAdmin ||
+      (await hasOpenEditWindow({
+        userId,
+        resourceKey: PRIMARY_EDU_RESOURCE_KEY,
+      }));
+
+    // 권한이 없을 때 1번 학력을 덮어쓰지 못하도록, delete 전에 기존 대표학력을 스냅샷.
+    let existingPrimary: EducationRow | null = null;
+    if (!canEditPrimary) {
+      const { data: existingRows, error: existingError } = await supabaseAdmin
+        .from("user_educations")
+        .select(EDU_SELECT_COLUMNS)
+        .eq("user_id", userId)
+        .order("sort_order", { ascending: true });
+
+      if (existingError) {
+        console.error(TAG, "PUT existing educations lookup failed", existingError);
+        return NextResponse.json(
+          errorPayload(
+            "educations_existing_select",
+            existingError.message,
+            existingError,
+          ),
+          { status: 500 },
+        );
+      }
+
+      const rows = (existingRows ?? []) as EducationRow[];
+      existingPrimary =
+        rows.find((r) => r.is_primary === true) ??
+        rows.find((r) => Number(r.sort_order) === 0) ??
+        null;
+    }
+
     // 1) user 의 모든 user_educations row 삭제
     const { error: deleteError } = await supabaseAdmin
       .from("user_educations")
@@ -402,74 +504,59 @@ export async function PUT(request: Request) {
       );
     }
 
-    if (educations.length === 0) {
+    // 2) insert payload 구성.
+    //    - 1번 학력 수정 권한이 없고(비-admin·윈도우 닫힘) 기존 대표학력이 있으면:
+    //      client 가 보낸 0번(잠긴 대표 슬롯)은 무시하고 기존 DB 대표학력을 그대로 보존,
+    //      나머지(2번~)만 client 입력으로 재기록한다. → 비-admin 의 1번 학력 변경/재지정 차단.
+    //    - admin 이거나 윈도우가 열렸거나 기존 대표학력이 없으면(신규 생성): client 입력 그대로.
+    const protectPrimary = !canEditPrimary && existingPrimary !== null;
+
+    let records: ReturnType<typeof buildEducationRecord>[];
+    if (protectPrimary) {
+      let nonPrimaryCounter = 1;
+      const nonPrimary = educations
+        .slice(1)
+        .map((edu) =>
+          buildEducationRecord(edu, false, nonPrimaryCounter++, userId, nowIso),
+        );
+      records = [
+        buildEducationRecord(
+          existingPrimary as unknown as EducationInputUI,
+          true,
+          0,
+          userId,
+          nowIso,
+        ),
+        ...nonPrimary,
+      ];
+    } else {
+      // 대표학력 결정 — client 가 isFinal/sort_order/is_primary 중 무엇으로 표시했는지 모르므로
+      // 다음 우선순위로 1개 row 만 대표로 본다.
+      const primaryIndex = (() => {
+        const byIsPrimary = educations.findIndex((e) => e.is_primary === true);
+        if (byIsPrimary >= 0) return byIsPrimary;
+        const byIsFinal = educations.findIndex((e) => e.isFinal === true);
+        if (byIsFinal >= 0) return byIsFinal;
+        const bySortZero = educations.findIndex((e) => Number(e.sort_order) === 0);
+        if (bySortZero >= 0) return bySortZero;
+        return 0;
+      })();
+
+      let nonPrimaryCounter = 1;
+      records = educations.map((edu, index) => {
+        const isPrimary = index === primaryIndex;
+        const sortOrder = isPrimary ? 0 : nonPrimaryCounter++;
+        return buildEducationRecord(edu, isPrimary, sortOrder, userId, nowIso);
+      });
+    }
+
+    // 빈 결과 — 전체 삭제 후 재삽입 없음. (protectPrimary 면 최소 대표학력 1행은 남는다.)
+    if (records.length === 0) {
       return NextResponse.json({
         success: true,
         message: "학력이 비워졌습니다.",
       });
     }
-
-    // 2) 대표학력 동기화
-    //    client 가 isFinal/sort_order/is_primary 중 어느 하나로 표시했는지 모르므로
-    //    다음 우선순위로 1개 row 만 대표로 결정한다.
-    const primaryIndex = (() => {
-      const byIsPrimary = educations.findIndex((e) => e.is_primary === true);
-      if (byIsPrimary >= 0) return byIsPrimary;
-      const byIsFinal = educations.findIndex((e) => e.isFinal === true);
-      if (byIsFinal >= 0) return byIsFinal;
-      const bySortZero = educations.findIndex(
-        (e) => Number(e.sort_order) === 0,
-      );
-      if (bySortZero >= 0) return bySortZero;
-      return 0;
-    })();
-
-    // 3) insert payload — canonical 키 우선, legacy UI 키는 fallback.
-    let nonPrimaryCounter = 1;
-    const records = educations.map((edu, index) => {
-      const isPrimary = index === primaryIndex;
-      const sortOrder = isPrimary ? 0 : nonPrimaryCounter++;
-
-      const rawSchool = edu.school_name ?? edu.school;
-      const rawMajor1 = edu.major_name_1 ?? edu.major1;
-
-      const schoolName =
-        rawSchool && !isBlankInput(rawSchool)
-          ? normalizeSchool(rawSchool)
-          : null;
-      const majorName1 =
-        rawMajor1 && !isBlankInput(rawMajor1)
-          ? normalizeMajor(rawMajor1)
-          : null;
-
-      return {
-        id: crypto.randomUUID(),
-        user_id: userId,
-        school_name: schoolName,
-        major_name_1: majorName1,
-        major_name_2: nullOrTrimmed(edu.major_name_2 ?? edu.major2),
-        major_name_3: nullOrTrimmed(edu.major_name_3 ?? edu.major3),
-        education_level: nullOrTrimmed(edu.education_level ?? edu.eduLevel),
-        status: nullOrTrimmed(edu.status),
-        major_category: nullOrTrimmed(edu.major_category ?? edu.category),
-        admission_year: toYearInt(edu.admission_year ?? edu.startYear),
-        admission_month: normalizeMonth(
-          edu.admission_month ?? edu.admissionMonth ?? edu.startMonth,
-          ADMISSION_MONTHS,
-        ),
-        graduation_year: toYearInt(edu.graduation_year ?? edu.endYear),
-        graduation_month: normalizeMonth(
-          edu.graduation_month ?? edu.graduationMonth ?? edu.endMonth,
-          GRADUATION_MONTHS,
-        ),
-        grade_max_type: nullOrTrimmed(edu.grade_max_type ?? edu.gradeMax),
-        grade_value: nullOrTrimmed(edu.grade_value ?? edu.gradeValue),
-        note: nullOrTrimmed(edu.note ?? edu.description),
-        sort_order: sortOrder,
-        is_primary: isPrimary,
-        updated_at: nowIso,
-      };
-    });
 
     const { error: insertError } = await supabaseAdmin
       .from("user_educations")

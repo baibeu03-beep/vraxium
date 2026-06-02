@@ -34,6 +34,9 @@ type EditWindowRow = {
 //     라우트에서 lib/editWindow.ts hasOpenEditWindow 로 동일 키 enforce.
 const ALLOWED_RESOURCE_KEYS = new Set<string>([
   "cluster2.review_links",
+  // cluster2.primary_education: 대표학력(1번 학력) 수정 윈도우.
+  //   server-side gate 는 app/(host)/api/educations/route.ts PUT 에서 동일 키로 enforce.
+  "cluster2.primary_education",
   TOP_CARD_EDIT_RESOURCE_BY_TYPE.output,
   TOP_CARD_EDIT_RESOURCE_BY_TYPE.detail,
   ...CLUSTER4_EDIT_RESOURCE_KEY_LIST,

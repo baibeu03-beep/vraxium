@@ -1174,7 +1174,10 @@ const Cluster3Content = () => {
     }
 
     // 로그인 안 된 상태: 잠금 + fetch 생략.
-    if (!session?.user) {
+    // 단, 테스트 유저(데모) 모드(demoUserId)는 세션이 없어도 막지 않고 아래 permission fetch 로
+    // 흘려보낸다 — apiUrl 이 demoUserId 를 부착하고 백엔드가 그 테스트 유저의 실제 작성기간으로
+    // canEdit 을 판정하므로(일반 고객과 동일 경로). 비로그인 일반 사용자(!isDemo)는 기존처럼 차단.
+    if (!session?.user && !isDemo) {
       setCanEditOutput(unlockAll || unlockOutput);
       setCanEditDetail(unlockAll || unlockDetail);
       setOutputPermissionLoading(false);
@@ -1234,7 +1237,7 @@ const Cluster3Content = () => {
     return () => {
       cancelled = true;
     };
-  }, [isDemoMode, session?.user?.isAdmin, session?.user?.email, session?.user, sessionStatus, searchParams]);
+  }, [isDemoMode, isDemo, session?.user?.isAdmin, session?.user?.email, session?.user, sessionStatus, searchParams]);
 
   // 서버 PUT 이 403 EDIT_WINDOW_CLOSED 로 떨어졌을 때 즉시 잠금 UI 로 복귀시키기 위한 재조회 트리거.
   //   - permissionRefreshTick 을 bump 하면 위 effect 가 같은 의존성 사이클을 다시 돌면서
@@ -1244,7 +1247,8 @@ const Cluster3Content = () => {
     if (permissionRefreshTick === 0) return;
     if (sessionStatus === "loading") return;
     const isAdmin = !!session?.user?.isAdmin || isAdminEmail(session?.user?.email);
-    if (isDemoMode || (isAdmin && !isDemo) || !session?.user) return;
+    // 테스트 유저(데모) 모드는 세션 없이도 demoUserId 기준으로 재조회해야 하므로 skip 대상에서 제외.
+    if (isDemoMode || (isAdmin && !isDemo) || (!session?.user && !isDemo)) return;
     let cancelled = false;
     (async () => {
       try {

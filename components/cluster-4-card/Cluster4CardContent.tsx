@@ -356,15 +356,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 테스트 유저(데모) 모드면 편집 UX 검증을 위해 owner 로 취급 (실제 저장은 demoUserId 로 백엔드 검증).
   const isOwner = session?.user?.isAdmin || !!demoUserId || !urlUserId || session?.user?.id === urlUserId;
   const isAdmin = !!session?.user?.isAdmin;
+  // 순수 어드민 프리뷰(admin=true 이면서 demoUserId 없음)에만 적용되는 단일 기준 플래그.
+  // 테스트 유저 모드(demoUserId)는 "특정 테스트 유저로 로그인한 일반 고객 모드"와 100% 동일 경로를 타야 하므로,
+  // admin=true 분기는 반드시 isAdminPreview 가 아니라 isPureAdminPreview 로만 판정한다.
+  // (운영진 output image/caption 표시, 강제 편집 언락, 저장 스킵 등 모든 어드민 전용 동작의 단일 출처.)
+  const isPureAdminPreview = isAdminPreview && !demoUserId;
   // 4허브 수정 버튼 강제 활성(권한 우회)은 (1) localStorage 더미 데모 모드(isDemoMode: 실제 DTO 없음),
   // (2) 순수 어드민 프리뷰(demoUserId 없는 admin=true) 에만 적용한다.
-  // 테스트 유저 모드(demoUserId)는 "특정 테스트 유저로 로그인한 일반 모드"처럼 동작 — weekly-cards DTO 의
-  // canEdit/lineTargetId/owner 단일 기준을 그대로 따르며 강제 활성하지 않는다(저장은 demoUserId 로 백엔드 검증).
-  const forceEditUnlock = isDemoMode || (isAdminPreview && !demoUserId);
-  // 순수 어드민 프리뷰(admin=true 이면서 demoUserId 없음)에만 적용되는 플래그.
-  // 운영진 output 이미지 슬롯 렌더는 isAdminPreview 대신 이 플래그를 써서, 테스트 유저 모드(demoUserId)는
-  // 일반 고객과 동일 경로로 운영진 output image/caption 을 표시한다(실고객/순수 프리뷰 동작은 불변).
-  const isPureAdminPreview = isAdminPreview && !demoUserId;
+  // 테스트 유저 모드(demoUserId)는 weekly-cards DTO 의 canEdit/lineTargetId/owner 단일 기준을 그대로 따른다.
+  const forceEditUnlock = isDemoMode || isPureAdminPreview;
 
   // [진단] 테스트 유저 모드 위클리 리뷰 버튼 활성화 추적 — 콘솔에서 런타임 값 확인용.
   // 버튼 disabled 는 `!isOwner` 단일 조건이므로 isOwner=true 면 활성이어야 한다.
@@ -3008,7 +3008,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const newOutputLinks = editingOutputLinks;
       const newGrowthPoint = editingGrowthPoint.trim() || null;
       let persistedImages: (string | null)[] = editingImages;
-      if (isAdminPreview && !demoUserId) {
+      if (isPureAdminPreview) {
         // 일반 어드민 미리보기(admin=true, demoUserId 없음)만 저장 스킵.
         // 테스트 유저 모드(admin=true + demoUserId)는 실제 저장 API 를 호출한다.
         console.log("[AdminPreview] workInfo 저장 — API 호출 생략, local state만 반영");
@@ -3109,8 +3109,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // Output Link 2차 모달 — 열기
   const openOutputLinkEditModal = (modalType: "workInfo" | "workExp" | "workAbility" | "workCareer", idx: number) => {
     // 관리자 슬롯 진입 차단 (defense-in-depth): index < adminLinkCount 슬롯은 편집 모달을 열지 않고 안내만.
-    // admin-preview(관리자 본인 편집) 에서는 차단하지 않는다.
-    if (!isAdminPreview) {
+    // 순수 어드민 프리뷰(관리자 본인 편집)에서만 차단하지 않는다.
+    // 테스트 유저 모드(demoUserId)는 일반 고객과 동일하게 관리자 슬롯 편집을 차단한다.
+    if (!isPureAdminPreview) {
       const activityTypeForModal =
         modalType === "workInfo"
           ? (selectedWorkInfoCard?.activityType as string | undefined)
@@ -3163,7 +3164,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       return;
     }
     const newLink = { desc: desc.trim(), url: trimmedUrl };
-    if (isAdminPreview && !demoUserId) {
+    if (isPureAdminPreview) {
       // 프론트 테스트용: API/권한 체크 우회, editing state에만 직접 저장.
       // 테스트 유저 모드(demoUserId)는 일반 사용자 경로(handleOutputLinkChange)로 흘려 실제 저장에 반영한다.
       const directSet = (setter: React.Dispatch<React.SetStateAction<{ desc: string; url: string }[]>>) => {
@@ -3388,7 +3389,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const newOutputLinks = editingAbilityOutputLinks;
       const newGrowthPoint = editingAbilityGrowthPoint.trim() || null;
       let persistedImages: (string | null)[] = editingAbilityImages;
-      if (isAdminPreview && !demoUserId) {
+      if (isPureAdminPreview) {
         // 일반 어드민 미리보기만 저장 스킵. 테스트 유저 모드는 실제 저장.
         console.log("[AdminPreview] workAbility 저장 — API 호출 생략, local state만 반영");
       } else {
@@ -3698,7 +3699,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const newOutputLinks = editingExpOutputLinks;
       const newGrowthPoint = editingExpGrowthPoint.trim() || null;
       let persistedImages: (string | null)[] = editingExpImages;
-      if (isAdminPreview && !demoUserId) {
+      if (isPureAdminPreview) {
         // 일반 어드민 미리보기만 저장 스킵. 테스트 유저 모드는 실제 저장.
         console.log("[AdminPreview] workExp 저장 — API 호출 생략, local state만 반영");
       } else {
@@ -4000,7 +4001,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const crewImagesToSave = editingCareerImages.slice(adminImgCount);
       const crewCaptionsToSave = editingCareerImageCaptions.slice(adminImgCount);
       let persistedCrewImages: (string | null)[] = crewImagesToSave;
-      if (isAdminPreview && !demoUserId) {
+      if (isPureAdminPreview) {
         // 일반 어드민 미리보기만 저장 스킵. 테스트 유저 모드는 실제 저장.
         console.log("[AdminPreview] workCareer 저장 — API 호출 생략, local state만 반영");
       } else {
@@ -10763,7 +10764,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           ];
                           // 표시 우선순위: 1) editing state (수정 모드) 2) admin preview 저장 값
                           //   3) matchedLine.outputLinks (backend 단일 출처) 4) demo data (matchedLine 없을 때만)
-                          const adminOverride = isAdminPreview ? adminSavedOutputLinks["workInfo"]?.[i] : null;
+                          const adminOverride = isPureAdminPreview ? adminSavedOutputLinks["workInfo"]?.[i] : null;
                           const backendLink = lineOutputLinkAt(workInfoMatchedLine, i);
                           const link = workInfoViewIsEditing
                             ? editingOutputLinks[i] || { desc: "", url: "" }
@@ -10773,14 +10774,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                 ? backendLink || { desc: "", url: "" }
                                 : demoOutputLinks[i]) || { desc: "", url: "" };
                           const hasUrl = !!link.url?.trim();
-                          const prevLink = workInfoViewIsEditing ? editingOutputLinks[i - 1] : (isAdminPreview ? adminSavedOutputLinks["workInfo"]?.[i - 1] : null);
+                          const prevLink = workInfoViewIsEditing ? editingOutputLinks[i - 1] : (isPureAdminPreview ? adminSavedOutputLinks["workInfo"]?.[i - 1] : null);
                           const sequentialDisabled = workInfoViewIsEditing && !isAdminLink && i > adminCount && !prevLink?.url?.trim();
                           const displayText = link.desc?.trim() || link.url;
                           if (isAdminPreview && i === 0) console.log("[RenderWorkInfo]", { isEditing: workInfoViewIsEditing, link, adminOverride });
                           return (
                             <div className={`output-link-row ${isAdminLink ? "admin-link" : ""}`} key={i}>
                               <span className="link-dot" style={{ backgroundColor: dotColor }} />
-                              {workInfoViewIsEditing && (!isAdminLink || isAdminPreview) ? (
+                              {workInfoViewIsEditing && (!isAdminLink || isPureAdminPreview) ? (
                                 <span
                                   className={`output-link-text output-link-editable${hasUrl ? "" : " output-link-empty"}${sequentialDisabled ? " output-link-disabled" : ""}`}
                                   onClick={(e) => {
@@ -10793,7 +10794,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                   {sequentialDisabled ? "먼저 상위 Output Link를 입력해주세요" : hasUrl ? displayText || "" : `Output Link ${i + 1}`}
                                 </span>
                               ) : hasUrl ? (
-                                <span className="output-link-text output-link-clickable" onMouseEnter={(e) => showOlTooltip(e, link.desc?.trim() || link.url || "")} onMouseLeave={hideOlTooltip} onClick={() => { if ((workInfoViewIsEditing || workExpViewIsEditing || workAbilityViewIsEditing || workCareerViewIsEditing) && isAdminLink && !isAdminPreview) { void popup.alert("이 영역은 관리자가 입력한 자료입니다. 사용자는 수정할 수 없습니다."); return; } window.open(ensureProtocol(link.url), "_blank"); }}>
+                                <span className="output-link-text output-link-clickable" onMouseEnter={(e) => showOlTooltip(e, link.desc?.trim() || link.url || "")} onMouseLeave={hideOlTooltip} onClick={() => { if ((workInfoViewIsEditing || workExpViewIsEditing || workAbilityViewIsEditing || workCareerViewIsEditing) && isAdminLink && !isPureAdminPreview) { void popup.alert("이 영역은 관리자가 입력한 자료입니다. 사용자는 수정할 수 없습니다."); return; } window.open(ensureProtocol(link.url), "_blank"); }}>
                                   {displayText}
                                 </span>
                               ) : (
@@ -10994,7 +10995,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                               <div className="empty-slot"><i className="ti ti-photo-plus"></i></div>
                             </div>
                           )}
-                          {(isAdminPreview || !isAdminSlot) && (
+                          {(isPureAdminPreview || !isAdminSlot) && (
                             <input
                               type="file"
                               accept="image/*"
@@ -11303,7 +11304,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           const dotColor = ["#FF6B6B", "#4ECDC4", "#FAAB07", "#6BCB77", "#A084DC"][i];
                           const adminCount = selectedWorkExpCard?.activityTypeId ? getAdminOutputLinksCount(selectedWorkExpCard.activityTypeId, workExpMatchedLine) : 0;
                           const isAdminLink = i < adminCount;
-                          const adminOverride = isAdminPreview ? adminSavedOutputLinks["workExp"]?.[i] : null;
+                          const adminOverride = isPureAdminPreview ? adminSavedOutputLinks["workExp"]?.[i] : null;
                           const backendLink = lineOutputLinkAt(workExpMatchedLine, i);
                           const link = workExpViewIsEditing
                             ? editingExpOutputLinks[i] || { desc: "", url: "" }
@@ -11313,14 +11314,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                 ? backendLink || { desc: "", url: "" }
                                 : selectedWorkExpCard.outputLinks?.[i]) || { desc: "", url: "" };
                           const hasUrl = !!link.url?.trim();
-                          const prevLink = workExpViewIsEditing ? editingExpOutputLinks[i - 1] : (isAdminPreview ? adminSavedOutputLinks["workExp"]?.[i - 1] : null);
+                          const prevLink = workExpViewIsEditing ? editingExpOutputLinks[i - 1] : (isPureAdminPreview ? adminSavedOutputLinks["workExp"]?.[i - 1] : null);
                           const sequentialDisabled = workExpViewIsEditing && !isAdminLink && i > adminCount && !prevLink?.url?.trim();
                           const displayText = link.desc?.trim() || link.url;
                           if (isAdminPreview && i === 0) console.log("[RenderWorkExp]", { isEditing: workExpViewIsEditing, link, adminOverride });
                           return (
                             <div className={`output-link-row ${isAdminLink ? "admin-link" : ""}`} key={i}>
                               <span className="link-dot" style={{ backgroundColor: dotColor }} />
-                              {workExpViewIsEditing && (!isAdminLink || isAdminPreview) ? (
+                              {workExpViewIsEditing && (!isAdminLink || isPureAdminPreview) ? (
                                 <span
                                   className={`output-link-text output-link-editable${hasUrl ? "" : " output-link-empty"}${sequentialDisabled ? " output-link-disabled" : ""}`}
                                   onClick={(e) => {
@@ -11333,7 +11334,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                   {sequentialDisabled ? "먼저 상위 Output Link를 입력해주세요" : hasUrl ? displayText || "" : `Output Link ${i + 1}`}
                                 </span>
                               ) : hasUrl ? (
-                                <span className="output-link-text output-link-clickable" onMouseEnter={(e) => showOlTooltip(e, link.desc?.trim() || link.url || "")} onMouseLeave={hideOlTooltip} onClick={() => { if ((workInfoViewIsEditing || workExpViewIsEditing || workAbilityViewIsEditing || workCareerViewIsEditing) && isAdminLink && !isAdminPreview) { void popup.alert("이 영역은 관리자가 입력한 자료입니다. 사용자는 수정할 수 없습니다."); return; } window.open(ensureProtocol(link.url), "_blank"); }}>
+                                <span className="output-link-text output-link-clickable" onMouseEnter={(e) => showOlTooltip(e, link.desc?.trim() || link.url || "")} onMouseLeave={hideOlTooltip} onClick={() => { if ((workInfoViewIsEditing || workExpViewIsEditing || workAbilityViewIsEditing || workCareerViewIsEditing) && isAdminLink && !isPureAdminPreview) { void popup.alert("이 영역은 관리자가 입력한 자료입니다. 사용자는 수정할 수 없습니다."); return; } window.open(ensureProtocol(link.url), "_blank"); }}>
                                   {displayText}
                                 </span>
                               ) : (
@@ -11800,7 +11801,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           const dotColor = ["#FF6B6B", "#4ECDC4", "#FAAB07", "#6BCB77", "#A084DC"][i];
                           const adminCount = getAbilityAdminLinkCount(workAbilityMatchedLine, selectedWorkAbilityCard?.activityTypeId);
                           const isAdminLink = i < adminCount;
-                          const adminOverride = isAdminPreview ? adminSavedOutputLinks["workAbility"]?.[i] : null;
+                          const adminOverride = isPureAdminPreview ? adminSavedOutputLinks["workAbility"]?.[i] : null;
                           // 어드민 슬롯 = top-level outputLinks(어드민 개설값), 사용자 슬롯 = submission.outputLinks(사용자 제출값).
                           const backendLink = isAdminLink
                             ? lineOutputLinkAt(workAbilityMatchedLine, i)
@@ -11813,13 +11814,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                 ? backendLink || { desc: "", url: "" }
                                 : selectedWorkAbilityCard.outputLinks?.[i]) || { desc: "", url: "" };
                           const hasUrl = !!link.url?.trim();
-                          const prevLink = workAbilityViewIsEditing ? editingAbilityOutputLinks[i - 1] : (isAdminPreview ? adminSavedOutputLinks["workAbility"]?.[i - 1] : null);
+                          const prevLink = workAbilityViewIsEditing ? editingAbilityOutputLinks[i - 1] : (isPureAdminPreview ? adminSavedOutputLinks["workAbility"]?.[i - 1] : null);
                           const sequentialDisabled = workAbilityViewIsEditing && !isAdminLink && i > adminCount && !prevLink?.url?.trim();
                           const displayText = link.desc?.trim() || link.url;
                           return (
                             <div className={`output-link-row ${isAdminLink ? "admin-link" : ""}`} key={i}>
                               <span className="link-dot" style={{ backgroundColor: dotColor }} />
-                              {workAbilityViewIsEditing && (!isAdminLink || isAdminPreview) ? (
+                              {workAbilityViewIsEditing && (!isAdminLink || isPureAdminPreview) ? (
                                 <span
                                   className={`output-link-text output-link-editable${hasUrl ? "" : " output-link-empty"}${sequentialDisabled ? " output-link-disabled" : ""}`}
                                   onClick={(e) => {
@@ -11832,7 +11833,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                   {sequentialDisabled ? "먼저 상위 Output Link를 입력해주세요" : hasUrl ? displayText || "" : `Output Link ${i + 1}`}
                                 </span>
                               ) : hasUrl ? (
-                                <span className="output-link-text output-link-clickable" onMouseEnter={(e) => showOlTooltip(e, link.desc?.trim() || link.url || "")} onMouseLeave={hideOlTooltip} onClick={() => { if ((workInfoViewIsEditing || workExpViewIsEditing || workAbilityViewIsEditing || workCareerViewIsEditing) && isAdminLink && !isAdminPreview) { void popup.alert("이 영역은 관리자가 입력한 자료입니다. 사용자는 수정할 수 없습니다."); return; } window.open(ensureProtocol(link.url), "_blank"); }}>
+                                <span className="output-link-text output-link-clickable" onMouseEnter={(e) => showOlTooltip(e, link.desc?.trim() || link.url || "")} onMouseLeave={hideOlTooltip} onClick={() => { if ((workInfoViewIsEditing || workExpViewIsEditing || workAbilityViewIsEditing || workCareerViewIsEditing) && isAdminLink && !isPureAdminPreview) { void popup.alert("이 영역은 관리자가 입력한 자료입니다. 사용자는 수정할 수 없습니다."); return; } window.open(ensureProtocol(link.url), "_blank"); }}>
                                   {displayText}
                                 </span>
                               ) : (
@@ -12279,7 +12280,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           const activityType = workCareerActivityTypes[(selectedWorkCareerCard?.id || 1) - 1];
                           const adminCount = activityType ? getAdminOutputLinksCount(activityType, workCareerMatchedLine) : 0;
                           const isAdminLink = i < adminCount;
-                          const adminOverride = isAdminPreview ? adminSavedOutputLinks["workCareer"]?.[i] : null;
+                          const adminOverride = isPureAdminPreview ? adminSavedOutputLinks["workCareer"]?.[i] : null;
                           const backendLink = lineOutputLinkAt(workCareerMatchedLine, i);
                           const link = workCareerViewIsEditing
                             ? editingCareerOutputLinks[i] || { desc: "", url: "" }
@@ -12289,13 +12290,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                 ? backendLink || { desc: "", url: "" }
                                 : selectedWorkCareerCard.outputLinks?.[i]) || { desc: "", url: "" };
                           const hasUrl = !!link.url?.trim();
-                          const prevLink = workCareerViewIsEditing ? editingCareerOutputLinks[i - 1] : (isAdminPreview ? adminSavedOutputLinks["workCareer"]?.[i - 1] : null);
+                          const prevLink = workCareerViewIsEditing ? editingCareerOutputLinks[i - 1] : (isPureAdminPreview ? adminSavedOutputLinks["workCareer"]?.[i - 1] : null);
                           const sequentialDisabled = workCareerViewIsEditing && !isAdminLink && i > adminCount && !prevLink?.url?.trim();
                           const displayText = link.desc?.trim() || link.url;
                           return (
                             <div className={`output-link-row ${isAdminLink ? "admin-link" : ""}`} key={i}>
                               <span className="link-dot" style={{ backgroundColor: dotColor }} />
-                              {workCareerViewIsEditing && (!isAdminLink || isAdminPreview) ? (
+                              {workCareerViewIsEditing && (!isAdminLink || isPureAdminPreview) ? (
                                 <span
                                   className={`output-link-text output-link-editable${hasUrl ? "" : " output-link-empty"}${sequentialDisabled ? " output-link-disabled" : ""}`}
                                   onClick={(e) => {
@@ -12308,7 +12309,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                   {sequentialDisabled ? "먼저 상위 Output Link를 입력해주세요" : hasUrl ? displayText || "" : `Output Link ${i + 1}`}
                                 </span>
                               ) : hasUrl ? (
-                                <span className="output-link-text output-link-clickable" onMouseEnter={(e) => showOlTooltip(e, link.desc?.trim() || link.url || "")} onMouseLeave={hideOlTooltip} onClick={() => { if ((workInfoViewIsEditing || workExpViewIsEditing || workAbilityViewIsEditing || workCareerViewIsEditing) && isAdminLink && !isAdminPreview) { void popup.alert("이 영역은 관리자가 입력한 자료입니다. 사용자는 수정할 수 없습니다."); return; } window.open(ensureProtocol(link.url), "_blank"); }}>
+                                <span className="output-link-text output-link-clickable" onMouseEnter={(e) => showOlTooltip(e, link.desc?.trim() || link.url || "")} onMouseLeave={hideOlTooltip} onClick={() => { if ((workInfoViewIsEditing || workExpViewIsEditing || workAbilityViewIsEditing || workCareerViewIsEditing) && isAdminLink && !isPureAdminPreview) { void popup.alert("이 영역은 관리자가 입력한 자료입니다. 사용자는 수정할 수 없습니다."); return; } window.open(ensureProtocol(link.url), "_blank"); }}>
                                   {displayText}
                                 </span>
                               ) : (

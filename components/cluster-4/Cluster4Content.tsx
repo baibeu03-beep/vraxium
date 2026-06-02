@@ -140,7 +140,13 @@ const Cluster4Content = () => {
   const demoUserId = searchParams.get("demoUserId");
   const urlUserId =
     searchParams.get("userId") || searchParams.get("userID") || demoUserId;
-  const isDemoMode = checkDemoMode();
+  // 조회(read) API 에 붙일 demoUserId 마커 — 세션 우회가 필요한 라우트
+  // (season-reputations 등)에서 세션 없이도 테스트 유저 데이터를 읽도록 한다.
+  // 테스트 유저 모드가 아니면 빈 문자열(일반/admin 동작 불변).
+  const demoQS = demoUserId ? `&demoUserId=${encodeURIComponent(demoUserId)}` : "";
+  // 로컬 더미(localStorage demoMode)는 테스트 유저(?demoUserId=) 모드에서는 끈다 —
+  // 테스트 모드는 실제 DB 를 source of truth 로 읽어야 하므로 더미가 응답을 덮으면 안 된다.
+  const isDemoMode = checkDemoMode() && !demoUserId;
   // 어드민(마더) 계정은 모든 프로필 편집 가능
   // 테스트 유저(데모) 모드면 편집 UX 검증을 위해 owner 로 취급 (실제 저장은 demoUserId 로 백엔드 검증).
   const isOwner = session?.user?.isAdmin || !!demoUserId || !urlUserId || (session?.user?.id === urlUserId);
@@ -461,7 +467,9 @@ const Cluster4Content = () => {
       return;
     }
 
-    if (!session?.user) {
+    // 테스트 유저(데모) 모드는 세션 없이도 demoUserId 기준으로 permission fetch 해야 하므로 제외.
+    // 비로그인 일반 사용자(!demoUserId)는 기존처럼 fetch 생략(잠금).
+    if (!session?.user && !demoUserId) {
       setSeasonReviewWindowOpen(unlockAll || unlockSeasonReview);
       return;
     }
@@ -493,6 +501,7 @@ const Cluster4Content = () => {
     };
   }, [
     isDemoMode,
+    demoUserId,
     session?.user,
     session?.user?.isAdmin,
     session?.user?.email,
@@ -524,7 +533,9 @@ const Cluster4Content = () => {
       return;
     }
 
-    if (!session?.user) {
+    // 테스트 유저(데모) 모드는 세션 없이도 demoUserId 기준으로 permission fetch 해야 하므로 제외.
+    // 비로그인 일반 사용자(!demoUserId)는 기존처럼 fetch 생략(잠금).
+    if (!session?.user && !demoUserId) {
       setSeasonReputationWindowOpen(unlockAll || unlockSeasonReputation);
       return;
     }
@@ -556,6 +567,7 @@ const Cluster4Content = () => {
     };
   }, [
     isDemoMode,
+    demoUserId,
     session?.user,
     session?.user?.isAdmin,
     session?.user?.email,
@@ -1740,7 +1752,7 @@ const Cluster4Content = () => {
       return;
     }
     try {
-      const res = await fetch(`/api/season-reputations?targetUserId=${targetId}&seasonHistoryId=${seasonHistoryId}`);
+      const res = await fetch(`/api/season-reputations?targetUserId=${targetId}&seasonHistoryId=${seasonHistoryId}${demoQS}`);
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.data) {
@@ -4272,8 +4284,8 @@ const Cluster4Content = () => {
                     const isFull = currentRating >= fullValue;
                     return (
                       <div key={starIndex} className="star-wrapper">
-                        <svg className="star-bg" viewBox="0 0 24 24" fill="none" stroke="#FFA500" strokeWidth="2">
-                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        <svg className="star-bg" viewBox="0 0 24 24" fill="none">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="none" stroke="#FFA500" strokeWidth="2" />
                         </svg>
                         {isHalf && (
                           <svg className="star-half-fill" viewBox="0 0 24 24">
@@ -4286,8 +4298,8 @@ const Cluster4Content = () => {
                           </svg>
                         )}
                         {isFull && (
-                          <svg className="star-full-fill" viewBox="0 0 24 24" fill="#FFA500">
-                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                          <svg className="star-full-fill" viewBox="0 0 24 24">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="#FFA500" />
                           </svg>
                         )}
                         <button className="star-click-area star-click-left" type="button" onClick={() => setSeasonReviewEditData((prev) => ({ ...prev, rating: halfValue }))} />

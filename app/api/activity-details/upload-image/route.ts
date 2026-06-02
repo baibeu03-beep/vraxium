@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getUserProfile } from "@/lib/get-user-profile";
-import { extractTargetUserId } from "@/lib/admin";
+import { resolveWriteUserId } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +12,13 @@ const ACTIVITY_TYPE_PATTERN = /^[a-zA-Z0-9_-]{1,40}$/;
 
 export async function POST(request: Request) {
   try {
-    const targetUserId = extractTargetUserId(request);
-    const { profile, error } = await getUserProfile("id", targetUserId);
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+    // 테스트 유저(데모) 모드면 세션 없이 demoUserId 를 actor 로 사용(test_user_markers 검증).
+    // 비-데모면 기존과 동일: 세션 본인 또는 admin 의 targetUserId. (resolveWriteUserId 내부 위임)
+    const actor = await resolveWriteUserId(request);
+    if (!actor.ok) {
+      return NextResponse.json({ error: actor.message }, { status: actor.status });
     }
+    const ownerUserId = actor.userId;
 
     if (!supabaseAdmin) {
       return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     }
 
     const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-    const fileName = `${profile.id}/${weekId}/${activityTypeId}/slot-${slotIndex}_${Date.now()}.${ext}`;
+    const fileName = `${ownerUserId}/${weekId}/${activityTypeId}/slot-${slotIndex}_${Date.now()}.${ext}`;
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = new Uint8Array(arrayBuffer);

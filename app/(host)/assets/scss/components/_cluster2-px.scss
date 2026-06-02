@@ -32,29 +32,32 @@
   //    를 CSS 만으로 PX 톤으로 변환.
   //    (CSS fill/stroke 가 SVG attribute 보다 우선순위 높음)
   // -------------------------------------------------------
-  svg [fill="#FFA500" i],
-  svg [fill="#FAAB07" i],
-  svg [fill="#FFC300" i],
-  svg [fill="#FFC919" i],
-  svg [fill="#F5A623" i] {
+  //  스코프 한정: 본 attribute override 는 반드시 `.cluster2-content` 하위로만
+  //  적용한다. (cluster-px-theme 직속이면 동일 theme class 를 쓰는 다른 클러스터
+  //  — 예: cluster-4 시즌리뷰 모달의 SVG 별점 — 으로 누수되어 의도치 않은 변색 발생.)
+  .cluster2-content svg [fill="#FFA500" i],
+  .cluster2-content svg [fill="#FAAB07" i],
+  .cluster2-content svg [fill="#FFC300" i],
+  .cluster2-content svg [fill="#FFC919" i],
+  .cluster2-content svg [fill="#F5A623" i] {
     fill: var(--px-accent);
   }
-  svg [fill="#FED402" i],
-  svg [fill="#FFF1AA" i],
-  svg [fill="#FFE89C" i],
-  svg [fill="#FFD700" i] {
+  .cluster2-content svg [fill="#FED402" i],
+  .cluster2-content svg [fill="#FFF1AA" i],
+  .cluster2-content svg [fill="#FFE89C" i],
+  .cluster2-content svg [fill="#FFD700" i] {
     fill: var(--px-accent-soft);
   }
-  svg [stroke="#FFA500" i],
-  svg [stroke="#FAAB07" i],
-  svg [stroke="#FFC300" i],
-  svg [stroke="#FFC919" i],
-  svg [stroke="#F5A623" i] {
+  .cluster2-content svg [stroke="#FFA500" i],
+  .cluster2-content svg [stroke="#FAAB07" i],
+  .cluster2-content svg [stroke="#FFC300" i],
+  .cluster2-content svg [stroke="#FFC919" i],
+  .cluster2-content svg [stroke="#F5A623" i] {
     stroke: var(--px-accent);
   }
-  svg [stroke="#FED402" i],
-  svg [stroke="#FFF1AA" i],
-  svg [stroke="#FFE89C" i] {
+  .cluster2-content svg [stroke="#FED402" i],
+  .cluster2-content svg [stroke="#FFF1AA" i],
+  .cluster2-content svg [stroke="#FFE89C" i] {
     stroke: var(--px-accent-soft);
   }
 

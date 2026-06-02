@@ -270,7 +270,12 @@
       "Bash(ps -W)",
       "Bash(echo \"tsc-exit:$?\")",
       "Bash(python -)",
-      "Bash(echo \"tsc-cluster41-exit=$? \\(1=no errors in file\\)\")"
+      "Bash(echo \"tsc-cluster41-exit=$? \\(1=no errors in file\\)\")",
+      "Bash(curl -s -m 8 'https://oksnumlerbaybxlmgdux.supabase.co/rest/v1/cluster4_weekly_card_snapshots?user_id=eq.e649370f-ba2c-4d2f-b642-6800cb078d54&select=cards' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rc251bWxlcmJheWJ4bG1nZHV4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTU0MTg1MywiZXhwIjoyMDkxMTE3ODUzfQ.p_C02sCSJOl7nSEea0RAkkWY1H2OIdodQa58S2e_WaE' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9rc251bWxlcmJheWJ4bG1nZHV4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTU0MTg1MywiZXhwIjoyMDkxMTE3ODUzfQ.p_C02sCSJOl7nSEea0RAkkWY1H2OIdodQa58S2e_WaE')",
+      "Bash(echo \"exit:$?\")",
+      "Bash(echo \"tsc-done:$?\")",
+      "Bash(echo \"=== EXIT $? \\(no lines above = clean\\) ===\")",
+      "PowerShell(git diff -- app/\\(host\\)/api/educations/route.ts components/cluster-2/Cluster2Content.tsx)"
     ],
     "deny": [],
     "ask": []

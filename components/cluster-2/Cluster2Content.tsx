@@ -146,7 +146,9 @@ const Cluster2Content = () => {
   // 본인 프로필인지 확인: URL에 userId가 없거나, 로그인한 사용자 ID와 같으면 본인
   // 어드민(마더) 계정은 모든 프로필 편집 가능. 테스트 유저 모드면 편집 UX 검증을 위해 owner 로 취급.
   const isOwner = session?.user?.isAdmin || isDemo || !urlUserId || (session?.user?.id === urlUserId);
-  const isDemoMode = checkDemoMode();
+  // 로컬 더미(localStorage demoMode)는 테스트 유저(?demoUserId=) 모드에서는 끈다 —
+  // 테스트 모드는 실제 DB 를 source of truth 로 읽어야 하므로 더미 분기가 응답을 덮으면 안 된다.
+  const isDemoMode = checkDemoMode() && !isDemo;
 
   // 저장/조회 API URL 빌더.
   //   - 테스트 유저 모드: demoUserId 부착(백엔드가 test_user_markers 검증 후 대상 고정).
@@ -428,7 +430,7 @@ const Cluster2Content = () => {
   useEffect(() => {
     if (isOwner && session) {
       fetchPhotos();
-    } else if (!isOwner && urlUserId) {
+    } else if (urlUserId) {
       fetchPhotos();
     }
   }, [session, isOwner, urlUserId]);
@@ -695,7 +697,7 @@ const Cluster2Content = () => {
   useEffect(() => {
     if (isOwner && session) {
       fetchSlogans();
-    } else if (!isOwner && urlUserId) {
+    } else if (urlUserId) {
       fetchSlogans();
     }
   }, [session, isOwner, urlUserId]);
@@ -869,7 +871,7 @@ const Cluster2Content = () => {
   useEffect(() => {
     if (isOwner && session) {
       fetchVideos();
-    } else if (!isOwner && urlUserId) {
+    } else if (urlUserId) {
       fetchVideos();
     }
   }, [session, isOwner, urlUserId]);
@@ -1056,7 +1058,7 @@ const Cluster2Content = () => {
   useEffect(() => {
     if (isOwner && session) {
       fetchEducations();
-    } else if (!isOwner && urlUserId) {
+    } else if (urlUserId) {
       fetchEducations();
     }
   }, [session, isOwner, urlUserId]);
@@ -1347,19 +1349,17 @@ const Cluster2Content = () => {
   const [clubReviewPermissionReason, setClubReviewPermissionReason] = useState<"open" | "not_granted" | "not_started" | "expired" | "admin">("not_granted");
   const [clubReviewPermissionExpiresAt, setClubReviewPermissionExpiresAt] = useState<string | null>(null);
 
-  // 어드민(마더) 계정은 대표학력 변경 / Club Review 편집 권한 baseline 으로 부여.
+  // 어드민(마더) 계정은 Club Review 편집 권한 baseline 으로 부여.
   // 비-어드민의 canEditClubReview 는 /api/edit-windows/permission 응답으로만 갱신한다.
+  // 대표학력(1번 학력) 권한은 아래 fetchPrimaryEducationPermission 가 단독으로 판정한다 —
+  // admin baseline / 작성기간(cluster2.primary_education) 윈도우 / 데모 동일 게이트.
   useEffect(() => {
     const isAdmin = session?.user?.isAdmin || isAdminEmail(session?.user?.email);
     // 테스트 유저(데모) 모드에서는 admin baseline 우회 금지 — Club Review 편집권은 demoUserId 권한(fetch)으로 판정.
     if (isAdmin && !isDemo) {
-      setCanChangePrimary(true);
       setCanEditClubReview(true);
       setReviewPermissionLoading(false);
       setClubReviewPermissionReason("admin");
-    } else if (isDemo) {
-      // 대표학력 변경은 owner 기준 허용(작성기간 게이트 아님). Club Review 는 아래 fetch 로 판정.
-      setCanChangePrimary(true);
     }
   }, [session?.user?.isAdmin, session?.user?.email, isDemo]);
 
@@ -1383,7 +1383,10 @@ const Cluster2Content = () => {
       return;
     }
 
-    if (!session?.user) {
+    // 세션이 없으면 막되, 테스트 유저(데모) 모드(demoUserId)는 예외 — 세션 없이도
+    // apiUrl 이 demoUserId 를 부착하고 백엔드가 그 테스트 유저의 실제 edit window 로
+    // canEdit 을 판정하므로, 여기서 short-circuit 하면 "창은 열려 있는데 버튼만 비활성"이 된다.
+    if (!session?.user && !isDemo) {
       setCanEditClubReview(false);
       setReviewPermissionLoading(false);
       setClubReviewPermissionReason("not_granted");
@@ -1398,6 +1401,19 @@ const Cluster2Content = () => {
       });
       const result = await response.json();
       const permission = result?.data;
+
+      // [진단] Club Review 수정 버튼 disabled 조건 추적 — 콘솔에서 런타임 값 확인용.
+      console.log("[cluster2-clubReview-permission]", {
+        isDemo,
+        demoUserId: demo.demoUserId,
+        hasSession: !!session?.user,
+        requestUrl: apiUrl("/api/edit-windows/permission?resource_key=cluster2.review_links"),
+        httpOk: response.ok,
+        success: result?.success,
+        canEdit: permission?.canEdit ?? null,
+        reason: permission?.reason ?? null,
+        expiresAt: permission?.expiresAt ?? null,
+      });
 
       if (result?.success && permission && typeof permission.canEdit === "boolean") {
         setCanEditClubReview(permission.canEdit);
@@ -1416,12 +1432,52 @@ const Cluster2Content = () => {
     } finally {
       setReviewPermissionLoading(false);
     }
-  }, [isDemoMode, session?.user?.email, session?.user?.isAdmin]);
+  }, [isDemoMode, isDemo, demo.demoUserId, session?.user?.email, session?.user?.isAdmin]);
 
   useEffect(() => {
     if (sessionStatus === "loading") return;
     fetchClubReviewPermission();
   }, [fetchClubReviewPermission, sessionStatus]);
+
+  // 대표학력(1번 학력) 수정 권한 — admin baseline OR 작성기간 관리(cluster2.primary_education) 윈도우.
+  // 정책: 1번 학력은 기본 잠금, admin 만 항상 수정 가능, 일반 고객/테스트 유저는 "대표학력 수정"
+  // 윈도우가 열린 경우에만 수정 가능. 데모(테스트 유저) 모드는 admin 단축을 적용하지 않고
+  // 대상 userId(demoUserId) 기준 실제 윈도우로 판정해 일반 고객과 동일하게 동작시킨다.
+  const fetchPrimaryEducationPermission = useCallback(async () => {
+    const isAdmin = session?.user?.isAdmin || isAdminEmail(session?.user?.email);
+    if (isAdmin && !isDemo) {
+      setCanChangePrimary(true);
+      return;
+    }
+    // 로컬 더미(localStorage demoMode) 프리뷰는 실제 대상이 없으므로 기본 잠금.
+    if (isDemoMode) {
+      setCanChangePrimary(false);
+      return;
+    }
+    if (!isDemo && !session?.user) {
+      setCanChangePrimary(false);
+      return;
+    }
+    try {
+      const response = await fetch(
+        apiUrl("/api/edit-windows/permission?resource_key=cluster2.primary_education"),
+        { cache: "no-store" },
+      );
+      const result = await response.json();
+      const permission = result?.data;
+      setCanChangePrimary(
+        Boolean(result?.success && permission && permission.canEdit === true),
+      );
+    } catch (error) {
+      console.error("대표학력 수정 권한 확인 오류:", error);
+      setCanChangePrimary(false);
+    }
+  }, [isDemo, isDemoMode, session?.user?.email, session?.user?.isAdmin]);
+
+  useEffect(() => {
+    if (sessionStatus === "loading") return;
+    fetchPrimaryEducationPermission();
+  }, [fetchPrimaryEducationPermission, sessionStatus]);
 
   // dirty 추적: 편집 데이터 변경 감지 (초기 설정 시 skip)
   const introMountRef = useRef(false);
@@ -1500,7 +1556,7 @@ const Cluster2Content = () => {
   useEffect(() => {
     if (isOwner && session) {
       fetchReviewLink();
-    } else if (!isOwner && urlUserId) {
+    } else if (urlUserId) {
       fetchReviewLink();
     }
   }, [session, isOwner, urlUserId]);
@@ -1557,7 +1613,7 @@ const Cluster2Content = () => {
   useEffect(() => {
     if (isOwner && session) {
       fetchIntroductions();
-    } else if (!isOwner && urlUserId) {
+    } else if (urlUserId) {
       fetchIntroductions();
     }
   }, [session, isOwner, urlUserId]);
@@ -2273,8 +2329,8 @@ const Cluster2Content = () => {
                         const isFull = currentRating >= fullValue;
                         return (
                           <div key={starIndex} className="star-wrapper">
-                            <svg className="star-bg" viewBox="0 0 15 15" fill="none" stroke="#999" strokeWidth="1">
-                              <path d="M0 7.5C.99 7.51 1.97 7.32 2.88 6.95C3.8 6.58 4.63 6.02 5.33 5.33C6.02 4.63 6.58 3.8 6.95 2.88C7.32 1.97 7.51.99 7.5 0C7.49.99 7.68 1.97 8.05 2.88C8.42 3.8 8.98 4.63 9.67 5.33C10.37 6.02 11.2 6.58 12.12 6.95C13.03 7.32 14.01 7.51 15 7.5C14.01 7.49 13.03 7.68 12.12 8.05C11.2 8.42 10.37 8.98 9.67 9.67C8.98 10.37 8.42 11.2 8.05 12.12C7.68 13.03 7.49 14.01 7.5 15C7.51 14.01 7.32 13.03 6.95 12.12C6.58 11.2 6.02 10.37 5.33 9.67C4.63 8.98 3.8 8.42 2.88 8.05C1.97 7.68.99 7.49 0 7.5Z" />
+                            <svg className="star-bg" viewBox="0 0 15 15" fill="none">
+                              <path d="M0 7.5C.99 7.51 1.97 7.32 2.88 6.95C3.8 6.58 4.63 6.02 5.33 5.33C6.02 4.63 6.58 3.8 6.95 2.88C7.32 1.97 7.51.99 7.5 0C7.49.99 7.68 1.97 8.05 2.88C8.42 3.8 8.98 4.63 9.67 5.33C10.37 6.02 11.2 6.58 12.12 6.95C13.03 7.32 14.01 7.51 15 7.5C14.01 7.49 13.03 7.68 12.12 8.05C11.2 8.42 10.37 8.98 9.67 9.67C8.98 10.37 8.42 11.2 8.05 12.12C7.68 13.03 7.49 14.01 7.5 15C7.51 14.01 7.32 13.03 6.95 12.12C6.58 11.2 6.02 10.37 5.33 9.67C4.63 8.98 3.8 8.42 2.88 8.05C1.97 7.68.99 7.49 0 7.5Z" fill="none" stroke="#999" strokeWidth="1" />
                             </svg>
                             {isHalf && (
                               <svg className="star-half-fill" viewBox="0 0 15 15">
@@ -2291,8 +2347,8 @@ const Cluster2Content = () => {
                               </svg>
                             )}
                             {isFull && (
-                              <svg className="star-full-fill" viewBox="0 0 15 15" fill="#DFF314">
-                                <path d="M0 7.5C.99 7.51 1.97 7.32 2.88 6.95C3.8 6.58 4.63 6.02 5.33 5.33C6.02 4.63 6.58 3.8 6.95 2.88C7.32 1.97 7.51.99 7.5 0C7.49.99 7.68 1.97 8.05 2.88C8.42 3.8 8.98 4.63 9.67 5.33C10.37 6.02 11.2 6.58 12.12 6.95C13.03 7.32 14.01 7.51 15 7.5C14.01 7.49 13.03 7.68 12.12 8.05C11.2 8.42 10.37 8.98 9.67 9.67C8.98 10.37 8.42 11.2 8.05 12.12C7.68 13.03 7.49 14.01 7.5 15C7.51 14.01 7.32 13.03 6.95 12.12C6.58 11.2 6.02 10.37 5.33 9.67C4.63 8.98 3.8 8.42 2.88 8.05C1.97 7.68.99 7.49 0 7.5Z" />
+                              <svg className="star-full-fill" viewBox="0 0 15 15">
+                                <path d="M0 7.5C.99 7.51 1.97 7.32 2.88 6.95C3.8 6.58 4.63 6.02 5.33 5.33C6.02 4.63 6.58 3.8 6.95 2.88C7.32 1.97 7.51.99 7.5 0C7.49.99 7.68 1.97 8.05 2.88C8.42 3.8 8.98 4.63 9.67 5.33C10.37 6.02 11.2 6.58 12.12 6.95C13.03 7.32 14.01 7.51 15 7.5C14.01 7.49 13.03 7.68 12.12 8.05C11.2 8.42 10.37 8.98 9.67 9.67C8.98 10.37 8.42 11.2 8.05 12.12C7.68 13.03 7.49 14.01 7.5 15C7.51 14.01 7.32 13.03 6.95 12.12C6.58 11.2 6.02 10.37 5.33 9.67C4.63 8.98 3.8 8.42 2.88 8.05C1.97 7.68.99 7.49 0 7.5Z" fill="#DFF314" />
                               </svg>
                             )}
                           </div>
@@ -2345,8 +2401,8 @@ const Cluster2Content = () => {
                         const isFull = currentRating >= fullValue;
                         return (
                           <div key={starIndex} className="star-wrapper">
-                            <svg className="star-bg" viewBox="0 0 15 15" fill="none" stroke="#999" strokeWidth="1">
-                              <path d="M0 7.5C.99 7.51 1.97 7.32 2.88 6.95C3.8 6.58 4.63 6.02 5.33 5.33C6.02 4.63 6.58 3.8 6.95 2.88C7.32 1.97 7.51.99 7.5 0C7.49.99 7.68 1.97 8.05 2.88C8.42 3.8 8.98 4.63 9.67 5.33C10.37 6.02 11.2 6.58 12.12 6.95C13.03 7.32 14.01 7.51 15 7.5C14.01 7.49 13.03 7.68 12.12 8.05C11.2 8.42 10.37 8.98 9.67 9.67C8.98 10.37 8.42 11.2 8.05 12.12C7.68 13.03 7.49 14.01 7.5 15C7.51 14.01 7.32 13.03 6.95 12.12C6.58 11.2 6.02 10.37 5.33 9.67C4.63 8.98 3.8 8.42 2.88 8.05C1.97 7.68.99 7.49 0 7.5Z" />
+                            <svg className="star-bg" viewBox="0 0 15 15" fill="none">
+                              <path d="M0 7.5C.99 7.51 1.97 7.32 2.88 6.95C3.8 6.58 4.63 6.02 5.33 5.33C6.02 4.63 6.58 3.8 6.95 2.88C7.32 1.97 7.51.99 7.5 0C7.49.99 7.68 1.97 8.05 2.88C8.42 3.8 8.98 4.63 9.67 5.33C10.37 6.02 11.2 6.58 12.12 6.95C13.03 7.32 14.01 7.51 15 7.5C14.01 7.49 13.03 7.68 12.12 8.05C11.2 8.42 10.37 8.98 9.67 9.67C8.98 10.37 8.42 11.2 8.05 12.12C7.68 13.03 7.49 14.01 7.5 15C7.51 14.01 7.32 13.03 6.95 12.12C6.58 11.2 6.02 10.37 5.33 9.67C4.63 8.98 3.8 8.42 2.88 8.05C1.97 7.68.99 7.49 0 7.5Z" fill="none" stroke="#999" strokeWidth="1" />
                             </svg>
                             {isHalf && (
                               <svg className="star-half-fill" viewBox="0 0 15 15">
@@ -2363,8 +2419,8 @@ const Cluster2Content = () => {
                               </svg>
                             )}
                             {isFull && (
-                              <svg className="star-full-fill" viewBox="0 0 15 15" fill="#DFF314">
-                                <path d="M0 7.5C.99 7.51 1.97 7.32 2.88 6.95C3.8 6.58 4.63 6.02 5.33 5.33C6.02 4.63 6.58 3.8 6.95 2.88C7.32 1.97 7.51.99 7.5 0C7.49.99 7.68 1.97 8.05 2.88C8.42 3.8 8.98 4.63 9.67 5.33C10.37 6.02 11.2 6.58 12.12 6.95C13.03 7.32 14.01 7.51 15 7.5C14.01 7.49 13.03 7.68 12.12 8.05C11.2 8.42 10.37 8.98 9.67 9.67C8.98 10.37 8.42 11.2 8.05 12.12C7.68 13.03 7.49 14.01 7.5 15C7.51 14.01 7.32 13.03 6.95 12.12C6.58 11.2 6.02 10.37 5.33 9.67C4.63 8.98 3.8 8.42 2.88 8.05C1.97 7.68.99 7.49 0 7.5Z" />
+                              <svg className="star-full-fill" viewBox="0 0 15 15">
+                                <path d="M0 7.5C.99 7.51 1.97 7.32 2.88 6.95C3.8 6.58 4.63 6.02 5.33 5.33C6.02 4.63 6.58 3.8 6.95 2.88C7.32 1.97 7.51.99 7.5 0C7.49.99 7.68 1.97 8.05 2.88C8.42 3.8 8.98 4.63 9.67 5.33C10.37 6.02 11.2 6.58 12.12 6.95C13.03 7.32 14.01 7.51 15 7.5C14.01 7.49 13.03 7.68 12.12 8.05C11.2 8.42 10.37 8.98 9.67 9.67C8.98 10.37 8.42 11.2 8.05 12.12C7.68 13.03 7.49 14.01 7.5 15C7.51 14.01 7.32 13.03 6.95 12.12C6.58 11.2 6.02 10.37 5.33 9.67C4.63 8.98 3.8 8.42 2.88 8.05C1.97 7.68.99 7.49 0 7.5Z" fill="#DFF314" />
                               </svg>
                             )}
                           </div>
@@ -3114,8 +3170,8 @@ const Cluster2Content = () => {
                       const isFull = currentRating >= fullValue;
                       return (
                         <div key={starIndex} className="star-wrapper">
-                          <svg className="star-bg" viewBox="0 0 24 24" fill="none" stroke="#FFA500" strokeWidth="2">
-                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                          <svg className="star-bg" viewBox="0 0 24 24" fill="none">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="none" stroke="#FFA500" strokeWidth="2" />
                           </svg>
                           {isHalf && (
                             <svg className="star-half-fill" viewBox="0 0 24 24">
@@ -3128,8 +3184,8 @@ const Cluster2Content = () => {
                             </svg>
                           )}
                           {isFull && (
-                            <svg className="star-full-fill" viewBox="0 0 24 24" fill="#FFA500">
-                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                            <svg className="star-full-fill" viewBox="0 0 24 24">
+                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="#FFA500" />
                             </svg>
                           )}
                           <button
@@ -3224,8 +3280,8 @@ const Cluster2Content = () => {
                       const isFull = currentRating >= fullValue;
                       return (
                         <div key={starIndex} className="star-wrapper">
-                          <svg className="star-bg" viewBox="0 0 24 24" fill="none" stroke="#FFA500" strokeWidth="2">
-                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                          <svg className="star-bg" viewBox="0 0 24 24" fill="none">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="none" stroke="#FFA500" strokeWidth="2" />
                           </svg>
                           {isHalf && (
                             <svg className="star-half-fill" viewBox="0 0 24 24">
@@ -3238,8 +3294,8 @@ const Cluster2Content = () => {
                             </svg>
                           )}
                           {isFull && (
-                            <svg className="star-full-fill" viewBox="0 0 24 24" fill="#FFA500">
-                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                            <svg className="star-full-fill" viewBox="0 0 24 24">
+                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="#FFA500" />
                             </svg>
                           )}
                           <button
@@ -3334,8 +3390,8 @@ const Cluster2Content = () => {
                       const isFull = currentRating >= fullValue;
                       return (
                         <div key={starIndex} className="star-wrapper">
-                          <svg className="star-bg" viewBox="0 0 24 24" fill="none" stroke="#FFA500" strokeWidth="2">
-                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                          <svg className="star-bg" viewBox="0 0 24 24" fill="none">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="none" stroke="#FFA500" strokeWidth="2" />
                           </svg>
                           {isHalf && (
                             <svg className="star-half-fill" viewBox="0 0 24 24">
@@ -3348,8 +3404,8 @@ const Cluster2Content = () => {
                             </svg>
                           )}
                           {isFull && (
-                            <svg className="star-full-fill" viewBox="0 0 24 24" fill="#FFA500">
-                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                            <svg className="star-full-fill" viewBox="0 0 24 24">
+                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="#FFA500" />
                             </svg>
                           )}
                           <button

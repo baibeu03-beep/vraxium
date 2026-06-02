@@ -199,5 +199,26 @@ h6 {
 }
 
 /* ====
+ --------- (2.01b) caret-color 정책 — 비편집 영역 caret 제거 ---------
+ 근본 원인: 전역 caret-color 지정도, contentEditable도 없음(전수 조사 0건).
+ caret이 보이는 곳은 편집 모드 플래그에 따라 readOnly/disabled 로 토글되는
+ input·textarea (cluster3 output/detail, cluster4-card reputation 등). 이들은
+ 비편집 상태에서도 포커스 가능하므로 클릭/탭 시 깜빡이는 caret 이 노출됨.
+ => 기본적으로 caret 숨김. 단, "실제로 입력 가능한" 컨트롤(readonly/disabled
+ 아님 + contenteditable=true)에서만 caret 복원. :not() selector 가 universal
+ 보다 specificity 높아 cascade 로 자연히 이김 (별도 !important 불필요).
+ ==== */
+* {
+  caret-color: transparent;
+}
+
+input:not([readonly]):not([disabled]),
+textarea:not([readonly]):not([disabled]),
+[contenteditable="true"],
+[contenteditable=""] {
+  caret-color: auto;
+}
+
+/* ====
  --------- (2.01) reset styles end ---------
  ==== */

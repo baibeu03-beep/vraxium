@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getUserProfile } from "@/lib/get-user-profile";
+import { resolveWriteUserId } from "@/lib/api-auth";
 import { triggerAdminSnapshotRecompute } from "@/lib/triggerAdminSnapshotRecompute";
 import type {
   Cluster4LinePartType,
@@ -86,10 +86,16 @@ type Ctx = { params: Promise<{ lineTargetId: string }> };
 
 const SUB_SELECT = "id,line_target_id,subtitle,output_link_2,output_link_3,output_link_4,output_link_5,submitted_at,updated_at";
 
-async function getAuthProfileAndTarget(lineTargetId: string) {
-  const { profile, error } = await getUserProfile<{ user_id: string }>("user_id");
-  if (error) {
-    return { error: NextResponse.json({ success: false, error: error.message }, { status: error.status }) };
+async function getAuthProfileAndTarget(
+  request: NextRequest,
+  body: unknown,
+  lineTargetId: string,
+) {
+  // 테스트 유저(데모) 모드면 세션 없이 demoUserId 를 actor 로(test_user_markers 검증).
+  // 비-데모면 기존과 동일하게 세션 본인 user_id 를 사용.
+  const actor = await resolveWriteUserId(request, body);
+  if (!actor.ok) {
+    return { error: NextResponse.json({ success: false, error: actor.message }, { status: actor.status }) };
   }
   if (!supabaseAdmin) {
     return { error: NextResponse.json({ success: false, error: "Server configuration error." }, { status: 500 }) };
@@ -98,7 +104,7 @@ async function getAuthProfileAndTarget(lineTargetId: string) {
     return { error: NextResponse.json({ success: false, error: "lineTargetId must be a UUID." }, { status: 400 }) };
   }
 
-  const profileUserId = profile.user_id;
+  const profileUserId = actor.userId;
 
   const { data, error: dbErr } = await supabaseAdmin
     .from("cluster4_line_targets")
@@ -146,7 +152,7 @@ export async function POST(request: NextRequest, { params }: Ctx) {
     return NextResponse.json({ success: false, error: "Request body must be a JSON object." }, { status: 400 });
   }
 
-  const auth = await getAuthProfileAndTarget(lineTargetId);
+  const auth = await getAuthProfileAndTarget(request, body, lineTargetId);
   if ("error" in auth) return auth.error;
 
   if (!auth.isOpen) {
@@ -200,7 +206,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     return NextResponse.json({ success: false, error: "Request body must be a JSON object." }, { status: 400 });
   }
 
-  const auth = await getAuthProfileAndTarget(lineTargetId);
+  const auth = await getAuthProfileAndTarget(request, body, lineTargetId);
   if ("error" in auth) return auth.error;
 
   if (!auth.isOpen) {

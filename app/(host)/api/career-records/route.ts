@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase-server'
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { DemoModeError, resolveDemoProfileUserIdFromRequest } from '@/lib/demoMode'
 
 export const dynamic = "force-dynamic"
 
@@ -25,8 +26,18 @@ export async function GET(request: NextRequest) {
     const seasonKey = searchParams.get('season_key') || searchParams.get('season_id')
 
     // 로그인만 검증 — 타 크루 카드 진입(peer-view) 허용.
+    // 단, 유효한 테스트 유저(demoUserId)면 세션 없이 통과(데모 UX 읽기). season-reputations GET 과 동일 패턴.
+    let demoBypass: string | null = null
+    try {
+      demoBypass = await resolveDemoProfileUserIdFromRequest(request)
+    } catch (e) {
+      if (e instanceof DemoModeError) {
+        return NextResponse.json({ error: e.message }, { status: e.status })
+      }
+      throw e
+    }
     const session = await getServerSession(authOptions)
-    if (!session?.user?.email) {
+    if (!session?.user?.email && !demoBypass) {
       return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
     }
 

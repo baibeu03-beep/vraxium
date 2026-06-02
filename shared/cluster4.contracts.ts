@@ -131,6 +131,10 @@ export interface Cluster4WeeklyLineDto {
   outputLinks?: Cluster4LineOutputLinkDto[] | null;
   // 운영진 업로드 이미지 슬롯
   outputImages?: Cluster4LineOutputImageDto[] | null;
+  // ⚠️ 운영진(top-level) 이미지 캡션 — admin DTO 는 outputImages 객체에 caption 을 넣지 않고
+  // outputImages(URL string[]) 와 index 1:1 로 정렬된 별도 배열로 내려준다(submission.* 와 동일 형태).
+  // 프론트는 ingestion 단계에서 이 배열을 outputImages[{url,caption}] 로 coalesce 한다.
+  outputImageCaptions?: Array<string | null> | null;
   // ── 관리자 점유 슬롯 수 (백엔드 SoT — 프론트 추론 금지) ──
   // index < adminOutputLinkCount  → 관리자 링크 슬롯 (read-only)
   // index < adminOutputImageCount → 관리자 이미지 슬롯 (read-only, preview only)
