@@ -11,6 +11,10 @@ import {
 } from '@/lib/cluster4EditWindow'
 import { EDIT_WINDOW_LOCKED_MESSAGE } from '@/lib/editWindowMessages'
 import { DemoModeError, resolveDemoProfileUserId } from '@/lib/demoMode'
+import { triggerAdminSnapshotRecompute } from '@/lib/triggerAdminSnapshotRecompute'
+
+// cluster4 라인 저장 분기에서 line_target_id 형식 검증용.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // 프론트가 보낸 resource_key 가 4개 모달 신규 키 중 하나라면 그 키를 우선 검사하고,
 // 닫혀 있어도 legacy activity_details 가 열려 있으면 통과시킨다 (legacy fallback).
@@ -125,7 +129,24 @@ export async function POST(request: NextRequest) {
       image_captions,
       rating, // Work Exp 라인 평점 (0~10 정수 또는 null). undefined 면 미전달 → 기존 값 유지.
       resource_key, // optional — cluster4 모달 신규 키 (work_info/ability/exp/career). 없으면 legacy
+      // cluster4 "라인" 저장 식별자. 값이 있으면 user_activity_details 와 더불어 canonical
+      // store(cluster4_line_submissions)에도 동기화한다. (없으면 legacy activity_type 단위 저장만)
+      line_target_id,
+      // 신규 outputLinks([{url,label}]) 단일 출처. 라인 submission output_links jsonb 로 매핑.
+      outputLinks,
     } = body
+
+    // 진입 진단 로그 — 저장 대상/요청 본문 식별값.
+    console.log('[activity-details POST] entry', {
+      user_id,
+      week_id,
+      activity_type_id,
+      line_target_id: line_target_id ?? null,
+      resource_key: resource_key ?? null,
+      outputLinksCount: Array.isArray(outputLinks) ? outputLinks.length : 0,
+      imageCount: Array.isArray(image_urls) ? image_urls.filter(Boolean).length : 0,
+      body,
+    })
 
     // 테스트 유저(데모) 모드 주체 해소 — body.demoUserId 우선, 없으면 query demoUserId.
     //   - 없음 → null (일반 세션 인증 경로, 기존 흐름 그대로)
@@ -356,6 +377,137 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('Error saving activity details:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Cluster4 "라인" 저장 동기화 (line_target_id 가 있을 때만).
+    //
+    // 배경(과거 버그): 고객 앱 라인 모달은 line_target_id 를 함께 보냈지만, 이 라우트는
+    //   user_activity_details 에만 upsert 하고 line_target_id 를 무시했다. 어드민 상세와
+    //   고객 주차 카드(/api/cluster4/weekly-cards)는 cluster4_line_submissions 만 읽으므로
+    //   "저장 완료" 안내는 떠도 양쪽 어디에도 값이 보이지 않았다 (잘못된 테이블에 성공 저장).
+    //
+    // 수정: line_target_id 가 유효하면 canonical store 인 cluster4_line_submissions 에도
+    //   upsert 한다. 두 테이블을 함께 갱신해 legacy(detail-first) 표시와 submission 표시를
+    //   정합 유지하고, 이 write 가 실패하면 500 을 반환한다 → 프론트가 throw → "저장 완료"
+    //   안내가 실제 DB 저장 성공 이후에만 뜬다.
+    if (typeof line_target_id === 'string' && UUID_RE.test(line_target_id)) {
+      // 1) 대상 라인 소유/활성 검증 (validate_cluster4_line_submission 트리거의 사전 친절 에러).
+      //    트리거가 submission.user_id = target_user_id 를 강제하므로, 여기서 미리 확인해
+      //    혼동스러운 500 대신 명확한 403/404 를 돌려준다.
+      const { data: targetRow, error: targetErr } = await supabaseAdmin
+        .from('cluster4_line_targets')
+        .select('id, target_mode, target_user_id, cluster4_lines!inner(is_active)')
+        .eq('id', line_target_id)
+        .maybeSingle()
+
+      if (targetErr) {
+        console.error('[activity-details POST][cluster4-line] target lookup error', targetErr)
+        return NextResponse.json({ error: targetErr.message }, { status: 500 })
+      }
+
+      const tRow = targetRow as unknown as {
+        id: string
+        target_mode: 'user' | 'rule'
+        target_user_id: string | null
+        cluster4_lines: { is_active: boolean } | null
+      } | null
+
+      if (!tRow || tRow.cluster4_lines?.is_active !== true) {
+        return NextResponse.json({ error: '개설된 라인을 찾을 수 없습니다.' }, { status: 404 })
+      }
+      if (tRow.target_mode !== 'user' || tRow.target_user_id !== ownerUserId) {
+        return NextResponse.json(
+          { error: '이 라인에 대한 저장 권한이 없습니다.' },
+          { status: 403 },
+        )
+      }
+
+      // 2) 페이로드 매핑 — cluster4_line_submissions 컬럼 형태로 변환.
+      //    subtitle CHECK: NULL 또는 공백 아님. growth_point: NULL 또는 text.
+      const subSubtitle =
+        typeof sub_title === 'string' && sub_title.trim() ? sub_title.trim() : null
+      const subGrowthPoint =
+        typeof growth_point === 'string' && growth_point.trim() ? growth_point.trim() : null
+      // output_links jsonb: 신규 outputLinks([{url,label}]) 우선, 없으면 legacy output_links([{desc,url}]).
+      //    URL 없는 슬롯은 제외 (read 모델 resolveOutputLinks 와 동일 규칙).
+      const subOutputLinks = Array.isArray(outputLinks)
+        ? (outputLinks as Array<{ url?: unknown; label?: unknown }>)
+            .map((l) => ({
+              url: typeof l?.url === 'string' ? l.url.trim() : '',
+              label: typeof l?.label === 'string' && l.label.trim() ? l.label.trim() : null,
+            }))
+            .filter((l) => l.url !== '')
+        : Array.isArray(output_links)
+          ? (output_links as Array<{ url?: unknown; desc?: unknown }>)
+              .map((l) => ({
+                url: typeof l?.url === 'string' ? l.url.trim() : '',
+                label: typeof l?.desc === 'string' && l.desc.trim() ? l.desc.trim() : null,
+              }))
+              .filter((l) => l.url !== '')
+          : []
+      // output_images jsonb: image_urls(null 슬롯 포함) ↔ image_captions 1:1 → [{url,caption}].
+      //    url 없는 슬롯 제외. cluster4_lines.output_images 와 동일 구조 [{url,caption}].
+      const imgUrls = Array.isArray(image_urls) ? image_urls : []
+      const imgCaps = Array.isArray(image_captions) ? image_captions : []
+      const subOutputImages = imgUrls
+        .map((u: unknown, i: number) => ({
+          url: typeof u === 'string' ? u.trim() : '',
+          caption:
+            typeof imgCaps[i] === 'string' && imgCaps[i].trim() ? imgCaps[i].trim() : null,
+        }))
+        .filter((x) => x.url !== '')
+
+      const subPayload = {
+        line_target_id,
+        user_id: ownerUserId,
+        subtitle: subSubtitle,
+        growth_point: subGrowthPoint,
+        output_links: subOutputLinks,
+        output_images: subOutputImages,
+      }
+
+      // 진단 로그 — write 대상 table / where(onConflict) / payload.
+      console.log('[activity-details POST][cluster4-line] write', {
+        ownerUserId,
+        weekId: week_id,
+        activityTypeId: activity_type_id,
+        lineTargetId: line_target_id,
+        table: 'cluster4_line_submissions',
+        onConflict: 'line_target_id,user_id',
+        payload: subPayload,
+      })
+
+      const SUB_SELECT =
+        'id,line_target_id,user_id,subtitle,growth_point,output_links,output_images,updated_at'
+
+      const { data: subData, error: subErr } = await supabaseAdmin
+        .from('cluster4_line_submissions')
+        .upsert(subPayload, { onConflict: 'line_target_id,user_id' })
+        .select(SUB_SELECT)
+        .single()
+
+      if (subErr || !subData) {
+        console.error('[activity-details POST][cluster4-line] submission upsert FAILED', subErr)
+        return NextResponse.json(
+          { error: subErr?.message ?? '라인 저장에 실패했습니다.' },
+          { status: 500 },
+        )
+      }
+
+      // 저장 직후 동일 조건 재조회 — 실제 반영 확인용 로그.
+      const { data: verifyRow } = await supabaseAdmin
+        .from('cluster4_line_submissions')
+        .select(SUB_SELECT)
+        .eq('line_target_id', line_target_id)
+        .eq('user_id', ownerUserId)
+        .maybeSingle()
+      console.log('[activity-details POST][cluster4-line] post-write select', verifyRow)
+
+      // 어드민 주차 카드 스냅샷 재계산 트리거 (best-effort, 실패해도 저장은 성공).
+      await triggerAdminSnapshotRecompute([ownerUserId])
+
+      return NextResponse.json({ success: true, data, submission: subData })
     }
 
     return NextResponse.json({ success: true, data })

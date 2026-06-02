@@ -3083,9 +3083,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         image_captions: params.imageCaptions,
       }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || "저장에 실패했습니다.");
+    // res.ok 뿐 아니라 body.success === false 도 실패로 처리 (백엔드가 200+success:false 를 내도 안내 오인 방지).
+    const body = await res.json().catch(() => ({} as { success?: boolean; error?: string }));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.error || "저장에 실패했습니다.");
     }
     return { images: persistedImages };
   };
@@ -3184,6 +3185,25 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         images: [...persistedImages],
         imageCaptions: [...editingImageCaptions],
       };
+      // 저장 직후 미리보기 단일 출처(cluster4Lines[].submission) 패치 — canonical 우선 표시(buildWorkInfoCard)와
+      // 정합. info 미리보기는 submission.subtitle/growthPoint 만 읽으므로(links/images 는 detail) 두 필드만 갱신해
+      // 새로고침 없이 새 값이 보이게 한다. (competency 패턴과 동일)
+      if (infoSaveLineTargetId) {
+        setCluster4Lines((prev) =>
+          prev.map((l) =>
+            l.lineTargetId === infoSaveLineTargetId && normalizePartType(l.partType) === "information"
+              ? {
+                  ...l,
+                  submission: {
+                    ...((l.submission as Record<string, unknown> | null | undefined) || {}),
+                    subtitle: newSubTitle,
+                    growthPoint: newGrowthPoint,
+                  },
+                }
+              : l,
+          ),
+        );
+      }
     }
     await popup.alert("저장되었습니다.");
     setWorkInfoFooterNotice("default");
@@ -3514,12 +3534,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         try {
           const persisted = await persistActivityDetailToServer({
             activityTypeId: selectedWorkAbilityCard.activityTypeId,
-            lineTargetId:
-              (findCluster4Line({
-                partType: "competency",
-                competencyLineMasterId: (selectedWorkAbilityCard?.competencyLineMasterId as string | null | undefined) ?? null,
-                lineCode: (selectedWorkAbilityCard?.lineCode as string | null | undefined) ?? (selectedWorkAbilityCard?.code as string | null | undefined) ?? null,
-              })?.lineTargetId as string | null | undefined) ?? null,
+            // 가드(abilitySaveLineTargetId) 와 동일 출처 — persist 에 다른 값을 넘기면 가드 통과 후
+            // line_target_id:null 전송 → submission 미반영인데 "저장됨" 안내가 뜨는 회귀를 막는다.
+            lineTargetId: abilitySaveLineTargetId,
             subTitle: newSubTitle,
             outputLinks: newOutputLinks,
             growthPoint: newGrowthPoint,
@@ -3824,12 +3841,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         try {
           const persisted = await persistActivityDetailToServer({
             activityTypeId: selectedWorkExpCard.activityTypeId,
-            lineTargetId:
-              (findCluster4Line({
-                partType: "experience",
-                experienceLineMasterId: (selectedWorkExpCard?.experienceLineMasterId as string | null | undefined) ?? null,
-                lineCode: (selectedWorkExpCard?.code as string | null | undefined) ?? null,
-              })?.lineTargetId as string | null | undefined) ?? null,
+            // 가드(expSaveLineTargetId) 와 동일 출처 — persist 에 다른 값을 넘기면 가드 통과 후
+            // line_target_id:null 전송 → submission 미반영인데 "저장됨" 안내가 뜨는 회귀를 막는다.
+            lineTargetId: expSaveLineTargetId,
             subTitle: newSubTitle,
             outputLinks: newOutputLinks,
             growthPoint: newGrowthPoint,
@@ -3880,6 +3894,25 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         imageCaptions: [...editingExpImageCaptions],
         rating: editingExpRating,
       };
+      // 저장 직후 미리보기 단일 출처(cluster4Lines[].submission) 패치 — canonical 우선 표시(buildExpCard)와
+      // 정합. exp 미리보기는 submission.subtitle/growthPoint 만 읽으므로(links/images 는 detail) 두 필드만 갱신해
+      // 새로고침 없이 새 값이 보이게 한다. (competency 패턴과 동일)
+      if (expSaveLineTargetId) {
+        setCluster4Lines((prev) =>
+          prev.map((l) =>
+            l.lineTargetId === expSaveLineTargetId && normalizePartType(l.partType) === "experience"
+              ? {
+                  ...l,
+                  submission: {
+                    ...((l.submission as Record<string, unknown> | null | undefined) || {}),
+                    subtitle: newSubTitle,
+                    growthPoint: newGrowthPoint,
+                  },
+                }
+              : l,
+          ),
+        );
+      }
     }
     await popup.alert("저장되었습니다.");
     setWorkExpFooterNotice("default");
@@ -4126,12 +4159,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         try {
           const persisted = await persistActivityDetailToServer({
             activityTypeId: activityType,
-            lineTargetId:
-              (findCluster4Line({
-                partType: "career",
-                careerProjectId: (selectedWorkCareerCard?.careerProjectId as string | null | undefined) ?? null,
-                projectCode: (selectedWorkCareerCard?.projectCode as string | null | undefined) ?? (selectedWorkCareerCard?.lineCode as string | null | undefined) ?? (selectedWorkCareerCard?.code as string | null | undefined) ?? null,
-              })?.lineTargetId as string | null | undefined) ?? null,
+            // 가드(careerSaveLineTargetId) 와 동일 출처 — persist 에 다른 값을 넘기면 가드 통과 후
+            // line_target_id:null 전송 → submission 미반영인데 "저장됨" 안내가 뜨는 회귀를 막는다.
+            lineTargetId: careerSaveLineTargetId,
             subTitle: newSubTitle,
             outputLinks: newOutputLinks,
             growthPoint: newGrowthPoint,
@@ -4194,6 +4224,35 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         images: [...mergedImages],
         imageCaptions: [...mergedCaptions],
       };
+      // 저장 직후 미리보기 단일 출처(cluster4Lines[].submission) 패치 — career 미리보기(buildCareerCardFromLine)는
+      // subtitle/growthPoint 와 outputImages/outputImageCaptions(크루 슬롯)를 submission 에서 읽으므로 함께 갱신해
+      // 새로고침 없이 새 값이 보이게 한다. (어드민 top-level 이미지는 build 가 별도 머지 — 크루분만 저장)
+      if (careerSaveLineTargetId) {
+        const savedUserImages: string[] = [];
+        const savedUserCaptions: Array<string | null> = [];
+        (persistedCrewImages || []).forEach((u, i) => {
+          if (u && u.trim()) {
+            savedUserImages.push(u);
+            savedUserCaptions.push(crewCaptionsToSave[i] || "");
+          }
+        });
+        setCluster4Lines((prev) =>
+          prev.map((l) =>
+            l.lineTargetId === careerSaveLineTargetId && normalizePartType(l.partType) === "career"
+              ? {
+                  ...l,
+                  submission: {
+                    ...((l.submission as Record<string, unknown> | null | undefined) || {}),
+                    subtitle: newSubTitle,
+                    growthPoint: newGrowthPoint,
+                    outputImages: savedUserImages,
+                    outputImageCaptions: savedUserCaptions,
+                  },
+                }
+              : l,
+          ),
+        );
+      }
     }
     await popup.alert("저장되었습니다.");
     setWorkCareerFooterNotice("default");
@@ -6980,9 +7039,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         activityType,
         // Main Title: DTO line.mainTitle 우선 → legacy activity.title → '-' (submission 아님)
         title: (matchedLine?.mainTitle as string | null | undefined) || activity?.title || "-",
-        // subtitle/growthPoint 는 사용자 제출값 — legacy detail 우선 → matchedLine.submission → "".
-        subTitle: detail?.sub_title || ((matchedLine?.submission as { subtitle?: string | null } | null | undefined)?.subtitle ?? "") || "",
-        growthPoint: detail?.growth_point || ((matchedLine?.submission as { growthPoint?: string | null } | null | undefined)?.growthPoint ?? "") || "",
+        // subtitle/growthPoint 는 사용자 제출값 — canonical submission 우선 → legacy detail 폴백 → "".
+        // (cluster4_line_submissions 가 line 단위 SoT. detail 은 activity_type 단위라 멀티라인/stale 시 가림)
+        subTitle: ((matchedLine?.submission as { subtitle?: string | null } | null | undefined)?.subtitle ?? null) ?? detail?.sub_title ?? "",
+        growthPoint: ((matchedLine?.submission as { growthPoint?: string | null } | null | undefined)?.growthPoint ?? null) ?? detail?.growth_point ?? "",
         verified: true,
         category: config?.category || activityType,
         tagColor: config?.tagColor || "",
@@ -7449,9 +7509,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         fallbackMapping?.lineName ||
         "-",
       title: expMatchedLine?.mainTitle || activity?.title || fallbackMapping?.mainTitle || "-",
-      // subtitle/growthPoint: 사용자 제출값(legacy detail) 우선 → matchedLine.submission → "".
-      subTitle: detail?.sub_title || ((expMatchedLine?.submission as { subtitle?: string | null } | null | undefined)?.subtitle ?? "") || "",
-      growthPoint: detail?.growth_point || ((expMatchedLine?.submission as { growthPoint?: string | null } | null | undefined)?.growthPoint ?? "") || "",
+      // subtitle/growthPoint: canonical submission(line 단위 SoT) 우선 → legacy detail 폴백 → "".
+      subTitle: ((expMatchedLine?.submission as { subtitle?: string | null } | null | undefined)?.subtitle ?? null) ?? detail?.sub_title ?? "",
+      growthPoint: ((expMatchedLine?.submission as { growthPoint?: string | null } | null | undefined)?.growthPoint ?? null) ?? detail?.growth_point ?? "",
       outputLinks: mergedOutputLinks,
       images: normalizeWorkInfoImages(mergedImages),
       imageCaptions: normalizeWorkInfoCaptions(mergedCaptions),
