@@ -21,6 +21,7 @@ import { REPUTATION_KEYWORDS } from "@/lib/reputation-keywords";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
+import { appendDemoQuery } from "@/lib/appendDemoQuery";
 import HelpModalBody from "@/components/shared/HelpModalBody";
 
 // 글자수 초과 시 '..' 표시 (CSS ellipsis '…' 대신 JS 처리)
@@ -148,8 +149,13 @@ const Cluster4Content = () => {
   // 테스트 모드는 실제 DB 를 source of truth 로 읽어야 하므로 더미가 응답을 덮으면 안 된다.
   const isDemoMode = checkDemoMode() && !demoUserId;
   // 어드민(마더) 계정은 모든 프로필 편집 가능
-  // 테스트 유저(데모) 모드면 편집 UX 검증을 위해 owner 로 취급 (실제 저장은 demoUserId 로 백엔드 검증).
-  const isOwner = session?.user?.isAdmin || !!demoUserId || !urlUserId || (session?.user?.id === urlUserId);
+  // 테스트 유저(데모) 모드는 "demoUserId 유저로 로그인한 일반 고객"과 동일하게 동작해야 하므로,
+  // 본인 페이지(urlUserId === demoUserId)일 때만 owner 로 취급한다. ?userId= 로 타 크루 페이지를
+  // 열람 중(urlUserId !== demoUserId)이면 owner 가 아니어야 시즌 평판(= 타 크루 전용 작성)이
+  // 정상 동작한다. (demoUserId 만으로 무조건 owner 처리하면 타 크루 페이지에서도 본인으로 오인해
+  //  "시즌 평판은 타 크루끼리 작성합니다" 로 잘못 막혔다 — cluster-4-card isOwner 와 동일 규칙.)
+  const isOwner = session?.user?.isAdmin
+    || (demoUserId ? urlUserId === demoUserId : (!urlUserId || session?.user?.id === urlUserId));
 
   // 어드민이 다른 유저 편집 시 targetUserId를 API URL에 추가
   // (urlUserId 는 위에서 demoUserId 까지 fold-in 되어 있어 테스트 유저 모드도 동일 경로로 흐른다.)
@@ -320,8 +326,11 @@ const Cluster4Content = () => {
   // TODO: [백엔드 작업 필요] 일반 모드에서 API 응답의 canEdit 값을 setCanEditSeasonReputation으로 반영
   const [canEditSeasonReputation, setCanEditSeasonReputation] = useState(isDemoMode || !!demoUserId);
   useEffect(() => {
-    setCanEditSeasonReputation(isDemoMode);
-  }, [isDemoMode]);
+    // 테스트 유저(데모) 모드도 owner-승인 플래그는 통과시키고, 실제 작성기간 enforce 는
+    // seasonReputationWindowOpen(= demoUserId 권한 fetch 결과)이 담당한다. demoUserId 를 빠뜨리면
+    // 승인 플래그가 false 로 리셋돼 작성기간이 열려 있어도 수정 버튼이 막힌다.
+    setCanEditSeasonReputation(isDemoMode || !!demoUserId);
+  }, [isDemoMode, demoUserId]);
   const [seasonReputationSuccess, setSeasonReputationSuccess] = useState(false);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string>("");
 
@@ -437,8 +446,11 @@ const Cluster4Content = () => {
   const seasonReviewRatingDropdownTriggerRef = useRef<HTMLDivElement>(null);
   const [canEditSeasonReview, setCanEditSeasonReview] = useState(isDemoMode || !!demoUserId);
   useEffect(() => {
-    setCanEditSeasonReview(isDemoMode);
-  }, [isDemoMode]);
+    // 테스트 유저(데모) 모드도 승인 플래그는 통과시키고, 실제 작성기간 enforce 는
+    // seasonReviewWindowOpen(= demoUserId 권한 fetch 결과)이 담당한다. demoUserId 를 빠뜨리면
+    // 승인 플래그가 false 로 리셋돼 작성기간이 열려 있어도 수정/저장이 막힌다.
+    setCanEditSeasonReview(isDemoMode || !!demoUserId);
+  }, [isDemoMode, demoUserId]);
 
   // ============================================================
   // user_edit_windows 기반 Cluster4 시즌 리뷰 작성 기간 (cluster3 패턴 재사용)
@@ -2252,7 +2264,10 @@ const Cluster4Content = () => {
   // 시즌 평판 모달 열기
   // 본인이 이 시즌·이 대상에게 이미 남긴 평판이 있으면 prefill 하여 수정 모드로 진입
   const openSeasonReputationModal = () => {
-    const myProfileId = session?.user?.id;
+    // 테스트 유저(데모) 모드는 세션이 없으므로 reviewer = demoUserId 로 본다(백엔드가 reviewer 를
+    // demoUserId 로 고정해 저장하므로 기존 평판의 reviewer_id 도 demoUserId 다). 빠뜨리면 항상
+    // 신규(POST)로 진입해 중복 작성 409 로 저장이 막힌다.
+    const myProfileId = session?.user?.id || demoUserId || undefined;
     const myExisting = myProfileId
       ? seasonReputations.find((r) => r.reviewer_id === myProfileId)
       : undefined;
@@ -2757,14 +2772,14 @@ const Cluster4Content = () => {
           <div
             className="tab"
             style={{ width: "44px", height: "44px", background: "#161816" }}
-            onClick={() => router.push(withPxRoute(`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname))}
+            onClick={() => router.push(withPxRoute(appendDemoQuery(`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}`, searchParams), pathname))}
           >
             <img src="/images/0/cluster4/icon/icon%20-%20%EC%A0%84%EA%B5%AC.png" alt="전구" className="tab-icon" />
             <div
               className="tab-badge"
               onClick={(e) => {
                 e.stopPropagation();
-                router.push(withPxRoute(`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname));
+                router.push(withPxRoute(appendDemoQuery(`/cluster-4${urlUserId ? `?userId=${urlUserId}` : ""}`, searchParams), pathname));
               }}
             >
               <span className="badge-text">Weekly Growth</span>
@@ -2781,14 +2796,14 @@ const Cluster4Content = () => {
               // `.top-tabs .tab:first-child` 룰은 첫 탭만 잡으므로 여기서 분기.
               background: orgAccent,
             }}
-            onClick={() => router.push(withPxRoute(`/cluster-4-1${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname))}
+            onClick={() => router.push(withPxRoute(appendDemoQuery(`/cluster-4-1${urlUserId ? `?userId=${urlUserId}` : ""}`, searchParams), pathname))}
           >
             <img src="/images/0/cluster4/icon/icon%20-%20book.png" alt="book" className="tab-icon" />
             <div
               className="tab-badge"
               onClick={(e) => {
                 e.stopPropagation();
-                router.push(withPxRoute(`/cluster-4-1${urlUserId ? `?userId=${urlUserId}` : ""}`, pathname));
+                router.push(withPxRoute(appendDemoQuery(`/cluster-4-1${urlUserId ? `?userId=${urlUserId}` : ""}`, searchParams), pathname));
               }}
             >
               <span className="badge-text">Season Growth</span>

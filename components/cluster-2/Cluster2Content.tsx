@@ -13,6 +13,8 @@ import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { isPxRoute, isEcRoute, getOrgConfigFromPathname } from "@/lib/cluster-route";
 import { usePopup } from "@/components/ui/popup";
 import { useDemoUserMode } from "@/hooks/useDemoUserMode";
+import { useProfile } from "@/contexts/ProfileContext";
+import { invalidateDedupe } from "@/lib/fetch-dedupe";
 import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
 import { logEvent } from "@/utils/blackScreenDiagnostics";
 import { CLUSTER2_DUMMY_PHOTOS, CLUSTER2_DUMMY_SLOGANS, CLUSTER2_DUMMY_VIDEOS, CLUSTER2_DUMMY_EDUCATIONS, CLUSTER2_DUMMY_REVIEWS, CLUSTER2_DUMMY_INTRO, CLUSTER2_DUMMY_BY_USER, DEFAULT_DEMO_USER } from "@/constants/dummyData";
@@ -138,6 +140,10 @@ const Cluster2Content = () => {
   // 테스트 유저(데모) 모드 — ?demoUserId={id}&demoUserName={name} (공통 훅).
   const demo = useDemoUserMode();
   const isDemo = demo.isDemo;
+  // 이력서/Sidebar 가 읽는 /api/profile (profile_photo_url 등) 캐시.
+  // cluster2 에서 사진/슬로건 등을 저장한 뒤 이 캐시를 비워야, 다른 클러스터로
+  // 이동했다 돌아왔을 때 Sidebar 가 stale 캐시(이전 사진)로 되돌아가지 않는다.
+  const { clearCache: clearProfileCache } = useProfile();
   // 조회/표시/저장 대상: admin-view(userId) 우선 → 테스트 유저(demoUserId).
   const urlUserId = searchParams.get("userId") || searchParams.get("userID") || demo.demoUserId;
   const demoNameParam = searchParams.get("demoName");
@@ -506,6 +512,10 @@ const Cluster2Content = () => {
 
       const result = await response.json();
       if (result.success) {
+        // 이력서/Sidebar 의 /api/profile 캐시 무효화 — sidebarPhoto 는
+        // user_profiles.profile_photo_url 에 저장되며 Sidebar 가 이 값을 읽는다.
+        // 비우지 않으면 클러스터 전환/재진입 시 stale 캐시로 이전 사진이 복원된다.
+        clearProfileCache();
         showAlert("저장되었습니다.");
         setSection1ModalOpen(false);
       } else {
@@ -726,6 +736,12 @@ const Cluster2Content = () => {
       const result = await response.json();
       if (result.success) {
         setSloganData(editingSloganData);
+        // 슬로건(quote)은 /api/profile 에 포함되지 않고 Sidebar.fetchSlogan() 의
+        // dedupedJson('/api/slogans') 30s 캐시에서 온다. 라이브 반영은 아래 sloganUpdated
+        // 이벤트(detail 직접 사용)로 처리되지만, 캐시를 비우지 않으면 클러스터 전환/재진입 시
+        // fetchSlogan 이 stale 응답으로 quote 를 이전 값으로 덮어쓴다. (clearProfileCache 는
+        // /api/profile 전용이라 여기선 부적절 — 해당 endpoint dedupe 만 무효화.)
+        invalidateDedupe("/api/slogans");
         // 슬로건 변경을 Sidebar(.resume-card)에 알려 즉시 반영
         window.dispatchEvent(new CustomEvent("sloganUpdated", { detail: editingSloganData }));
         showAlert("저장되었습니다.");
@@ -1097,6 +1113,13 @@ const Cluster2Content = () => {
         setHasEduChanges(false);
         setEduValidationErrors({});
         setSection3ModalOpen(false);
+        // 학력(school/major)은 두 경로로 Sidebar 에 노출된다:
+        //   (1) /api/profile enrichment → buildSidebarUserProfile 첫 페인트 → ProfileContext 캐시
+        //   (2) Sidebar.fetchEducations() refine → dedupedJson('/api/educations') 30s 캐시
+        // 둘 다 비워야 클러스터 전환/재진입/새로고침 시 이전 학력으로 복원되지 않는다.
+        // (educationUpdated dispatch 전에 무효화해야 리스너의 fetchEducations 가 fresh 를 읽는다.)
+        clearProfileCache();
+        invalidateDedupe("/api/educations");
         // 학력 변경을 Sidebar(.resume-card)에 알려 즉시 반영
         window.dispatchEvent(new Event("educationUpdated"));
         showAlert("저장되었습니다.");

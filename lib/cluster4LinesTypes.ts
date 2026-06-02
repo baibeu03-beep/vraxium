@@ -13,6 +13,8 @@ export type Cluster4VisibleLineDto = {
   lineTargetId: string;
   partType: Cluster4LinePartType;
   targetMode: Cluster4LineTargetMode;
+  // 라인명(master.line_name) — mainTitle(main_title)과 별개. info part 는 null 일 수 있음.
+  lineName: string | null;
   mainTitle: string;
   outputLink1: string | null;
   submissionOpensAt: string;

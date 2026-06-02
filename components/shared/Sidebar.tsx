@@ -13,6 +13,7 @@ import { Autoplay } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { usePopup } from "@/components/ui/popup";
 import { getOrgClusterRouteBase } from "@/lib/cluster-route";
+import { appendDemoQuery } from "@/lib/appendDemoQuery";
 // Define the type for the game object
 interface Game {
   id: number;
@@ -65,8 +66,11 @@ const Sidebar = () => {
     () => resolveCurrentOrg(pathname ?? null, searchParams?.get("org") ?? null),
     [pathname, searchParams]
   );
-  const crewsHref = currentOrg ? `/crews?org=${currentOrg}` : "/crews";
-  const weeklyRankingHref = currentOrg ? `/weekly-ranking?org=${currentOrg}` : "/weekly-ranking";
+  // 테스트 유저(데모) 모드 컨텍스트(demoUserId/admin=true/demoUserName/org)를 사이드바
+  // 네비게이션 전 구간에 유지한다(공통 헬퍼 lib/appendDemoQuery). 진입 후 중간 페이지를
+  // 거치며 demoUserId 가 끊기면 타 크루 카드에서 평판 작성이 "로그인이 필요합니다" 로 막힌다.
+  const crewsHref = appendDemoQuery(currentOrg ? `/crews?org=${currentOrg}` : "/crews", searchParams);
+  const weeklyRankingHref = appendDemoQuery(currentOrg ? `/weekly-ranking?org=${currentOrg}` : "/weekly-ranking", searchParams);
 
   // 로그인 시 user_profiles ID를 미리 가져옴
   // 어드민(마더 계정)은 user_profiles에 없어 404 — skip
@@ -87,16 +91,18 @@ const Sidebar = () => {
     if (session?.user) {
       // 어드민(마더 계정)은 본인 프로필이 없어 /cluster-4 가 무의미 — 바로 크루 목록으로
       if (session.user.isAdmin) {
-        router.push("/crews");
+        router.push(appendDemoQuery("/crews", searchParams));
         return;
       }
       // 현재 조직 컨텍스트(랜딩 org)를 canonical cluster URL 로 보존.
       // currentOrg 없으면 marketing 기본. (crewsHref 와 동일한 org 분기 규칙.)
+      // 테스트 모드면 demoUserId 등 컨텍스트도 유지 — 세션이 없어 myProfileId 가 null 이라도
+      // demoUserId 본인 카드로 진입한다(appendDemoQuery 가 demoUserId 부착).
       const clusterBase = getOrgClusterRouteBase(currentOrg);
       if (myProfileId) {
-        router.push(`${clusterBase}/?userId=${myProfileId}`);
+        router.push(appendDemoQuery(`${clusterBase}/?userId=${myProfileId}`, searchParams));
       } else {
-        router.push(clusterBase);
+        router.push(appendDemoQuery(clusterBase, searchParams));
       }
     } else {
       await popup.alert("현재 활동 중이거나 졸업한 크루여야 합니다");
@@ -172,7 +178,9 @@ const Sidebar = () => {
                     {games.map((game) => (
                       <SwiperSlide key={game.id} className="swiper-slide">
                         <div className="sidebar-slider__single">
-                          <Link href={game.href} aria-label="open landing page" title="open landing page">
+                          {/* 동물 랜딩(index-two-*)은 목적지가 org 를 경로로 결정하므로 carryOrg:false
+                              — 현재 org 를 실으면 목적지 org 와 충돌. demoUserId 등만 유지. */}
+                          <Link href={appendDemoQuery(game.href, searchParams, { carryOrg: false })} aria-label="open landing page" title="open landing page">
                             <Image src={game.image} alt="Image" />
                             <svg viewBox="-3 -3 106 106" xmlns="http://www.w3.org/2000/svg" fill="none" className="hexagon-border">
                               <polygon points="50 0, 100 25, 100 75, 50 100, 0 75, 0 25" />

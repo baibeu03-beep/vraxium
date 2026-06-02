@@ -14,13 +14,17 @@ const Cluster4CardEcPage = () => {
   useEffect(() => {
     // demoMode 가 켜져 있을 때만 dw-01 더미 카드로 직행.
     // ?admin=true 는 DemoToggle 노출 신호일 뿐 — 단독 트리거 금지 (base route 와 동기).
+    // 진입 쿼리(userId=대상자/target, demoUserId=테스트 작성자/actor, admin, demoUserName, org)를
+    // redirect 목적지(주차 카드)까지 그대로 보존한다. 안 그러면 cluster-4-card 가 urlUserId 를
+    // demoUserId 로 폴백해 타 크루 카드에서 "내 카드로 복귀"한다.
     const params = new URLSearchParams(window.location.search);
+    const qs = params.toString();
+    const withQs = (path: string) => (qs ? `${path}?${qs}` : path);
     const demoOn =
       typeof window !== "undefined" &&
       window.localStorage.getItem("demoMode") === "true";
     if (demoOn) {
-      const qs = params.toString();
-      router.replace(qs ? `/cluster-4-card-entertainment/dw-01?${qs}` : "/cluster-4-card-entertainment/dw-01");
+      router.replace(withQs("/cluster-4-card-entertainment/dw-01"));
       return;
     }
 
@@ -48,7 +52,7 @@ const Cluster4CardEcPage = () => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const seasonName = (latestWeek.seasons as any)?.name || "";
             if (!seasonName.toLowerCase().includes("break")) {
-              router.replace(`/cluster-4-card-entertainment/${latestWeek.id}`);
+              router.replace(withQs(`/cluster-4-card-entertainment/${latestWeek.id}`));
               return;
             }
           }
@@ -56,7 +60,7 @@ const Cluster4CardEcPage = () => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const seasonName = (currentWeek.seasons as any)?.name || "";
           if (!seasonName.toLowerCase().includes("break")) {
-            router.replace(`/cluster-4-card-entertainment/${currentWeek.id}`);
+            router.replace(withQs(`/cluster-4-card-entertainment/${currentWeek.id}`));
             return;
           }
         }

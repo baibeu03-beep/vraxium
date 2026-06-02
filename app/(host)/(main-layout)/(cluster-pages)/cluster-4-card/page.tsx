@@ -14,13 +14,17 @@ const Cluster4CardPage = () => {
     // ?admin=true 는 DemoToggle 노출 신호일 뿐 (DemoToggle.tsx 가 처리) — 단독으로
     // dw-01 redirect 를 트리거하지 않는다. dw-01 은 frontend dummy 라
     // demoMode=false 에서 흘러가면 실 API 가 weekId='dw-01' 을 UUID 캐스트하다 실패.
+    // 진입 쿼리(userId=대상자/target, demoUserId=테스트 작성자/actor, admin, demoUserName, org)를
+    // redirect 목적지(주차 카드)까지 그대로 보존한다. 안 그러면 cluster-4-card 가 urlUserId 를
+    // demoUserId 로 폴백해 타 크루 카드에서 "내 카드로 복귀"한다.
     const params = new URLSearchParams(window.location.search);
+    const qs = params.toString();
+    const withQs = (path: string) => (qs ? `${path}?${qs}` : path);
     const demoOn =
       typeof window !== 'undefined' &&
       window.localStorage.getItem('demoMode') === 'true';
     if (demoOn) {
-      const qs = params.toString();
-      router.replace(qs ? `/cluster-4-card-marketing/dw-01?${qs}` : '/cluster-4-card-marketing/dw-01');
+      router.replace(withQs('/cluster-4-card-marketing/dw-01'));
       return;
     }
 
@@ -49,7 +53,7 @@ const Cluster4CardPage = () => {
             // break 시즌 제외
             const seasonName = (latestWeek.seasons as any)?.name || '';
             if (!seasonName.toLowerCase().includes('break')) {
-              router.replace(`/cluster-4-card-marketing/${latestWeek.id}`);
+              router.replace(withQs(`/cluster-4-card-marketing/${latestWeek.id}`));
               return;
             }
           }
@@ -57,7 +61,7 @@ const Cluster4CardPage = () => {
           // break 시즌 제외
           const seasonName = (currentWeek.seasons as any)?.name || '';
           if (!seasonName.toLowerCase().includes('break')) {
-            router.replace(`/cluster-4-card-marketing/${currentWeek.id}`);
+            router.replace(withQs(`/cluster-4-card-marketing/${currentWeek.id}`));
             return;
           }
         }

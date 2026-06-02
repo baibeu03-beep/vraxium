@@ -9,7 +9,7 @@ import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
 import { isPxRoute, isEcRoute, withPxRoute, getOrgConfigFromPathname } from "@/lib/cluster-route";
-import type { AdminCluster4WeeklyCardDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
+import type { AdminCluster4WeeklyCardDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto, Cluster4RateDto } from "@/shared/cluster4.contracts";
 import type { Cluster3StatsCards } from "@/lib/cluster3StatsCardsTypes";
 
 const truncate = (text: string | null | undefined, maxLen: number = 5): string => {
@@ -153,6 +153,34 @@ const adminCardLinesByPart = (card: AdminCluster4WeeklyCardDto) => {
   return map;
 };
 
+// ── 강화율 단일 출처 헬퍼 ──
+// 백엔드는 강화율을 {rate,count,total} 객체로 내려주는 신규 DTO 와, flat 필드
+// (weeklyGrowthRate / growthNumerator·growthDenominator / lines[].numerator·denominator)
+// 를 쓰는 구버전 두 형태가 공존한다. 이 헬퍼는 객체가 유효하면(숫자 하나라도 존재) 그대로 쓰고,
+// 아니면 null 을 반환해 호출부가 flat/lines fallback 으로 넘어가게 한다. 프론트 재계산은 하지 않는다.
+type RateTriple = { rate: number; count: number; total: number };
+
+const readRateObject = (value: unknown): RateTriple | null => {
+  if (!value || typeof value !== "object") return null;
+  const rec = value as Record<string, unknown>;
+  const num = (x: unknown): number | null =>
+    typeof x === "number" && Number.isFinite(x) ? x : null;
+  const rate = num(rec.rate);
+  const count = num(rec.count);
+  const total = num(rec.total);
+  if (rate === null && count === null && total === null) return null;
+  return { rate: rate ?? 0, count: count ?? 0, total: total ?? 0 };
+};
+
+// lines[] 의 numerator/denominator/rate 는 "해당 part 의 집계값"이 part 내 모든 라인에 동일하게
+// 복제되어 내려온다(검증: 같은 part 라인들의 denominator 가 라인 수와 동일·일치). 따라서 part 별
+// 첫 라인 하나만 취하면 그 part 의 강화율 집계가 된다(합산 금지 — 중복 집계됨).
+const lineTriple = (line: Cluster4WeeklyLineDto | undefined): RateTriple => ({
+  rate: lineRate(line),
+  count: lineNumerator(line),
+  total: lineDenominator(line),
+});
+
 // statusLabel 텍스트 기반으로 기존 프론트 className 매핑.
 // 백엔드 statusTone 만으로는 personal/official rest 가 분리되지 않으므로
 // label 텍스트를 우선 검사하고, 그래도 분류 안 되면 statusTone fallback.
@@ -246,11 +274,24 @@ const Cluster41Content = () => {
   const targetUserId = searchParams.get('userId') || searchParams.get('userID') || demoUserId;
   // 조회 API 에 붙일 demoUserId 쿼리 suffix (백엔드 테스트 유저 판정용). 없으면 빈 문자열.
   const demoQS = demoUserId ? `&demoUserId=${encodeURIComponent(demoUserId)}` : '';
-  // 페이지 내 네비게이션에 붙일 쿼리: 테스트 유저 모드면 demoUserId+admin 을 유지(저장 흐름이 테스트 유저 모드로 이어지도록).
+  // 페이지 내 네비게이션에 붙일 쿼리: target(userId)·actor(demoUserId)·org 를 모두 보존한다.
+  // ⚠️ 과거엔 테스트 모드에서 demoUserId 만 싣고 userId(대상자)를 떨궈, 타 크루 주차 카드로
+  //    진입할 때 urlUserId 가 demoUserId 로 폴백되어 "내 카드로 복귀"하는 버그가 있었다.
+  //    target(userId)은 항상 유지하고, demoUserId 는 actor 로만 덧붙인다(분리 유지).
   const demoUserName = searchParams.get('demoUserName');
-  const userLinkQuery = demoUserId
-    ? `?demoUserId=${encodeURIComponent(demoUserId)}&admin=true${demoUserName ? `&demoUserName=${encodeURIComponent(demoUserName)}` : ''}`
-    : (targetUserId ? `?userId=${targetUserId}` : '');
+  const userLinkQuery = (() => {
+    const params = new URLSearchParams();
+    if (targetUserId) params.set('userId', targetUserId);
+    if (demoUserId) {
+      params.set('demoUserId', demoUserId);
+      params.set('admin', 'true');
+      if (demoUserName) params.set('demoUserName', demoUserName);
+    }
+    const org = searchParams.get('org');
+    if (org) params.set('org', org);
+    const qs = params.toString();
+    return qs ? `?${qs}` : '';
+  })();
   const isDemoMode = checkDemoMode();
 
   const [dbWeeklyData, setDbWeeklyData] = useState<AdminCluster4WeeklyCardDto[]>([]);
@@ -491,6 +532,12 @@ const Cluster41Content = () => {
           // DTO 원본 1장 — 위치별 매핑 검증용
           console.log('[weekly-cards] sample card (raw DTO)', cards[0]);
           console.log('[weekly-cards] sample card lines', cards[0]?.lines);
+          // 진단: 주차 카드 목록 통계용 신규 요약 필드가 실제로 내려오는지 (백엔드 누락 시 즉시 식별)
+          console.log('[weekly-cards] 신규 요약 필드 점검', cards.map((c) => ({
+            weekNumber: c.weekNumber,
+            reputationSummary: c.reputationSummary ?? null,
+            colleagueSummary: c.colleagueSummary ?? null,
+          })));
           // W12 raw DTO 출력 — 매핑 검증용
           const w12 = cards.find((c) => c.weekNumber === 12);
           if (w12) {
@@ -1249,16 +1296,41 @@ const Cluster41Content = () => {
                 : statusDividerColor(badgeToneClass);
 
               // ── 백엔드 DTO 값을 그대로 주입. 프론트에서 재계산 금지. ──
-              const growthRate = typeof week.weeklyGrowthRate === 'number' ? week.weeklyGrowthRate : 0;
+              // 이 카드(week item)의 필드만 사용한다. 전역 selected card / 상세 weeklyCardMeta / dummy 금지.
               const linesByPart = adminCardLinesByPart(week);
-              const growthNumeratorRaw =
-                typeof week.growthNumerator === 'number' && Number.isFinite(week.growthNumerator)
-                  ? week.growthNumerator
-                  : 0;
-              const growthDenominatorRaw =
-                typeof week.growthDenominator === 'number' && Number.isFinite(week.growthDenominator)
+
+              // 주차 성장률 + 총 A개 중 B개 — 신규 growthRate{rate,count,total} 우선, 없으면 flat.
+              // A(총 개수) = total(=growthDenominator, 분모), B(달성 개수) = count(=growthNumerator, 분자).
+              const growthObj =
+                readRateObject((week as { growthRate?: Cluster4RateDto | null }).growthRate) ??
+                readRateObject((week as Record<string, unknown>).weeklyGrowth);
+              const growthRate =
+                growthObj?.rate ??
+                (typeof week.weeklyGrowthRate === 'number' && Number.isFinite(week.weeklyGrowthRate)
+                  ? week.weeklyGrowthRate
+                  : 0);
+              const growthTotal =
+                growthObj?.total ??
+                (typeof week.growthDenominator === 'number' && Number.isFinite(week.growthDenominator)
                   ? week.growthDenominator
-                  : 0;
+                  : 0);
+              const growthCount =
+                growthObj?.count ??
+                (typeof week.growthNumerator === 'number' && Number.isFinite(week.growthNumerator)
+                  ? week.growthNumerator
+                  : 0);
+
+              // 4허브 강화율 — 신규 {info,experience,competency,career}Rate 객체 우선, 없으면 lines[] (part별 첫 라인) fallback.
+              const hubRate = (
+                partType: (typeof PART_LINE_ORDER)[number],
+                cardRateObj: unknown,
+              ): RateTriple => readRateObject(cardRateObj) ?? lineTriple(linesByPart.get(partType));
+              const rateByPart: Record<(typeof PART_LINE_ORDER)[number], RateTriple> = {
+                information: hubRate('information', week.infoRate),
+                experience: hubRate('experience', week.experienceRate),
+                competency: hubRate('competency', week.competencyRate),
+                career: hubRate('career', week.careerRate),
+              };
               const currentWeekValue = numberField(week, ["approvedWeeks", "currentCumulative", "cumulative", "accumulatedApprovedWeeks"]);
               const totalWeeks = numberField(week, ["totalWeeks", "totalWeekCount"], 25);
 
@@ -1289,33 +1361,68 @@ const Cluster41Content = () => {
                   ? pointsObj.shield
                   : 0;
 
-              // 주차 평판: reputationCount / reputationTotal (null → 0)
+              // ── 주차별 단일 출처: 반드시 "이 week item" 의 필드만 사용 (다른 주차 값 혼입 금지) ──
+              // 해당 주차 신규 배열 — FM rating 합계 fallback/진단 전용. 전역 배열 사용 금지.
+              const weekReputations = Array.isArray(week.weeklyReputations) ? week.weeklyReputations : [];
+              const weekColleagues = Array.isArray(week.weeklyColleagues) ? week.weeklyColleagues : [];
+
+              // ── 주차 평판: reputationSummary.receivedCount/receivedLimit 단일 출처 (해당 weekId) ──
+              // 요약 부재 시에만 기존 reputationCount → 해당 주차 weeklyReputations.length → 분모 4 fallback.
+              const repSummary =
+                week.reputationSummary && typeof week.reputationSummary === 'object'
+                  ? week.reputationSummary
+                  : null;
               const reputationCount =
-                typeof week.reputationCount === 'number' && Number.isFinite(week.reputationCount)
+                repSummary && typeof repSummary.receivedCount === 'number' && Number.isFinite(repSummary.receivedCount)
+                  ? repSummary.receivedCount
+                  : typeof week.reputationCount === 'number' && Number.isFinite(week.reputationCount)
                   ? week.reputationCount
-                  : 0;
+                  : weekReputations.length;
               const reputationTotal =
-                typeof week.reputationTotal === 'number' && Number.isFinite(week.reputationTotal)
+                repSummary && typeof repSummary.receivedLimit === 'number' && Number.isFinite(repSummary.receivedLimit)
+                  ? repSummary.receivedLimit
+                  : typeof week.reputationTotal === 'number' && Number.isFinite(week.reputationTotal) && week.reputationTotal > 0
                   ? week.reputationTotal
-                  : 0;
+                  : 4;
 
-              // 명성도(FM): fmScore 우선, 없으면 fameScore (null → 0)
+              // ── 명성도(FM): reputationSummary.fm 단일 출처 (해당 weekId) ──
+              // 누적 포인트(fmScore/fameScore)·count·length 금지. 요약 부재 시에만 "해당 주차" rating 합계.
               const fame =
-                typeof week.fmScore === 'number' && Number.isFinite(week.fmScore)
-                  ? week.fmScore
-                  : typeof week.fameScore === 'number' && Number.isFinite(week.fameScore)
-                  ? week.fameScore
-                  : 0;
+                repSummary && typeof repSummary.fm === 'number' && Number.isFinite(repSummary.fm)
+                  ? repSummary.fm
+                  : weekReputations.reduce((s, r) => s + (typeof r?.rating === 'number' ? r.rating : 0), 0);
 
-              // 연계 동료: colleagueCount / colleagueTotal (null → 0)
+              // ── 연계 동료: colleagueSummary.writtenCount/writtenLimit 단일 출처 (해당 weekId) ──
+              // 요약 부재 시에만 기존 colleagueCount → 해당 주차 weeklyColleagues.length → 분모 3 fallback.
+              const colSummary =
+                week.colleagueSummary && typeof week.colleagueSummary === 'object'
+                  ? week.colleagueSummary
+                  : null;
               const colleagueCount =
-                typeof week.colleagueCount === 'number' && Number.isFinite(week.colleagueCount)
+                colSummary && typeof colSummary.writtenCount === 'number' && Number.isFinite(colSummary.writtenCount)
+                  ? colSummary.writtenCount
+                  : typeof week.colleagueCount === 'number' && Number.isFinite(week.colleagueCount)
                   ? week.colleagueCount
-                  : 0;
+                  : weekColleagues.length;
               const colleagueTotal =
-                typeof week.colleagueTotal === 'number' && Number.isFinite(week.colleagueTotal)
+                colSummary && typeof colSummary.writtenLimit === 'number' && Number.isFinite(colSummary.writtenLimit)
+                  ? colSummary.writtenLimit
+                  : typeof week.colleagueTotal === 'number' && Number.isFinite(week.colleagueTotal) && week.colleagueTotal > 0
                   ? week.colleagueTotal
-                  : 0;
+                  : 3;
+
+              // 진단: 각 주차 카드가 자기 weekId 의 summary 만으로 계산되는지 확인 (다른 주차 혼입 검출용)
+              console.log('[weekly-cards] 주차별 통계 진단', {
+                weekId: week.weekId,
+                weekNumber: week.weekNumber,
+                reputationSummary: week.reputationSummary ?? null,
+                colleagueSummary: week.colleagueSummary ?? null,
+                weeklyReputationsLength: weekReputations.length,
+                weeklyColleaguesLength: weekColleagues.length,
+                renderedReputationCount: reputationCount,
+                renderedFm: fame,
+                renderedColleagueCount: colleagueCount,
+              });
 
               const imagePaths = getWeekImagePath(week);
 
@@ -1387,13 +1494,11 @@ const Cluster41Content = () => {
 
                         <div className="weekly-card-details-grid">
                           {PART_LINE_ORDER.map((partType) => {
-                            const line = linesByPart.get(partType);
-                            const numerator = lineNumerator(line);
-                            const denominator = lineDenominator(line);
+                            const { rate, count, total } = rateByPart[partType];
                             return (
                               <div className="detail-row" key={partType}>
                                 <span className="k">{PART_LINE_LABEL[partType]} 강화율</span>
-                                <span className="v">{lineRate(line)}% <span className="sub">({numerator}/{denominator})</span></span>
+                                <span className="v">{rate}% <span className="sub">({count}/{total})</span></span>
                               </div>
                             );
                           })}
@@ -1515,7 +1620,7 @@ const Cluster41Content = () => {
                       </div>
                       <span className="total-count">
                         <img src="/images/0/cluster4/icon/icon - 0.png" alt="leaf" className="leaf-icon" />
-                        총 <span className="num-3">{growthNumeratorRaw}</span> 개 중 <strong><span className="num-3">{growthDenominatorRaw}</span></strong> 개
+                        총 <span className="num-3">{growthTotal}</span> 개 중 <strong><span className="num-3">{growthCount}</span></strong> 개
                       </span>
                     </div>
 
@@ -1523,12 +1628,10 @@ const Cluster41Content = () => {
                     <div className={`weekly-card-stats-wrapper ${badgeToneClass}`}>
                       <div className="weekly-card-stats">
                         {WEEKLY_STATS_LINE_ORDER.map((partType) => {
-                          const line = linesByPart.get(partType);
-                          const numerator = lineNumerator(line);
-                          const denominator = lineDenominator(line);
+                          const { rate, count, total } = rateByPart[partType];
                           return (
                             <span className="stat" key={partType}>
-                              <span className="dot">·</span> 실무 <span className={`highlight ${partType} ${badgeToneClass}`}>{PART_LINE_LABEL[partType]}</span> 강화율 <strong><span className="num-3">{lineRate(line)}</span>%</strong> <span className="gray">(<span className="num num-2">{numerator}</span>/<span className="num-2">{denominator}</span>)</span>
+                              <span className="dot">·</span> 실무 <span className={`highlight ${partType} ${badgeToneClass}`}>{PART_LINE_LABEL[partType]}</span> 강화율 <strong><span className="num-3">{rate}</span>%</strong> <span className="gray">(<span className="num num-2">{count}</span>/<span className="num-2">{total}</span>)</span>
                             </span>
                           );
                         })}

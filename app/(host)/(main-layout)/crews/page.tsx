@@ -9,6 +9,7 @@ import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { DEMO_CREW_MEMBERS } from "@/constants/dummyData";
 import { getOrgClusterRouteBase, getOrgConfigForSlug } from "@/lib/cluster-route";
 import { getOrgAlias } from "@/utils/orgLabelAlias";
+import { appendDemoQuery } from "@/lib/appendDemoQuery";
 
 interface Crew {
   id: string;
@@ -98,10 +99,14 @@ function CrewsContent() {
     // 카드 이미지 / crew-club-badge / author-meta / "보기" 버튼 4 군데가
     // 모두 본 함수를 사용하므로 분기 일관성 보장.
     const base = getOrgClusterRouteBase(org);
-    if (demoMode && (DEMO_CREW_MEMBERS as readonly string[]).includes(crew.name)) {
-      return `${base}?userId=${crew.id}&demoName=${encodeURIComponent(crew.name)}`;
-    }
-    return `${base}?userId=${crew.id}`;
+    const target =
+      demoMode && (DEMO_CREW_MEMBERS as readonly string[]).includes(crew.name)
+        ? `${base}?userId=${crew.id}&demoName=${encodeURIComponent(crew.name)}`
+        : `${base}?userId=${crew.id}`;
+    // 테스트 유저(데모) 모드 컨텍스트(demoUserId/admin=true/demoUserName/org)를 카드 링크에
+    // 유지한다(공통 헬퍼). userId(=대상자/target)는 위에서 crew.id 로 고정, demoUserId(=작성자/
+    // actor)는 헬퍼가 부착 → target/actor 분리 유지. demoUserId 없으면 완전 no-op(기존 동작).
+    return appendDemoQuery(target, searchParams);
   };
   const [crews, setCrews] = useState<Crew[]>([]);
   const [loading, setLoading] = useState(true);

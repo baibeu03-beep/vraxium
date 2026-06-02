@@ -119,7 +119,10 @@ export interface Cluster4WeeklyLineDto {
   // experienceRating 도입 이후 표시에는 사용하지 않음(append-only 보존). 신규 코드는 experienceRating 사용.
   lineRating?: number | null;
   // ── 표시 데이터 단일 출처 (legacy/dummy 대체) ──
-  // 라인 제목 (matchedLine 존재 시 제목 표시 우선 출처)
+  // 라인명(master.line_name) — 라인명/배지/노란 문구 등 "라인 이름" 표시 슬롯의 단일 출처.
+  // ⚠️ mainTitle(main_title)과 별개 — 혼동 금지. info part 등에서 null 일 수 있고, 그때만 activityTypeName/legacy fallback.
+  lineName?: string | null;
+  // 라인 제목 (matchedLine 존재 시 "Main Title" 영역 표시 우선 출처 — 라인명 슬롯에 쓰지 말 것)
   mainTitle?: string | null;
   // 운영자가 라인 개설 시 입력한 Sub Title / Growth Point (운영진 SoT).
   // ⚠️ 크루원 제출 subtitle/growthPoint(카드의 subTitle/growthPoint)와 별개 — 혼동 금지.
@@ -180,6 +183,62 @@ export interface Cluster4LineOutputImageDto {
   [key: string]: unknown;
 }
 
+// ── 위클리 평판 / 연계 동료 인적사항 프로필 DTO (백엔드 weekly-cards 단일 출처) ──
+// reputation fromProfile/toProfile, colleague colleagueProfile 공통 형태.
+// 값 부재(null) 시 프론트는 "-" 로 표시. profileTagline 이 null 이면 "-".
+export interface Cluster4PersonProfileDto {
+  name?: string | null;
+  gender?: string | null;
+  age?: number | string | null;
+  school?: string | null;
+  department?: string | null;
+  team?: string | null;
+  part?: string | null;
+  // 일반/심화 등 멤버십 레벨 라벨
+  membershipLevel?: string | null;
+  profileImageUrl?: string | null;
+  profileTagline?: string | null;
+  [key: string]: unknown;
+}
+
+// 주차 평판 수신 요약 — 명성도(FM)는 누적 포인트(fameScore/fmScore)가 아니라 이 fm 단일 출처.
+export interface Cluster4ReputationSummaryDto {
+  receivedCount?: number | null;
+  receivedLimit?: number | null;
+  fm?: number | null;
+  [key: string]: unknown;
+}
+
+// 연계 동료 작성 요약.
+export interface Cluster4ColleagueSummaryDto {
+  writtenCount?: number | null;
+  writtenLimit?: number | null;
+  [key: string]: unknown;
+}
+
+// 주차 평판 1건 — "타인이 내 카드에 나에 대해 작성한 것".
+// fromProfile = 작성자, toProfile = 대상자.
+export interface Cluster4WeeklyReputationDto {
+  id?: string | null;
+  rating?: number | null;
+  comment?: string | null;
+  keyword?: string | null;
+  createdAt?: string | null;
+  fromProfile?: Cluster4PersonProfileDto | null;
+  toProfile?: Cluster4PersonProfileDto | null;
+  [key: string]: unknown;
+}
+
+// 연계 동료 1건 — "본인이 본인 카드에 타인을 작성한 것". 표시 프로필 = colleagueProfile.
+export interface Cluster4WeeklyColleagueDto {
+  id?: string | null;
+  rank?: number | null;
+  message?: string | null;
+  createdAt?: string | null;
+  colleagueProfile?: Cluster4PersonProfileDto | null;
+  [key: string]: unknown;
+}
+
 // statusTone — 어드민 DTO 가능 값(semantic tone): "neutral" | "info" | "success" | "warning" | "danger".
 // statusIconKey/userWeekStatus 와 별개 축 (tone 은 색상 톤, iconKey 는 아이콘/세부 상태).
 export type AdminCluster4StatusTone =
@@ -215,6 +274,16 @@ export interface AdminCluster4WeeklyCardDto {
   weeklyGrowthRate?: number | null;
   growthNumerator?: number | null;
   growthDenominator?: number | null;
+  // ── 강화율 집계 객체 (백엔드 신규 DTO 단일 출처 — {rate,count,total}) ──
+  // 신규 백엔드는 주차 성장률/4허브 강화율을 아래 객체로 내려준다(권장 출처).
+  // 구버전(flat weeklyGrowthRate/growthNumerator/growthDenominator + lines[]) 백엔드 호환을 위해
+  // 프론트는 이 객체가 있으면 우선 사용하고, 없으면 flat/lines[] 로 fallback 한다.
+  // ⚠️ growthRate.count = 강화 성공 개수(분자), growthRate.total = 전체 개수(분모). "총 total개 중 count개".
+  growthRate?: Cluster4RateDto | null;
+  infoRate?: Cluster4RateDto | null;
+  competencyRate?: Cluster4RateDto | null;
+  experienceRate?: Cluster4RateDto | null;
+  careerRate?: Cluster4RateDto | null;
   thumbnailUrl?: string | null;
   imageUrl?: string | null;
   teamName?: string | null;
@@ -233,6 +302,12 @@ export interface AdminCluster4WeeklyCardDto {
   fameScore?: number | null;
   colleagueCount?: number | null;
   colleagueTotal?: number | null;
+  // ── 위클리 평판 / 연계 동료 단일 출처 (백엔드 weekly-cards DTO append-only) ──
+  // 명성도(FM)는 reputationSummary.fm 만 사용 — 누적 포인트 fameScore/fmScore 금지.
+  reputationSummary?: Cluster4ReputationSummaryDto | null;
+  colleagueSummary?: Cluster4ColleagueSummaryDto | null;
+  weeklyReputations?: Cluster4WeeklyReputationDto[] | null;
+  weeklyColleagues?: Cluster4WeeklyColleagueDto[] | null;
   lines?: Cluster4WeeklyLineDto[];
 
   // ── section1-header 단일 출처 보강 필드 (어드민 DTO append-only — 2026-05-30) ──

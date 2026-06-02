@@ -69,6 +69,9 @@ function toVisibleLine(row: LineTargetRow): Cluster4VisibleLineDto {
     lineTargetId: row.id,
     partType: l.part_type,
     targetMode: row.target_mode,
+    // 이 로컬 detail 엔드포인트는 cluster4_lines(main_title)만 조회 — master.line_name 미보유 → null.
+    // 라인명은 weekly-cards upstream(Cluster4WeeklyLineDto.lineName)이 단일 출처.
+    lineName: null,
     mainTitle: l.main_title,
     outputLink1: l.output_link_1,
     submissionOpensAt: l.submission_opens_at,
