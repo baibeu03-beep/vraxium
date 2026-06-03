@@ -31,6 +31,167 @@ const truncate = (text: string | undefined | null, maxLen: number): string => {
   return text.slice(0, maxLen) + "..";
 };
 
+// 학과 표시값 정규화 — 라벨 "학과"와 중복/어색함 방지용 화면 표시 전용 helper.
+//   원본 DTO 값은 변경하지 않고 렌더링에서만 가공한다.
+//   "법무학" → "법무" (+ 학과 라벨 = "법무 학과"), "컴퓨터공학과" → "컴퓨터공학"
+const formatMajor = (value: string | null | undefined): string => {
+  if (!value) return "-";
+  const v = value.trim(); // 원본 유지, 표시 직전 공백 제거 — "법무학 " 같은 패딩값도 suffix 매칭되게
+  if (!v || v === "-") return "-";
+  if (v.endsWith("학과")) return v.slice(0, -2) || "-"; // "법무학과" → "법무" (+ 학과 라벨 = "법무 학과")
+  if (v.endsWith("학부")) return v.slice(0, -2) || "-"; // "소프트웨어학부" → "소프트웨어" (+ 학과 라벨)
+  if (v.endsWith("학")) return v.slice(0, -1) || "-"; // "법무학" → "법무"
+  return v;
+};
+
+// ──────────────────────────────────────────────────────────────────────────
+// 인적사항 공통 표시 헬퍼 — Cluster4CardContent 의 resolvePersonalInfo 패턴과 동일.
+// 이 화면(Cluster4Content)의 "모든" 인적사항 카드/모달이 같은 fallback 규칙으로
+// (이름/성별/나이/학교/학과/팀/파트/일반·심화/프로필이미지/태그라인)을 표시하도록
+// 단일 출처로 통일한다. source bag 에 가용한 모든 출처(계약 DTO / legacy alias /
+// 세션 user / 시즌 역할 메타)를 넣어주면 필드별 우선순위대로 첫 "유효값"을 고른다.
+// "유효값" = null/undefined/공백 및 placeholder("-"·"—") 가 아닌 값. 없으면 null.
+type PersonalInfoSourceBag = {
+  profile?: Record<string, any> | null; // 1순위 프로필류 (reviewer DTO / seasonReviewerProfile 등)
+  user?: Record<string, any> | null; // 2순위 세션 user 류
+  weeklyCardMeta?: Record<string, any> | null; // team/part alias 보강용 (시즌 역할 메타 등)
+  headerExtras?: Record<string, any> | null;
+  // 페이지 주인의 /api/profile data 객체(원본 snake_case alias 포함). profile/user 가 비웠을 때
+  // team_name/part_name/membership_level/vision/profile_keyword 등을 마지막 source 로 채운다.
+  // (seasonRoles 가 비어 팀/파트/멤버십/태그라인이 "-" 로 떨어지는 것을 방지하는 fallback.)
+  fallbackProfile?: Record<string, any> | null;
+};
+
+type ResolvedPersonalInfo = {
+  name: string | null;
+  gender: string | null;
+  age: number | string | null;
+  school: string | null;
+  department: string | null;
+  team: string | null;
+  part: string | null;
+  membershipLevel: string | null;
+  profileImageUrl: string | null;
+  tagline: string | null;
+};
+
+// 첫 "유효값" 선택 — null/undefined/공백/placeholder("-"·"—") 는 건너뛴다.
+const pickPersonalValue = (...candidates: Array<unknown>): string | null => {
+  for (const c of candidates) {
+    if (c === null || c === undefined) continue;
+    const s = typeof c === "string" ? c.trim() : String(c).trim();
+    if (s === "" || s === "-" || s === "—") continue;
+    return s;
+  }
+  return null;
+};
+
+const resolvePersonalInfo = (sources: PersonalInfoSourceBag): ResolvedPersonalInfo => {
+  const p = sources.profile ?? {};
+  const u = sources.user ?? {};
+  const meta = sources.weeklyCardMeta ?? {};
+  const extras = sources.headerExtras ?? {};
+  // fp = 페이지 주인 /api/profile data (snake_case alias 포함) — 각 필드의 마지막 fallback.
+  const fp = sources.fallbackProfile ?? {};
+
+  // 나이: 명시값 우선, 없으면 birthDate/birth_date 로 계산
+  let age: number | string | null = pickPersonalValue(p.age, u.age, fp.age);
+  if (age === null) {
+    const birth = pickPersonalValue(p.birthDate, p.birth_date, u.birthDate, u.birth_date, fp.birthDate, fp.birth_date);
+    if (birth) {
+      const birthYear = new Date(birth).getFullYear();
+      const currentYear = new Date().getFullYear();
+      if (!Number.isNaN(birthYear)) age = currentYear - birthYear;
+    }
+  }
+
+  return {
+    name: pickPersonalValue(
+      p.name, p.displayName, p.display_name, u.displayName, u.display_name, u.name,
+      fp.name, fp.displayName, fp.display_name,
+    ),
+    gender: pickPersonalValue(p.gender, u.gender, fp.gender),
+    age,
+    school: pickPersonalValue(
+      p.school, p.schoolName, p.school_name, p.university, u.school, u.schoolName, u.school_name, u.university,
+      fp.school, fp.schoolName, fp.school_name, fp.university,
+    ),
+    department: pickPersonalValue(
+      p.department, p.departmentName, p.department_name, p.major, p.major1, p.major_first,
+      u.department, u.departmentName, u.department_name, u.major, u.major1, u.major_first,
+      fp.department, fp.departmentName, fp.department_name, fp.major, fp.major1, fp.major_first, fp.major_name_1,
+    ),
+    team: pickPersonalValue(
+      p.team, p.teamName, p.team_name, u.team, u.teamName, u.team_name,
+      p.currentTeamName, p.current_team_name, u.currentTeamName, u.current_team_name,
+      meta.teamName, extras.teamName,
+      fp.team, fp.teamName, fp.team_name,
+    ),
+    part: pickPersonalValue(
+      p.part, p.partName, p.part_name, u.part, u.partName, u.part_name,
+      p.currentPartName, p.current_part_name, u.currentPartName, u.current_part_name,
+      meta.partName, extras.partName,
+      fp.part, fp.partName, fp.part_name,
+    ),
+    membershipLevel: pickPersonalValue(
+      p.membershipLevel, p.membership_level, u.membershipLevel, u.membership_level,
+      p.role, u.role, p.status, u.status,
+      fp.membershipLevel, fp.membership_level, fp.role,
+    ),
+    profileImageUrl: pickPersonalValue(
+      p.profileImageUrl, p.profile_photo_url, p.profilePhotoUrl, p.profileImg, p.avatarUrl, p.image,
+      u.profileImageUrl, u.profile_photo_url, u.profilePhotoUrl, u.profileImg, u.avatarUrl, u.image,
+      fp.profileImageUrl, fp.profile_photo_url, fp.profilePhotoUrl,
+    ),
+    tagline: pickPersonalValue(
+      p.profileTagline, p.profile_tagline, u.profileTagline, u.profile_tagline,
+      p.profileKeyword, p.profile_keyword, u.profileKeyword, u.profile_keyword,
+      p.nickname, u.nickname, p.vision, u.vision,
+      fp.profileTagline, fp.profile_tagline, fp.profileKeyword, fp.profile_keyword, fp.vision,
+    ),
+  };
+};
+
+// 멤버십/역할/상태 라벨 공통 표시 헬퍼 — DB 원본값(membership_level / role 코드 / status)을
+// 화면 친화적 한글 라벨로 변환한다. 모든 인적사항 카드 badge(tag-role)는 이 헬퍼만 사용한다.
+//   ⚠ DB 원본은 변경하지 않으며(표시 시점에만 변환), 다음 fallback 규칙을 따른다:
+//   - 값 없음(null/undefined/공백/"-"/"—")  → "-"  (하드코딩 "일반" 금지)
+//   - 알 수 없는 신규 값                      → 원본값 그대로
+//   - 이미 한글 라벨(일반/심화/운영진 …)        → 매핑 미스 → 원본 유지 (멱등)
+const MEMBERSHIP_ROLE_LABEL_MAP: Record<string, string> = {
+  // membership_level 단축값 / status
+  active: "일반",
+  advanced: "심화",
+  agent: "심화(에이전트)",
+  part_leader: "심화(파트장)",
+  team_leader: "운영진(팀장)",
+  ambassador: "운영진(앰배서더)",
+  // role 코드 (user_role_history.role / profile.role 등) — 기존 ROLE_LABELS 통합
+  crew: "일반",
+  crew_regular: "일반",
+  crew_normal: "일반",
+  crew_advanced_agent: "심화(에이전트)",
+  crew_agent: "심화(에이전트)",
+  crew_advanced_part_leader: "심화(파트장)",
+  crew_partleader: "심화(파트장)",
+  operations_partleader: "심화(파트장)",
+  admin_team_leader: "운영진(팀장)",
+  crew_team_leader: "운영진(팀장)",
+  operations_teamleader: "운영진(팀장)",
+  admin_ambassador: "운영진(앰배서더)",
+  crew_ambassador: "운영진(앰배서더)",
+  operations_ambassador: "운영진(앰배서더)",
+  operations_clubleader: "운영진(클럽장)",
+};
+
+const formatMembershipRoleLabel = (value: string | null | undefined): string => {
+  if (value === null || value === undefined) return "-";
+  const v = String(value).trim();
+  if (v === "" || v === "-" || v === "—") return "-";
+  // 정확 매칭 우선 → 소문자 정규화 매칭 → 그래도 없으면 원본 그대로(신규 값 보호).
+  return MEMBERSHIP_ROLE_LABEL_MAP[v] ?? MEMBERSHIP_ROLE_LABEL_MAP[v.toLowerCase()] ?? v;
+};
+
 // 기본 시즌 데이터 — seasonHistories 가 비었을 때(=비-데모 API 로딩 전/무데이터) 쓰이는
 //   render-safe 빈 상태(empty-state) 구조. currentSeason 이 항상 non-null 이어야 하므로
 //   객체 형태는 유지하되, 모든 수치/라벨은 더미 대신 0·빈값(빈 상태)으로 둔다.
@@ -1126,6 +1287,11 @@ const Cluster4Content = () => {
     vision: string;
   }>({ displayName: "", profilePhotoUrl: "", gender: "", age: null, school: "", major: "", vision: "" });
 
+  // 페이지 주인 인적사항 원본 — /api/profile 의 data 객체(team_name/part_name/membership_level/vision 등 alias 포함).
+  // resolvePersonalInfo 의 fallbackProfile 로 넘겨, seasonRoles 가 비어도 팀/파트/멤버십/태그라인이 "-" 로
+  // 떨어지지 않게 한다. (인적사항 모달/카드의 단일 fallback source — weeklyGrowth.data 는 시즌/성장 전용이라 사용 X.)
+  const [ownerProfileData, setOwnerProfileData] = useState<Record<string, any> | null>(null);
+
   useEffect(() => {
     if (isDemoMode) return;
     const targetId = urlUserId || session?.user?.id;
@@ -1143,6 +1309,9 @@ const Cluster4Content = () => {
 
         const p = profileJson?.data;
         const eduFirst = Array.isArray(eduJson?.data) && eduJson.data.length > 0 ? eduJson.data[0] : null;
+
+        // 인적사항 fallback source — /api/profile data 원본 그대로 보관(팀/파트/멤버십/태그라인 alias 포함).
+        setOwnerProfileData(p ?? null);
 
         let age: number | null = null;
         if (p?.birth_date) {
@@ -1273,6 +1442,88 @@ const Cluster4Content = () => {
   // 메인 프로필 사진
   const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>("/images/0/cluster4/cluster4-1/이안0.png");
 
+  // 진입 화면 시즌 정보(area-1-title) / 시즌 누적 포인트(area-4-stats) — 서버 산출 DTO.
+  // GET /api/cluster4/weekly-growth → data.seasonSummary / data.seasonPointSummary.
+  // 프론트 계산 없이 그대로 표시(전환주차 제외는 백엔드 처리). 없으면 area-1="-", area-4=0.
+  interface SeasonPointSummaryDto {
+    star: number;
+    shield: number;
+    lightning: number;
+  }
+  interface SeasonSummaryDto {
+    seasonKey?: string;
+    year: number | null;
+    seasonName: string;
+    seasonCode: string;
+    displayTitle: string;
+    dateRangeLabel: string | null;
+    status: string; // "active" | "ended" | "rest"
+    seasonResult?: string; // "success" | "failed" | "none"
+    statusLabel: string;
+    startDate: string | null;
+    endDate: string | null;
+    pointSummary?: SeasonPointSummaryDto;
+  }
+  const [seasonSummary, setSeasonSummary] = useState<SeasonSummaryDto | null>(null);
+  const [seasonPointSummary, setSeasonPointSummary] = useState<SeasonPointSummaryDto | null>(null);
+  // 시즌별 요약 배열(페이지네이션) — section3Page index 로 선택. 비면 단일 seasonSummary fallback.
+  const [seasonSummaries, setSeasonSummaries] = useState<SeasonSummaryDto[]>([]);
+
+  // status-badge 텍스트 — 아래 4종만 노출. active→진행 중, ended+success→성공,
+  // ended+failed→중단, rest(전환/휴식/오프시즌)→휴식. ("진행중/종료/예정" 표기 금지)
+  const seasonStatusText = (s: SeasonSummaryDto | null): string => {
+    if (!s) return "-";
+    if (s.status === "rest") return "시즌 휴식";
+    if (s.status === "ended") {
+      if (s.seasonResult === "success") return "시즌 성공";
+      if (s.seasonResult === "failed") return "시즌 중단";
+      return "시즌 휴식";
+    }
+    return "시즌 진행 중"; // active 및 기타
+  };
+
+  // 위 4종 → 기존 status-badge className 매핑(스타일 유지).
+  const seasonStatusClass = (s: SeasonSummaryDto | null): string => {
+    if (!s) return "in-progress";
+    if (s.status === "rest") return "resting";
+    if (s.status === "ended") {
+      if (s.seasonResult === "success") return "completed";
+      if (s.seasonResult === "failed") return "suspended";
+      return "resting";
+    }
+    return "in-progress";
+  };
+
+  // seasonSummary.startDate/endDate("YYYY-MM-DD") → "YYYY / MM / DD (요일)".
+  // 요일은 TZ 영향 없도록 UTC 기준으로 계산(서버/클라 시간대 무관 동일 결과).
+  const SEASON_DOW = ["일", "월", "화", "수", "목", "금", "토"];
+  const formatSeasonDate = (dateStr: string | null | undefined): string => {
+    if (!dateStr) return "-";
+    const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return String(dateStr);
+    const [, y, mo, d] = m;
+    const dow = SEASON_DOW[new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d))).getUTCDay()];
+    return `${y} / ${mo} / ${d} (${dow})`;
+  };
+  // 페이지네이션으로 선택된 시즌 — section3Page index 로 seasonSummaries[index] 선택.
+  // seasonSummaries 가 비면(다른 환경/무데이터) 단일 현재-시즌 seasonSummary 로 fallback.
+  const selectedSeasonSummary: SeasonSummaryDto | null =
+    seasonSummaries.length > 0
+      ? (seasonSummaries[section3Page] ?? seasonSummaries[0])
+      : seasonSummary;
+  // 선택 시즌의 누적 포인트(area-4-stats). seasonSummaries 항목은 pointSummary 동봉.
+  const selectedPointSummary: SeasonPointSummaryDto | null =
+    seasonSummaries.length > 0
+      ? ((seasonSummaries[section3Page] ?? seasonSummaries[0])?.pointSummary ?? null)
+      : seasonPointSummary;
+  // 페이지네이션 소스 — 시즌별 요약이 있으면 그 길이만큼 페이지, 없으면 기존 seasonHistories.
+  const seasonPages: Array<unknown> = seasonSummaries.length > 0 ? seasonSummaries : seasonHistories;
+
+  // 진입 화면 날짜 범위 — startDate/endDate 우선(위 포맷), 둘 다 없을 때만 dateRangeLabel fallback.
+  const seasonDateRangeText = selectedSeasonSummary?.startDate && selectedSeasonSummary?.endDate
+    ? `${formatSeasonDate(selectedSeasonSummary.startDate)} - ${formatSeasonDate(selectedSeasonSummary.endDate)}`
+    : (selectedSeasonSummary?.dateRangeLabel || "-");
+
   // 현재 선택된 시즌 데이터 (데모 모드 → seasonHistories 페이지네이션 우선, 없으면 기본 데이터)
   const currentSeason: SeasonHistoryData = isDemoMode
     ? seasonHistories.length > 0
@@ -1281,6 +1532,38 @@ const Cluster4Content = () => {
     : seasonHistories.length > 0
       ? seasonHistories[section3Page] || seasonHistories[0]
       : (defaultSeasonData as SeasonHistoryData);
+
+  // 진입 화면 시즌 정보/누적 포인트 — GET /api/cluster4/weekly-growth (data.seasonSummary / data.seasonPointSummary).
+  // 일반 모드(세션) + demoUserId 테스트 모드(urlUserId=demoUserId) 동일 경로. 로컬 더미(isDemoMode)만 스킵.
+  useEffect(() => {
+    if (isDemoMode) return; // 로컬 더미 모드는 API 호출 스킵(기존 패턴)
+    const abortController = new AbortController();
+    const fetchSeasonGrowth = async () => {
+      const uid = urlUserId || session?.user?.id;
+      if (!uid) return;
+      try {
+        const res = await fetch(
+          `/api/cluster4/weekly-growth?userId=${encodeURIComponent(uid)}${demoQS}`,
+          { signal: abortController.signal },
+        );
+        if (!res.ok) {
+          console.warn("[cluster4/weekly-growth] non-OK", res.status);
+          return;
+        }
+        const json = await res.json();
+        if (abortController.signal.aborted) return;
+        // 백엔드 DTO 그대로 반영(프론트 계산 X). 없으면 null → area-1 "-", area-4 0.
+        setSeasonSummary(json?.data?.seasonSummary ?? null);
+        setSeasonPointSummary(json?.data?.seasonPointSummary ?? null);
+        setSeasonSummaries(Array.isArray(json?.data?.seasonSummaries) ? json.data.seasonSummaries : []);
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        console.error("[cluster4/weekly-growth] 시즌 요약 로드 오류:", err);
+      }
+    };
+    fetchSeasonGrowth();
+    return () => abortController.abort();
+  }, [urlUserId, session?.user?.id]);
 
   // 현재 시즌 정보 가져오기
   useEffect(() => {
@@ -3003,17 +3286,18 @@ const Cluster4Content = () => {
           <div className="top-header-row">
             {/* 영역 1: 타이틀 + 날짜 + 상태 */}
             <div className={`area-1-title ${isTextFading ? "fading" : ""}`} style={{ display: "flex", alignItems: "center", flexWrap: "nowrap", whiteSpace: "nowrap" }}>
+              {/* 진입 화면 시즌 정보 — 페이지네이션 선택 시즌(selectedSeasonSummary) 바인딩. 없으면 "-". */}
               <div className="season-main-title" style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
-                <span className="year-orange">{currentSeason.year}</span>년도<span style={{ display: "inline-block", width: "1.2em" }}></span>
+                <span className="year-orange">{selectedSeasonSummary?.year != null ? String(selectedSeasonSummary.year) : "-"}</span>년도<span style={{ display: "inline-block", width: "1.2em" }}></span>
                 <span className="season-highlight" style={{ display: "inline-block", minWidth: "2em", textAlign: "right" }}>
-                  {currentSeason.season}
+                  {selectedSeasonSummary?.seasonName || "-"}
                 </span>{" "}
                 시즌
               </div>
               <span className="bullet-dot" style={{ display: "inline-block", width: "2px", height: "2px", background: orgAccent, borderRadius: "50%", marginLeft: "15px", transform: "translateY(0px)" }}></span>
               <div className="date-status" style={{ display: "flex", alignItems: "center", flexShrink: 0, whiteSpace: "nowrap" }}>
-                <span className="date-range">{currentSeason.dateRange}</span>
-                <button className={`status-badge ${currentSeason.statusClass}`}>{currentSeason.status}</button>
+                <span className="date-range">{seasonDateRangeText}</span>
+                <button className={`status-badge ${seasonStatusClass(selectedSeasonSummary)}`}>{seasonStatusText(selectedSeasonSummary)}</button>
               </div>
             </div>
 
@@ -3074,10 +3358,11 @@ const Cluster4Content = () => {
                   원본 데이터(currentSeason.stats.*) 미터치. */}
               <div className="area-4-stats" style={{ transform: "translateX(44px)" }}>
                 {(["단감", "인절미", "어흥"] as const).map((name) => {
+                  // 진입 화면 시즌 누적 포인트 — 선택 시즌의 pointSummary(별/방패/번개). 없으면 0.
                   const valueMap = {
-                    단감: currentSeason.stats.dangam,
-                    인절미: currentSeason.stats.injeolmi,
-                    어흥: currentSeason.stats.eoheung,
+                    단감: selectedPointSummary?.star ?? 0,
+                    인절미: selectedPointSummary?.shield ?? 0,
+                    어흥: selectedPointSummary?.lightning ?? 0,
                   };
                   const defaultSrcMap = {
                     단감: "/images/0/cluster4/icon/icon - 단감.png",
@@ -3257,20 +3542,7 @@ const Cluster4Content = () => {
                 <div className="progress-item">
                   <div className="progress-header">
                     <span className="name">
-                      <img src="/images/0/cluster4/icon/2 실무 경험.png" alt="2" className="progress-icon" /> 실무 <span style={{ color: "#FFD09B" }}>경험</span> 강화율 <span className="rate-number">{currentSeason.progress.competency.rate}</span>%
-                    </span>
-                    <span className="value">
-                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{currentSeason.progress.competency.total}</span> 개 중 <span className="highlight">{currentSeason.progress.competency.completed}</span> 개
-                    </span>
-                  </div>
-                  <div className="bar">
-                    <div className="fill yellow" style={{ width: `${currentSeason.progress.competency.rate}%` }}></div>
-                  </div>
-                </div>
-                <div className="progress-item">
-                  <div className="progress-header">
-                    <span className="name">
-                      <img src="/images/0/cluster4/icon/3 실무 역량.png" alt="3" className="progress-icon" /> 실무 <span style={{ color: "#A8D8A8" }}>역량</span> 강화율 <span className="rate-number">{currentSeason.progress.experience.rate}</span>%
+                      <img src="/images/0/cluster4/icon/2 실무 경험.png" alt="2" className="progress-icon" /> 실무 <span style={{ color: "#FFD09B" }}>경험</span> 강화율 <span className="rate-number">{currentSeason.progress.experience.rate}</span>%
                     </span>
                     <span className="value">
                       <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{currentSeason.progress.experience.total}</span> 개 중 <span className="highlight">{currentSeason.progress.experience.completed}</span> 개
@@ -3278,6 +3550,19 @@ const Cluster4Content = () => {
                   </div>
                   <div className="bar">
                     <div className="fill yellow" style={{ width: `${currentSeason.progress.experience.rate}%` }}></div>
+                  </div>
+                </div>
+                <div className="progress-item">
+                  <div className="progress-header">
+                    <span className="name">
+                      <img src="/images/0/cluster4/icon/3 실무 역량.png" alt="3" className="progress-icon" /> 실무 <span style={{ color: "#A8D8A8" }}>역량</span> 강화율 <span className="rate-number">{currentSeason.progress.competency.rate}</span>%
+                    </span>
+                    <span className="value">
+                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{currentSeason.progress.competency.total}</span> 개 중 <span className="highlight">{currentSeason.progress.competency.completed}</span> 개
+                    </span>
+                  </div>
+                  <div className="bar">
+                    <div className="fill yellow" style={{ width: `${currentSeason.progress.competency.rate}%` }}></div>
                   </div>
                 </div>
                 <div className="progress-item">
@@ -3492,7 +3777,7 @@ const Cluster4Content = () => {
                                   <span className="separator" style={{ margin: "0 1px" }}>
                                     |
                                   </span>{" "}
-                                  <span style={{ flex: "1 1 0", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", verticalAlign: "middle", fontFamily: "'Pretendard', sans-serif", fontSize: "14px" }}>{truncate(mask.major(reviewer?.major_first), 6)}</span>
+                                  <span style={{ flex: "1 1 0", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", verticalAlign: "middle", fontFamily: "'Pretendard', sans-serif", fontSize: "14px" }}>{truncate(formatMajor(mask.major(reviewer?.major_first)), 6)}</span>
                                 </div>
                                 <div className="row2">
                                   <span style={{ minWidth: "85px", width: "85px", flex: "0 0 85px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "clip", verticalAlign: "middle", fontFamily: "'Pretendard', sans-serif", fontSize: "14px" }}>{truncate(reviewer?.teamName, 6)}</span>{" "}
@@ -3597,9 +3882,9 @@ const Cluster4Content = () => {
 
         {/* 페이지네이션 */}
         <div className="section3-pagination">
-          {seasonHistories.length > 0 ? (
-            seasonHistories.map((_: SeasonHistoryData, index: number) => (
-              <span key={index} className={`page-num ${section3Page === index ? "active" : ""} ${index === seasonHistories.length - 1 ? "last" : ""}`} onClick={() => handlePageChange(index)}>
+          {seasonPages.length > 0 ? (
+            seasonPages.map((_: unknown, index: number) => (
+              <span key={index} className={`page-num ${section3Page === index ? "active" : ""} ${index === seasonPages.length - 1 ? "last" : ""}`} onClick={() => handlePageChange(index)}>
                 {index + 1}
               </span>
             ))
@@ -3798,50 +4083,54 @@ const Cluster4Content = () => {
               {/* 인적사항 카드 — 보낸 사람 정보 */}
               <div className="workinfo-personal-card">
                 <div className="personal-grid">
-                  <div className="personal-photo">
-                    <img src={selectedReputation.reviewer?.profile_photo_url || "/images/0/crew profile/남 1.webp"} alt="프로필" />
-                  </div>
-                  <div className="personal-info">
-                    <div className="personal-row-1">
-                      <span className="personal-name">{selectedReputation.reviewer?.display_name || "-"}</span>
-                      <span className="personal-separator">|</span>
-                      <span className="personal-gender">{selectedReputation.reviewer?.gender || "-"}</span>
-                      <span className="personal-separator">|</span>
-                      <span className="personal-age">
-                        {(() => {
-                          const birthYear = selectedReputation.reviewer?.birth_date ? parseInt(selectedReputation.reviewer.birth_date.substring(0, 4)) : null;
-                          if (!birthYear) return "-";
-                          return `${new Date().getFullYear() - birthYear} 세`;
-                        })()}
-                      </span>
-                    </div>
-                    <div className="personal-row-2">
-                      <span className="personal-field">
-                        <span className="field-value">{selectedReputation.reviewer?.university || "-"}</span>
-                        <span className="field-label">학교</span>
-                      </span>
-                      <span className="personal-separator">|</span>
-                      <span className="personal-field">
-                        <span className="field-value">{selectedReputation.reviewer?.major_first || "-"}</span>
-                        <span className="field-label">학과</span>
-                      </span>
-                    </div>
-                    <div className="personal-row-3">
-                      <span className="personal-field">
-                        <span className="field-value">{selectedReputation.reviewer?.teamName || "-"}</span>
-                        <span className="field-label">팀</span>
-                      </span>
-                      <span className="personal-separator">|</span>
-                      <span className="personal-field">
-                        <span className="field-value">{selectedReputation.reviewer?.partName || "-"}</span>
-                        <span className="field-label">파트</span>
-                      </span>
-                    </div>
-                  </div>
-                  <div className="personal-tags">
-                    <span className="tag-badge tag-role">일반</span>
-                    <span className="tag-badge tag-keyword">{selectedReputation.reviewer?.vision || "키워드"}</span>
-                  </div>
+                  {(() => {
+                    // 보낸 사람(reviewer) 인적사항 — 공통 resolvePersonalInfo 로 alias fallback 통일.
+                    // reviewer DTO: display_name/gender/birth_date/profile_photo_url/vision +
+                    //   university(=school_name)/major_first/teamName/partName (role 미포함 → tag-role "-").
+                    const pi = resolvePersonalInfo({ profile: selectedReputation.reviewer });
+                    return (
+                      <>
+                        <div className="personal-photo">
+                          <img src={pi.profileImageUrl || "/images/0/crew profile/남 1.webp"} alt="프로필" />
+                        </div>
+                        <div className="personal-info">
+                          <div className="personal-row-1">
+                            <span className="personal-name">{pi.name || "-"}</span>
+                            <span className="personal-separator">|</span>
+                            <span className="personal-gender">{pi.gender || "-"}</span>
+                            <span className="personal-separator">|</span>
+                            <span className="personal-age">{pi.age != null ? `${pi.age} 세` : "-"}</span>
+                          </div>
+                          <div className="personal-row-2">
+                            <span className="personal-field">
+                              <span className="field-value">{pi.school || "-"}</span>
+                              <span className="field-label">학교</span>
+                            </span>
+                            <span className="personal-separator">|</span>
+                            <span className="personal-field">
+                              <span className="field-value">{formatMajor(pi.department)}</span>
+                              <span className="field-label">학과</span>
+                            </span>
+                          </div>
+                          <div className="personal-row-3">
+                            <span className="personal-field">
+                              <span className="field-value">{pi.team || "-"}</span>
+                              <span className="field-label">팀</span>
+                            </span>
+                            <span className="personal-separator">|</span>
+                            <span className="personal-field">
+                              <span className="field-value">{pi.part || "-"}</span>
+                              <span className="field-label">파트</span>
+                            </span>
+                          </div>
+                        </div>
+                        <div className="personal-tags">
+                          <span className="tag-badge tag-role">{formatMembershipRoleLabel(pi.membershipLevel)}</span>
+                          <span className="tag-badge tag-keyword">{pi.tagline || "키워드"}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* 어드민 전용: 수정/삭제 버튼 */}
@@ -4122,70 +4411,84 @@ const Cluster4Content = () => {
               {/* 인적사항 카드 — user_profiles + user_educations 실데이터 */}
               <div className="workinfo-personal-card">
                 <div className="personal-grid">
-                  <div className="personal-photo">
-                    <img
-                      src={
-                        isDemoMode
-                          ? (profilePhotoUrl || session?.user?.image || "/images/avatar/avatar.png")
-                          : (seasonReviewerProfile.profilePhotoUrl || profilePhotoUrl || "/images/avatar/avatar.png")
-                      }
-                      alt="프로필"
-                      onError={(e) => { (e.target as HTMLImageElement).src = "/images/avatar/avatar.png"; }}
-                    />
-                  </div>
-                  <div className="personal-info">
-                    <div className="personal-row-1">
-                      <span className="personal-name">
-                        {isDemoMode
-                          ? (session?.user?.name || demoUserName || "-")
-                          : (seasonReviewerProfile.displayName || session?.user?.name || "-")}
-                      </span>
-                      <span className="personal-separator">|</span>
-                      <span className="personal-gender">{isDemoMode ? "-" : (seasonReviewerProfile.gender || "-")}</span>
-                      <span className="personal-separator">|</span>
-                      <span className="personal-age">{isDemoMode ? "-" : (seasonReviewerProfile.age ?? "-")}</span>
-                    </div>
-                    <div className="personal-row-2">
-                      <span className="personal-field">
-                        <span className="field-value">{isDemoMode ? "-" : (seasonReviewerProfile.school || "-")}</span>
-                        <span className="field-label">학교</span>
-                      </span>
-                      <span className="personal-separator">|</span>
-                      <span className="personal-field">
-                        <span className="field-value">{isDemoMode ? "-" : (seasonReviewerProfile.major || "-")}</span>
-                        <span className="field-label">학과</span>
-                      </span>
-                    </div>
-                    <div className="personal-row-3">
-                      {(() => {
-                        // 해당 시즌 가장 최신 팀/파트: seasonRoles는 chronological ascending → 마지막 원소
-                        const sr = currentSeason.seasonRoles;
-                        const latest = sr && sr.length > 0 ? sr[sr.length - 1] : null;
-                        return (
-                          <>
-                            <span className="personal-field"><span className="field-value">{latest?.teamName || "-"}</span><span className="field-label">팀</span></span>
+                  {(() => {
+                    // 페이지 주인 인적사항 — 공통 resolvePersonalInfo 로 alias fallback 통일.
+                    //   profile: seasonReviewerProfile(/api/profile + /api/educations 매핑), user: 세션.
+                    //   팀/파트: 해당 시즌 최신 역할(seasonRoles 마지막 원소) 메타로 보강.
+                    //   ⚠ 데모 모드는 개인정보 마스킹 정책 유지(이름 외 "-"), 팀/파트·역할은 더미 그대로.
+                    const sr = currentSeason.seasonRoles;
+                    const latest = sr && sr.length > 0 ? sr[sr.length - 1] : null;
+                    const pi = resolvePersonalInfo({
+                      profile: {
+                        displayName: seasonReviewerProfile.displayName,
+                        gender: seasonReviewerProfile.gender,
+                        age: seasonReviewerProfile.age,
+                        school: seasonReviewerProfile.school,
+                        major: seasonReviewerProfile.major,
+                        profilePhotoUrl: seasonReviewerProfile.profilePhotoUrl,
+                        vision: seasonReviewerProfile.vision,
+                      },
+                      user: session?.user,
+                      weeklyCardMeta: latest ? { teamName: latest.teamName, partName: latest.partName } : null,
+                      // 팀/파트/멤버십/태그라인 — seasonRoles 가 비면 /api/profile data 로 채운다.
+                      fallbackProfile: ownerProfileData,
+                    });
+                    // 역할 라벨: 시즌 최신 roleLabel(이미 한글) 우선. 없으면(seasonRoles 빈 경우) 멤버십 등급
+                    //   (일반/심화 — /api/profile membership_level) 을 우선 표시하고, 그래도 없으면 role 코드로 폴백.
+                    const roleLabel = latest?.roleLabel
+                      ? latest.roleLabel
+                      : formatMembershipRoleLabel(pi.membershipLevel || currentSeason.roleInSeason || userDefaultRole || "");
+                    return (
+                      <>
+                        <div className="personal-photo">
+                          <img
+                            src={
+                              isDemoMode
+                                ? (profilePhotoUrl || session?.user?.image || "/images/avatar/avatar.png")
+                                : (pi.profileImageUrl || profilePhotoUrl || "/images/avatar/avatar.png")
+                            }
+                            alt="프로필"
+                            onError={(e) => { (e.target as HTMLImageElement).src = "/images/avatar/avatar.png"; }}
+                          />
+                        </div>
+                        <div className="personal-info">
+                          <div className="personal-row-1">
+                            <span className="personal-name">
+                              {isDemoMode
+                                ? (session?.user?.name || demoUserName || "-")
+                                : (pi.name || "-")}
+                            </span>
                             <span className="personal-separator">|</span>
-                            <span className="personal-field"><span className="field-value">{latest?.partName || "-"}</span><span className="field-label">파트</span></span>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                  <div className="personal-tags">
-                    <span className="tag-badge tag-role">
-                      {(() => {
-                        // 해당 시즌 가장 최신 역할: seasonRoles는 chronological ascending → 마지막 원소
-                        const sr = currentSeason.seasonRoles;
-                        const latest = sr && sr.length > 0 ? sr[sr.length - 1] : null;
-                        if (latest?.roleLabel) return latest.roleLabel;
-                        const rawRole = currentSeason.roleInSeason || userDefaultRole || "";
-                        return ROLE_LABELS[rawRole] || rawRole || "일반";
-                      })()}
-                    </span>
-                    <span className="tag-badge tag-keyword">
-                      {isDemoMode ? "-" : (seasonReviewerProfile.vision || "-")}
-                    </span>
-                  </div>
+                            <span className="personal-gender">{isDemoMode ? "-" : (pi.gender || "-")}</span>
+                            <span className="personal-separator">|</span>
+                            <span className="personal-age">{isDemoMode ? "-" : (pi.age ?? "-")}</span>
+                          </div>
+                          <div className="personal-row-2">
+                            <span className="personal-field">
+                              <span className="field-value">{isDemoMode ? "-" : (pi.school || "-")}</span>
+                              <span className="field-label">학교</span>
+                            </span>
+                            <span className="personal-separator">|</span>
+                            <span className="personal-field">
+                              <span className="field-value">{isDemoMode ? "-" : formatMajor(pi.department)}</span>
+                              <span className="field-label">학과</span>
+                            </span>
+                          </div>
+                          <div className="personal-row-3">
+                            <span className="personal-field"><span className="field-value">{pi.team || "-"}</span><span className="field-label">팀</span></span>
+                            <span className="personal-separator">|</span>
+                            <span className="personal-field"><span className="field-value">{pi.part || "-"}</span><span className="field-label">파트</span></span>
+                          </div>
+                        </div>
+                        <div className="personal-tags">
+                          <span className="tag-badge tag-role">{roleLabel}</span>
+                          <span className="tag-badge tag-keyword">
+                            {isDemoMode ? "-" : (pi.tagline || "-")}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
