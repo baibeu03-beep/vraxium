@@ -198,17 +198,53 @@ export async function GET(request: NextRequest) {
         }
         return { data: all, error: null };
       })(),
-      // 해당 주차 포인트
-      supabaseAdmin
-        .from('points')
-        .select('user_id, point_type, points')
-        .eq('week_id', weekId),
-      // 누적 인절미 계산용 포인트 — 현재 시즌 내 주차로 제한
-      supabaseAdmin
-        .from('points')
-        .select('user_id, week_id, point_type, points')
-        .in('week_id', seasonRelevantWeekIdArray)
-        .in('point_type', ['shield', 'lightning']),
+      // 해당 주차 포인트 — 캐노니컬 source user_weekly_points (별=points/방패=advantages/번개=penalty).
+      // 다운스트림(userPointsMap)이 기대하는 {user_id, point_type, points} shape 로 전개한다.
+      // (이전 public.points 는 이 환경 PostgREST 미노출 → 0 fallback.)
+      (async () => {
+        const { data, error } = await supabaseAdmin!
+          .from('user_weekly_points')
+          .select('user_id, points, advantages, penalty')
+          .eq('week_start_date', selectedWeekStartDate)
+          .in('user_id', userIdArray);
+        if (error) return { data: [] as { user_id: string; point_type: string; points: number }[], error };
+        const rows: { user_id: string; point_type: string; points: number }[] = [];
+        for (const r of data || []) {
+          rows.push({ user_id: r.user_id, point_type: 'star', points: r.points || 0 });
+          rows.push({ user_id: r.user_id, point_type: 'shield', points: r.advantages || 0 });
+          rows.push({ user_id: r.user_id, point_type: 'lightning', points: r.penalty || 0 });
+        }
+        return { data: rows, error: null };
+      })(),
+      // 누적 인절미 계산용 포인트 — 현재 시즌 내 주차로 제한 (캐노니컬 user_weekly_points).
+      // 다운스트림(userAllPointsMap)이 기대하는 {user_id, week_id, point_type, points} shape 로 전개.
+      // 시즌 전체 주차 × 유저는 1000행을 넘을 수 있어 range 페이지네이션으로 빠짐없이 수집.
+      (async () => {
+        const seasonStartDates = (allWeeks || [])
+          .filter((w: any) => seasonRelevantWeekIds.has(w.id))
+          .map((w: any) => w.start_date);
+        const rows: { user_id: string; week_id: string; point_type: string; points: number }[] = [];
+        if (seasonStartDates.length === 0) return { data: rows, error: null };
+        const PAGE = 1000;
+        for (let from = 0; ; from += PAGE) {
+          const { data, error } = await supabaseAdmin!
+            .from('user_weekly_points')
+            .select('user_id, week_start_date, advantages, penalty')
+            .in('user_id', userIdArray)
+            .in('week_start_date', seasonStartDates)
+            .range(from, from + PAGE - 1);
+          if (error) return { data: rows, error };
+          if (!data || data.length === 0) break;
+          for (const r of data) {
+            const wId = startDateToWeekIdMap.get(r.week_start_date);
+            if (!wId) continue;
+            rows.push({ user_id: r.user_id, week_id: wId, point_type: 'shield', points: r.advantages || 0 });
+            rows.push({ user_id: r.user_id, week_id: wId, point_type: 'lightning', points: r.penalty || 0 });
+          }
+          if (data.length < PAGE) break;
+        }
+        return { data: rows, error: null };
+      })(),
       // 팀 정보
       supabaseAdmin.from('teams').select('id, name'),
       // 파트 정보

@@ -14,7 +14,7 @@ import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
-import { isPxRoute, isEcRoute, withPxRoute, getThemeClass } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getGraduationWeeksFromPathname } from "@/lib/cluster-route";
 import { formatSeasonLabel, formatSeasonWeekTitle } from "@/lib/cluster4-types";
 import { REPUTATION_KEYWORD_GROUPS } from "@/lib/reputation-keywords";
 import { isAdminEmail } from "@/lib/admin";
@@ -99,10 +99,140 @@ const formatSchool = (value: string) => {
 };
 
 const formatMajor = (value: string) => {
-  if (!value || value === "-") return "-";
-  if (value.endsWith("학과")) return value.slice(0, -1); // "컴퓨터공학과" → "컴퓨터공학" (+ 학과 라벨)
-  if (value.endsWith("학부")) return value.slice(0, -1); // "소프트웨어학부" → "소프트웨어학" (+ 부 라벨은 안 맞지만 일단)
-  return value;
+  if (!value) return "-";
+  const v = value.trim(); // 원본 유지, 표시 직전 공백 제거 — "법무학 " 같은 패딩값도 suffix 매칭되게
+  if (!v || v === "-") return "-";
+  if (v.endsWith("학과")) return v.slice(0, -2) || "-"; // "법무학과" → "법무" (+ 학과 라벨 = "법무 학과")
+  if (v.endsWith("학부")) return v.slice(0, -2) || "-"; // "소프트웨어학부" → "소프트웨어" (+ 학과 라벨)
+  if (v.endsWith("학")) return v.slice(0, -1) || "-"; // "법무학" → "법무" (+ 학과 라벨 = "법무 학과")
+  return v;
+};
+
+// ──────────────────────────────────────────────────────────────────────────
+// 인적사항 공통 표시 헬퍼 — cluster-4-card 의 "모든" 모달이 동일한 fallback 규칙으로
+// 인적사항(이름/성별/나이/학교/학과/팀/파트/일반·심화/프로필이미지/태그라인)을 표시하도록
+// 단일 출처로 통일한다. 각 모달이 개별 fallback 체인을 두지 않는다.
+//
+// source bag 한 곳에 가용한 모든 출처(계약 DTO / legacy alias / 세션 user / 주차 카드 메타)를
+// 넣어주면 필드별 우선순위대로 첫 "유효값"을 고른다. "유효값"은 null/undefined/공백 및
+// placeholder("-"·"—") 가 아닌 값. 값이 없으면 null 을 반환하고, placeholder 글리프(— vs -)는
+// 각 렌더 사이트가 기존 디자인 그대로 결정한다(시각 회귀 방지).
+type PersonalInfoSourceBag = {
+  // 1순위 프로필류: Cluster4PersonProfileDto / reviewerProfile-like / 카드 객체 등
+  profile?: Record<string, any> | null;
+  // 2순위 user 류: session.user / legacy reviewer 행 등
+  user?: Record<string, any> | null;
+  // team/part alias 보강용
+  weeklyCardMeta?: Record<string, any> | null;
+  headerExtras?: Record<string, any> | null;
+};
+
+export type ResolvedPersonalInfo = {
+  name: string | null;
+  gender: string | null;
+  age: number | string | null;
+  school: string | null;
+  department: string | null;
+  team: string | null;
+  part: string | null;
+  membershipLevel: string | null;
+  profileImageUrl: string | null;
+  tagline: string | null;
+};
+
+// 첫 "유효값" 선택 — null/undefined/공백/placeholder("-"·"—") 는 건너뛴다.
+const pickPersonalValue = (...candidates: Array<unknown>): string | null => {
+  for (const c of candidates) {
+    if (c === null || c === undefined) continue;
+    const s = typeof c === "string" ? c.trim() : String(c).trim();
+    if (s === "" || s === "-" || s === "—") continue;
+    return s;
+  }
+  return null;
+};
+
+const resolvePersonalInfo = (sources: PersonalInfoSourceBag): ResolvedPersonalInfo => {
+  const p = sources.profile ?? {};
+  const u = sources.user ?? {};
+  const meta = sources.weeklyCardMeta ?? {};
+  const extras = sources.headerExtras ?? {};
+
+  // 나이: 명시값 우선, 없으면 birthDate/birth_date 로 계산
+  let age: number | string | null = pickPersonalValue(p.age, u.age);
+  if (age === null) {
+    const birth = pickPersonalValue(p.birthDate, p.birth_date, u.birthDate, u.birth_date);
+    if (birth) {
+      const birthYear = new Date(birth).getFullYear();
+      const currentYear = new Date().getFullYear();
+      if (!Number.isNaN(birthYear)) age = currentYear - birthYear;
+    }
+  }
+
+  return {
+    name: pickPersonalValue(p.name, p.displayName, p.display_name, u.displayName, u.display_name, u.name),
+    gender: pickPersonalValue(p.gender, u.gender),
+    age,
+    school: pickPersonalValue(p.school, p.schoolName, p.school_name, p.university, u.school, u.schoolName, u.school_name, u.university),
+    department: pickPersonalValue(
+      p.department, p.departmentName, p.department_name, p.major, p.major1, p.major_first,
+      u.department, u.departmentName, u.department_name, u.major, u.major1, u.major_first,
+    ),
+    team: pickPersonalValue(
+      p.team, p.teamName, p.team_name, u.team, u.teamName, u.team_name,
+      p.currentTeamName, p.current_team_name, u.currentTeamName, u.current_team_name,
+      meta.teamName, extras.teamName,
+    ),
+    part: pickPersonalValue(
+      p.part, p.partName, p.part_name, u.part, u.partName, u.part_name,
+      p.currentPartName, p.current_part_name, u.currentPartName, u.current_part_name,
+      meta.partName, extras.partName,
+    ),
+    membershipLevel: pickPersonalValue(p.membershipLevel, p.membership_level, u.membershipLevel, u.membership_level, p.role, u.role),
+    profileImageUrl: pickPersonalValue(
+      p.profileImageUrl, p.profile_photo_url, p.profileImg, p.avatarUrl, p.profilePhotoUrl,
+      u.profileImageUrl, u.profile_photo_url, u.profileImg, u.avatarUrl, u.image,
+    ),
+    tagline: pickPersonalValue(
+      p.profileTagline, p.profile_tagline, u.profileTagline, u.profile_tagline,
+      p.profileKeyword, p.profile_keyword, u.profileKeyword, u.profile_keyword,
+      p.nickname, u.nickname, p.vision, u.vision,
+    ),
+  };
+};
+
+// ──────────────────────────────────────────────────────────────────────────
+// 멤버십/역할/상태 라벨 공통 표시 헬퍼 — DB 원본값(membership_level / role 코드 등)을
+// 화면 친화적 한글 라벨로 변환한다. cluster-4-card 의 "모든" 모달 인적사항 카드의
+// badge(tag-role)·역할 표시는 이 단일 헬퍼만 사용한다.
+//   ⚠ DB 원본은 변경하지 않으며(표시 시점에만 변환), 다음 fallback 규칙을 따른다:
+//   - 값 없음(null/undefined/공백/"-"/"—")  → "-"
+//   - 알 수 없는 신규 값                      → 원본값 그대로 표시
+//   - 이미 한글 라벨(일반/심화/운영진 …)        → 매핑 미스 → 원본 유지 (멱등)
+const MEMBERSHIP_ROLE_LABEL_MAP: Record<string, string> = {
+  // membership_level 단축값 (Cluster4PersonProfileDto.membershipLevel 등)
+  active: "일반",
+  advanced: "심화",
+  agent: "심화(에이전트)",
+  part_leader: "심화(파트장)",
+  team_leader: "운영진(팀장)",
+  ambassador: "운영진(앰배서더)",
+  // role 코드 (user_role_history.role / profile.role 등) — 기존 roleLabels 통합 단일화
+  crew: "일반",
+  crew_regular: "일반",
+  crew_partleader: "심화(파트장)",
+  operations_partleader: "심화(파트장)",
+  crew_agent: "심화(에이전트)",
+  operations_ambassador: "운영진(앰배서더)",
+  operations_teamleader: "운영진(팀장)",
+  operations_clubleader: "운영진(클럽장)",
+};
+
+const formatMembershipRoleLabel = (value: string | null | undefined): string => {
+  if (value === null || value === undefined) return "-";
+  const v = String(value).trim();
+  if (v === "" || v === "-" || v === "—") return "-";
+  // 정확 매칭 우선 → 소문자 정규화 매칭 → 그래도 없으면 원본 그대로(신규 값 보호).
+  return MEMBERSHIP_ROLE_LABEL_MAP[v] ?? MEMBERSHIP_ROLE_LABEL_MAP[v.toLowerCase()] ?? v;
 };
 
 const WORKINFO_IMAGE_SLOT_COUNT = 4;
@@ -427,7 +557,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     school: string;
     major: string;
     vision: string;
-  }>({ displayName: "", profilePhotoUrl: "", gender: "", age: null, school: "", major: "", vision: "" });
+    tagline: string;
+  }>({ displayName: "", profilePhotoUrl: "", gender: "", age: null, school: "", major: "", vision: "", tagline: "" });
 
   useEffect(() => {
     // urlUserId 가 있으면 비로그인이라도 공개 프로필을 표시할 수 있도록 fetch.
@@ -462,6 +593,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           school: eduFirst?.school || "",
           major: eduFirst?.major1 && eduFirst.major1 !== "-" ? eduFirst.major1 : "",
           vision: p?.vision || "",
+          // 태그라인: 계약 키(profile_tagline) → keyword(legacy) → nickname → vision 순으로 보강.
+          // (실제 표시 우선순위는 resolvePersonalInfo 가 결정 — 여기서는 source 확보용으로 모은다.)
+          tagline: p?.profile_tagline || p?.profileTagline || p?.profile_keyword || p?.profileKeyword || p?.nickname || p?.vision || "",
         });
       } catch {
         // 무시 — fallback으로 session.user.name 사용
@@ -852,18 +986,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const infoTypes = ["calendar", "essay", "forum", "infodesk", "session", "wisdom", "practical_lecture", "community", "etc_a"];
   // competencyTypes, experienceTypes, careerTypes는 이제 state로 관리됨
 
-  // 역할 라벨 매핑
-  const roleLabels: { [key: string]: string } = {
-    crew: "일반",
-    crew_regular: "일반",
-    part_leader: "심화(파트장)",
-    crew_partleader: "심화(파트장)",
-    operations_partleader: "심화(파트장)",
-    crew_agent: "심화(에이전트)",
-    operations_ambassador: "운영진(앰배서더)",
-    operations_teamleader: "운영진(팀장)",
-    operations_clubleader: "운영진(클럽장)",
-  };
+  // 역할/멤버십 라벨 매핑은 모듈 레벨 formatMembershipRoleLabel 단일 헬퍼로 통일.
 
   // 실무 역량 아이콘 매핑 (activity_type_id → 이미지 파일명)
   const competencyIconMap: { [key: string]: string } = {
@@ -1330,10 +1453,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         });
 
         if (userRole) {
-          setRoleLabel(roleLabels[userRole.role] || userRole.role);
+          setRoleLabel(formatMembershipRoleLabel(userRole.role));
           setUserWeekRole(userRole.role || null);
         } else if (profileResult.data?.role) {
-          setRoleLabel(roleLabels[profileResult.data.role] || profileResult.data.role);
+          setRoleLabel(formatMembershipRoleLabel(profileResult.data.role));
           setUserWeekRole(profileResult.data.role || null);
         }
         // 멤버십 등급(membership_level) — 이력서 카드 "심화" 표시와 동일 source. 관리 슬롯 잠금 판단용.
@@ -1891,6 +2014,36 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   useEffect(() => {
     setCanEditReputation(isDemoMode || !!demoUserId);
   }, [isDemoMode, demoUserId]);
+
+  // 연계 동료 작성 창 열림 여부 — 모달 오픈 게이트(requireWeeklyColleaguesWriteAccess)와 동일 판정을
+  // "버튼 disabled / 안내 표시" 용으로 reactive 하게 캐시한 값. 단일 출처 = 서버 POST 와 동일한
+  // /api/edit-windows/permission(cluster4.weekly_colleagues, week_id).canEdit.
+  //   true=열림, false=닫힘(버튼 비활성+안내), null=조회 전(로딩 — 비활성화하지 않음).
+  const [colleagueWindowOpen, setColleagueWindowOpen] = useState<boolean | null>(null);
+  useEffect(() => {
+    // demo/admin 은 게이트와 동일하게 항상 열림으로 본다.
+    if (isDemoMode) { setColleagueWindowOpen(true); return; }
+    if (session?.user?.isAdmin && !demoUserId) { setColleagueWindowOpen(true); return; }
+    if (!weekId) { setColleagueWindowOpen(null); return; } // 주차 미확정 → 로딩
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          apiUrl(
+            `/api/edit-windows/permission?resource_key=${encodeURIComponent(CLUSTER4_EDIT_RESOURCE_KEYS.weeklyColleagues)}&week_id=${encodeURIComponent(weekId)}`,
+          ),
+          { cache: "no-store" },
+        );
+        const json = await res.json().catch(() => null);
+        if (cancelled) return;
+        const data = json as { success?: boolean; data?: { canEdit?: boolean } } | null;
+        setColleagueWindowOpen(!!(res.ok && data?.success && data?.data?.canEdit === true));
+      } catch {
+        if (!cancelled) setColleagueWindowOpen(false); // 보수적 닫힘
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isDemoMode, demoUserId, session?.user?.isAdmin, weekId]);
 
   // 연계 동료 — 평판/주차 리뷰와 동일하게 데모/테스트 유저 모드에서 활성, 일반 모드에서 승인 상태 따름
   const [canEditColleague, setCanEditColleague] = useState<boolean>(isDemoMode || !!demoUserId);
@@ -3043,7 +3196,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     m.type === "missing-caption" ? `아웃풋 이미지 ${m.slot}번의 캡션을 입력해주세요.\n이미지와 캡션은 한 쌍이에요. 😊` : `아웃풋 ${m.slot}번에 이미지를 올려주세요.\n캡션만 입력할 수 없어요. 이미지와 캡션은 한 쌍이에요. 😊`;
 
   // blob: URL 배열을 Supabase Storage로 업로드 → 영구 URL 배열 반환. http(s)/data URL은 그대로 통과.
-  const persistImageUrls = async (images: (string | null)[], activityTypeId: string): Promise<(string | null)[]> => {
+  // storageKey: 스토리지 경로 구분자. 보통 activity_type_id, 라인 단위 저장(activity_type_id 없음)에서는 line_target_id.
+  const persistImageUrls = async (images: (string | null)[], storageKey: string): Promise<(string | null)[]> => {
     const result: (string | null)[] = [];
     for (let i = 0; i < images.length; i++) {
       const url = images[i];
@@ -3061,7 +3215,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("week_id", weekId);
-      formData.append("activity_type_id", activityTypeId);
+      formData.append("activity_type_id", storageKey);
       formData.append("slot_index", String(i));
       const res = await fetch(apiUrl("/api/activity-details/upload-image"), {
         method: "POST",
@@ -3078,7 +3232,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   // user_activity_details 저장 (모달 저장 공용 헬퍼). 데모 모드에서는 API 호출 스킵.
-  const persistActivityDetailToServer = async (params: { activityTypeId: string; lineTargetId?: string | null; subTitle: string | null; outputLinks: { desc: string; url: string }[] | null; growthPoint: string | null; images: (string | null)[]; imageCaptions: string[]; adminLinkCount?: number }): Promise<{ images: (string | null)[] }> => {
+  const persistActivityDetailToServer = async (params: { activityTypeId: string | null; lineTargetId?: string | null; subTitle: string | null; outputLinks: { desc: string; url: string }[] | null; growthPoint: string | null; images: (string | null)[]; imageCaptions: string[]; adminLinkCount?: number }): Promise<{ images: (string | null)[] }> => {
+    // [SAVE] persist 함수 진입 — 호출부에서 실제 저장 함수까지 도달했는지 확정.
+    console.log("[SAVE] persistActivityDetailToServer 시작", {
+      activityTypeId: params.activityTypeId,
+      lineTargetId: params.lineTargetId ?? null,
+    });
     // [진단] 저장 분기 추적 — 어느 경로로 빠지는지 콘솔로 확정 (isDemoMode/스킵/currentUserId/lineTargetId).
     console.log("[cluster4-save-diag] persist 진입", {
       isDemoMode,
@@ -3101,10 +3260,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       console.error("[cluster4-save-diag] ABORT: currentUserId/weekId 없음 — 저장 불가", { currentUserId, weekId });
       throw new Error("저장 대상 사용자를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.");
     }
-    const persistedImages = await persistImageUrls(params.images, params.activityTypeId);
+    // 이미지 스토리지 경로 키 — activity_type_id 가 없으면(라인 단위 저장) line_target_id 로 폴백.
+    // 업로드 라우트의 activity_type_id 패턴(/^[a-zA-Z0-9_-]{1,40}$/)에 UUID(line_target_id)도 매칭된다.
+    const imageStorageKey = params.activityTypeId || params.lineTargetId || "";
+    const hasBlobImages = params.images.some((u) => typeof u === "string" && u.startsWith("blob:"));
+    if (hasBlobImages && !imageStorageKey) {
+      throw new Error("이미지 저장 대상을 식별하지 못했습니다. 새로고침 후 다시 시도해주세요.");
+    }
+    const persistedImages = await persistImageUrls(params.images, imageStorageKey);
     // 렌더/가드와 동일한 adminLinkCount 사용 — 호출부가 matchedLine 기준 값을 넘기면 그걸 쓰고,
     // 없을 때만 legacy(local) getAdminOutputLinksCount 로 fallback. (관리자 prefix 만큼 slice 후 크루 슬롯만 저장)
-    const adminCount = params.adminLinkCount ?? getAdminOutputLinksCount(params.activityTypeId);
+    // activity_type_id 가 없으면 legacy adminLinkCount 산출 불가 → 0 (라인 저장은 호출부가 명시값 전달).
+    const adminCount = params.adminLinkCount ?? (params.activityTypeId ? getAdminOutputLinksCount(params.activityTypeId) : 0);
     // 운영진 링크(앞쪽 adminCount 개)는 라인 소유 — 재저장하지 않고 크루 슬롯만 저장한다.
     const userSlots = (params.outputLinks || []).slice(adminCount);
     // label-only 검증: URL 없이 설명만 입력된 슬롯은 저장 불가 (경고 후 중단).
@@ -3136,7 +3303,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         // 테스트 유저 모드: demoUserId 가 있으면 백엔드가 이 id 로 저장 대상/작성기간을 고정한다.
         ...(demoUserId ? { demoUserId } : {}),
         week_id: weekId,
-        activity_type_id: params.activityTypeId,
+        // activity_type_id 는 null 가능 — competency/experience/career 라인은 line_target_id 가 canonical.
+        // 백엔드는 line_target_id 가 유효하면 activity_type_id 없이 cluster4_line_submissions 에만 저장한다.
+        activity_type_id: params.activityTypeId || null,
         // 실제 lineTarget 단위 저장 — 백엔드가 line_target_id 로 라인을 식별한다.
         // (매칭되는 백엔드 line 이 없는 part 는 null → 기존 activity_type_id 기준 저장)
         line_target_id: params.lineTargetId ?? null,
@@ -3569,6 +3738,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleSaveWorkAbility = async () => {
+    // [SAVE] 핸들러 진입 — 클릭이 실제 저장 함수까지 도달했는지 + 모든 게이트 상태를 한 번에 확인.
+    console.log("[SAVE] handleSaveWorkAbility 시작", {
+      canEditWorkAbility,
+      forceEditUnlock,
+      isPureAdminPreview,
+      isForeignViewer,
+      activityTypeId: (selectedWorkAbilityCard?.activityTypeId as string | null | undefined) ?? null,
+      lineTargetId: (workAbilityMatchedLine?.lineTargetId as string | null | undefined) ?? null,
+    });
     if (!forceEditUnlock && !canEditWorkAbility) {
       console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkAbility" });
       await popup.alert("관리자 승인 후 수정할 수 있습니다.");
@@ -3596,7 +3774,28 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
     // 모든 필드 옵셔널 — 일부만 기입해도 저장 가능
     if (!(await popup.confirm("저장하시겠습니까?"))) return;
-    if (selectedWorkAbilityCard?.activityTypeId) {
+    // competency 라인 저장의 canonical key = line_target_id. competency 라인은 activity_type_id 가
+    // null/"" 인 경우가 많으므로(part_type!=info), activityTypeId 없음 = 저장 불가가 아니다.
+    // → lineTargetId 가 있으면 activityTypeId 없이도 저장한다(백엔드가 cluster4_line_submissions 에 저장).
+    // 단 둘 다 없으면 진짜 식별 불가 → false-success 대신 명확한 에러.
+    const abilityActivityTypeId = (selectedWorkAbilityCard?.activityTypeId as string | null | undefined) ?? "";
+    const abilityCanPersist = !!abilityActivityTypeId || !!abilitySaveLineTargetId;
+    console.log("[SAVE] handleSaveWorkAbility persist 분기", {
+      activityTypeId: abilityActivityTypeId || null,
+      lineTargetId: abilitySaveLineTargetId,
+      canPersist: abilityCanPersist,
+      willCallApi: abilityCanPersist && !isPureAdminPreview,
+    });
+    if (!abilityCanPersist && !forceEditUnlock) {
+      console.error("[SAVE] workAbility 저장 차단 — activityTypeId/lineTargetId 모두 없음", {
+        weekId,
+        lineCode: (selectedWorkAbilityCard?.lineCode as string | null | undefined) ?? (selectedWorkAbilityCard?.code as string | null | undefined) ?? null,
+      });
+      setWorkAbilityFooterNotice("error");
+      await popup.alert("저장 대상 라인을 식별하지 못했습니다. 새로고침 후 다시 시도해주세요.");
+      return;
+    }
+    {
       const newSubTitle = editingAbilitySubTitle.trim() || null;
       const newOutputLinks = editingAbilityOutputLinks;
       const newGrowthPoint = editingAbilityGrowthPoint.trim() || null;
@@ -3607,7 +3806,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       } else {
         try {
           const persisted = await persistActivityDetailToServer({
-            activityTypeId: selectedWorkAbilityCard.activityTypeId,
+            // activity_type_id 는 null 가능 — line_target_id 가 canonical.
+            activityTypeId: abilityActivityTypeId || null,
             // 가드(abilitySaveLineTargetId) 와 동일 출처 — persist 에 다른 값을 넘기면 가드 통과 후
             // line_target_id:null 전송 → submission 미반영인데 "저장됨" 안내가 뜨는 회귀를 막는다.
             lineTargetId: abilitySaveLineTargetId,
@@ -3616,7 +3816,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             growthPoint: newGrowthPoint,
             images: editingAbilityImages,
             imageCaptions: editingAbilityImageCaptions,
-            adminLinkCount: getAbilityAdminLinkCount(workAbilityMatchedLine, selectedWorkAbilityCard.activityTypeId),
+            adminLinkCount: getAbilityAdminLinkCount(workAbilityMatchedLine, abilityActivityTypeId || null),
           });
           persistedImages = persisted.images;
         } catch (err) {
@@ -3626,20 +3826,25 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         }
       }
       setEditingAbilityImages(persistedImages);
-      setWeekActivityDetails((prev) => {
-        const nextDetail = {
-          week_id: weekId,
-          activity_type_id: selectedWorkAbilityCard.activityTypeId,
-          sub_title: newSubTitle,
-          output_links: newOutputLinks,
-          growth_point: newGrowthPoint,
-          image_urls: persistedImages,
-          image_captions: editingAbilityImageCaptions,
-        };
-        const existingIndex = prev.findIndex((d) => d.activity_type_id === selectedWorkAbilityCard.activityTypeId);
-        if (existingIndex < 0) return [...prev, nextDetail];
-        return prev.map((d) => (d.activity_type_id === selectedWorkAbilityCard.activityTypeId ? { ...d, ...nextDetail } : d));
-      });
+      // legacy weekActivityDetails 미러는 activity_type_id 가 있을 때만 갱신한다. competency 표시는
+      // cluster4Lines[].submission 단일 출처라 이 미러는 비표시용이며, "" 키로 쓰면 라인 간 충돌
+      // (findIndex 가 첫 빈 키 행에 매칭)이 날 수 있어 빈 키일 땐 건너뛴다.
+      if (abilityActivityTypeId) {
+        setWeekActivityDetails((prev) => {
+          const nextDetail = {
+            week_id: weekId,
+            activity_type_id: abilityActivityTypeId,
+            sub_title: newSubTitle,
+            output_links: newOutputLinks,
+            growth_point: newGrowthPoint,
+            image_urls: persistedImages,
+            image_captions: editingAbilityImageCaptions,
+          };
+          const existingIndex = prev.findIndex((d) => d.activity_type_id === abilityActivityTypeId);
+          if (existingIndex < 0) return [...prev, nextDetail];
+          return prev.map((d) => (d.activity_type_id === abilityActivityTypeId ? { ...d, ...nextDetail } : d));
+        });
+      }
       setSelectedWorkAbilityCard((prev: any) =>
         prev
           ? {
@@ -3658,7 +3863,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       // submission.outputLinks 는 "사용자분만" — 어드민 슬롯(adminCount) 을 제외한 뒤쪽 슬롯만 저장.
       // submission.outputImages/outputImageCaptions 는 비어있지 않은 이미지와 그 캡션만 1:1 정렬해 저장.
       if (abilitySaveLineTargetId) {
-        const savedAdminCount = getAbilityAdminLinkCount(workAbilityMatchedLine, selectedWorkAbilityCard.activityTypeId);
+        const savedAdminCount = getAbilityAdminLinkCount(workAbilityMatchedLine, abilityActivityTypeId || null);
         const savedUserLinks = newOutputLinks
           .slice(savedAdminCount)
           .map((l: { desc?: string | null; url?: string | null }) => ({ desc: l?.desc || "", url: l?.url || "" }))
@@ -3903,7 +4108,23 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
     // 모든 필드 옵셔널 — 일부만 기입해도 저장 가능 (라인 평점은 어드민 전용)
     if (!(await popup.confirm("저장하시겠습니까?"))) return;
-    if (selectedWorkExpCard?.activityTypeId) {
+    // experience 라인 저장의 canonical key = line_target_id. experience 라인은 activity_type_id 가
+    // null/"" 인 경우가 많으므로, lineTargetId 가 있으면 activityTypeId 없이도 저장한다.
+    const expActivityTypeId = (selectedWorkExpCard?.activityTypeId as string | null | undefined) ?? "";
+    const expCanPersist = !!expActivityTypeId || !!expSaveLineTargetId;
+    console.log("[SAVE] handleSaveWorkExp persist 분기", {
+      activityTypeId: expActivityTypeId || null,
+      lineTargetId: expSaveLineTargetId,
+      canPersist: expCanPersist,
+      willCallApi: expCanPersist && !isPureAdminPreview,
+    });
+    if (!expCanPersist && !forceEditUnlock) {
+      console.error("[SAVE] workExp 저장 차단 — activityTypeId/lineTargetId 모두 없음", { weekId });
+      setWorkExpFooterNotice("error");
+      await popup.alert("저장 대상 라인을 식별하지 못했습니다. 새로고침 후 다시 시도해주세요.");
+      return;
+    }
+    {
       const newSubTitle = editingExpSubTitle.trim() || null;
       const newOutputLinks = editingExpOutputLinks;
       const newGrowthPoint = editingExpGrowthPoint.trim() || null;
@@ -3914,7 +4135,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       } else {
         try {
           const persisted = await persistActivityDetailToServer({
-            activityTypeId: selectedWorkExpCard.activityTypeId,
+            // activity_type_id 는 null 가능 — line_target_id 가 canonical.
+            activityTypeId: expActivityTypeId || null,
             // 가드(expSaveLineTargetId) 와 동일 출처 — persist 에 다른 값을 넘기면 가드 통과 후
             // line_target_id:null 전송 → submission 미반영인데 "저장됨" 안내가 뜨는 회귀를 막는다.
             lineTargetId: expSaveLineTargetId,
@@ -3923,7 +4145,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             growthPoint: newGrowthPoint,
             images: editingExpImages,
             imageCaptions: editingExpImageCaptions,
-            adminLinkCount: getAdminOutputLinksCount(selectedWorkExpCard.activityTypeId, workExpMatchedLine),
+            adminLinkCount: getAdminOutputLinksCount(expActivityTypeId, workExpMatchedLine),
           });
           persistedImages = persisted.images;
         } catch (err) {
@@ -3933,20 +4155,23 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         }
       }
       setEditingExpImages(persistedImages);
-      setWeekActivityDetails((prev) => {
-        const nextDetail = {
-          week_id: weekId,
-          activity_type_id: selectedWorkExpCard.activityTypeId,
-          sub_title: newSubTitle,
-          output_links: newOutputLinks,
-          growth_point: newGrowthPoint,
-          image_urls: persistedImages,
-          image_captions: editingExpImageCaptions,
-        };
-        const existingIndex = prev.findIndex((d) => d.activity_type_id === selectedWorkExpCard.activityTypeId);
-        if (existingIndex < 0) return [...prev, nextDetail];
-        return prev.map((d) => (d.activity_type_id === selectedWorkExpCard.activityTypeId ? { ...d, ...nextDetail } : d));
-      });
+      // legacy weekActivityDetails 미러는 activity_type_id 가 있을 때만 (competency 와 동일 — "" 키 충돌 방지).
+      if (expActivityTypeId) {
+        setWeekActivityDetails((prev) => {
+          const nextDetail = {
+            week_id: weekId,
+            activity_type_id: expActivityTypeId,
+            sub_title: newSubTitle,
+            output_links: newOutputLinks,
+            growth_point: newGrowthPoint,
+            image_urls: persistedImages,
+            image_captions: editingExpImageCaptions,
+          };
+          const existingIndex = prev.findIndex((d) => d.activity_type_id === expActivityTypeId);
+          if (existingIndex < 0) return [...prev, nextDetail];
+          return prev.map((d) => (d.activity_type_id === expActivityTypeId ? { ...d, ...nextDetail } : d));
+        });
+      }
       setSelectedWorkExpCard((prev: any) =>
         prev
           ? {
@@ -4213,8 +4438,23 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
     // 모든 필드 옵셔널 — 일부만 기입해도 저장 가능
     if (!(await popup.confirm("저장하시겠습니까?"))) return;
-    const activityType = workCareerActivityTypes[(selectedWorkCareerCard?.id || 1) - 1];
-    if (activityType) {
+    // career 라인 저장의 canonical key = line_target_id. career 라인은 activity_type_id(legacy
+    // workCareerActivityTypes 매핑)가 없을 수 있으므로, lineTargetId 가 있으면 activityType 없이도 저장.
+    const activityType = workCareerActivityTypes[(selectedWorkCareerCard?.id || 1) - 1] || "";
+    const careerCanPersist = !!activityType || !!careerSaveLineTargetId;
+    console.log("[SAVE] handleSaveWorkCareer persist 분기", {
+      activityType: activityType || null,
+      lineTargetId: careerSaveLineTargetId,
+      canPersist: careerCanPersist,
+      willCallApi: careerCanPersist && !isPureAdminPreview,
+    });
+    if (!careerCanPersist && !forceEditUnlock) {
+      console.error("[SAVE] workCareer 저장 차단 — activityType/lineTargetId 모두 없음", { weekId });
+      setWorkCareerFooterNotice("error");
+      await popup.alert("저장 대상 라인을 식별하지 못했습니다. 새로고침 후 다시 시도해주세요.");
+      return;
+    }
+    {
       const newSubTitle = editingCareerSubTitle.trim() || null;
       const newOutputLinks = editingCareerOutputLinks;
       const newGrowthPoint = editingCareerGrowthPoint.trim() || null;
@@ -4232,7 +4472,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       } else {
         try {
           const persisted = await persistActivityDetailToServer({
-            activityTypeId: activityType,
+            // activity_type_id 는 null 가능 — line_target_id 가 canonical.
+            activityTypeId: activityType || null,
             // 가드(careerSaveLineTargetId) 와 동일 출처 — persist 에 다른 값을 넘기면 가드 통과 후
             // line_target_id:null 전송 → submission 미반영인데 "저장됨" 안내가 뜨는 회귀를 막는다.
             lineTargetId: careerSaveLineTargetId,
@@ -4265,20 +4506,23 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       }
       setEditingCareerImages(mergedImages);
       setEditingCareerImageCaptions(mergedCaptions);
-      setWeekActivityDetails((prev) => {
-        const nextDetail = {
-          week_id: weekId,
-          activity_type_id: activityType,
-          sub_title: newSubTitle,
-          output_links: newOutputLinks,
-          growth_point: newGrowthPoint,
-          image_urls: persistedCrewImages,
-          image_captions: crewCaptionsToSave,
-        };
-        const existingIndex = prev.findIndex((d) => d.activity_type_id === activityType);
-        if (existingIndex < 0) return [...prev, nextDetail];
-        return prev.map((d) => (d.activity_type_id === activityType ? { ...d, ...nextDetail } : d));
-      });
+      // legacy weekActivityDetails 미러는 activityType 이 있을 때만 (competency/exp 와 동일 — "" 키 충돌 방지).
+      if (activityType) {
+        setWeekActivityDetails((prev) => {
+          const nextDetail = {
+            week_id: weekId,
+            activity_type_id: activityType,
+            sub_title: newSubTitle,
+            output_links: newOutputLinks,
+            growth_point: newGrowthPoint,
+            image_urls: persistedCrewImages,
+            image_captions: crewCaptionsToSave,
+          };
+          const existingIndex = prev.findIndex((d) => d.activity_type_id === activityType);
+          if (existingIndex < 0) return [...prev, nextDetail];
+          return prev.map((d) => (d.activity_type_id === activityType ? { ...d, ...nextDetail } : d));
+        });
+      }
       setSelectedWorkCareerCard((prev: any) =>
         prev
           ? {
@@ -4545,18 +4789,21 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     setColleagueSearchQuery("");
   };
 
-  // ── 연계동료 쓰기 권한 게이트 (어드민 부여 권한 OR 기본 시간창) ──────────────
-  // requireWeeklyReviewWriteAccess 와 동일 패턴 — resource_key 만 weeklyColleagues 로.
-  //   먼저 /api/edit-windows/permission?resource_key=cluster4.weekly_colleagues&week_id=...
-  //   를 조회해 canEdit===true 면 시간창과 무관하게 허용. 그 외(권한 없음/조회 실패)는
-  //   기존 requireWriteWindow 시간창 게이트로 fallback (실패 팝업도 그쪽에서 처리).
-  // 서버 POST /api/weekly-colleagues 도 동일 (user_id, resource_key, week_id) 로 enforce.
-  //   ⚠ 반드시 week_id 를 포함해 프론트/서버가 동일 주차 기준을 보도록 한다.
+  // ── 연계동료 쓰기 권한 게이트 (서버 POST 와 "동일 판정") ──────────────────────
+  // 판정 source = GET /api/edit-windows/permission?resource_key=cluster4.weekly_colleagues&week_id=...
+  //   의 canEdit. 이 값은 서버 POST /api/weekly-colleagues 가 쓰는 hasOpenEditWindow 와
+  //   "동일 테이블(user_edit_windows) · 동일 (user_id, resource_key, week_id, opened_at<=now<expires_at)"
+  //   판정이므로 프론트(모달 오픈)와 서버(저장)가 절대 어긋나지 않는다.
+  // ⚠ 과거엔 canEdit!==true 일 때 requireWriteWindow(고정 시간창)로 fallback 했다. 그러나 서버 POST 엔
+  //   그 시간창 fallback 이 없어(오직 hasOpenEditWindow), "고정 시간창엔 들지만 어드민 창은 닫힘" 구간에서
+  //   모달은 열리고 저장만 403 EDIT_WINDOW_CLOSED 가 났다 → fallback 제거(판정 기준 일치).
+  //   창이 닫혔으면 모달 오픈 단계에서 정확한 안내로 막는다(저장까지 못 가게).
+  // demo/admin 정책: 기존과 동일(데모는 로컬 작성 허용, 비데모 어드민은 항상 허용).
   const requireWeeklyColleaguesWriteAccess = async (): Promise<boolean> => {
     if (isDemoMode) return true;
     if (session?.user?.isAdmin && !demoUserId) return true;
 
-    let grantCanEdit = false;
+    let canEdit = false;
     let permissionForLog: unknown = null;
     try {
       const res = await fetch(
@@ -4568,33 +4815,28 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       );
       permissionForLog = await res.json().catch(() => null);
       const data = (permissionForLog as { success?: boolean; data?: { canEdit?: boolean } } | null);
-      if (res.ok && data?.success && data?.data?.canEdit === true) {
-        grantCanEdit = true;
-      }
+      canEdit = !!(res.ok && data?.success && data?.data?.canEdit === true);
     } catch (err) {
-      // 권한 API 실패 → 보수적으로 시간창 fallback (아래)
-      console.error("[weekly-colleagues-gate] 권한 조회 실패 — 시간창 fallback", err);
+      // 권한 API 실패 → 보수적으로 "닫힘" 처리(서버도 저장을 막으므로 일관).
+      console.error("[weekly-colleagues-gate] 권한 조회 실패 — 작성 불가 처리", err);
+      canEdit = false;
     }
 
-    if (grantCanEdit) {
-      // 어드민이 작성기간을 열어준 케이스 — 고정 시간창 무관 허용
-      console.log("[weekly-colleagues-gate] 어드민 부여 권한(cluster4.weekly_colleagues) 으로 허용", {
+    if (!canEdit) {
+      console.log("[weekly-colleagues-gate] 작성 창 닫힘 — 모달 오픈/저장 차단", {
         weekId,
         weekNumber: weekData?.weekNumber ?? null,
         permission: permissionForLog,
       });
-      return true;
+      await popup.alert("관리자 허가를 받은 기간에만 작성할 수 있습니다. 어드민에서 위클리 연계동료 작성 기간을 열어주세요.");
+      return false;
     }
-
-    // 권한 없음/조회 실패 → 기존 고정 시간창 게이트로 판정 (실패 시 팝업은 requireWriteWindow 가 처리)
-    const withinWindow = await requireWriteWindow();
-    console.log("[weekly-colleagues-gate] 권한 없음 → 기본 시간창 fallback", {
+    console.log("[weekly-colleagues-gate] 작성 창 열림 — 허용", {
       weekId,
       weekNumber: weekData?.weekNumber ?? null,
-      withinDefaultWindow: withinWindow,
       permission: permissionForLog,
     });
-    return withinWindow;
+    return true;
   };
 
   // colleague-view-modal [수정] — 어드민 부여 권한(week_id) OR 기본 시간창 검증 후 편집 진입
@@ -4674,10 +4916,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       createdAt: new Date().toISOString(),
     };
 
+    // ⚠️ optimistic update 금지 — 여기서 setSelectedColleagues 를 미리 호출하면 API 실패(403 등)
+    //   시에도 화면에 동료가 남고(새로고침하면 사라짐) count 가 잘못 1/3 로 오른다.
+    //   따라서 로컬 state(selectedColleagues)는 "데모 성공" 또는 "API 200" 이후에만 반영한다.
     const updatedList = [...selectedColleagues, newEntry].sort((a, b) => a.rank - b.rank);
-    setSelectedColleagues(updatedList);
 
+    // 데모(테스트 유저) 모드: API 미호출 성공 경로 — 이때만 로컬 반영.
     if (isDemoMode) {
+      setSelectedColleagues(updatedList);
       await popup.alert("저장되었습니다.");
       setIsColleagueEditing(false);
       setHeaderModalOpen(false);
@@ -4692,11 +4938,30 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ weekCardId: weekId, colleagues: payload }),
       });
-      if (!res.ok) throw new Error("저장 실패");
+      const json = await res.json().catch(() => ({} as any));
+
+      if (!res.ok) {
+        // 실패: 로컬 state 절대 미반영(추가/수정/rollback 모두 불필요 — 애초에 안 건드림).
+        console.error("[연계동료 저장] 실패 — 화면 미반영", {
+          status: res.status,
+          error: json?.error ?? null,
+          message: json?.message ?? null,
+          weekCardId: weekId,
+          payload,
+        });
+        await popup.alert(json?.message || json?.error || "저장에 실패했습니다.");
+        return;
+      }
+
+      // ✅ 성공 시에만 화면 반영. 서버 재조회(fetchWeeklyColleagues)로 canonical state 동기화 →
+      //    selectedColleagues 갱신 → displayedColleagues/colleagueData/count(N/3) 즉시 반영.
+      setSelectedColleagues(updatedList);
+      fetchWeeklyColleagues();
       await popup.alert("저장되었습니다.");
       setIsColleagueEditing(false);
       setHeaderModalOpen(false);
     } catch (err) {
+      // 네트워크/파싱 예외 — 역시 로컬 state 미반영.
       console.error("연계 동료 저장 실패:", err);
       await popup.alert("저장에 실패했습니다.");
     } finally {
@@ -5824,114 +6089,181 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 백엔드 미수정 — 이미 fetch 중인 /api/cluster4/weekly-cards 의 matchedCard(AdminCluster4WeeklyCardDto) 재사용.
   // 값이 null/undefined 면 로컬 계산값으로 폴백하고, 표시 단계에서 "-"/0 으로 안전 처리.
 
-  // 제목: displayTitle > titleText > weekLabel > 로컬 조합(currentTitle)
-  const headerTitle = weeklyCardMeta?.displayTitle ?? weeklyCardMeta?.titleText ?? weeklyCardMeta?.weekLabel ?? currentTitle;
+  // 제목: 주차 카드 목록(Cluster41Content.parseWeekTitle)과 "동일 규칙"으로 weeklyCardMeta 에서 파싱.
+  //   카드 목록 표기 = "{year}년, {season} 시즌, {weekText}주차"(전환 주차면 "{weekText} 주차").
+  //   기존(raw displayTitle 직출력)은 카드 목록과 표기 체계가 달라 같은 주차인데 제목 문자열이 어긋났다.
+  //   → weeklyCardMeta(= 카드 목록과 동일 DTO 객체)에 같은 파서를 적용해 표기를 통일한다.
+  const headerTitle = (() => {
+    if (!weeklyCardMeta) return currentTitle;
+    const card = weeklyCardMeta as Record<string, unknown>;
+    const label = `${weeklyCardMeta.displayTitle ?? ""} ${weeklyCardMeta.weekLabel ?? ""}`;
+    let year: number | null = null;
+    if (typeof card.seasonYear === "number") year = card.seasonYear as number;
+    else if (typeof card.year === "number") year = card.year as number;
+    else {
+      const m = label.match(/(\d{4})\s*(?:년|년도)?/);
+      if (m) year = parseInt(m[1], 10);
+      else if (typeof weeklyCardMeta.startDate === "string" && /^\d{4}/.test(weeklyCardMeta.startDate)) year = parseInt(weeklyCardMeta.startDate.slice(0, 4), 10);
+    }
+    let season = "";
+    if (typeof card.seasonName === "string" && (card.seasonName as string).trim()) season = card.seasonName as string;
+    else { const m = label.match(/(봄|여름|가을|겨울)/); if (m) season = m[1]; }
+    const isBreak = card.isBreakSeason === true || card.isRestSeason === true || /전환|break/i.test(label);
+    let weekText: string;
+    if (isBreak) weekText = "전환";
+    else if (typeof weeklyCardMeta.weekNumber === "number" && weeklyCardMeta.weekNumber > 0) weekText = String(weeklyCardMeta.weekNumber);
+    else { const m = label.match(/(\d+)\s*(?:w|주차)/i); weekText = m ? m[1] : "-"; }
+    return `${year ?? "-"}년, ${season || "-"} 시즌, ${weekText}${isBreak ? " 주차" : "주차"}`;
+  })();
 
-  // 상태 배지: 텍스트=statusLabel(어드민), 톤(className)=statusIconKey > statusTone 매핑(미상 vocab 은 로컬 폴백),
-  //            아이콘=statusIconUrl 우선, 없으면 로컬 매핑 유지.
-  // statusIconKey(어드민 DTO, userWeekStatus 와 1:1) → 기존 로컬 status-badge CSS className 매핑.
-  const STATUS_ICON_KEY_CLASS: Record<string, string> = {
-    running: "in-progress",
-    tallying: "counting",
-    success: "success",
-    fail: "fail",
-    personal_rest: "rest-personal",
-    official_rest: "rest-official",
+  // 상태 배지: 주차 카드 목록(weekly-card-status-badge)과 "동일 source/규칙".
+  //   - 텍스트  = statusLabel (카드 목록과 동일 필드).
+  //   - className(톤) = badgeClassFromLabel(statusLabel, statusToneClass(statusTone)) — 카드 목록과 "동일 규칙".
+  //       기존(statusIconKey>statusTone 직매핑)은 카드 목록의 label-우선 분기와 달라 rest-personal/official 등에서
+  //       톤이 갈릴 수 있었다. 카드 목록과 같은 함수 규칙으로 통일한다.
+  //   - 아이콘 = 위 className → ASCII 정적자산 맵. 카드 목록(statusIconPath)은 한글 경로라 일부 환경에서 404 가
+  //       나므로, "동일 상태 → 동일 아이콘"을 유지하되 경로만 ASCII 로 통일(404 면역)한다.
+  const cardStatusToneClass = (tone: unknown): string => {
+    switch (String(tone ?? "").toLowerCase()) {
+      case "success": return "success";
+      case "fail": return "fail";
+      case "progress": return "in-progress";
+      case "rest": return "rest";
+      case "counting": return "counting";
+      default: return "";
+    }
   };
-  // statusIconKey(어드민 DTO) → ASCII 정적 자산 경로 단일 출처.
-  // 한글/공백/괄호 파일명은 일부 환경(프록시/CDN/정적 핸들러)에서 404 가 나므로 ASCII 파일명으로 통일.
-  const STATUS_ICON_URL: Record<string, string> = {
-    running: "/images/0/cluster4/icon/icon-growth-running.png",
-    tallying: "/images/0/cluster4/icon/icon-growth-tallying.png",
-    success: "/images/0/cluster4/icon/icon-growth-success.png",
-    fail: "/images/0/cluster4/icon/icon-growth-fail.png",
-    personal_rest: "/images/0/cluster4/icon/icon-rest-personal.png",
-    official_rest: "/images/0/cluster4/icon/icon-rest-official.png",
-  };
-  // statusTone(semantic) → status-badge CSS className 보강.
-  // 기존 vocab(success/fail/in_progress/...)은 하위 호환 유지하고, 어드민 DTO 의미 톤(neutral/info/warning/danger)을 추가.
-  const STATUS_TONE_CLASS: Record<string, string> = {
-    success: "success",
-    fail: "fail",
-    in_progress: "in-progress",
-    counting: "counting",
-    rest_personal: "rest-personal",
-    rest_official: "rest-official",
-    // 어드민 DTO semantic tone 보강
-    neutral: "rest-personal",
-    info: "in-progress",
-    warning: "counting",
-    danger: "fail",
+  const cardBadgeClassFromLabel = (label: string, fallback: string): string => {
+    if (label.includes("실패")) return "fail";
+    if (label.includes("성공")) return "success";
+    if (label.includes("진행")) return "in-progress";
+    if (label.includes("집계")) return "counting";
+    if (label.includes("개인")) return "rest-personal";
+    if (label.includes("공식")) return "rest-official";
+    return fallback || "";
   };
   const headerStatusText = weeklyCardMeta?.statusLabel ?? statusBadgeInfo.text;
-  const headerStatusClass =
-    (weeklyCardMeta?.statusIconKey ? STATUS_ICON_KEY_CLASS[weeklyCardMeta.statusIconKey] : undefined)
-    ?? (weeklyCardMeta?.statusTone ? STATUS_TONE_CLASS[weeklyCardMeta.statusTone] : undefined)
-    ?? statusBadgeInfo.className;
-  // 아이콘 경로 통일(ASCII 강제) — 우선순위:
-  //  1) statusIconKey → 프론트가 커밋·배포를 보장하는 ASCII 단일 출처 맵. 어떤 DTO url 이 와도
-  //     무시한다(404 면역). statusIconKey 는 userWeekStatus 와 1:1 이라 의미 손실이 없다.
-  //  2) statusIconKey 가 없을 때만, DTO statusIconUrl 이 "명백히 ASCII-safe" 하면 사용.
-  //  3) 그래도 없으면 로컬 growthStatus 기반 ASCII 아이콘(statusBadgeInfo.icon)으로 폴백.
-  const dtoStatusIconUrl = weeklyCardMeta?.statusIconUrl ?? undefined;
-  // 한글/공백/괄호 raw 파일명(icon - 성장(성공).png …)뿐 아니라, 그것이 percent-encoding
-  // (%20, %EC%84%B1… )된 형태도 일부 프록시/CDN/정적 핸들러에서 404 가 나므로 모두 폐기한다.
-  // 기존 한글-only 정규식(/icon - (성장|휴식)/)은 인코딩 변형을 통과시켜 깨진 경로가 그대로
-  // 렌더되는 결함이 있었다. 순수 ASCII(공백·제어문자 없음) + 괄호·% 금지로 강하게 차단한다.
-  const isAsciiSafeIconUrl =
-    !!dtoStatusIconUrl &&
-    /^[\x21-\x7E]+$/.test(dtoStatusIconUrl) &&
-    !/[()%]/.test(dtoStatusIconUrl);
-  const keyedStatusIconUrl = weeklyCardMeta?.statusIconKey
-    ? STATUS_ICON_URL[weeklyCardMeta.statusIconKey]
-    : undefined;
-  const headerStatusIcon =
-    keyedStatusIconUrl
-    ?? (isAsciiSafeIconUrl ? dtoStatusIconUrl : undefined)
-    ?? statusBadgeInfo.icon;
+  const headerStatusClass = weeklyCardMeta
+    ? (cardBadgeClassFromLabel(weeklyCardMeta.statusLabel ?? "", cardStatusToneClass(weeklyCardMeta.statusTone)) || statusBadgeInfo.className)
+    : statusBadgeInfo.className;
+  // className → ASCII 아이콘 (카드 목록 statusIconPath 의 시각적 대응; 경로만 ASCII 로 통일해 404 면역).
+  const STATUS_CLASS_ICON_URL: Record<string, string> = {
+    "in-progress": "/images/0/cluster4/icon/icon-growth-running.png",
+    counting: "/images/0/cluster4/icon/icon-growth-tallying.png",
+    success: "/images/0/cluster4/icon/icon-growth-success.png",
+    fail: "/images/0/cluster4/icon/icon-growth-fail.png",
+    "rest-personal": "/images/0/cluster4/icon/icon-rest-personal.png",
+    "rest-official": "/images/0/cluster4/icon/icon-rest-official.png",
+  };
+  const headerStatusIcon = STATUS_CLASS_ICON_URL[headerStatusClass] ?? statusBadgeInfo.icon;
 
   // 날짜 배지
   const headerStartDate = weeklyCardMeta?.startDate ?? weekData?.startDate ?? null;
   const headerEndDate = weeklyCardMeta?.endDate ?? weekData?.endDate ?? null;
 
-  // 역할 배지
-  const headerRoleLabel = weeklyCardMeta?.roleLabel ?? roleLabel;
+  // 역할 배지: 주차 카드 목록(membership)과 동일 규칙 = roleLabel || membershipStatusLabel || "-".
+  //   기존(roleLabel 만, ?? 로 폴백)은 roleLabel 이 빈 문자열("")이면 membershipStatusLabel 로 못 넘어가
+  //   카드 목록과 어긋났다. 카드 목록처럼 truthy 검사 + membershipStatusLabel 폴백을 둔다.
+  const headerRoleLabel = weeklyCardMeta
+    ? ((weeklyCardMeta.roleLabel && weeklyCardMeta.roleLabel.trim()) ||
+       (weeklyCardMeta.membershipStatusLabel && weeklyCardMeta.membershipStatusLabel.trim()) ||
+       "-")
+    : (roleLabel ?? "-");
 
   // 팀/파트
   const headerTeamName = weeklyCardMeta?.teamName ?? teamName;
   const headerPartName = weeklyCardMeta?.partName ?? partName;
+
+  // ── 페이지 주인(본인) 인적사항 — 모든 모달 인적사항 카드의 단일 출처 ──
+  // reviewerProfile(/api/profile + /api/educations) + 팀/파트/멤버십 state + weeklyCardMeta 를
+  // 한 source bag 으로 모아 resolvePersonalInfo 로 통일 해석. 데모 모드는 고정 placeholder.
+  // (role 배지는 spec 10필드 밖이라 기존 roleLabel 을 그대로 둠.)
+  const ownerPersonalInfo: ResolvedPersonalInfo = useMemo(() => {
+    if (isDemoMode) {
+      return {
+        name: "홍길동",
+        gender: "남",
+        age: 22,
+        school: "서울대",
+        department: "경영",
+        team: "마케팅",
+        part: "바이럴",
+        membershipLevel: "심화",
+        profileImageUrl: null,
+        tagline: "엔비디아 구글 테슬라",
+      };
+    }
+    return resolvePersonalInfo({
+      profile: {
+        name: reviewerProfile.displayName,
+        gender: reviewerProfile.gender,
+        age: reviewerProfile.age,
+        school: reviewerProfile.school,
+        department: reviewerProfile.major,
+        team: teamName,
+        part: partName,
+        membershipLevel,
+        profileImageUrl: reviewerProfile.profilePhotoUrl,
+        profileTagline: reviewerProfile.tagline,
+        vision: reviewerProfile.vision,
+      },
+      user: session?.user ?? null,
+      weeklyCardMeta,
+    });
+  }, [isDemoMode, reviewerProfile, teamName, partName, membershipLevel, session?.user, weeklyCardMeta]);
 
   // 팀/파트 특수 표기(운영진·온보딩·팀장(managedTeam)) 분기 입력값: 어드민 DTO 우선, null/undefined 면 로컬 상태 fallback.
   const headerIsOnboarding = weeklyCardMeta?.isOnboarding ?? isOnboardingWeek;
   const headerGeneration = weeklyCardMeta?.generation ?? generation;
   const headerManagedTeamName = weeklyCardMeta?.managedTeamName ?? managedTeamName;
 
-  // 주차 진행 라벨: displayWeekProgressLabel 우선.
-  // 없으면 accumulatedApprovedWeeks / (totalRequiredWeeks ?? baseWeekCount) 로 계산, 그것도 없으면 로컬 누적 주차 + 25 fallback.
-  const headerWeekTotal = weeklyCardMeta?.totalRequiredWeeks ?? weeklyCardMeta?.baseWeekCount ?? 25;
-  const isCountingWeek = weekData?.growthStatus === "진행 중" || weekData?.growthStatus === "집계 중";
-  const headerWeekApproved = weeklyCardMeta?.accumulatedApprovedWeeks ?? cumulativeApprovedWeeks;
-  // 기존 .highlight DOM 구조 유지를 위해 강조 토큰과 접미사로 분리.
-  let headerWeekHighlight: string | number = isCountingWeek ? "+1" : headerWeekApproved;
-  let headerWeekSuffix = ` / ${headerWeekTotal} 주차`;
-  if (weeklyCardMeta?.displayWeekProgressLabel) {
-    const label = weeklyCardMeta.displayWeekProgressLabel;
-    const slashIdx = label.indexOf("/");
-    if (slashIdx > -1) {
-      headerWeekHighlight = label.slice(0, slashIdx).trim();
-      headerWeekSuffix = ` ${label.slice(slashIdx)}`;
-    } else {
-      headerWeekHighlight = label;
-      headerWeekSuffix = "";
+  // 현재/전체 주차: 주차 카드 목록과 "동일 계산식"으로 통일.
+  //   카드 목록(Cluster41Content): 분자 = numberField(week,["approvedWeeks","currentCumulative","cumulative","accumulatedApprovedWeeks"]),
+  //                               분모 = numberField(week,["totalWeeks","totalWeekCount","totalRequiredWeeks","baseWeekCount"], org정책값),
+  //                               진행/집계 주차(badgeToneClass∈{in-progress,counting})면 분자 표기를 "+1" 로.
+  //   기존 header 는 (1) displayWeekProgressLabel 우선, (2) 분모 = totalRequiredWeeks??baseWeekCount,
+  //   (3) +1 판정 = weekData.growthStatus 라 카드 목록과 계산식이 모두 달랐다(보고 #5 참조).
+  //   → 카드 목록과 동일한 키 우선순위/판정으로 맞춘다. displayWeekProgressLabel 우선은 제거(카드 목록은 미사용).
+  const headerNumberField = (keys: string[], fallback = 0): number => {
+    const rec = (weeklyCardMeta ?? {}) as Record<string, unknown>;
+    for (const key of keys) {
+      const v = rec[key];
+      if (typeof v === "number" && Number.isFinite(v)) return v;
+      if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v);
     }
-  }
+    return fallback;
+  };
+  // 분모: 카드 목록과 동일하게 totalWeeks/totalWeekCount → totalRequiredWeeks/baseWeekCount 순으로 읽고,
+  //   모두 없을 때만 org 정책값으로 폴백(marketing 25 / encre·phalanx 30). 25 는 조직별 정책값이지 버그가
+  //   아니므로 하드코딩하지 않고 getGraduationWeeksFromPathname 으로 org 기준 폴백한다(카드 목록과 동일 규칙).
+  const headerWeekTotal = weeklyCardMeta
+    ? headerNumberField(["totalWeeks", "totalWeekCount", "totalRequiredWeeks", "baseWeekCount"], getGraduationWeeksFromPathname(pathname))
+    : getGraduationWeeksFromPathname(pathname);
+  // 분자: 카드 목록과 동일 키 우선순위(앞 3키는 contract 미정의 → 보통 accumulatedApprovedWeeks 로 귀결).
+  const headerWeekApproved = weeklyCardMeta
+    ? headerNumberField(["approvedWeeks", "currentCumulative", "cumulative", "accumulatedApprovedWeeks"], cumulativeApprovedWeeks)
+    : cumulativeApprovedWeeks;
+  // 진행/집계 주차 판정: 카드 목록과 동일하게 status className(badgeToneClass) 기준으로 +1 표기.
+  const isCountingWeek = headerStatusClass === "in-progress" || headerStatusClass === "counting";
+  // 기존 .highlight DOM 구조 유지를 위해 강조 토큰과 접미사로 분리.
+  const headerWeekHighlight: string | number = isCountingWeek ? "+1" : headerWeekApproved;
+  const headerWeekSuffix = ` / ${headerWeekTotal} 주차`;
 
-  // 단감/인절미/어흥: 어드민 카드 points 우선(동일 계산식 유지), 없으면 로컬 weekPoints 폴백.
-  // ※ DTO.cumulativeInjeolmi 는 '누적' 개념이라 주차 단위 인절미 배지와 별개 — 사용하지 않음.
+  // 단감/인절미/어흥: 주차 카드 목록과 "동일 source/규칙".
+  //   카드 목록(Cluster41Content): 단감 = points.star, 어흥 = points.lightning,
+  //                               인절미 = week.cumulativeInjeolmi ?? points.shield (← '누적' 개념 그대로 표기).
+  //   기존 header 는 인절미 = |shield - lightning| 라 카드 목록과 값이 어긋났다(보고 #7).
+  //   → 카드 목록과 동일하게 cumulativeInjeolmi(없으면 points.shield) 를 인절미로 쓴다.
   const headerCardPoints = weeklyCardMeta?.points ?? null;
   const headerDangam = headerCardPoints?.star ?? weekPoints.star ?? 0;
-  const headerInjeolmi = headerCardPoints ? Math.abs((headerCardPoints.shield ?? 0) - (headerCardPoints.lightning ?? 0)) : Math.abs(weekPoints.shield - weekPoints.lightning);
-  const headerEoheung = headerCardPoints ? Math.abs(headerCardPoints.lightning ?? 0) : Math.abs(weekPoints.lightning);
+  const headerInjeolmi = weeklyCardMeta
+    ? (typeof weeklyCardMeta.cumulativeInjeolmi === "number" && Number.isFinite(weeklyCardMeta.cumulativeInjeolmi)
+        ? weeklyCardMeta.cumulativeInjeolmi
+        : (typeof headerCardPoints?.shield === "number" && Number.isFinite(headerCardPoints.shield) ? headerCardPoints.shield : 0))
+    : Math.abs(weekPoints.shield - weekPoints.lightning);
+  const headerEoheung = headerCardPoints
+    ? (typeof headerCardPoints.lightning === "number" && Number.isFinite(headerCardPoints.lightning) ? headerCardPoints.lightning : 0)
+    : Math.abs(weekPoints.lightning);
 
   // 태그 색상 배열
   const tagColors = ["tag--pink", "tag--red", "tag--yellow", "tag--purple", "tag--green", "tag--cyan", "tag--mint", "tag--dark"];
@@ -5944,11 +6276,29 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const dtoWeeklyReputations = weeklyCardMeta?.weeklyReputations ?? null;
   const dtoWeeklyColleagues = weeklyCardMeta?.weeklyColleagues ?? null;
 
-  // 상단 통계: 요약 우선, 없으면 기존 length / 정책 분모(4·3) fallback. FM 없으면 0.
+  // ── 표시 중인 평판(주차 최대 4건) 단일 source ──
+  // dtoWeeklyReputations(weekly-cards DTO) 우선, 없으면 legacy state(weeklyReputations).
+  // 별점(stars) · 명성도(FM) · section-count 분자가 전부 이 동일 source 에서 나오도록 맞춰
+  // "카드는 보이는데 수치만 어긋나는" desync(snapshot stale)를 구조적으로 제거한다.
+  const displayedReputations: any[] = (
+    dtoWeeklyReputations && dtoWeeklyReputations.length > 0
+      ? dtoWeeklyReputations
+      : weeklyReputations
+  ).slice(0, 4); // 정책: 주차 최대 4건 반영
+
+  // 상단 통계: section-count 분자 = "표시 중인 평판" 개수와 반드시 동일 source.
+  // ⚠️ precomputed reputationSummary.receivedCount 는 평판 추가 직전(0)으로 stale 일 수 있다.
+  //   스냅샷이 stale 이면 "카드 1개 표시인데 0/4" 로 어긋났다(별점·FM 과 동일한 desync).
+  //   → 표시할 평판이 1건이라도 있으면 그 개수(displayedReputations.length)를 분자로 쓰고,
+  //     표시할 평판이 전혀 없을 때만 precomputed receivedCount, 그것도 없으면 legacy length 로 보강.
+  //   (하드코딩 0 / 대기카드(빈 슬롯) 개수 / stale precomputed 우선사용 모두 금지.)
   const reputationReceivedCount =
-    reputationSummary && typeof reputationSummary.receivedCount === "number" && Number.isFinite(reputationSummary.receivedCount)
-      ? reputationSummary.receivedCount
-      : weeklyReputations.length;
+    displayedReputations.length > 0
+      ? displayedReputations.length
+      : reputationSummary && typeof reputationSummary.receivedCount === "number" && Number.isFinite(reputationSummary.receivedCount)
+        ? reputationSummary.receivedCount
+        : weeklyReputations.length;
+  // 분모: receivedLimit 우선, 없으면 정책 분모 4.
   const reputationReceivedLimit =
     reputationSummary && typeof reputationSummary.receivedLimit === "number" && Number.isFinite(reputationSummary.receivedLimit)
       ? reputationSummary.receivedLimit
@@ -5962,11 +6312,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   //     표시할 평판이 전혀 없을 때만 백엔드 precomputed reputationSummary.fm 으로 보강한다.
   //   단일 평판이면 별점 rating == 카드 FM == 상단 FM == 모달 FM (전부 reputationFm 단일값).
   // ⚠️ count/length/receivedCount/fameScore/fmScore 는 FM 으로 절대 사용하지 않음 (정의상 rating 합계만).
-  const displayedReputations: any[] = (
-    dtoWeeklyReputations && dtoWeeklyReputations.length > 0
-      ? dtoWeeklyReputations
-      : weeklyReputations
-  ).slice(0, 4); // 정책: 주차 최대 4건 반영
   const reputationRatingsSum = displayedReputations.reduce(
     (s: number, r: any) => s + (typeof r?.rating === "number" ? r.rating : Number(r?.rating) || 0),
     0,
@@ -5977,10 +6322,26 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       : reputationSummary && typeof reputationSummary.fm === "number" && Number.isFinite(reputationSummary.fm)
         ? reputationSummary.fm
         : 0;
+  // ── 표시 중인 연계 동료(주차 최대 3건) 단일 source ──
+  // dtoWeeklyColleagues(weekly-cards DTO) 우선, 없으면 legacy state(selectedColleagues).
+  // 카드 렌더(colleagueData)와 section-count 분자가 전부 이 동일 source 에서 나오도록 맞춰
+  // "카드는 보이는데 count만 0/3" desync(snapshot stale)를 평판 섹션과 동일하게 제거한다.
+  const displayedColleagues: any[] = (
+    dtoWeeklyColleagues && dtoWeeklyColleagues.length > 0
+      ? dtoWeeklyColleagues
+      : selectedColleagues
+  ).slice(0, 3); // 정책: 주차 최대 3건 반영
+  // section-count 분자 = "표시 중인 연계 동료" 개수와 반드시 동일 source.
+  //   precomputed colleagueSummary.writtenCount 는 저장 직전(0)으로 stale 일 수 있다.
+  //   → 표시할 동료가 1명이라도 있으면 그 개수(displayedColleagues.length)를 분자로 쓰고,
+  //     전혀 없을 때만 precomputed writtenCount, 그것도 없으면 legacy length 로 보강. (하드코딩 0 금지.)
   const colleagueWrittenCount =
-    colleagueSummary && typeof colleagueSummary.writtenCount === "number" && Number.isFinite(colleagueSummary.writtenCount)
-      ? colleagueSummary.writtenCount
-      : selectedColleagues.length;
+    displayedColleagues.length > 0
+      ? displayedColleagues.length
+      : colleagueSummary && typeof colleagueSummary.writtenCount === "number" && Number.isFinite(colleagueSummary.writtenCount)
+        ? colleagueSummary.writtenCount
+        : selectedColleagues.length;
+  // 분모: writtenLimit 우선, 없으면 정책 분모 3.
   const colleagueWrittenLimit =
     colleagueSummary && typeof colleagueSummary.writtenLimit === "number" && Number.isFinite(colleagueSummary.writtenLimit)
       ? colleagueSummary.writtenLimit
@@ -6017,18 +6378,21 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             let age: string | number = "-";
             if (fp.age !== undefined && fp.age !== null && fp.age !== "") age = fp.age;
             else if (rv.birth_date) age = new Date().getFullYear() - new Date(rv.birth_date).getFullYear();
+            // 인적사항(이름/성별/학교/학과/팀/파트/이미지/태그라인)은 공통 헬퍼로 통일 해석.
+            // fromProfile(Cluster4PersonProfileDto 계약 + legacy alias) 1순위, legacy reviewer(rv) 보강.
+            const pi = resolvePersonalInfo({ profile: fp, user: rv });
             return {
               id: rep.id ?? legacy.id ?? `wr-${index}`,
-              name: fp.name || rv.display_name || rv.name || "-",
-              gender: fp.gender || rv.gender || "-",
+              name: pi.name ?? "-",
+              gender: pi.gender ?? "-",
               age,
-              profileImg: fp.profileImageUrl || rv.profile_photo_url || "",
-              university: fp.school || rv.university || "-",
-              major: fp.department || rv.major_first || "-",
-              team: fp.team || rv.teamName || "-",
-              part: fp.part || rv.partName || "-",
-              nickname: fp.profileTagline || rv.vision || "-",
-              role: fp.membershipLevel || (rv.role ? roleLabels[rv.role] || rv.role : "") || "일반",
+              profileImg: pi.profileImageUrl ?? "",
+              university: pi.school ?? "-",
+              major: pi.department ?? "-",
+              team: pi.team ?? "-",
+              part: pi.part ?? "-",
+              nickname: pi.tagline ?? "-",
+              role: formatMembershipRoleLabel(fp.membershipLevel || rv.role),
               rating: (rep.rating ?? 0) / 2, // 10점 만점 → 5점 만점(별 표시용)
               ratingCount: `${rep.rating ?? 0} / 10`,
               description: rep.comment || "-",
@@ -6052,18 +6416,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               age = currentYear - birthYear;
             }
 
+            const pi = resolvePersonalInfo({ profile: reviewer });
             return {
               id: rep.id,
-              name: reviewer?.display_name || "-",
-              gender: reviewer?.gender || "-",
+              name: pi.name ?? "-",
+              gender: pi.gender ?? "-",
               age: age,
-              profileImg: reviewer?.profile_photo_url || "",
-              university: reviewer?.university || "-",
-              major: reviewer?.major_first || "-",
-              team: reviewer?.teamName || "-",
-              part: reviewer?.partName || "-",
-              nickname: reviewer?.vision || "-",
-              role: reviewer?.role ? roleLabels[reviewer.role] || reviewer.role : "일반",
+              profileImg: pi.profileImageUrl ?? "",
+              university: pi.school ?? "-",
+              major: pi.department ?? "-",
+              team: pi.team ?? "-",
+              part: pi.part ?? "-",
+              nickname: pi.tagline ?? "-",
+              role: formatMembershipRoleLabel(reviewer?.role),
               rating: rep.rating / 2, // 10점 만점 → 5점 만점 변환 (별 표시용)
               ratingCount: `${rep.rating} / 10`,
               description: rep.content || "-",
@@ -6170,18 +6535,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       dtoWeeklyColleagues && dtoWeeklyColleagues.length > 0
         ? dtoWeeklyColleagues.map((c, index) => {
             const p: any = c.colleagueProfile || {};
+            // 인적사항은 공통 헬퍼로 통일 해석 (계약 키 + legacy alias 동시 지원).
+            const pi = resolvePersonalInfo({ profile: p });
             return {
               id: (p.id ?? c.id ?? `wc-${c.rank ?? index}`) as any,
-              name: p.name || "-",
-              gender: p.gender || "-",
-              age: (p.age ?? "-") as any,
-              profileImg: p.profileImageUrl || "",
-              university: p.school || "-",
-              major: p.department || "-",
-              team: p.team || "-",
-              part: p.part || "-",
-              nickname: p.profileTagline || "-",
-              role: p.membershipLevel || "일반",
+              name: pi.name ?? "-",
+              gender: pi.gender ?? "-",
+              age: ((pi.age ?? "-") as any),
+              profileImg: pi.profileImageUrl ?? "",
+              university: pi.school ?? "-",
+              major: pi.department ?? "-",
+              team: pi.team ?? "-",
+              part: pi.part ?? "-",
+              nickname: pi.tagline ?? "-",
+              role: formatMembershipRoleLabel(p.membershipLevel),
               date: c.createdAt ? formatDate(c.createdAt) : "-",
               message: c.message || "",
               created_at: c.createdAt || null,
@@ -6190,23 +6557,26 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             };
           })
         : selectedColleagues.length > 0
-        ? selectedColleagues.map((c) => ({
-            id: c.id,
-            name: c.name || "-",
-            gender: c.gender || "-",
-            age: c.age || "-",
-            profileImg: c.profileImg || "",
-            university: c.university || "-",
-            major: c.major || "-",
-            team: c.team || "-",
-            part: c.part || "-",
-            nickname: c.nickname || "-",
-            role: c.role || "일반",
-            date: c.createdAt ? formatDate(c.createdAt) : "-",
-            message: c.message || "",
-            created_at: c.createdAt || null, // 작업 6에서 reputation-timestamp 표시용
-            isEmpty: false,
-          }))
+        ? selectedColleagues.map((c) => {
+            const pi = resolvePersonalInfo({ profile: c });
+            return {
+              id: c.id,
+              name: pi.name ?? "-",
+              gender: pi.gender ?? "-",
+              age: (pi.age ?? "-") as any,
+              profileImg: pi.profileImageUrl ?? "",
+              university: pi.school ?? "-",
+              major: pi.department ?? "-",
+              team: pi.team ?? "-",
+              part: pi.part ?? "-",
+              nickname: pi.tagline ?? "-",
+              role: formatMembershipRoleLabel(c.role),
+              date: c.createdAt ? formatDate(c.createdAt) : "-",
+              message: c.message || "",
+              created_at: c.createdAt || null, // 작업 6에서 reputation-timestamp 표시용
+              isEmpty: false,
+            };
+          })
         : (() => {
             // 테스트용: ?admin=true&colCount=N (N: 0~3) — 데모 모드에서만 더미 개수 조절
             if (isDemoMode && searchParams.get("admin") === "true") {
@@ -8306,18 +8676,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const currentYear = new Date().getFullYear();
                       age = currentYear - birthYear;
                     }
+                    const pi = resolvePersonalInfo({ profile: reviewer });
                     setSelectedReputationCard({
                       id: myExistingRep.id,
-                      name: reviewer?.display_name || "-",
-                      gender: reviewer?.gender || "-",
+                      name: pi.name ?? "-",
+                      gender: pi.gender ?? "-",
                       age,
-                      profileImg: reviewer?.profile_photo_url || "",
-                      university: reviewer?.university || "-",
-                      major: reviewer?.major_first || "-",
-                      team: reviewer?.teamName || "-",
-                      part: reviewer?.partName || "-",
-                      nickname: reviewer?.vision || "-",
-                      role: reviewer?.role ? roleLabels[reviewer.role] || reviewer.role : "일반",
+                      profileImg: pi.profileImageUrl ?? "",
+                      university: pi.school ?? "-",
+                      major: pi.department ?? "-",
+                      team: pi.team ?? "-",
+                      part: pi.part ?? "-",
+                      nickname: pi.tagline ?? "-",
+                      role: formatMembershipRoleLabel(reviewer?.role),
                       rating: (myExistingRep.rating || 0) / 2,
                       ratingCount: `${myExistingRep.rating || 0} / 10`,
                       description: myExistingRep.content || "",
@@ -8740,8 +9111,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       await popup.alert("연계 크루는 본인만이 작성할 수 있습니다.");
                       return;
                     }
-                    // 어드민 부여 권한(week_id) OR 기본 시간창 — weekly-review 와 동일 게이트.
-                    // (기존 requireWriteWindow 만 보면 어드민이 열어준 작성기간을 무시해 막혔다.)
+                    // 모달 오픈 시점 작성 창 체크 — 서버 POST hasOpenEditWindow 와 동일 판정.
+                    // 닫혀 있으면 게이트가 안내 팝업을 띄우고 false → 모달(검색/입력 UI) 미오픈.
                     if (!(await requireWeeklyColleaguesWriteAccess())) return;
                     handleEditClick(() => {
                       handleOpenColleagueEdit();
@@ -10610,9 +10981,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <button
                       type="button"
                       className="modal-edit-btn"
+                      // 작성 창 닫힘이면 수정 진입 비활성 (onClick 게이트가 backstop).
+                      disabled={colleagueWindowOpen === false}
                       onClick={async () => {
-                        // 어드민 부여 권한(week_id) OR 기본 시간창 — 카드 진입 게이트와 동일.
-                        // (기존 requireWriteWindow 만 보면 어드민이 열어준 작성기간을 무시했다.)
+                        // 모달 오픈/저장과 동일 판정 게이트(서버 POST hasOpenEditWindow 와 일치).
                         if (!(await requireWeeklyColleaguesWriteAccess())) return;
                         handleEditClick(() => setIsColleagueEditing(true));
                       }}
@@ -10627,7 +10999,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       <button type="button" className="modal-reset-btn" onClick={handleColleagueEditReset}>
                         초기화
                       </button>
-                      <button type="button" className="modal-save-btn" onClick={handleColleagueEditSave} disabled={colleagueSaving}>
+                      {/* 저장 전에도 작성 창 닫힘이면 비활성 — 서버 403 방어(state 미반영)는 handleColleagueEditSave 가 유지. */}
+                      <button type="button" className="modal-save-btn" onClick={handleColleagueEditSave} disabled={colleagueSaving || colleagueWindowOpen === false}>
                         {colleagueSaving ? "저장 중..." : "저장"}
                       </button>
                     </>
@@ -10635,9 +11008,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 </div>
               </div>
               <div className="modal-footer-bottom">
-                <span className={`modal-notice ${colleagueSaveAttemptFailed ? "notice-error" : ""}`} style={{ visibility: colleagueSaveAttemptFailed ? "visible" : "hidden" }}>
-                  필수 사항이 누락되었어요! 확인 부탁드려요! 😊
-                </span>
+                {colleagueWindowOpen === false ? (
+                  <span className="modal-notice notice-error" style={{ visibility: "visible" }}>
+                    관리자 허가를 받은 기간에만 작성할 수 있습니다. 
+                  </span>
+                ) : (
+                  <span className={`modal-notice ${colleagueSaveAttemptFailed ? "notice-error" : ""}`} style={{ visibility: colleagueSaveAttemptFailed ? "visible" : "hidden" }}>
+                    필수 사항이 누락되었어요! 확인 부탁드려요! 😊
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -11179,7 +11558,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       <div className="personal-photo">
                         {/* TODO: [백엔드 작업 필요] profile API의 photo URL 사용 — 현재는 데모 더미 또는 기본 아이콘 */}
                         <img
-                          src={isDemoMode ? "/images/0/crew profile/남 1.webp" : reviewerProfile.profilePhotoUrl || "/images/0/crew profile/남 1.webp"}
+                          src={ownerPersonalInfo.profileImageUrl || "/images/0/crew profile/남 1.webp"}
                           alt="profile"
                           onError={(e) => {
                             (e.target as HTMLImageElement).src = "/images/0/crew profile/남 1.webp";
@@ -11191,27 +11570,27 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       <div className="personal-info">
                         {/* 1행 — 이름·성별·나이 + 역할/키워드 태그 (태그는 우측 정렬) */}
                         <div className="personal-row-1">
-                          <span className="personal-name">{isDemoMode ? "홍길동" : reviewerProfile.displayName || session?.user?.name || "—"}</span>
+                          <span className="personal-name">{ownerPersonalInfo.name ?? "—"}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{isDemoMode ? "남" : reviewerProfile.gender || "—"}</span>
+                          <span className="personal-gender">{ownerPersonalInfo.gender ?? "—"}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-age">{isDemoMode ? "22" : (reviewerProfile.age ?? "—")} 세</span>
+                          <span className="personal-age">{ownerPersonalInfo.age ?? "—"} 세</span>
                           <div className="personal-tags">
                             {/* TODO: [백엔드 작업 필요] role 필드 (운영진/앰배서더/일반 등) — profile API에 추가 필요 */}
                             <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : roleLabel || "—", "—")}</span>
-                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : reviewerProfile.vision || "-", "-")}</span>
+                            <span className="tag-badge tag-keyword">{compactPersonalTag(ownerPersonalInfo.tagline ?? "-", "-")}</span>
                           </div>
                         </div>
 
                         {/* 2행 — 학교·학과 (필드명/값 분리, 고정폭, 말줄임 없음) */}
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "서울대" : reviewerProfile.school || "—"}</span>
+                            <span className="field-value">{ownerPersonalInfo.school ?? "—"}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "경영" : reviewerProfile.major || "—"}</span>
+                            <span className="field-value">{ownerPersonalInfo.department ? formatMajor(ownerPersonalInfo.department) : "—"}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
@@ -11219,12 +11598,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         {/* 3행 — 팀·파트 (필드명/값 분리, 고정폭, 말줄임 없음) */}
                         <div className="personal-row-3">
                           <span className="personal-field">
-                            <span className="field-value">{teamName || (isDemoMode ? "마케팅" : "—")}</span>
+                            <span className="field-value">{ownerPersonalInfo.team ?? "—"}</span>
                             <span className="field-label">팀</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{partName || (isDemoMode ? "바이럴" : "—")}</span>
+                            <span className="field-value">{ownerPersonalInfo.part ?? "—"}</span>
                             <span className="field-label">파트</span>
                           </span>
                         </div>
@@ -11724,7 +12103,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <div className="personal-grid">
                       <div className="personal-photo">
                         <img
-                          src={isDemoMode ? "/images/0/crew profile/남 1.webp" : reviewerProfile.profilePhotoUrl || "/images/0/crew profile/남 1.webp"}
+                          src={ownerPersonalInfo.profileImageUrl || "/images/0/crew profile/남 1.webp"}
                           alt="profile"
                           onError={(e) => {
                             (e.target as HTMLImageElement).src = "/images/0/crew profile/남 1.webp";
@@ -11734,37 +12113,37 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{isDemoMode ? "홍길동" : reviewerProfile.displayName || session?.user?.name || "—"}</span>
+                          <span className="personal-name">{ownerPersonalInfo.name ?? "—"}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{isDemoMode ? "남" : reviewerProfile.gender || "—"}</span>
+                          <span className="personal-gender">{ownerPersonalInfo.gender ?? "—"}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-age">{isDemoMode ? "22" : (reviewerProfile.age ?? "—")} 세</span>
+                          <span className="personal-age">{ownerPersonalInfo.age ?? "—"} 세</span>
                           <div className="personal-tags">
                             <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : roleLabel || "—", "—")}</span>
-                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : reviewerProfile.vision || "-", "-")}</span>
+                            <span className="tag-badge tag-keyword">{compactPersonalTag(ownerPersonalInfo.tagline ?? "-", "-")}</span>
                           </div>
                         </div>
 
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "서울대" : reviewerProfile.school || "—"}</span>
+                            <span className="field-value">{ownerPersonalInfo.school ?? "—"}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "경영" : reviewerProfile.major || "—"}</span>
+                            <span className="field-value">{ownerPersonalInfo.department ? formatMajor(ownerPersonalInfo.department) : "—"}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
 
                         <div className="personal-row-3">
                           <span className="personal-field">
-                            <span className="field-value">{teamName || (isDemoMode ? "마케팅" : "—")}</span>
+                            <span className="field-value">{ownerPersonalInfo.team ?? "—"}</span>
                             <span className="field-label">팀</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{partName || (isDemoMode ? "바이럴" : "—")}</span>
+                            <span className="field-value">{ownerPersonalInfo.part ?? "—"}</span>
                             <span className="field-label">파트</span>
                           </span>
                         </div>
@@ -12235,7 +12614,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <div className="personal-grid">
                       <div className="personal-photo">
                         <img
-                          src={isDemoMode ? "/images/0/crew profile/남 1.webp" : reviewerProfile.profilePhotoUrl || "/images/0/crew profile/남 1.webp"}
+                          src={ownerPersonalInfo.profileImageUrl || "/images/0/crew profile/남 1.webp"}
                           alt="profile"
                           onError={(e) => {
                             (e.target as HTMLImageElement).src = "/images/0/crew profile/남 1.webp";
@@ -12244,35 +12623,35 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       </div>
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{isDemoMode ? "홍길동" : reviewerProfile.displayName || session?.user?.name || "—"}</span>
+                          <span className="personal-name">{ownerPersonalInfo.name ?? "—"}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{isDemoMode ? "남" : reviewerProfile.gender || "—"}</span>
+                          <span className="personal-gender">{ownerPersonalInfo.gender ?? "—"}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-age">{isDemoMode ? "22" : (reviewerProfile.age ?? "—")} 세</span>
+                          <span className="personal-age">{ownerPersonalInfo.age ?? "—"} 세</span>
                           <div className="personal-tags">
                             <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : roleLabel || "—", "—")}</span>
-                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : reviewerProfile.vision || "-", "-")}</span>
+                            <span className="tag-badge tag-keyword">{compactPersonalTag(ownerPersonalInfo.tagline ?? "-", "-")}</span>
                           </div>
                         </div>
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "서울대" : reviewerProfile.school || "—"}</span>
+                            <span className="field-value">{ownerPersonalInfo.school ?? "—"}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "경영" : reviewerProfile.major || "—"}</span>
+                            <span className="field-value">{ownerPersonalInfo.department ? formatMajor(ownerPersonalInfo.department) : "—"}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
                         <div className="personal-row-3">
                           <span className="personal-field">
-                            <span className="field-value">{teamName || (isDemoMode ? "마케팅" : "—")}</span>
+                            <span className="field-value">{ownerPersonalInfo.team ?? "—"}</span>
                             <span className="field-label">팀</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{partName || (isDemoMode ? "바이럴" : "—")}</span>
+                            <span className="field-value">{ownerPersonalInfo.part ?? "—"}</span>
                             <span className="field-label">파트</span>
                           </span>
                         </div>
@@ -12701,42 +13080,48 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   <div className="workinfo-personal-card">
                     <div className="personal-grid">
                       <div className="personal-photo">
-                        <img src="/images/0/crew profile/남 1.webp" alt="profile" />
+                        <img
+                          src={ownerPersonalInfo.profileImageUrl || "/images/0/crew profile/남 1.webp"}
+                          alt="profile"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = "/images/0/crew profile/남 1.webp";
+                          }}
+                        />
                       </div>
 
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{isDemoMode ? "홍길동" : reviewerProfile.displayName || session?.user?.name || "—"}</span>
+                          <span className="personal-name">{ownerPersonalInfo.name ?? "—"}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{isDemoMode ? "남" : reviewerProfile.gender || "—"}</span>
+                          <span className="personal-gender">{ownerPersonalInfo.gender ?? "—"}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-age">{isDemoMode ? "22" : (reviewerProfile.age ?? "—")} 세</span>
+                          <span className="personal-age">{ownerPersonalInfo.age ?? "—"} 세</span>
                           <div className="personal-tags">
                             <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : roleLabel || "—", "—")}</span>
-                            <span className="tag-badge tag-keyword">{compactPersonalTag(isDemoMode ? "엔비디아 구글 테슬라" : reviewerProfile.vision || "-", "-")}</span>
+                            <span className="tag-badge tag-keyword">{compactPersonalTag(ownerPersonalInfo.tagline ?? "-", "-")}</span>
                           </div>
                         </div>
 
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "서울대" : reviewerProfile.school || "—"}</span>
+                            <span className="field-value">{ownerPersonalInfo.school ?? "—"}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "경영" : reviewerProfile.major || "—"}</span>
+                            <span className="field-value">{ownerPersonalInfo.department ? formatMajor(ownerPersonalInfo.department) : "—"}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
 
                         <div className="personal-row-3">
                           <span className="personal-field">
-                            <span className="field-value">{teamName || (isDemoMode ? "마케팅" : "—")}</span>
+                            <span className="field-value">{ownerPersonalInfo.team ?? "—"}</span>
                             <span className="field-label">팀</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{partName || (isDemoMode ? "바이럴" : "—")}</span>
+                            <span className="field-value">{ownerPersonalInfo.part ?? "—"}</span>
                             <span className="field-label">파트</span>
                           </span>
                         </div>
@@ -13357,7 +13742,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <div className="personal-grid">
                       <div className="personal-photo">
                         <img
-                          src={isDemoMode ? "/images/0/crew profile/남 1.webp" : reviewerProfile.profilePhotoUrl || "/images/0/crew profile/남 1.webp"}
+                          src={ownerPersonalInfo.profileImageUrl || "/images/0/crew profile/남 1.webp"}
                           alt="프로필"
                           onError={(e) => {
                             (e.target as HTMLImageElement).src = "/images/0/crew profile/남 1.webp";
@@ -13366,38 +13751,38 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       </div>
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{isDemoMode ? "홍길동" : reviewerProfile.displayName || session?.user?.name || "—"}</span>
+                          <span className="personal-name">{ownerPersonalInfo.name ?? "—"}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{isDemoMode ? "남" : reviewerProfile.gender || "—"}</span>
+                          <span className="personal-gender">{ownerPersonalInfo.gender ?? "—"}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-age">{isDemoMode ? "22" : (reviewerProfile.age ?? "—")} 세</span>
+                          <span className="personal-age">{ownerPersonalInfo.age ?? "—"} 세</span>
                         </div>
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "서울대" : reviewerProfile.school || "—"}</span>
+                            <span className="field-value">{ownerPersonalInfo.school ?? "—"}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{isDemoMode ? "경영" : reviewerProfile.major || "—"}</span>
+                            <span className="field-value">{ownerPersonalInfo.department ? formatMajor(ownerPersonalInfo.department) : "—"}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
                         <div className="personal-row-3">
                           <span className="personal-field">
-                            <span className="field-value">{teamName || (isDemoMode ? "마케팅" : "—")}</span>
+                            <span className="field-value">{ownerPersonalInfo.team ?? "—"}</span>
                             <span className="field-label">팀</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{partName || (isDemoMode ? "디자인" : "—")}</span>
+                            <span className="field-value">{ownerPersonalInfo.part ?? "—"}</span>
                             <span className="field-label">파트</span>
                           </span>
                         </div>
                       </div>
                       <div className="personal-tags">
                         <span className="tag-badge tag-role">{isDemoMode ? "앰배서더" : roleLabel || "일반"}</span>
-                        <span className="tag-badge tag-keyword">{isDemoMode ? "엔비디아 구글 테슬라" : reviewerProfile.vision || "-"}</span>
+                        <span className="tag-badge tag-keyword">{ownerPersonalInfo.tagline ?? "-"}</span>
                       </div>
                     </div>
                   </div>

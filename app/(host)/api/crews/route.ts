@@ -277,27 +277,27 @@ export async function GET(request: Request) {
       }
     }
 
-    // 2.8) Stars enrichment — points 테이블(point_type='star') 누적 합산.
-    // 별 개수 SoT: points 테이블 (cluster-4-ranking/route.ts L202-205,
-    // cluster4-weekly-cards.ts L85 와 동일 source — points.user_id = user_profiles.user_id).
+    // 2.8) Stars enrichment — user_weekly_points.points(별) 누적 합산.
+    // 별 개수 SoT: user_weekly_points (cluster-4-ranking/route.ts, cluster4-weekly-cards.ts,
+    // cluster4/weekly-growth seasonPointSummary 와 동일 캐노니컬 source — uwp.user_id = user_profiles.user_id).
+    // (이전 public.points 테이블은 이 환경의 PostgREST 스키마에 미노출 → 0 fallback.)
     // crew_list_view.total_stars 는 legacy(phalanx 28명) enrichment 전용이라
     // encre/oranke 는 view 행이 없어 항상 0 으로 표시되던 문제를 여기서 교정한다.
     // PostgREST 가 서버측 max-rows 를 1000 으로 강제하므로 range 페이지네이션으로
-    // 전 주차 star 포인트 행을 빠짐없이 수집한 뒤 user 별로 합산한다.
+    // 전 주차 별 포인트 행을 빠짐없이 수집한 뒤 user 별로 합산한다.
     // best-effort: 조회 실패 시 view.total_stars 폴백 (별 외 포인트는 미터치).
     const starsByUser = new Map<string, number>();
     {
       const PAGE = 1000;
       for (let from = 0; ; from += PAGE) {
         const { data: starRows, error: starError } = await supabase
-          .from("points")
+          .from("user_weekly_points")
           .select("user_id, points")
-          .eq("point_type", "star")
           .in("user_id", userIds)
           .range(from, from + PAGE - 1)
           .returns<{ user_id: string; points: number | null }[]>();
         if (starError) {
-          console.error("points(star) enrichment failed (continuing without it):", JSON.stringify(starError));
+          console.error("user_weekly_points(star) enrichment failed (continuing without it):", JSON.stringify(starError));
           break;
         }
         if (!starRows || starRows.length === 0) break;

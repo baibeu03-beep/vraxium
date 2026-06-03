@@ -172,10 +172,19 @@ export async function POST(request: NextRequest) {
     // 데모 모드면 저장 대상 user_id 를 테스트 유저로 강제 고정 (body.user_id 가 관리자 id 여도 무시).
     const effectiveUserId = isDemo ? demoProfileUserId : user_id
 
-    // 필수 필드 검증
-    if (!effectiveUserId || !week_id || !activity_type_id) {
+    // 4허브 라인 저장의 canonical key = line_target_id. competency/experience/career 라인은
+    // activity_type_id 가 null 인 경우가 많으므로(part_type!=info), 유효한 line_target_id 가 있으면
+    // activity_type_id 없이도 저장을 허용한다(아래에서 cluster4_line_submissions 에만 저장).
+    const hasValidLineTarget =
+      typeof line_target_id === 'string' && UUID_RE.test(line_target_id)
+
+    // 필수 필드 검증 — activity_type_id 또는 유효한 line_target_id 중 하나는 반드시 필요.
+    if (!effectiveUserId || !week_id || (!activity_type_id && !hasValidLineTarget)) {
       return NextResponse.json(
-        { error: 'user_id, week_id, and activity_type_id are required' },
+        {
+          error:
+            'user_id, week_id, and (activity_type_id or line_target_id) are required',
+        },
         { status: 400 }
       )
     }
@@ -332,42 +341,49 @@ export async function POST(request: NextRequest) {
 
     // 권한 체크: 마감 시간 이내 OR 어드민 개별 grant
     // 실무경험은 team_id 별로 weekly_activities 가 분리되어 있어서, 유저 팀에 해당하는 행을 골라야 한다.
-    const [weeklyActivitiesResult, userTeamResult, grantResult] = await Promise.all([
-      supabaseAdmin
-        .from('weekly_activities')
-        .select('is_active, opened_at, deadline, team_id')
-        .eq('week_id', week_id)
-        .eq('activity_type_id', activity_type_id),
-      supabaseAdmin
-        .from('user_team_parts')
-        .select('team_id, left_at')
-        .eq('user_id', ownerUserId)
-        .is('left_at', null)
-        .maybeSingle(),
-      supabaseAdmin
-        .from('secondary_info_grants')
-        .select('deadline')
-        .eq('user_id', ownerUserId)
-        .eq('week_id', week_id)
-        .eq('activity_type_id', activity_type_id)
-        .maybeSingle(),
-    ])
+    // ⚠️ weekly_activities / secondary_info_grants 는 activity_type_id 로 키된다. 라인 단위
+    //    저장(activity_type_id 없음)은 이 게이트가 무의미하므로 쿼리를 건너뛰고
+    //    lineSubmissionAuthorized(라인 submission window) / admin 우회에만 의존한다.
+    let isBeforeDeadline: boolean = false
+    let hasActiveGrant: boolean = false
+    if (activity_type_id) {
+      const [weeklyActivitiesResult, userTeamResult, grantResult] = await Promise.all([
+        supabaseAdmin
+          .from('weekly_activities')
+          .select('is_active, opened_at, deadline, team_id')
+          .eq('week_id', week_id)
+          .eq('activity_type_id', activity_type_id),
+        supabaseAdmin
+          .from('user_team_parts')
+          .select('team_id, left_at')
+          .eq('user_id', ownerUserId)
+          .is('left_at', null)
+          .maybeSingle(),
+        supabaseAdmin
+          .from('secondary_info_grants')
+          .select('deadline')
+          .eq('user_id', ownerUserId)
+          .eq('week_id', week_id)
+          .eq('activity_type_id', activity_type_id)
+          .maybeSingle(),
+      ])
 
-    const userTeamId: string | null = userTeamResult.data?.team_id || null
-    const candidateRows = weeklyActivitiesResult.data || []
-    // 클럽 공통(NULL) 행 우선, 없으면 유저 팀 매칭 행
-    const wa = candidateRows.find((r) => r.team_id == null)
-      || candidateRows.find((r) => r.team_id === userTeamId)
-      || null
-    // deadline 컬럼 우선, 없으면 opened_at+48h 폴백
-    const isBeforeDeadline = wa?.is_active && (
-      wa?.deadline
-        ? Date.now() < new Date(wa.deadline).getTime()
-        : wa?.opened_at && (Date.now() - new Date(wa.opened_at).getTime()) < 48 * 60 * 60 * 1000
-    )
+      const userTeamId: string | null = userTeamResult.data?.team_id || null
+      const candidateRows = weeklyActivitiesResult.data || []
+      // 클럽 공통(NULL) 행 우선, 없으면 유저 팀 매칭 행
+      const wa = candidateRows.find((r) => r.team_id == null)
+        || candidateRows.find((r) => r.team_id === userTeamId)
+        || null
+      // deadline 컬럼 우선, 없으면 opened_at+48h 폴백
+      isBeforeDeadline = Boolean(wa?.is_active && (
+        wa?.deadline
+          ? Date.now() < new Date(wa.deadline).getTime()
+          : wa?.opened_at && (Date.now() - new Date(wa.opened_at).getTime()) < 48 * 60 * 60 * 1000
+      ))
 
-    const grant = grantResult.data
-    const hasActiveGrant = grant && new Date(grant.deadline).getTime() > Date.now()
+      const grant = grantResult.data
+      hasActiveGrant = Boolean(grant && new Date(grant.deadline).getTime() > Date.now())
+    }
 
     // 관리자는 마감 시간 게이트 우회 가능 (운영상 복구/보강용).
     // user_edit_windows row 가 열려 있는 사용자도 같은 의미적 등급으로 우회 허용:
@@ -390,33 +406,40 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Upsert (있으면 업데이트, 없으면 삽입)
+    // legacy user_activity_details 저장 — activity_type_id 가 있을 때만 수행한다.
+    // (user_activity_details 는 (user_id, week_id, activity_type_id) PK/conflict-key 라 activity_type_id
+    //  없이는 upsert 불가. 4허브 라인 저장은 아래 cluster4_line_submissions 가 canonical 이므로
+    //  activity_type_id 가 null 이면 legacy 저장을 건너뛴다 — 데이터 유실 아님.)
     // 미전달 필드는 기존 값 유지: undefined → 페이로드에서 제외
-    const upsertPayload: Record<string, unknown> = {
-      user_id: ownerUserId,
-      week_id,
-      activity_type_id,
-      updated_at: new Date().toISOString(),
-    }
-    if (sub_title !== undefined) upsertPayload.sub_title = sub_title || null
-    // output_links 는 DB NOT NULL — null/undefined 는 빈 배열로 정규화 (image_urls/captions 와 동일 패턴).
-    if (output_links !== undefined) upsertPayload.output_links = output_links ?? []
-    if (growth_point !== undefined) upsertPayload.growth_point = growth_point || null
-    if (image_urls !== undefined) upsertPayload.image_urls = image_urls ?? []
-    if (image_captions !== undefined) upsertPayload.image_captions = image_captions ?? []
-    if (rating !== undefined) upsertPayload.rating = rating === null ? null : Number(rating)
+    let data: unknown = null
+    if (activity_type_id) {
+      const upsertPayload: Record<string, unknown> = {
+        user_id: ownerUserId,
+        week_id,
+        activity_type_id,
+        updated_at: new Date().toISOString(),
+      }
+      if (sub_title !== undefined) upsertPayload.sub_title = sub_title || null
+      // output_links 는 DB NOT NULL — null/undefined 는 빈 배열로 정규화 (image_urls/captions 와 동일 패턴).
+      if (output_links !== undefined) upsertPayload.output_links = output_links ?? []
+      if (growth_point !== undefined) upsertPayload.growth_point = growth_point || null
+      if (image_urls !== undefined) upsertPayload.image_urls = image_urls ?? []
+      if (image_captions !== undefined) upsertPayload.image_captions = image_captions ?? []
+      if (rating !== undefined) upsertPayload.rating = rating === null ? null : Number(rating)
 
-    const { data, error } = await supabaseAdmin
-      .from('user_activity_details')
-      .upsert(upsertPayload, {
-        onConflict: 'user_id,week_id,activity_type_id',
-      })
-      .select()
-      .single()
+      const { data: legacyData, error } = await supabaseAdmin
+        .from('user_activity_details')
+        .upsert(upsertPayload, {
+          onConflict: 'user_id,week_id,activity_type_id',
+        })
+        .select()
+        .single()
 
-    if (error) {
-      console.error('Error saving activity details:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) {
+        console.error('Error saving activity details:', error)
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+      data = legacyData
     }
 
     // ─────────────────────────────────────────────────────────────────────────

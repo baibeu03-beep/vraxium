@@ -26,6 +26,309 @@ function toLegacyWeekInfo(seasonLabel: string | null, weekNumber: number | null,
   };
 }
 
+// ── 현재 활성 시즌 요약 + 시즌 누적 포인트 (진입 화면 area-1-title / area-4-stats 용) ──
+// 프론트 계산 없이 서버에서 산출한다.
+//   - 활성 시즌 = 현재 주차의 시즌. 현재 주차가 전환(break) 주차면 from-시즌으로 폴백한다.
+//   - 날짜 범위/포인트 모두 활성 시즌 season_key 기준으로만 집계 → 전환주차(별도 season_key)는 자동 제외.
+// 산출 불가(현재 주차 없음·전환 폴백 실패)면 null 을 반환 → 프론트는 "-" / 0 fallback.
+async function buildSeasonSummaryAndPoints(
+  supabase: ReturnType<typeof createAdminClient>,
+  userId: string,
+  currentWeek: any,
+  today: string,
+  growthStatus: string | null,
+  userStatus: string | null,
+): Promise<{ seasonSummary: any | null; seasonPointSummary: { star: number; shield: number; lightning: number } | null }> {
+  if (!currentWeek) return { seasonSummary: null, seasonPointSummary: null };
+
+  const sd = currentWeek.season_definitions;
+  const rawType: string = sd?.season_type || "";
+  const isBreak = rawType.toLowerCase().includes("break");
+
+  let seasonKey: string | null = currentWeek.season_key || null;
+  let seasonType = rawType;
+  let year: number | null = typeof sd?.year === "number" ? sd.year : null;
+
+  if (isBreak) {
+    // 전환주차: from-시즌(parts[0])으로 폴백
+    const fromType = rawType.toLowerCase().replace("_break", "").split("_")[0];
+    const { data: fromDef } = await supabase
+      .from("season_definitions")
+      .select("season_key, season_type, year")
+      .eq("season_type", fromType)
+      .eq("year", year)
+      .maybeSingle();
+    if (!fromDef) return { seasonSummary: null, seasonPointSummary: null };
+    seasonKey = (fromDef as any).season_key;
+    seasonType = (fromDef as any).season_type;
+    year = (fromDef as any).year;
+  }
+
+  if (!seasonKey) return { seasonSummary: null, seasonPointSummary: null };
+
+  // 시즌 날짜 범위 — 활성 시즌 주차들의 min(start_date)·max(end_date)
+  const { data: seasonWeeks } = await supabase
+    .from("weeks")
+    .select("start_date, end_date")
+    .eq("season_key", seasonKey)
+    .order("start_date", { ascending: true });
+
+  const hasWeeks = Array.isArray(seasonWeeks) && seasonWeeks.length > 0;
+  const startDate = hasWeeks ? (seasonWeeks![0] as any).start_date : null;
+  const endDate = hasWeeks ? (seasonWeeks![seasonWeeks!.length - 1] as any).end_date : null;
+  // 활성 시즌 주차들의 start_date 집합 — 전환주차(별도 season_key)는 이미 제외된 상태.
+  const seasonStartDates = new Set<string>(
+    (seasonWeeks || []).map((w: any) => w.start_date).filter(Boolean),
+  );
+
+  if (year == null && startDate) year = Number(String(startDate).slice(0, 4));
+
+  const seasonName = seasonLabel(seasonType);
+  const yy = year != null ? String(year).slice(-2) : "";
+  const displayTitle = year != null ? `${yy}년도 ${seasonName} 시즌` : `${seasonName} 시즌`;
+  const fmt = (d: string | null) => (d ? String(d).replace(/-/g, ".") : null);
+  const dateRangeLabel = startDate && endDate ? `${fmt(startDate)} - ${fmt(endDate)}` : null;
+
+  // ── 시즌 상태 (4종만 노출) ──
+  // status: "active" | "ended" | "rest", seasonResult: "success" | "failed" | "none".
+  // 성공/중단 판별은 status(active/completed)만으로 불가능 → 성장 상태(growth_status/status)로 결정한다.
+  // (Cluster4Content.getGrowthBadgeText 와 동일한 캐노니컬 분류 — 신규 데이터 도입 없이 기존 DTO 재사용.)
+  const gs = String(growthStatus || "").toLowerCase();
+  const st = String(userStatus || "").toLowerCase();
+  const isSuccessStatus = gs === "graduated" || gs === "graduating";
+  const isFailedStatus = gs === "suspended" || gs === "withdrawn" || gs === "expelled" || gs === "deferred" || st === "suspended";
+  const isRestStatus = gs === "resting" || gs === "official_rest" || gs === "season_rest" || gs === "seasonal_rest" || gs === "weekly_rest";
+  // 현재 주차가 전환(break) 주차면 시즌 휴식으로 본다.
+  // (공식 휴식 주차 is_official_rest 는 활성 시즌 내 휴일일 뿐이므로 시즌 진행 중을 유지한다.)
+  const inTransition = isBreak;
+
+  let status: "active" | "ended" | "rest";
+  let seasonResult: "success" | "failed" | "none";
+  if (isSuccessStatus) {
+    status = "ended";
+    seasonResult = "success";
+  } else if (isFailedStatus) {
+    status = "ended";
+    seasonResult = "failed";
+  } else if (inTransition || isRestStatus) {
+    status = "rest";
+    seasonResult = "none";
+  } else if (endDate && today > endDate) {
+    // 시즌 종료(off-season) — 결과 미정 → 휴식 취급
+    status = "rest";
+    seasonResult = "none";
+  } else {
+    status = "active";
+    seasonResult = "none";
+  }
+
+  const statusLabel =
+    status === "active"
+      ? "시즌 진행 중"
+      : status === "rest"
+        ? "시즌 휴식"
+        : seasonResult === "success"
+          ? "시즌 성공"
+          : seasonResult === "failed"
+            ? "시즌 중단"
+            : "시즌 휴식";
+
+  const seasonSummary = {
+    year,
+    seasonName,
+    seasonCode: seasonType,
+    displayTitle,
+    dateRangeLabel,
+    status,
+    seasonResult,
+    statusLabel,
+    startDate,
+    endDate,
+  };
+
+  // 시즌 누적 포인트 — 캐노니컬 source 는 user_weekly_points (주차 카드/이력서와 동일).
+  //   별 = points 합계 · 방패 = advantages 합계 · 번개 = penalty 합계.
+  //   주차 매칭은 week_start_date ∈ 활성 시즌 주차 → 전환주차는 자동 제외.
+  // (public.points 는 이 환경의 PostgREST 스키마에 노출되지 않아 0 으로 떨어진다.)
+  const { data: pointRows } = await supabase
+    .from("user_weekly_points")
+    .select("week_start_date, points, advantages, penalty")
+    .eq("user_id", userId);
+
+  let star = 0;
+  let shield = 0;
+  let lightning = 0;
+  (pointRows || []).forEach((p: any) => {
+    if (!seasonStartDates.has(p.week_start_date)) return;
+    star += p.points || 0;
+    shield += p.advantages || 0;
+    lightning += p.penalty || 0;
+  });
+
+  return { seasonSummary, seasonPointSummary: { star, shield, lightning } };
+}
+
+// 시즌 상태(4종) 산출 — buildSeasonSummaries 의 시즌별 status/statusLabel/seasonResult 계산.
+// 성공/중단 판별은 성장 상태(growth_status/status)로만 가능(시즌별 결과 컬럼 부재).
+//   - 현재 시즌(오늘 포함): active/ended/rest + success/failed/none
+//   - 과거 시즌(종료): 기본 "시즌 성공"(완료) 처리
+function deriveSeasonStatus(
+  isCurrent: boolean,
+  endDate: string | null,
+  today: string,
+  growthStatus: string | null,
+  userStatus: string | null,
+): { status: "active" | "ended" | "rest"; seasonResult: "success" | "failed" | "none"; statusLabel: string } {
+  const gs = String(growthStatus || "").toLowerCase();
+  const st = String(userStatus || "").toLowerCase();
+  const isSuccess = gs === "graduated" || gs === "graduating";
+  const isFailed = gs === "suspended" || gs === "withdrawn" || gs === "expelled" || gs === "deferred" || st === "suspended";
+  const isRest = gs === "resting" || gs === "official_rest" || gs === "season_rest" || gs === "seasonal_rest" || gs === "weekly_rest";
+
+  let status: "active" | "ended" | "rest";
+  let seasonResult: "success" | "failed" | "none";
+  if (isCurrent) {
+    if (isSuccess) {
+      status = "ended";
+      seasonResult = "success";
+    } else if (isFailed) {
+      status = "ended";
+      seasonResult = "failed";
+    } else if (isRest) {
+      status = "rest";
+      seasonResult = "none";
+    } else {
+      status = "active";
+      seasonResult = "none";
+    }
+  } else if (endDate && today > endDate) {
+    status = "ended";
+    seasonResult = "success";
+  } else {
+    status = "active";
+    seasonResult = "none";
+  }
+
+  const statusLabel =
+    status === "active"
+      ? "시즌 진행 중"
+      : status === "rest"
+        ? "시즌 휴식"
+        : seasonResult === "success"
+          ? "시즌 성공"
+          : seasonResult === "failed"
+            ? "시즌 중단"
+            : "시즌 휴식";
+  return { status, seasonResult, statusLabel };
+}
+
+// ── 시즌별 요약 배열 (페이지네이션용) ──
+// 유저가 활동한 모든 (비-전환) 시즌을 시작일 DESC 로 반환. 각 시즌은 자기 범위만 누적한 pointSummary 포함.
+// 프론트는 section3Page index 로 seasonSummaries[index] 를 선택해 area-1-title / area-4-stats 에 바인딩한다.
+async function buildSeasonSummaries(
+  supabase: ReturnType<typeof createAdminClient>,
+  userId: string,
+  today: string,
+  growthStatus: string | null,
+  userStatus: string | null,
+): Promise<any[]> {
+  // 1. 유저가 활동한 주차(포인트 + 주차상태)의 week_start_date 수집
+  const [wpRes, wsRes] = await Promise.all([
+    supabase.from("user_weekly_points").select("week_start_date, points, advantages, penalty").eq("user_id", userId),
+    supabase.from("user_week_statuses").select("week_start_date").eq("user_id", userId),
+  ]);
+  const weeklyPoints = (wpRes.data || []) as any[];
+  const candidateDates = new Set<string>();
+  weeklyPoints.forEach((p) => p.week_start_date && candidateDates.add(p.week_start_date));
+  (wsRes.data || []).forEach((r: any) => r.week_start_date && candidateDates.add(r.week_start_date));
+  if (candidateDates.size === 0) return [];
+
+  // 2. 해당 주차 → season_key (전환/break 시즌은 제외)
+  const { data: dateWeeks } = await supabase
+    .from("weeks")
+    .select("start_date, season_key")
+    .in("start_date", [...candidateDates]);
+  const seasonKeys = new Set<string>();
+  (dateWeeks || []).forEach((w: any) => {
+    if (w.season_key && !String(w.season_key).toLowerCase().includes("break")) seasonKeys.add(w.season_key);
+  });
+  if (seasonKeys.size === 0) return [];
+
+  // 3. 각 시즌의 전체 주차(기간/누적 범위) + season_definitions
+  const { data: seasonWeeks } = await supabase
+    .from("weeks")
+    .select("start_date, end_date, season_key, season_definitions!inner(season_type, year)")
+    .in("season_key", [...seasonKeys]);
+  const bySeason = new Map<string, { type: string; year: number | null; starts: string[]; ends: string[]; startSet: Set<string> }>();
+  (seasonWeeks || []).forEach((w: any) => {
+    const k = w.season_key;
+    if (!k) return;
+    if (!bySeason.has(k)) {
+      bySeason.set(k, {
+        type: w.season_definitions?.season_type || "",
+        year: typeof w.season_definitions?.year === "number" ? w.season_definitions.year : null,
+        starts: [],
+        ends: [],
+        startSet: new Set<string>(),
+      });
+    }
+    const s = bySeason.get(k)!;
+    if (w.start_date) {
+      s.starts.push(w.start_date);
+      s.startSet.add(w.start_date);
+    }
+    if (w.end_date) s.ends.push(w.end_date);
+  });
+
+  // 4. 시즌별 요약 + 누적 포인트
+  const out: any[] = [];
+  for (const [seasonKey, s] of bySeason) {
+    if (s.starts.length === 0) continue;
+    const startDate = s.starts.slice().sort()[0];
+    const sortedEnds = s.ends.slice().sort();
+    const endDate = sortedEnds.length ? sortedEnds[sortedEnds.length - 1] : null;
+    let year = s.year;
+    if (year == null && startDate) year = Number(String(startDate).slice(0, 4));
+    const seasonName = seasonLabel(s.type);
+    const yy = year != null ? String(year).slice(-2) : "";
+    const displayTitle = year != null ? `${yy}년도 ${seasonName} 시즌` : `${seasonName} 시즌`;
+    const fmt = (d: string | null) => (d ? String(d).replace(/-/g, ".") : null);
+    const dateRangeLabel = startDate && endDate ? `${fmt(startDate)} - ${fmt(endDate)}` : null;
+
+    let star = 0;
+    let shield = 0;
+    let lightning = 0;
+    weeklyPoints.forEach((p) => {
+      if (!s.startSet.has(p.week_start_date)) return;
+      star += p.points || 0;
+      shield += p.advantages || 0;
+      lightning += p.penalty || 0;
+    });
+
+    const isCurrent = !!(startDate && endDate && today >= startDate && today <= endDate);
+    const { status, seasonResult, statusLabel } = deriveSeasonStatus(isCurrent, endDate, today, growthStatus, userStatus);
+
+    out.push({
+      seasonKey,
+      year,
+      seasonName,
+      seasonCode: s.type,
+      displayTitle,
+      dateRangeLabel,
+      status,
+      statusLabel,
+      seasonResult,
+      startDate,
+      endDate,
+      pointSummary: { star, shield, lightning },
+    });
+  }
+
+  // 시작일 DESC (최신 시즌이 1페이지)
+  out.sort((a, b) => (a.startDate < b.startDate ? 1 : a.startDate > b.startDate ? -1 : 0));
+  return out;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const userId = searchParams.get("userId");
@@ -47,7 +350,7 @@ export async function GET(request: NextRequest) {
         .maybeSingle(),
       supabase
         .from("user_profiles")
-        .select("activity_started_at, joined_week_id, onboarding_week_id, growth_status, status, role")
+        .select("activity_started_at, growth_status, status, role")
         .eq("user_id", userId)
         .maybeSingle(),
     ]);
@@ -171,6 +474,24 @@ export async function GET(request: NextRequest) {
       userDefaultRole: userProfile?.role || null,
     });
 
+    // 진입 화면 시즌 정보/시즌 누적 포인트 (area-1-title / area-4-stats) — 서버 산출.
+    const { seasonSummary, seasonPointSummary } = await buildSeasonSummaryAndPoints(
+      supabase,
+      userId,
+      currentWeek,
+      today,
+      userProfile?.growth_status || null,
+      userProfile?.status || null,
+    );
+    // 시즌별 요약 배열(페이지네이션용) — 각 시즌 자기 범위만 누적.
+    const seasonSummaries = await buildSeasonSummaries(
+      supabase,
+      userId,
+      today,
+      userProfile?.growth_status || null,
+      userProfile?.status || null,
+    );
+
     return NextResponse.json({
       currentWeekInfo,
       growthStats: {
@@ -185,6 +506,9 @@ export async function GET(request: NextRequest) {
       userGrowthStatus: gs || null,
       userStatus: userProfile?.status || null,
       weeklyCards,
+      // 사용 DTO: data.seasonSummary(현재 시즌), data.seasonPointSummary(현재 시즌),
+      //          data.seasonSummaries[](시즌별 — 페이지네이션용, 각 pointSummary 포함)
+      data: { seasonSummary, seasonPointSummary, seasonSummaries },
     });
   } catch (err: any) {
     console.error("[cluster4/weekly-growth] error:", err?.message || err);

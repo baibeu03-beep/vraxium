@@ -591,9 +591,10 @@ export async function GET(request: NextRequest) {
         supabaseAdmin.from("user_week_statuses")
           .select("week_start_date, status")
           .eq("user_id", profile.id),
-        // [15] all points for user (단감/인절미/어흥 누적 계산)
-        supabaseAdmin.from("points")
-          .select("week_id, point_type, points")
+        // [15] all points for user (단감/인절미/어흥 누적 계산) — 캐노니컬 user_weekly_points.
+        // (public.points 는 이 환경 PostgREST 미노출 → 0 fallback; 아래 weekBundle.allPoints 에서 legacy shape 로 전개.)
+        supabaseAdmin.from("user_weekly_points")
+          .select("week_start_date, points, advantages, penalty")
           .eq("user_id", profile.id),
         // [16] success weeks — user_week_statuses status=success 기반
         supabaseAdmin.from("user_week_statuses")
@@ -692,13 +693,29 @@ export async function GET(request: NextRequest) {
         .filter((w: any) => successStartDates.has(w.start_date))
         .map((w: any) => ({ week_id: w.id, weeks: { end_date: w.end_date } }));
 
+      // 단감/인절미/어흥 누적 — 캐노니컬 user_weekly_points 를 legacy points shape 로 전개.
+      // (별=points/방패=advantages/번개=penalty; week_start_date → week_id, client 코드 무변경.)
+      const startDateToWeekIdForPoints = new Map<string, string>();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      rawAllWeeks.forEach((w: any) => { if (w.start_date && w.id) startDateToWeekIdForPoints.set(w.start_date, w.id); });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const adaptedAllPoints: any[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ((weekResults[5]?.data as any[]) || []).forEach((p: any) => {
+        const wId = startDateToWeekIdForPoints.get(p.week_start_date);
+        if (!wId) return;
+        adaptedAllPoints.push({ week_id: wId, point_type: 'star', points: p.points || 0 });
+        adaptedAllPoints.push({ week_id: wId, point_type: 'shield', points: p.advantages || 0 });
+        adaptedAllPoints.push({ week_id: wId, point_type: 'lightning', points: p.penalty || 0 });
+      });
+
       const weekBundle = weekId && weekResults.length === 7 ? {
         activityTypes: weekResults[0]?.data || [],
         currentWeek:   adaptedCurrentWeek,
         allWeeks:      adaptedAllWeeks,
         weeklyActivities: weekResults[3]?.data || [],
         weeklyGrowth:  adaptedWeeklyGrowth,
-        allPoints: weekResults[5]?.data || [],
+        allPoints: adaptedAllPoints,
         successWeeks: adaptedSuccessWeeks,
       } : null;
 
@@ -846,8 +863,9 @@ export async function GET(request: NextRequest) {
       // 응답 shape 호환을 위해 빈 결과만 반환.
       Promise.resolve({ data: [], error: null }),
 
-      // 해당 유저의 시즌별 포인트 (week_id를 통해 season 조인)
-      supabaseAdmin.from("points").select("week_id, point_type, points, weeks!inner(season_key)").eq("user_id", profile.id),
+      // 해당 유저의 시즌별 포인트 — 캐노니컬 user_weekly_points (별=points/방패=advantages/번개=penalty).
+      // (public.points 는 이 환경 PostgREST 미노출 → 0 fallback; 아래 seasonPointsMap 에서 week_start_date→season_key 그룹핑.)
+      supabaseAdmin.from("user_weekly_points").select("week_start_date, points, advantages, penalty").eq("user_id", profile.id),
 
       // 해당 유저의 팀/파트 이력 (시즌 상태 표시용)
       supabaseAdmin.from("user_team_parts").select("user_id, team_id, part_id, joined_at, left_at, generation, managed_team_id").eq("user_id", profile.id),
@@ -1580,13 +1598,28 @@ export async function GET(request: NextRequest) {
     const onboardingWeek = allWeeks.find((w: any) => w.id === profile.onboarding_week_id);
     const onboardingSeasonId = onboardingWeek?.season_key;
 
-    // 시즌별 포인트 집계
+    // 시즌별 포인트 집계 — 캐노니컬 user_weekly_points 기준.
+    // ⚠ 두 시즌 시스템: 소비자(finalSeasonHistoriesWithOnboarding)는 seasons(uuid) 테이블 id 로
+    //   seasonPointsMap.get() 하므로, 맵도 반드시 seasons.id(uuid)로 키잉해야 한다.
+    //   season_key(텍스트)로 키잉하면 lookup 이 영구 miss → 시즌 포인트가 항상 0.
+    //   week_start_date → seasons.id 는 seasons 테이블 날짜범위 포함관계로 해소한다.
     const seasonPointsData = seasonPointsResult.data || [];
+    const weekStartToSeasonUuid = new Map<string, string>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    allWeeks.forEach((w: any) => {
+      if (!w.start_date) return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const hit = (seasonsRows || []).find((s: any) =>
+        s.started_at && s.ended_at &&
+        String(s.started_at).slice(0, 10) <= w.start_date &&
+        w.start_date <= String(s.ended_at).slice(0, 10));
+      if (hit) weekStartToSeasonUuid.set(w.start_date, hit.id);
+    });
     const seasonPointsMap = new Map<string, { stars: number; lightnings: number; shields: number }>();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     seasonPointsData.forEach((p: any) => {
-      const seasonId = p.weeks?.season_key;
+      const seasonId = weekStartToSeasonUuid.get(p.week_start_date);
       if (!seasonId) return;
 
       if (!seasonPointsMap.has(seasonId)) {
@@ -1594,13 +1627,9 @@ export async function GET(request: NextRequest) {
       }
 
       const current = seasonPointsMap.get(seasonId)!;
-      if (p.point_type === 'star') {
-        current.stars += p.points || 0;
-      } else if (p.point_type === 'lightning') {
-        current.lightnings += p.points || 0;
-      } else if (p.point_type === 'shield') {
-        current.shields += p.points || 0;
-      }
+      current.stars += p.points || 0;       // 단감
+      current.shields += p.advantages || 0; // 방패
+      current.lightnings += p.penalty || 0; // 어흥
     });
 
     // 시즌별 주차/활동 통계 계산을 위한 데이터 준비

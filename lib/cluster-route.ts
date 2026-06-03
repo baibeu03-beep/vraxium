@@ -459,6 +459,25 @@ export const ORGANIZATION_CONFIG: Record<Organization, OrganizationConfig> = {
   },
 };
 
+/**
+ * 조직별 졸업 목표 주차 수(정책 상수) — "현재/전체 주차" 분모의 fallback.
+ * weekly-cards DTO 의 totalRequiredWeeks/baseWeekCount 가 있으면 그 값을 우선 쓰고,
+ * 둘 다 없을 때만 본 org 기준값으로 폴백한다(주차 카드 목록 ↔ 상세 header 동일 규칙).
+ *   marketing(oranke) = 25, entertainment(encre) / planning(phalanx) = 30.
+ */
+export const ORG_GRADUATION_WEEKS: Record<Organization, number> = {
+  marketing: 25,
+  entertainment: 30,
+  planning: 30,
+};
+
+/** 현재 pathname 의 org 기준 졸업 목표 주차 수(DTO 분모 부재 시 fallback). */
+export function getGraduationWeeksFromPathname(
+  pathname: string | null | undefined,
+): number {
+  return ORG_GRADUATION_WEEKS[getCurrentOrganizationFromPathname(pathname)];
+}
+
 /** organization → config. */
 export function getOrganizationConfig(org: Organization): OrganizationConfig {
   return ORGANIZATION_CONFIG[org];

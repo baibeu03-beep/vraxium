@@ -99,9 +99,11 @@ export async function GET(request: Request) {
       const reviewerIds = Array.from(new Set(data.map(d => d.reviewer_id)));
 
       // reviewer 프로필 조회 (university, major_first 제거)
+      // role 추가 — badge-status fallback 체인의 최종 단계(membership 없을 때).
+      // profile_tagline/profile_keyword 추가 — 한줄소개 DTO source(tagline 우선, keyword fallback).
       const { data: reviewers, error: reviewerError } = await supabaseAdmin
         .from("user_profiles")
-        .select("user_id, display_name, gender, birth_date, profile_photo_url, vision")
+        .select("user_id, display_name, gender, birth_date, profile_photo_url, vision, role, profile_tagline, profile_keyword")
         .in("user_id", reviewerIds);
 
       if (reviewerError) {
@@ -126,44 +128,73 @@ export async function GET(request: Request) {
         }
       });
 
-      // reviewer의 팀/파트 정보 조회 (현재 활성화된 것만)
-      const { data: userTeamParts } = await supabaseAdmin
-        .from("user_team_parts")
-        .select("user_id, team_id, part_id")
-        .in("user_id", reviewerIds)
-        .is("left_at", null);
+      // reviewer 팀/파트 + 멤버십 등급 조회 — 단일 source = user_memberships.
+      // (구버전은 user_team_parts + teams/parts 조인을 썼으나, 이 환경에 public.user_team_parts
+      //  테이블이 존재하지 않아 teamName/partName 이 항상 null 이었다. /api/crews·/api/profile 과
+      //  동일하게 user_memberships 의 denormalized team_name/part_name 으로 교체한다.)
+      // 컨벤션: is_current 를 쿼리에서 필터하지 않고 전 row 를 가져온 뒤 2-pass 우선순위 채택
+      //   Pass 1: is_current=true row 우선
+      //   Pass 2: current row 가 없는 user 는 아무 row 라도 폴백 (is_current 비동기화 방지)
+      const { data: memberships } = await supabaseAdmin
+        .from("user_memberships")
+        .select("user_id, team_name, part_name, membership_level, membership_state, is_current")
+        .in("user_id", reviewerIds);
 
-      // 팀/파트 이름 조회
-      const { data: teams } = await supabaseAdmin.from("teams").select("id, name");
-      const { data: parts } = await supabaseAdmin.from("parts").select("id, name");
-
-      // 팀/파트 이름 매핑
-      const teamMap: { [key: string]: string } = {};
-      const partMap: { [key: string]: string } = {};
-      teams?.forEach(t => { teamMap[t.id] = t.name; });
-      parts?.forEach(p => { partMap[p.id] = p.name; });
-
-      // 유저별 팀/파트 매핑
-      const userTeamPartMap: { [key: string]: { teamName: string | null; partName: string | null } } = {};
-      userTeamParts?.forEach(utp => {
-        userTeamPartMap[utp.user_id] = {
-          teamName: utp.team_id ? teamMap[utp.team_id] || null : null,
-          partName: utp.part_id ? partMap[utp.part_id] || null : null,
-        };
+      const membershipMap: {
+        [key: string]: { team_name: string | null; part_name: string | null; membership_level: string | null; membership_state: string | null };
+      } = {};
+      // Pass 1: is_current=true 우선
+      memberships?.forEach(m => {
+        if (m.is_current === true && !membershipMap[m.user_id]) {
+          membershipMap[m.user_id] = {
+            team_name: m.team_name ?? null,
+            part_name: m.part_name ?? null,
+            membership_level: m.membership_level ?? null,
+            membership_state: m.membership_state ?? null,
+          };
+        }
+      });
+      // Pass 2: current 가 없는 user 는 비-current row 폴백
+      memberships?.forEach(m => {
+        if (!membershipMap[m.user_id]) {
+          membershipMap[m.user_id] = {
+            team_name: m.team_name ?? null,
+            part_name: m.part_name ?? null,
+            membership_level: m.membership_level ?? null,
+            membership_state: m.membership_state ?? null,
+          };
+        }
       });
 
       // Object로 매핑 (Map 대신)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const reviewerObj: { [key: string]: any } = {};
       reviewers?.forEach(r => {
-        const teamPart = userTeamPartMap[r.user_id];
         const education = educationMap[r.user_id];
+        const membership = membershipMap[r.user_id];
+        // role: user_profiles.role (없으면 null) — append-only.
+        const role = r.role ?? null;
+        // membershipLevel fallback 체인: membership_level → membership_state → role → null.
+        // 프론트가 원본값을 한글 라벨(일반/심화/운영진 등)로 변환하므로 raw 그대로 내려준다.
+        const membershipLevel =
+          membership?.membership_level ?? membership?.membership_state ?? role ?? null;
+        // 팀/파트: user_memberships denormalized 값 (단일 source).
+        const teamName = membership?.team_name ?? null;
+        const partName = membership?.part_name ?? null;
+        // 한줄소개: profile_tagline 우선, 없으면 profile_keyword 폴백.
+        const profileTagline = r.profile_tagline ?? r.profile_keyword ?? null;
         reviewerObj[r.user_id] = {
           ...r,
           university: education?.school_name || null,
           major_first: education?.major_name_1 || null,
-          teamName: teamPart?.teamName || null,
-          partName: teamPart?.partName || null,
+          // team/part 와 teamName/partName 둘 다 내려준다 (프론트 별칭 fallback 호환 + 최종 계약 필드).
+          teamName,
+          partName,
+          team: teamName,
+          part: partName,
+          role,
+          membershipLevel,
+          profileTagline,
         };
       });
 

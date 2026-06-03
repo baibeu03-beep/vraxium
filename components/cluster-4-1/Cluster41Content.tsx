@@ -8,7 +8,7 @@ import { getFixedDropdownPosition } from "@/utils/documentZoom";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
-import { isPxRoute, isEcRoute, withPxRoute, getOrgConfigFromPathname } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, withPxRoute, getOrgConfigFromPathname, getGraduationWeeksFromPathname } from "@/lib/cluster-route";
 import type { AdminCluster4WeeklyCardDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto, Cluster4RateDto } from "@/shared/cluster4.contracts";
 import type { Cluster3StatsCards } from "@/lib/cluster3StatsCardsTypes";
 
@@ -1332,7 +1332,10 @@ const Cluster41Content = () => {
                 career: hubRate('career', week.careerRate),
               };
               const currentWeekValue = numberField(week, ["approvedWeeks", "currentCumulative", "cumulative", "accumulatedApprovedWeeks"]);
-              const totalWeeks = numberField(week, ["totalWeeks", "totalWeekCount"], 25);
+              // 전체 주차(분모): DTO totalWeeks/totalWeekCount → totalRequiredWeeks/baseWeekCount 우선,
+              // 모두 없을 때만 org 정책값(marketing 25 / encre·phalanx 30)으로 폴백.
+              // 상세 header(Cluster4CardContent)와 "동일 규칙" — 같은 weekId 분모가 양쪽에서 일치하도록.
+              const totalWeeks = numberField(week, ["totalWeeks", "totalWeekCount", "totalRequiredWeeks", "baseWeekCount"], getGraduationWeeksFromPathname(pathname));
 
               // 팀명/파트명: card.teamName / card.partName (null → "-")
               const teamName = week.teamName && week.teamName.trim() ? week.teamName : "-";

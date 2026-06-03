@@ -82,7 +82,7 @@ export async function buildWeeklyCards(supabase: any, userId: string, opts: {
   ] = await Promise.all([
     weeksQ,
     supabase.from("user_week_statuses").select("week_start_date, status").eq("user_id", userId),
-    supabase.from("points").select("week_id, point_type, points").eq("user_id", userId),
+    supabase.from("user_weekly_points").select("week_start_date, points, advantages, penalty").eq("user_id", userId),
     supabase.from("activity_records").select("week_id, activity_type_id, is_completed").eq("user_id", userId),
     supabase.from("activity_types").select("id, cluster_id").eq("is_active", true),
     supabase.from("rest_requests").select("week_id").eq("user_id", userId).eq("status", "approved"),
@@ -128,14 +128,18 @@ export async function buildWeeklyCards(supabase: any, userId: string, opts: {
 
   const restWeekIds = new Set<string>((restRes.data || []).map((r: any) => r.week_id));
 
-  // Points grouped by week
+  // Points grouped by week — 캐노니컬 source: user_weekly_points
+  // (별=points, 방패=advantages, 번개=penalty; week_start_date → week_id 매핑).
+  // public.points 는 이 환경의 PostgREST 스키마에 미노출 → 0 fallback 되던 문제 교정.
   const pointsMap = new Map<string, { star: number; shield: number; lightning: number }>();
   (pointsRes.data || []).forEach((p: any) => {
-    let entry = pointsMap.get(p.week_id);
-    if (!entry) { entry = { star: 0, shield: 0, lightning: 0 }; pointsMap.set(p.week_id, entry); }
-    if (p.point_type === "star") entry.star += p.points;
-    else if (p.point_type === "shield") entry.shield += p.points;
-    else if (p.point_type === "lightning") entry.lightning += p.points;
+    const wId = startDateToWeekId.get(p.week_start_date);
+    if (!wId) return;
+    pointsMap.set(wId, {
+      star: p.points || 0,
+      shield: p.advantages || 0,
+      lightning: p.penalty || 0,
+    });
   });
 
   // Activity type → cluster mapping
