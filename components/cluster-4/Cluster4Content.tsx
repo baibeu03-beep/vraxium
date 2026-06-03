@@ -241,6 +241,14 @@ const defaultSeasonData = {
   },
 };
 
+// season_reputations.season_history_id 는 DB 에서 uuid 컬럼이다. placeholder/가짜 id
+// (defaultSeasonData.id="", DUMMY_SEASON_DATA "dummy-season-1", "cluster-4-1" 등)를 실제
+// season_history_id 로 전송하면 안 된다 — 저장 차단 또는 22P02 의 원인. 실제 uuid 만 통과시킨다.
+const SEASON_HISTORY_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isRealSeasonHistoryId = (id: unknown): id is string =>
+  typeof id === "string" && SEASON_HISTORY_UUID_RE.test(id);
+
 // 역할 라벨 매핑
 const ROLE_LABELS: { [key: string]: string } = {
   crew: "일반",
@@ -1043,6 +1051,61 @@ const Cluster4Content = () => {
     try {
       const endpoint = apiUrl("/api/season-reputations");
       const method = isUpdate ? "PUT" : "POST";
+
+      // 평판 대상(targetUserId) = 현재 열람 중인 타 크루 페이지의 user_id.
+      //   urlUserId = ?userId= / ?userID= / demoUserId (page owner). 로그인 본인이 아니라
+      //   "지금 보고 있는 크루"의 user_id 가 들어가야 한다.
+      const targetUserId = urlUserId || undefined;
+
+      // 시즌(seasonHistoryId) = 실제 season_history uuid 만 채택.
+      //   우선순위: 선택된 시즌 → 현재 시즌 → 현재 페이지 row → 첫 row.
+      //   defaultSeasonData(id="")·dummy·"cluster-4-1" 같은 가짜 id 는 isRealSeasonHistoryId 가 걸러
+      //   currentSeason 이 아직 로딩 전(빈 fallback)이라도 seasonHistories 의 진짜 row 로 교정된다.
+      const seasonHistoryId: string | undefined = [
+        selectedSeasonId,
+        currentSeason?.id,
+        seasonHistories[section3Page]?.id,
+        seasonHistories[0]?.id,
+      ].find(isRealSeasonHistoryId);
+
+      // [진단] 저장 직전 상태 — 요청된 5개 값 출력.
+      console.log("[season-reputation POST] resolved body fields", {
+        currentSeason,
+        selectedSeasonId,
+        seasonHistories,
+        resolvedSeasonHistoryId: seasonHistoryId,
+        targetUserId,
+        currentSeasonId: currentSeason?.id,
+        section3Page,
+        reviewerId: session?.user?.id ?? null,
+        demoUserId,
+        rating: seasonReputationEditData.rating,
+        content: seasonReputationEditData.content.trim(),
+        keywords: [
+          seasonReputationEditData.keyword1.trim(),
+          seasonReputationEditData.keyword2.trim(),
+          seasonReputationEditData.keyword3.trim(),
+        ],
+      });
+
+      // 저장 직전 방어 — 신규 작성(POST)에서 대상/시즌이 비면 API 호출하지 않고 중단.
+      // 어떤 값이 비었는지 console.warn 으로 명시.
+      if (!isUpdate && (!targetUserId || !seasonHistoryId)) {
+        const missing = [
+          !targetUserId ? "targetUserId(urlUserId)" : null,
+          !seasonHistoryId ? "seasonHistoryId(uuid 없음: selectedSeasonId/currentSeason/seasonHistories 모두 placeholder)" : null,
+        ].filter(Boolean);
+        console.warn("[season-reputation POST] 저장 중단 — 필수 값 누락:", missing.join(", "), {
+          targetUserId,
+          seasonHistoryId,
+          selectedSeasonId,
+          currentSeasonId: currentSeason?.id,
+          seasonHistoriesIds: seasonHistories.map((s) => s?.id),
+          urlUserId,
+        });
+        throw new Error("평판 대상 또는 시즌 정보가 없어 저장할 수 없습니다. 페이지를 새로고침한 뒤 다시 시도해주세요.");
+      }
+
       const body = isUpdate
         ? {
             id: selectedReputation!.id,
@@ -1053,8 +1116,8 @@ const Cluster4Content = () => {
             keyword3: seasonReputationEditData.keyword3.trim(),
           }
         : {
-            targetUserId: urlUserId,
-            seasonHistoryId: selectedSeasonId,
+            targetUserId,
+            seasonHistoryId,
             rating: seasonReputationEditData.rating,
             content: seasonReputationEditData.content.trim(),
             keyword1: seasonReputationEditData.keyword1.trim(),
@@ -1413,6 +1476,129 @@ const Cluster4Content = () => {
   }
   const [seasonHistories, setSeasonHistories] = useState<SeasonHistoryData[]>([]);
 
+  // area-6-circles 단일 출처 = weekly-cards 스냅샷(snapshot-only). /api/profile 의 legacy 실시간
+  // 계산(seasonStats)을 더 이상 쓰지 않고, admin Cluster4 스냅샷에서 현재 시즌 단위로 집계된
+  // areaSixCircles 를 그대로 표시한다. demoUserId/일반 모드 모두 동일 DTO(같은 라우트·같은 파생 함수).
+  //   weekUsage = 주차 활용도 / scheduleReliability = 일정 신뢰도 / seasonGrowth = 시즌 성장률.
+  //   availableWeeks(e) = 분모 / approvedWeeks(a) / reliableWeeks(a+c).
+  //   availableLines = 전체 가용 라인 / completedLines = 이행 라인.
+  // 로딩 전/조회 실패 시 null → 화면은 0 으로 렌더(legacy 값으로 폴백하지 않음 — snapshot SoT 유지).
+  const [snapshotCircles, setSnapshotCircles] = useState<{
+    weekUsage: number;
+    approvedWeeks: number;
+    scheduleReliability: number;
+    reliableWeeks: number;
+    availableWeeks: number;
+    seasonGrowth: number;
+    completedLines: number;
+    availableLines: number;
+  } | null>(null);
+
+  // area-7-progress 단일 출처 = 동일 weekly-cards 스냅샷(snapshot-only). 백엔드 seasonAreaProgress
+  // (실무 정보/경험/역량/경력 시즌 누적 강화율)를 그대로 표시한다. 프론트 재계산/legacy seasonStats 미사용.
+  //   각 항목: { key, label, rate(=round(earned/total*100)), total, earned }. 로딩 전/실패 시 null → 0 렌더.
+  const [snapshotAreaProgress, setSnapshotAreaProgress] = useState<Array<{
+    key: string;
+    label: string;
+    rate: number;
+    total: number;
+    earned: number;
+  }> | null>(null);
+
+  // weekly-cards 스냅샷에서 area-6-circles(현재 시즌 집계) 로드. 일반/데모 동일 라우트.
+  //   URL 규칙(기존 /api/profile 패턴과 동일):
+  //     urlUserId 있으면 ?userId=...(+demoUserId 마커) / 없으면 본인 세션.
+  //   urlUserId 는 demoUserId 를 fold-in 하므로 데모 본인 페이지도 userId=demoUserId&demoUserId=...
+  //   형태가 되어 백엔드 demo 경로(세션 우회)로 흐른다.
+  useEffect(() => {
+    let cancelled = false;
+    const qs = urlUserId
+      ? `?userId=${encodeURIComponent(urlUserId)}${demoQS}`
+      : "";
+    (async () => {
+      try {
+        const json = await dedupedJson<{
+          success?: boolean;
+          areaSixCircles?: {
+            weekUsage: number;
+            approvedWeeks: number;
+            scheduleReliability: number;
+            reliableWeeks: number;
+            availableWeeks: number;
+            seasonGrowth: number;
+            completedLines: number;
+            availableLines: number;
+          } | null;
+          seasonAreaProgress?: Array<{
+            key: string;
+            label: string;
+            rate: number;
+            total: number;
+            earned: number;
+          }> | null;
+        }>(`/api/cluster4/weekly-cards${qs}`).catch(() => null);
+        if (cancelled) return;
+        const c = json?.areaSixCircles ?? null;
+        setSnapshotCircles(
+          c
+            ? {
+                weekUsage: c.weekUsage ?? 0,
+                approvedWeeks: c.approvedWeeks ?? 0,
+                scheduleReliability: c.scheduleReliability ?? 0,
+                reliableWeeks: c.reliableWeeks ?? 0,
+                availableWeeks: c.availableWeeks ?? 0,
+                seasonGrowth: c.seasonGrowth ?? 0,
+                completedLines: c.completedLines ?? 0,
+                availableLines: c.availableLines ?? 0,
+              }
+            : null,
+        );
+        // area-7-progress — 동일 응답의 seasonAreaProgress 그대로 저장(snapshot SoT).
+        const ap = Array.isArray(json?.seasonAreaProgress) ? json!.seasonAreaProgress! : null;
+        setSnapshotAreaProgress(ap);
+      } catch {
+        if (!cancelled) {
+          setSnapshotCircles(null);
+          setSnapshotAreaProgress(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [urlUserId, demoQS]);
+
+  // area-6-circles 표시값 — 스냅샷 로드 전/실패 시 0 세트(snapshot SoT, legacy 폴백 금지).
+  const circlesView = snapshotCircles ?? {
+    weekUsage: 0,
+    approvedWeeks: 0,
+    scheduleReliability: 0,
+    reliableWeeks: 0,
+    availableWeeks: 0,
+    seasonGrowth: 0,
+    completedLines: 0,
+    availableLines: 0,
+  };
+
+  // area-7-progress 표시값 — 백엔드 seasonAreaProgress(key 기준) 를 4허브로 매핑.
+  //   스냅샷 로드 전/항목 없음 → 0 fallback (rate/total/completed 전부 0, snapshot SoT 유지).
+  //   front 의 .completed 는 DTO 의 earned(이행 라인 수)에 대응.
+  const progressView = (() => {
+    const zero = { rate: 0, total: 0, completed: 0 };
+    const pick = (key: string) => {
+      const item = (snapshotAreaProgress ?? []).find((x) => x.key === key);
+      return item
+        ? { rate: item.rate ?? 0, total: item.total ?? 0, completed: item.earned ?? 0 }
+        : zero;
+    };
+    return {
+      info: pick("practical_info"),
+      experience: pick("practical_experience"),
+      competency: pick("practical_competency"),
+      career: pick("practical_career"),
+    };
+  })();
+
   // 역할 이력 데이터
   const [userRoleHistory, setUserRoleHistory] = useState<
     Array<{
@@ -1468,6 +1654,17 @@ const Cluster4Content = () => {
   const [seasonPointSummary, setSeasonPointSummary] = useState<SeasonPointSummaryDto | null>(null);
   // 시즌별 요약 배열(페이지네이션) — section3Page index 로 선택. 비면 단일 seasonSummary fallback.
   const [seasonSummaries, setSeasonSummaries] = useState<SeasonSummaryDto[]>([]);
+
+  // area-8-season-status DTO — GET /api/cluster4/weekly-growth → data.seasonActivityStatuses.
+  // 백엔드가 팀/파트/역할 라벨을 완성해서 내려준다. 프론트는 그대로 표시만 한다(재계산 금지).
+  // 백엔드는 user_team_parts/user_role_history 부재 시 user_memberships/user_profiles.role
+  // fallback 으로 최소 1개를 내려줄 수 있으므로 1개만 와도 정상 표시한다.
+  interface SeasonActivityStatusDto {
+    teamLabel: string;
+    partLabel: string;
+    statusLabel: string;
+  }
+  const [seasonActivityStatuses, setSeasonActivityStatuses] = useState<SeasonActivityStatusDto[]>([]);
 
   // status-badge 텍스트 — 아래 4종만 노출. active→진행 중, ended+success→성공,
   // ended+failed→중단, rest(전환/휴식/오프시즌)→휴식. ("진행중/종료/예정" 표기 금지)
@@ -1533,6 +1730,40 @@ const Cluster4Content = () => {
       ? seasonHistories[section3Page] || seasonHistories[0]
       : (defaultSeasonData as SeasonHistoryData);
 
+  // area-8-season-status 표시 소스 — 우선순위:
+  //   1) 백엔드 seasonActivityStatuses(DTO) — 현재 weekly-growth 라우트는 미제공이라 보통 비어 있음.
+  //   2) currentSeason.seasonRoles 패스스루 — 로컬 더미(isDemoMode) 및 역할이력이 채워진 경우.
+  //   3) /api/profile data(ownerProfileData) 기반 최소 1행 — user_team_parts/user_role_history 부재 환경 fallback.
+  //   4) 빈 배열 → placeholder.
+  // (프론트에서 역할/팀/파트를 재계산하지 않는다. profile fallback 은 이미 존재하는 team/part/membership 값을 표시만.)
+  const seasonActivityStatusItems: SeasonActivityStatusDto[] = (() => {
+    // 1) 백엔드 DTO
+    if (seasonActivityStatuses.length > 0) return seasonActivityStatuses;
+    // 2) seasonRoles 패스스루(이미 계산된 값 → DTO 모양 rename)
+    const fromRoles = (currentSeason.seasonRoles || []).map((r) => ({
+      teamLabel: r.isAdmin ? `운영진(${r.adminGeneration ?? ""}기)` : (r.teamName || "-"),
+      partLabel: r.isAdmin ? "클럽 단위" : (r.partName || "-"),
+      statusLabel: r.roleLabel || "-",
+    }));
+    if (fromRoles.length > 0) return fromRoles;
+    // 3) /api/profile data 기반 최소 1행 fallback (팀/파트/멤버십 중 하나라도 의미값이 있을 때)
+    const fp = ownerProfileData;
+    if (fp) {
+      const teamLabel = fp.team || fp.teamName || fp.team_name || null;
+      const partLabel = fp.part || fp.partName || fp.part_name || null;
+      const statusLabel = formatMembershipRoleLabel(
+        fp.membershipLevel || fp.membership_level || fp.role || null,
+      );
+      const hasMeaning =
+        (teamLabel && teamLabel !== "-") || (partLabel && partLabel !== "-") || (statusLabel && statusLabel !== "-");
+      if (hasMeaning) {
+        return [{ teamLabel: teamLabel || "-", partLabel: partLabel || "-", statusLabel: statusLabel || "-" }];
+      }
+    }
+    // 4) placeholder
+    return [];
+  })();
+
   // 진입 화면 시즌 정보/누적 포인트 — GET /api/cluster4/weekly-growth (data.seasonSummary / data.seasonPointSummary).
   // 일반 모드(세션) + demoUserId 테스트 모드(urlUserId=demoUserId) 동일 경로. 로컬 더미(isDemoMode)만 스킵.
   useEffect(() => {
@@ -1556,6 +1787,8 @@ const Cluster4Content = () => {
         setSeasonSummary(json?.data?.seasonSummary ?? null);
         setSeasonPointSummary(json?.data?.seasonPointSummary ?? null);
         setSeasonSummaries(Array.isArray(json?.data?.seasonSummaries) ? json.data.seasonSummaries : []);
+        // area-8-season-status — 백엔드 DTO 그대로(teamLabel/partLabel/statusLabel). 없으면 [].
+        setSeasonActivityStatuses(Array.isArray(json?.data?.seasonActivityStatuses) ? json.data.seasonActivityStatuses : []);
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
         console.error("[cluster4/weekly-growth] 시즌 요약 로드 오류:", err);
@@ -2570,10 +2803,35 @@ const Cluster4Content = () => {
     }
     setSeasonReputationError(null);
     setSeasonReputationSuccess(false);
-    // 현재 보고 있는 시즌을 기본 선택
-    setSelectedSeasonId(currentSeason?.id || "");
+    // 현재 보고 있는 시즌을 기본 선택 — 단, 실제 uuid 만(가짜 placeholder id 회피).
+    // seasonHistories 가 아직 비어 있어 currentSeason 이 defaultSeasonData(id="") 면 ""
+    // 로 두고, 아래 동기화 useEffect 가 로딩 완료 후 채워준다.
+    const initialSeasonId = [
+      currentSeason?.id,
+      seasonHistories[section3Page]?.id,
+      seasonHistories[0]?.id,
+    ].find(isRealSeasonHistoryId);
+    setSelectedSeasonId(initialSeasonId || "");
     setSeasonReputationModalOpen(true);
   };
+
+  // 시즌 평판 모달이 열린 뒤 시즌 데이터가 늦게 로딩되는 경우 동기화.
+  // 모달 open 시점에 seasonHistories 가 비어 selectedSeasonId 가 ""(또는 가짜 id)로 잡혔다면,
+  // currentSeason / seasonHistories 가 채워지는 순간 실제 season_history uuid 로 1회 보정한다.
+  // (이미 유효한 uuid 가 선택돼 있으면 — 사용자가 시즌을 직접 고른 경우 포함 — 덮어쓰지 않는다.)
+  useEffect(() => {
+    if (!seasonReputationModalOpen) return;
+    if (isRealSeasonHistoryId(selectedSeasonId)) return;
+    const resolved = [
+      currentSeason?.id,
+      seasonHistories[section3Page]?.id,
+      seasonHistories[0]?.id,
+    ].find(isRealSeasonHistoryId);
+    if (resolved) {
+      setSelectedSeasonId(resolved);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seasonReputationModalOpen, selectedSeasonId, currentSeason?.id, seasonHistories, section3Page]);
 
   // 시즌 평판 저장 - 다른 사람에게 평판 남기기
   const handleSaveSeasonReputation = async () => {
@@ -3457,15 +3715,16 @@ const Cluster4Content = () => {
                 </div>
               </div>
 
-              {/* 영역 6: 원형 차트 3개 */}
+              {/* 영역 6: 원형 차트 3개 — 단일 출처=weekly-cards 스냅샷(현재 시즌 집계, circlesView).
+                  /api/profile seasonStats(legacy 실시간) 미사용. 현재 시즌 값만 표시. */}
               <div className="area-6-circles">
                 <div className="circle-item">
                   <div className="label-sub">
                     <div>
-                      총 <span className="num-fixed">{currentSeason.circles.totalOperatingWeeks ?? 0}</span>주 중
+                      총 <span className="num-fixed">{circlesView.availableWeeks}</span>주 중
                     </div>
                     <div>
-                      <span className="highlight">{currentSeason.circles.approvedWeeks ?? 0}</span>주
+                      <span className="highlight">{circlesView.approvedWeeks}</span>주
                     </div>
                   </div>
                   <div className="circle-wrapper">
@@ -3473,9 +3732,9 @@ const Cluster4Content = () => {
                     <div className="circle pink">
                       <svg viewBox="0 0 100 100">
                         <circle className="bg" cx="50" cy="50" r="40" />
-                        <circle className="fill" cx="50" cy="50" r="40" strokeDasharray="251.2" strokeDashoffset={251.2 * (1 - currentSeason.circles.weekUsage / 100)} />
+                        <circle className="fill" cx="50" cy="50" r="40" strokeDasharray="251.2" strokeDashoffset={251.2 * (1 - circlesView.weekUsage / 100)} />
                       </svg>
-                      <div className="percent">{currentSeason.circles.weekUsage}%</div>
+                      <div className="percent">{circlesView.weekUsage}%</div>
                     </div>
                   </div>
                   <div className="label-main">주차 활용도</div>
@@ -3483,10 +3742,10 @@ const Cluster4Content = () => {
                 <div className="circle-item">
                   <div className="label-sub">
                     <div>
-                      총 <span className="num-fixed">{currentSeason.circles.totalWeeksReliability ?? currentSeason.circles.totalOperatingWeeks ?? 0}</span>주 중
+                      총 <span className="num-fixed">{circlesView.availableWeeks}</span>주 중
                     </div>
                     <div>
-                      <span className="highlight">{currentSeason.circles.reliableWeeks ?? 0}</span>주
+                      <span className="highlight">{circlesView.reliableWeeks}</span>주
                     </div>
                   </div>
                   <div className="circle-wrapper">
@@ -3494,9 +3753,9 @@ const Cluster4Content = () => {
                     <div className="circle yellow">
                       <svg viewBox="0 0 100 100">
                         <circle className="bg" cx="50" cy="50" r="40" />
-                        <circle className="fill" cx="50" cy="50" r="40" strokeDasharray="251.2" strokeDashoffset={251.2 * (1 - currentSeason.circles.scheduleReliability / 100)} />
+                        <circle className="fill" cx="50" cy="50" r="40" strokeDasharray="251.2" strokeDashoffset={251.2 * (1 - circlesView.scheduleReliability / 100)} />
                       </svg>
-                      <div className="percent">{currentSeason.circles.scheduleReliability}%</div>
+                      <div className="percent">{circlesView.scheduleReliability}%</div>
                     </div>
                   </div>
                   <div className="label-main">일정 신뢰도</div>
@@ -3504,10 +3763,10 @@ const Cluster4Content = () => {
                 <div className="circle-item">
                   <div className="label-sub">
                     <div>
-                      총 <span className="num-fixed">{currentSeason.circles.totalActivities ?? 0}</span>개 중
+                      총 <span className="num-fixed">{circlesView.availableLines}</span>개 중
                     </div>
                     <div>
-                      <span className="highlight">{currentSeason.circles.completedActivities ?? 0}</span>개
+                      <span className="highlight">{circlesView.completedLines}</span>개
                     </div>
                   </div>
                   <div className="circle-wrapper">
@@ -3515,9 +3774,9 @@ const Cluster4Content = () => {
                     <div className="circle green">
                       <svg viewBox="0 0 100 100">
                         <circle className="bg" cx="50" cy="50" r="40" />
-                        <circle className="fill" cx="50" cy="50" r="40" strokeDasharray="251.2" strokeDashoffset={251.2 * (1 - currentSeason.circles.seasonGrowth / 100)} />
+                        <circle className="fill" cx="50" cy="50" r="40" strokeDasharray="251.2" strokeDashoffset={251.2 * (1 - circlesView.seasonGrowth / 100)} />
                       </svg>
-                      <div className="percent">{currentSeason.circles.seasonGrowth}%</div>
+                      <div className="percent">{circlesView.seasonGrowth}%</div>
                     </div>
                   </div>
                   <div className="label-main">시즌 성장률</div>
@@ -3529,53 +3788,53 @@ const Cluster4Content = () => {
                 <div className="progress-item">
                   <div className="progress-header">
                     <span className="name">
-                      <img src="/images/0/cluster4/icon/1 실무 정보.png" alt="1" className="progress-icon" /> 실무 <span style={{ color: "#FF9B9B" }}>정보</span> 강화율 <span className="rate-number">{currentSeason.progress.info.rate}</span>%
+                      <img src="/images/0/cluster4/icon/1 실무 정보.png" alt="1" className="progress-icon" /> 실무 <span style={{ color: "#FF9B9B" }}>정보</span> 강화율 <span className="rate-number">{progressView.info.rate}</span>%
                     </span>
                     <span className="value">
-                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{currentSeason.progress.info.total}</span> 개 중 <span className="highlight">{currentSeason.progress.info.completed}</span> 개
+                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{progressView.info.total}</span> 개 중 <span className="highlight">{progressView.info.completed}</span> 개
                     </span>
                   </div>
                   <div className="bar">
-                    <div className="fill yellow" style={{ width: `${currentSeason.progress.info.rate}%` }}></div>
+                    <div className="fill yellow" style={{ width: `${progressView.info.rate}%` }}></div>
                   </div>
                 </div>
                 <div className="progress-item">
                   <div className="progress-header">
                     <span className="name">
-                      <img src="/images/0/cluster4/icon/2 실무 경험.png" alt="2" className="progress-icon" /> 실무 <span style={{ color: "#FFD09B" }}>경험</span> 강화율 <span className="rate-number">{currentSeason.progress.experience.rate}</span>%
+                      <img src="/images/0/cluster4/icon/2 실무 경험.png" alt="2" className="progress-icon" /> 실무 <span style={{ color: "#FFD09B" }}>경험</span> 강화율 <span className="rate-number">{progressView.experience.rate}</span>%
                     </span>
                     <span className="value">
-                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{currentSeason.progress.experience.total}</span> 개 중 <span className="highlight">{currentSeason.progress.experience.completed}</span> 개
+                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{progressView.experience.total}</span> 개 중 <span className="highlight">{progressView.experience.completed}</span> 개
                     </span>
                   </div>
                   <div className="bar">
-                    <div className="fill yellow" style={{ width: `${currentSeason.progress.experience.rate}%` }}></div>
+                    <div className="fill yellow" style={{ width: `${progressView.experience.rate}%` }}></div>
                   </div>
                 </div>
                 <div className="progress-item">
                   <div className="progress-header">
                     <span className="name">
-                      <img src="/images/0/cluster4/icon/3 실무 역량.png" alt="3" className="progress-icon" /> 실무 <span style={{ color: "#A8D8A8" }}>역량</span> 강화율 <span className="rate-number">{currentSeason.progress.competency.rate}</span>%
+                      <img src="/images/0/cluster4/icon/3 실무 역량.png" alt="3" className="progress-icon" /> 실무 <span style={{ color: "#A8D8A8" }}>역량</span> 강화율 <span className="rate-number">{progressView.competency.rate}</span>%
                     </span>
                     <span className="value">
-                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{currentSeason.progress.competency.total}</span> 개 중 <span className="highlight">{currentSeason.progress.competency.completed}</span> 개
+                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{progressView.competency.total}</span> 개 중 <span className="highlight">{progressView.competency.completed}</span> 개
                     </span>
                   </div>
                   <div className="bar">
-                    <div className="fill yellow" style={{ width: `${currentSeason.progress.competency.rate}%` }}></div>
+                    <div className="fill yellow" style={{ width: `${progressView.competency.rate}%` }}></div>
                   </div>
                 </div>
                 <div className="progress-item">
                   <div className="progress-header">
                     <span className="name">
-                      <img src="/images/0/cluster4/icon/4 실무 경력.png" alt="4" className="progress-icon" /> 실무 <span style={{ color: "#9BB8FF" }}>경력</span> 강화율 <span className="rate-number">{currentSeason.progress.career.rate}</span>%
+                      <img src="/images/0/cluster4/icon/4 실무 경력.png" alt="4" className="progress-icon" /> 실무 <span style={{ color: "#9BB8FF" }}>경력</span> 강화율 <span className="rate-number">{progressView.career.rate}</span>%
                     </span>
                     <span className="value">
-                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{currentSeason.progress.career.total}</span> 개 중 <span className="highlight">{currentSeason.progress.career.completed}</span> 개
+                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{progressView.career.total}</span> 개 중 <span className="highlight">{progressView.career.completed}</span> 개
                     </span>
                   </div>
                   <div className="bar">
-                    <div className="fill yellow" style={{ width: `${currentSeason.progress.career.rate}%` }}></div>
+                    <div className="fill yellow" style={{ width: `${progressView.career.rate}%` }}></div>
                   </div>
                 </div>
               </div>
@@ -3588,53 +3847,43 @@ const Cluster4Content = () => {
                 <h4 className="section-title">
                   <img className="section-icon" src="/images/0/cluster4/icon - 시즌 상태.png" alt="시즌 상태" /> 시즌 상태{" "}
                   <span className="count-label">
-                    <span className="num-fixed">{currentSeason.seasonRoles?.length ?? 0}</span>개
+                    <span className="num-fixed">{seasonActivityStatusItems.length}</span>개
                   </span>
                 </h4>
                 <div style={{ position: "relative" }}>
                   <div ref={statusBadgesRef} className="status-badges" onScroll={updateScrollbar8}>
                     {(() => {
-                      const roles = currentSeason.seasonRoles && currentSeason.seasonRoles.length > 0 ? currentSeason.seasonRoles : [];
-                      const renderCount = roles.length > 0 ? roles.length : 3;
+                      // 백엔드 DTO(seasonActivityStatuses) 순서 그대로, 최대 6개까지.
+                      // 슬롯은 항상 최소 3줄 유지 — 실제 항목이 3개 미만이면 나머지는 empty placeholder.
+                      //   0개 → placeholder 3 · 1개 → 실제1+placeholder2 · 2개 → 실제2+placeholder1
+                      //   3~6개 → 실제 개수만 · 6개 초과분은 slice 로 제외.
+                      // (count-label 은 실제 DTO 개수만 표시 — placeholder 는 count 에 미포함.)
+                      const items = seasonActivityStatusItems.slice(0, 6);
+                      const renderCount = Math.min(6, Math.max(3, items.length));
                       return Array.from({ length: renderCount }).map((_, index) => {
-                        const roleItem = roles[index] as any;
-                        if (roleItem) {
+                        const statusItem = items[index];
+                        if (statusItem) {
                           return (
                             <div className="badge-item" key={index}>
                               <div className="badge-icon">
-                                <img src={roleItem.profileImage || profilePhotoUrl || "/images/avatar/avatar.png"} alt="profile" />
+                                <img src={profilePhotoUrl || "/images/avatar/avatar.png"} alt="profile" />
                               </div>
                               <div className="badge-info">
-                                {roleItem.isAdmin ? (
-                                  <span className="badge-text">
-                                    <span style={{ display: "inline-block", minWidth: "86px", maxWidth: "86px", whiteSpace: "nowrap", verticalAlign: "middle", fontFamily: "'Pretendard', sans-serif", fontSize: "14px" }}>{truncate(`운영진(${roleItem.adminGeneration}기)`, 6)}</span>{" "}
-                                    <span className="separator" style={{ margin: "0 4px 0 0" }}>
-                                      |
-                                    </span>{" "}
-                                    <span className="sub-text" style={{ display: "inline-block", minWidth: "86px", maxWidth: "86px", whiteSpace: "nowrap", verticalAlign: "middle", fontFamily: "'Pretendard', sans-serif", fontSize: "14px" }}>
-                                      클럽 단위
-                                    </span>{" "}
-                                    <span className="separator" style={{ margin: "0" }}>
-                                      |
-                                    </span>
+                                <span className="badge-text">
+                                  <span style={{ display: "inline-block", minWidth: "86px", maxWidth: "86px", whiteSpace: "nowrap", verticalAlign: "middle", fontFamily: "'Pretendard', sans-serif", fontSize: "14px" }}>{truncate(statusItem.teamLabel, 6)}</span>{" "}
+                                  <span className="separator" style={{ margin: "0 4px 0 0" }}>
+                                    |
+                                  </span>{" "}
+                                  <span className="sub-text" style={{ display: "inline-block", minWidth: "86px", maxWidth: "86px", whiteSpace: "nowrap", verticalAlign: "middle", fontFamily: "'Pretendard', sans-serif", fontSize: "14px" }}>
+                                    {truncate(statusItem.partLabel, 6)}
+                                  </span>{" "}
+                                  <span className="separator" style={{ margin: "0" }}>
+                                    |
                                   </span>
-                                ) : (
-                                  <span className="badge-text">
-                                    <span style={{ display: "inline-block", minWidth: "86px", maxWidth: "86px", whiteSpace: "nowrap", verticalAlign: "middle", fontFamily: "'Pretendard', sans-serif", fontSize: "14px" }}>{truncate(roleItem.teamName, 6)}</span>{" "}
-                                    <span className="separator" style={{ margin: "0 4px 0 0" }}>
-                                      |
-                                    </span>{" "}
-                                    <span className="sub-text" style={{ display: "inline-block", minWidth: "86px", maxWidth: "86px", whiteSpace: "nowrap", verticalAlign: "middle", fontFamily: "'Pretendard', sans-serif", fontSize: "14px" }}>
-                                      {truncate(roleItem.partName, 6)}
-                                    </span>{" "}
-                                    <span className="separator" style={{ margin: "0" }}>
-                                      |
-                                    </span>
-                                  </span>
-                                )}
+                                </span>
                               </div>
                               <span className="badge-status yellow" style={{ display: "inline-block", width: "fit-content", whiteSpace: "nowrap", fontFamily: "'Pretendard', sans-serif", fontSize: "13px", padding: "4px 10px", marginLeft: "-4px" }}>
-                                {truncate(roleItem.roleLabel, 9)}
+                                {truncate(statusItem.statusLabel, 9)}
                               </span>
                             </div>
                           );

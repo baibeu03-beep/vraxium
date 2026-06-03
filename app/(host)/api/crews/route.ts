@@ -188,124 +188,112 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, data: [] });
     }
 
-    // 2) Enrichment from crew_list_view (rich fields: school, major, club, points, weeks).
+    // 2~2.8) Enrichment — 5개 source 모두 userIds 에만 의존하며 서로 독립적이므로
+    // Promise.all 로 병렬 실행한다(기존 순차 waterfall 제거). 각 enrichment 는 best-effort:
+    // 하나가 실패해도 roster(user_profiles)는 그대로 표시한다. 병렬화는 round-trip 지연만
+    // 줄일 뿐, 최종 merge + sort 결과(응답 JSON)는 순차 실행 때와 100% 동일하다.
     const userIds = profiles.map((p) => p.user_id);
-    const { data: viewData, error: viewError } = await supabase
-      .from("crew_list_view")
-      .select("*")
-      .in("id", userIds)
-      .returns<CrewListViewRow[]>();
+    const STAR_PAGE = 1000;
+    const [viewRes, eduRes, growthRes, membershipRes, starsByUser] = await Promise.all([
+      // 2) crew_list_view (rich fields: school, major, club, points, weeks)
+      supabase
+        .from("crew_list_view")
+        .select("*")
+        .in("id", userIds)
+        .returns<CrewListViewRow[]>(),
+      // 2.5) Education — 최종학력(sort_order=0) 우선. sort_order ASC + first-write-wins.
+      // (동일 패턴: weekly-colleagues/route.ts:62-78)
+      supabase
+        .from("user_educations")
+        .select("user_id, school_name, major_name_1, sort_order")
+        .in("user_id", userIds)
+        .order("sort_order", { ascending: true })
+        .returns<UserEducationRow[]>(),
+      // 2.6) Growth stats — user_growth_stats(누적 활동 통계). cumulative_weeks 컬럼 미존재 시
+      // 쿼리 실패 → 에러 로그 후 view 폴백.
+      supabase
+        .from("user_growth_stats")
+        .select("user_id, approved_weeks, cumulative_weeks")
+        .in("user_id", userIds)
+        .returns<UserGrowthStatsRow[]>(),
+      // 2.7) Membership — user_memberships(denormalized team_name / part_name). is_current 필터를
+      // 쿼리 단계에서 걸지 않고 모든 row 를 가져와 아래에서 2-pass 우선순위 채택.
+      supabase
+        .from("user_memberships")
+        .select("user_id, team_name, part_name, membership_level, membership_state, is_current")
+        .in("user_id", userIds)
+        .returns<UserMembershipRow[]>(),
+      // 2.8) Stars — user_weekly_points.points(별) 누적 합산. 별 개수 SoT(=cluster-4-ranking,
+      // cluster4-weekly-cards 와 동일 캐노니컬 source). PostgREST max-rows=1000 강제 →
+      // range 페이지네이션으로 전 행 수집 후 user 별 합산. best-effort: 실패 시 view.total_stars 폴백.
+      (async () => {
+        const acc = new Map<string, number>();
+        for (let from = 0; ; from += STAR_PAGE) {
+          const { data: starRows, error: starError } = await supabase
+            .from("user_weekly_points")
+            .select("user_id, points")
+            .in("user_id", userIds)
+            .range(from, from + STAR_PAGE - 1)
+            .returns<{ user_id: string; points: number | null }[]>();
+          if (starError) {
+            console.error("user_weekly_points(star) enrichment failed (continuing without it):", JSON.stringify(starError));
+            break;
+          }
+          if (!starRows || starRows.length === 0) break;
+          for (const row of starRows) {
+            const prev = acc.get(row.user_id) ?? 0;
+            acc.set(row.user_id, prev + (Number(row.points) || 0));
+          }
+          if (starRows.length < STAR_PAGE) break;
+        }
+        return acc;
+      })(),
+    ]);
 
-    // [debug] 임시
+    // --- view ---
+    const { data: viewData, error: viewError } = viewRes;
     console.log("[/api/crews] enrichment view rows=", viewData?.length ?? 0, "err=", viewError?.message);
-
-    // view 조회가 실패해도 roster 는 보여준다 — enrichment 는 best-effort.
     if (viewError) {
       console.error("crew_list_view enrichment failed (continuing without it):", JSON.stringify(viewError));
     }
-
     const viewMap = new Map<string, CrewListViewRow>();
     for (const row of viewData ?? []) viewMap.set(row.id, row);
 
-    // 2.5) Education enrichment — 최종학력(sort_order=0) 우선.
-    // 동일 패턴: weekly-colleagues/route.ts:62-78. sort_order ASC + first-write-wins
-    // 으로 user 당 1행만 채택한다 (sort_order=0 가 최종학력 컨벤션이므로 첫 row 가 최종).
-    const { data: educations, error: eduError } = await supabase
-      .from("user_educations")
-      .select("user_id, school_name, major_name_1, sort_order")
-      .in("user_id", userIds)
-      .order("sort_order", { ascending: true })
-      .returns<UserEducationRow[]>();
-
+    // --- educations (user 당 첫 row = 최종학력) ---
+    const { data: educations, error: eduError } = eduRes;
     console.log("[/api/crews] education rows=", educations?.length ?? 0, "err=", eduError?.message);
-
     if (eduError) {
       console.error("user_educations enrichment failed (continuing without it):", JSON.stringify(eduError));
     }
-
     const eduMap = new Map<string, UserEducationRow>();
     for (const row of educations ?? []) {
       if (!eduMap.has(row.user_id)) eduMap.set(row.user_id, row);
     }
 
-    // 2.6) Growth stats enrichment — user_growth_stats(누적 활동 통계).
-    // user_id 별 1행 가정 (PK 또는 unique). cumulative_weeks 컬럼 존재 의존 — 미존재 시
-    // 쿼리 실패 → 에러 로그 후 view 폴백 (approvedWeeks 도 함께 view 로 떨어진다).
-    const { data: growthStats, error: growthError } = await supabase
-      .from("user_growth_stats")
-      .select("user_id, approved_weeks, cumulative_weeks")
-      .in("user_id", userIds)
-      .returns<UserGrowthStatsRow[]>();
-
+    // --- growth stats ---
+    const { data: growthStats, error: growthError } = growthRes;
     console.log("[/api/crews] growth_stats rows=", growthStats?.length ?? 0, "err=", growthError?.message);
-
     if (growthError) {
       console.error("user_growth_stats enrichment failed (continuing without it):", JSON.stringify(growthError));
     }
-
     const growthMap = new Map<string, UserGrowthStatsRow>();
     for (const row of growthStats ?? []) growthMap.set(row.user_id, row);
 
-    // 2.7) Membership enrichment — user_memberships (denormalized team_name / part_name).
-    // is_current 필터를 쿼리 단계에서 걸지 않는 이유: is_current 비동기화로 인한 누락을
-    // 방지하기 위해 모든 row 를 가져온 뒤 2-pass로 우선순위 채택한다.
-    //   Pass 1: is_current=true 행만 채택
-    //   Pass 2: 그래도 매칭이 없는 user 는 아무 row 라도 폴백
-    const { data: memberships, error: membershipError } = await supabase
-      .from("user_memberships")
-      .select("user_id, team_name, part_name, membership_level, membership_state, is_current")
-      .in("user_id", userIds)
-      .returns<UserMembershipRow[]>();
-
+    // --- memberships (Pass1: is_current=true 우선, Pass2: 없으면 비-current 폴백) ---
+    const { data: memberships, error: membershipError } = membershipRes;
     console.log("[/api/crews] membership rows=", memberships?.length ?? 0, "err=", membershipError?.message);
-
     if (membershipError) {
       console.error("user_memberships enrichment failed (continuing without it):", JSON.stringify(membershipError));
     }
-
     const membershipMap = new Map<string, UserMembershipRow>();
-    // Pass 1: is_current=true 우선
     for (const m of memberships ?? []) {
       if (m.is_current === true && !membershipMap.has(m.user_id)) {
         membershipMap.set(m.user_id, m);
       }
     }
-    // Pass 2: is_current 행이 없는 user 는 비-current row 폴백
     for (const m of memberships ?? []) {
       if (!membershipMap.has(m.user_id)) {
         membershipMap.set(m.user_id, m);
-      }
-    }
-
-    // 2.8) Stars enrichment — user_weekly_points.points(별) 누적 합산.
-    // 별 개수 SoT: user_weekly_points (cluster-4-ranking/route.ts, cluster4-weekly-cards.ts,
-    // cluster4/weekly-growth seasonPointSummary 와 동일 캐노니컬 source — uwp.user_id = user_profiles.user_id).
-    // (이전 public.points 테이블은 이 환경의 PostgREST 스키마에 미노출 → 0 fallback.)
-    // crew_list_view.total_stars 는 legacy(phalanx 28명) enrichment 전용이라
-    // encre/oranke 는 view 행이 없어 항상 0 으로 표시되던 문제를 여기서 교정한다.
-    // PostgREST 가 서버측 max-rows 를 1000 으로 강제하므로 range 페이지네이션으로
-    // 전 주차 별 포인트 행을 빠짐없이 수집한 뒤 user 별로 합산한다.
-    // best-effort: 조회 실패 시 view.total_stars 폴백 (별 외 포인트는 미터치).
-    const starsByUser = new Map<string, number>();
-    {
-      const PAGE = 1000;
-      for (let from = 0; ; from += PAGE) {
-        const { data: starRows, error: starError } = await supabase
-          .from("user_weekly_points")
-          .select("user_id, points")
-          .in("user_id", userIds)
-          .range(from, from + PAGE - 1)
-          .returns<{ user_id: string; points: number | null }[]>();
-        if (starError) {
-          console.error("user_weekly_points(star) enrichment failed (continuing without it):", JSON.stringify(starError));
-          break;
-        }
-        if (!starRows || starRows.length === 0) break;
-        for (const row of starRows) {
-          const prev = starsByUser.get(row.user_id) ?? 0;
-          starsByUser.set(row.user_id, prev + (Number(row.points) || 0));
-        }
-        if (starRows.length < PAGE) break;
       }
     }
 

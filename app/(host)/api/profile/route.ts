@@ -223,6 +223,57 @@ async function fetchClubRankAvgPercentile(request: NextRequest, userId: string |
   }
 }
 
+// 사이드바 이력서 카드 SoT — admin canonical route(/api/cluster1/resume)의 getCluster1Resume DTO.
+// 활동완료율(activityCompletion.rate)·실무 4종(practicalStats)을 고객 측에서 자체 계산하지 않고
+// 이 단일 DTO 에서 가져간다. club-rank 와 동일한 resolveAdminBaseUrl + x-internal-api-key 패턴.
+// best-effort — 실패/미설정 시 null 반환(호출부에서 기존 로컬 계산으로 폴백).
+// 반환 shape: { activityCompletion:{rate,availableActivities,completedActivities}, practicalStats:{...}, ... } | null
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchAdminCluster1Resume(request: NextRequest, userId: string | null): Promise<any | null> {
+  if (!userId) return null;
+
+  const adminApiBaseUrl = await resolveAdminBaseUrl();
+  if (!adminApiBaseUrl) {
+    console.warn("[profile] admin backend 미발견 — cluster1 resume DTO 조회 불가");
+    return null;
+  }
+
+  const targetUrl = new URL(`${adminApiBaseUrl}/api/cluster1/resume`);
+  targetUrl.searchParams.set("userId", userId);
+
+  const internalApiKey = process.env.INTERNAL_API_KEY;
+  if (!internalApiKey) console.warn("[profile] INTERNAL_API_KEY missing — cluster1 resume 호출");
+
+  const headers = new Headers();
+  headers.set("Content-Type", "application/json");
+  headers.set("x-internal-api-key", internalApiKey ?? "");
+  const cookie = request.headers.get("cookie");
+  if (cookie) headers.set("cookie", cookie);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  try {
+    const upstream = await fetch(targetUrl.toString(), {
+      method: "GET",
+      headers,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!upstream.ok) {
+      console.warn("[profile] cluster1 resume upstream non-OK", upstream.status, targetUrl.toString());
+      return null;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const json: any = await upstream.json();
+    return json?.success ? (json.data ?? null) : null;
+  } catch (e) {
+    console.warn("[profile] cluster1 resume fetch 실패 — null", (e as Error)?.message || String(e));
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // GET: 프로필 조회 (userId 쿼리 파라미터로 다른 유저 조회 가능)
 export async function GET(request: NextRequest) {
   try {
@@ -231,6 +282,13 @@ export async function GET(request: NextRequest) {
     // GET 은 공개 read 경로이므로 demoUserId 도 동일하게 user_id 조회 키로 사용한다
     // (test_user_markers 게이트는 쓰기 경로 전용 — 읽기는 어떤 userId 든 공개).
     const targetUserId = searchParams.get('userId') || searchParams.get('demoUserId');
+
+    // context: 'card'(사이드바/카드 경량) / 'cluster41'(cluster-4-1 전용 경량).
+    // cluster41 은 plain 분기를 그대로 타되, cluster-4-1 이 응답에서 읽지 않는
+    // 무거운 계산(실무 카운트 라인쿼리 9개·resume-card settings·point DTO·club-rank 외부프록시)만 스킵한다.
+    // → growthInfo/growthPeriodStats/currentSeasonInfo/seasonHistories 계산 경로는 100% 동일.
+    const context = searchParams.get('context');
+    const isCluster41 = context === 'cluster41';
 
     if (!supabaseAdmin) {
       return NextResponse.json(
@@ -532,13 +590,14 @@ export async function GET(request: NextRequest) {
 
     // resume-card admin settings (3-tier: user > org > site).
     // 두 응답 분기(context=card / 메인)에서 공유 사용.
-    const resumeCardSettings = await fetchResumeCardSettings(
-      supabaseAdmin,
-      profile?.id ?? null,
-      profile?.organization_slug ?? null,
-    );
-
-    const context = searchParams.get('context');
+    // cluster41 은 resume-card 를 렌더링하지 않으므로 settings 조회(3 쿼리)를 스킵한다.
+    const resumeCardSettings = isCluster41
+      ? EMPTY_RESUME_CARD_SETTINGS
+      : await fetchResumeCardSettings(
+          supabaseAdmin,
+          profile?.id ?? null,
+          profile?.organization_slug ?? null,
+        );
 
     // ========== context=card: 카드 페이지용 경량 응답 (시즌 통계/계산 전부 스킵) ==========
     if (context === 'card') {
@@ -763,7 +822,13 @@ export async function GET(request: NextRequest) {
 
     // Cluster3 주차 평균 백분위: admin canonical route(/api/cluster3/club-rank) 실시간 계산값.
     // DB 쿼리들과 병렬로 선행 호출하고 응답 직전에 await 한다.
-    const clubRankAvgPercentilePromise = fetchClubRankAvgPercentile(request, profile.id);
+    // cluster41 은 gradeStats.avgPercentile 을 읽지 않으므로 외부 admin 프록시 호출을 스킵한다.
+    const clubRankAvgPercentilePromise = isCluster41
+      ? Promise.resolve<number | null>(null)
+      : fetchClubRankAvgPercentile(request, profile.id);
+
+    // 사이드바 이력서 카드 단일 SoT — admin getCluster1Resume DTO. DB 쿼리들과 병렬 선행 호출.
+    const adminResumePromise = fetchAdminCluster1Resume(request, profile.id);
 
     // 모든 쿼리를 병렬로 실행 (성능 최적화)
     const [
@@ -815,7 +880,10 @@ export async function GET(request: NextRequest) {
       // point DTO(check/advantage/penalty)는 별도 쿼리로 분리 조회한다(아래 cumulativePointDto).
       // 이유: 한 SELECT 에 존재하지 않는 컬럼이 섞이면 PostgREST 가 쿼리 전체를 에러로 돌려
       //       data=null 이 되어 badges 와 point 가 동시에 0 으로 죽는다.
-      supabaseAdmin.from("user_cumulative_points").select("total_stars, total_lightnings, total_shields").eq("user_id", profile.id).maybeSingle(),
+      // 별/방패/번개 SoT = user_cumulative_points 전용 컬럼(total_checks/advantages/penalties).
+      // (구 total_stars/total_lightnings/total_shields 는 스키마에 존재하지 않아 쿼리 전체가 에러 →
+      //  badges 가 항상 0 으로 죽던 문제. admin getResumeCardForCrew 와 동일 컬럼으로 정정.)
+      supabaseAdmin.from("user_cumulative_points").select("total_checks, total_advantages, total_penalties").eq("user_id", profile.id).maybeSingle(),
 
       // season_histories
       // 실제 user_season_histories 컬럼: id, user_id, season_id, rating, review,
@@ -1001,11 +1069,14 @@ export async function GET(request: NextRequest) {
     // (profile.id 가 아닌 profile.user_id 우선 — /api/profile/summary 와 동일 컨벤션).
     // badges 조회와 분리하여, 한쪽 컬럼이 없거나 조회 실패해도 다른 쪽이 0 으로 죽지 않게 한다.
     const cumulativePointUserId = profile.user_id ?? profile.id;
-    const cumulativePointsRes = await supabaseAdmin
-      .from("user_cumulative_points")
-      .select("total_checks, total_advantages, total_penalties")
-      .eq("user_id", cumulativePointUserId)
-      .maybeSingle();
+    // cluster41 은 point DTO(check/advantage/penalty)를 읽지 않으므로 조회를 스킵한다.
+    const cumulativePointsRes = isCluster41
+      ? { data: null as { total_checks: number; total_advantages: number; total_penalties: number } | null, error: null as null }
+      : await supabaseAdmin
+          .from("user_cumulative_points")
+          .select("total_checks, total_advantages, total_penalties")
+          .eq("user_id", cumulativePointUserId)
+          .maybeSingle();
     if (cumulativePointsRes.error) {
       // 조회 실패(컬럼/권한/네트워크 등) — row 없음과 명확히 구분.
       console.error("[Profile API] user_cumulative_points 조회 실패(point)", cumulativePointUserId, cumulativePointsRes.error);
@@ -1017,6 +1088,8 @@ export async function GET(request: NextRequest) {
     }
     const cumulativePointDto = cumulativePointsRes.data;
     const clubRankAvgPercentile = await clubRankAvgPercentilePromise;
+    // 이력서 카드 SoT DTO (활동완료율·실무성적). 실패 시 null → 아래에서 로컬 계산 폴백.
+    const adminResume = await adminResumePromise;
     const growthStats = growthStatsResult.data;
     const allWeeks = allWeeksResult.data || [];
     const allRests = allRestsResult.data || [];
@@ -1092,7 +1165,64 @@ export async function GET(request: NextRequest) {
         is_qualified: row.is_qualified ?? false,
         seasons: row.season_id ? seasonsMap.get(row.season_id) || null : null,
       }));
-    const seasonHistories = attachSeasons(seasonHistoriesResult.data);
+    // ── FIND-OR-CREATE: 활성 시즌 user_season_histories 자동 생성 ──
+    // ⚠️ 주의: 이 GET 라우트는 여기서 **쓰기(INSERT)** 를 수행한다 (조회 전용 아님).
+    //   이유: cluster-4-1 타 크루 시즌 평판 저장은 peer_review.season_history_id
+    //         (FK → user_season_histories.id) 를 필요로 하는데, row 가 없는 크루는
+    //         seasonHistories=[] → 저장 대상 UUID 부재 → 저장 실패한다.
+    //   정책: 대상 유저가 "현재 활성 시즌"(seasons.uuid, started_at≤now≤ended_at)의
+    //         user_season_histories row 를 갖고 있지 않으면, rating/review=null 로 1건 생성하고
+    //         그 실제 UUID 를 응답 seasonHistories 에 포함시킨다 (앞으로 누락 크루 자동 self-heal).
+    //   멱등: 이미 row 가 있으면 INSERT 하지 않는다. 첫 조회에서 1회만 쓰기, 이후 GET 은 no-op.
+    //   best-effort: 활성 시즌 미해소/INSERT 실패 시 기존 동작(빈 배열)로 폴백 — 응답은 깨지지 않음.
+    //   ⚠ legacy(crew_list_view) 경로와 context=card 경로는 위에서 early-return 하므로 여기 미적용.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const seasonHistoryRows: any[] = [...(seasonHistoriesResult.data || [])];
+    try {
+      // 현재 활성 시즌 1건 (복수면 started_at 최신). season_definitions(text)와 별개인 seasons(uuid).
+      const nowForSeason = new Date().toISOString();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const activeSeasonRow = ((seasonsRows || []) as any[])
+        .filter(
+          (s) =>
+            (!s.started_at || s.started_at <= nowForSeason) &&
+            (!s.ended_at || s.ended_at >= nowForSeason),
+        )
+        .sort((a, b) => String(b.started_at ?? "").localeCompare(String(a.started_at ?? "")))[0] ?? null;
+
+      const hasActiveSeasonRow =
+        activeSeasonRow != null &&
+        seasonHistoryRows.some((r) => r.season_id === activeSeasonRow.id);
+
+      if (activeSeasonRow && !hasActiveSeasonRow && profile?.id) {
+        const { data: createdRows, error: createErr } = await supabaseAdmin
+          .from("user_season_histories")
+          .insert({
+            user_id: profile.id,
+            season_id: activeSeasonRow.id,
+            rating: null,
+            review: null,
+          })
+          .select("id, user_id, season_id, rating, review, created_at, updated_at");
+        if (createErr) {
+          // 동시 요청 등으로 이미 생성됐을 수 있으니 재조회로 복구 (UUID 보장).
+          console.warn('[Profile API] season_history find-or-create INSERT 실패 — 재조회', createErr.message);
+          const { data: refetched } = await supabaseAdmin
+            .from("user_season_histories")
+            .select("id, user_id, season_id, rating, review, created_at, updated_at")
+            .eq("user_id", profile.id)
+            .eq("season_id", activeSeasonRow.id);
+          if (refetched && refetched.length > 0) seasonHistoryRows.push(...refetched);
+        } else if (createdRows && createdRows.length > 0) {
+          console.log('[Profile API] season_history 자동 생성(find-or-create):', createdRows[0].id, 'season', activeSeasonRow.id);
+          seasonHistoryRows.push(...createdRows);
+        }
+      }
+    } catch (e) {
+      console.error('[Profile API] season_history find-or-create 예외 — 기존 동작 폴백', (e as Error)?.message || String(e));
+    }
+
+    const seasonHistories = attachSeasons(seasonHistoryRows);
 
     console.log('[Profile API] final seasonHistories', seasonHistories);
 
@@ -1177,7 +1307,7 @@ export async function GET(request: NextRequest) {
         .map((w) => weekIdByStart.get(w.week_start_date))
         .filter((id): id is string => !!id);
 
-      if (infoUserId && infoWeekIds.length > 0) {
+      if (!isCluster41 && infoUserId && infoWeekIds.length > 0) {
         const { data: infoLines } = await supabaseAdmin
           .from("cluster4_lines")
           .select("id, submission_closes_at")
@@ -1227,7 +1357,7 @@ export async function GET(request: NextRequest) {
         .map((w) => weekIdByStart.get(w.week_start_date))
         .filter((id): id is string => !!id);
 
-      if (experienceUserId && experienceWeekIds.length > 0) {
+      if (!isCluster41 && experienceUserId && experienceWeekIds.length > 0) {
         const { data: experienceLines } = await supabaseAdmin
           .from("cluster4_lines")
           .select("id, submission_closes_at")
@@ -1277,7 +1407,7 @@ export async function GET(request: NextRequest) {
         .map((w) => weekIdByStart.get(w.week_start_date))
         .filter((id): id is string => !!id);
 
-      if (competencyUserId && competencyWeekIds.length > 0) {
+      if (!isCluster41 && competencyUserId && competencyWeekIds.length > 0) {
         const { data: competencyLines } = await supabaseAdmin
           .from("cluster4_lines")
           .select("id, submission_closes_at")
@@ -1322,7 +1452,7 @@ export async function GET(request: NextRequest) {
         .map((w) => weekIdByStart.get(w.week_start_date))
         .filter((id): id is string => !!id);
 
-      if (careerUserId && careerWeekIds.length > 0) {
+      if (!isCluster41 && careerUserId && careerWeekIds.length > 0) {
         const { data: careerLines } = await supabaseAdmin
           .from("cluster4_lines")
           .select("id, submission_closes_at")
@@ -1373,20 +1503,29 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // 단일 SoT: admin getCluster1Resume.practicalStats 우선. 프록시 실패 시에만 로컬 cluster4 라인 집계로 폴백.
+    //   (로컬 집계도 cluster4 라인 기준이라 통상 동일하지만, 어드민 DTO 를 정본으로 고정한다.)
+    const practicalStats = adminResume?.practicalStats
+      ? {
+          infoCount: adminResume.practicalStats.infoCount ?? 0,
+          experienceCount: adminResume.practicalStats.experienceCount ?? 0,
+          abilityUnitCount: adminResume.practicalStats.abilityUnitCount ?? 0,
+          careerProjectCount: adminResume.practicalStats.careerProjectCount ?? 0,
+        }
+      : {
+          infoCount: infoLineSuccessCount,
+          experienceCount: experienceLineSuccessCount,
+          abilityUnitCount: competencyLineSuccessCount,
+          careerProjectCount: careerLineSuccessCount,
+        };
     const practicalCounts = {
-      competency: competencyLineSuccessCount,
-      experience: experienceLineSuccessCount,
-      info: infoLineSuccessCount,
-      career: careerLineSuccessCount,
+      competency: practicalStats.abilityUnitCount,
+      experience: practicalStats.experienceCount,
+      info: practicalStats.infoCount,
+      career: practicalStats.careerProjectCount,
     };
-    const practicalStats = {
-      infoCount: infoLineSuccessCount,
-      experienceCount: experienceLineSuccessCount,
-      abilityUnitCount: competencyLineSuccessCount,
-      careerProjectCount: careerLineSuccessCount,
-    };
-    const careerProjectCount = careerLineSuccessCount;
-    const careerActivityCount = careerLineSuccessCount;
+    const careerProjectCount = practicalStats.careerProjectCount;
+    const careerActivityCount = practicalStats.careerProjectCount;
 
     // completionRate 계산: (R / P) × 100
     // P = 가입 주차 이후 열린 모든 활동 수 (weekly_activities, break 시즌 제외)
@@ -1420,6 +1559,15 @@ export async function GET(request: NextRequest) {
       console.log('[Profile API] completionRate 결과:', completionRate);
     } else {
       console.log('[Profile API] completionRate 계산 스킵 - 조건 불충족 (null 반환)');
+    }
+
+    // ── 단일 SoT override ──
+    // 위 로컬 경로는 weekly_activities / activity_records 에 의존하는데 두 테이블은 cluster4
+    // 라인 체계로 전환되며 제거되어(스키마 부재) totalP=0 → 항상 null 이 된다. 따라서 활동완료율은
+    // admin getCluster1Resume.activityCompletion.rate (허브 개설라인 기준, 전체기간 이행/개설)로
+    // 대체한다. 프록시 실패 시에만 위 로컬 결과를 유지한다(= 기존 폴백 동작).
+    if (adminResume?.activityCompletion && typeof adminResume.activityCompletion.rate === "number") {
+      completionRate = adminResume.activityCompletion.rate;
     }
 
     // 시즌 이름에서 순서 매핑 (겨울 시작: winter=1, spring=2, summer=3, fall=4)
@@ -1878,10 +2026,11 @@ export async function GET(request: NextRequest) {
       careerActivityCount,
       reliabilityRate: finalGrowthPeriodStats.reliabilityRate,
       completionRate,
+      // 별=total_checks, 방패=total_advantages, 번개=total_penalties (admin getResumeCardForCrew 와 동일 매핑).
       badges: {
-        stars: cumulativePoints?.total_stars || 0,
-        lightnings: cumulativePoints?.total_lightnings || 0,
-        shields: cumulativePoints?.total_shields || 0,
+        stars: cumulativePoints?.total_checks ?? 0,
+        lightnings: cumulativePoints?.total_penalties ?? 0,
+        shields: cumulativePoints?.total_advantages ?? 0,
       },
       // resume-card .resume-badges 표시용 point DTO.
       // source table: user_cumulative_points (전용 컬럼, cumulativePointDto 로 분리 조회)

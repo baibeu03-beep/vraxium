@@ -23,6 +23,7 @@ import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
 import DetailLogModal from "./DetailLogModal";
 import confetti from "canvas-confetti";
 import HelpModalBody from "@/components/shared/HelpModalBody";
+import { Skeleton } from "@/components/ui/skeleton/Skeleton";
 import type { AdminCluster4WeeklyCardDto, Cluster4RateDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
 
 // 주차 결과 결정 시점 = N+1주(목) 12:01 KST = N(월) 00:00 + 10일 12시간 1분
@@ -8561,7 +8562,48 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   if (isLoadingWeek) {
-    return <div className="cluster4-card-content weekly-card-detail" style={{ marginRight: "27px", minHeight: "400px" }} />;
+    // 로딩 중에는 빈 화면/0값 대신 카드 상세 레이아웃을 모사한 Skeleton 을 노출한다.
+    // (org 강조색·실제 값은 데이터 도착 후에만 렌더 → "빈 화면→데이터 등장" 점프 제거)
+    return (
+      <div className="cluster4-card-content weekly-card-detail" style={{ marginRight: "27px", minHeight: "400px" }} aria-busy="true">
+        {/* 상단 탭/네비 바 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+          <Skeleton width={44} height={44} radius={10} />
+          <Skeleton width={44} height={44} radius={10} />
+          <div style={{ flex: 1 }} />
+          <Skeleton width={96} height={36} radius={8} />
+          <Skeleton width={96} height={36} radius={8} />
+          <Skeleton width={180} height={36} radius={8} />
+        </div>
+
+        {/* 섹션1: 좌측 큰 주차 이미지 + 우측 헤더/평판 영역 */}
+        <div style={{ display: "flex", gap: 24, alignItems: "stretch", flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 340px", minWidth: 280 }}>
+            <Skeleton width="100%" height={320} radius={16} style={{ display: "block" }} />
+          </div>
+          <div style={{ flex: "1 1 340px", minWidth: 280, display: "flex", flexDirection: "column", gap: 14 }}>
+            <Skeleton width="60%" height={26} radius={6} style={{ display: "block" }} />
+            <Skeleton width="40%" height={16} radius={4} style={{ display: "block" }} />
+            <div style={{ display: "flex", gap: 14, marginTop: 6 }}>
+              <Skeleton width={72} height={72} circle />
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10, justifyContent: "center" }}>
+                <Skeleton width="80%" height={15} radius={4} style={{ display: "block" }} />
+                <Skeleton width="65%" height={15} radius={4} style={{ display: "block" }} />
+                <Skeleton width="50%" height={15} radius={4} style={{ display: "block" }} />
+              </div>
+            </div>
+            <Skeleton width="100%" height={88} radius={12} style={{ display: "block", marginTop: 8 }} />
+          </div>
+        </div>
+
+        {/* 하단 섹션: 4허브/통계 카드 자리 */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginTop: 28 }}>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={`card-skeleton-${i}`} width="100%" height={140} radius={14} style={{ display: "block" }} />
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -8954,7 +8996,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         style={{ cursor: isEmpty ? "default" : "pointer" }}
                       >
                         <div className="card-profile">
-                          <div className="profile-image">{!isEmpty && user.profileImg ? <img src={user.profileImg} alt={user.name} /> : <div className="profile-placeholder"></div>}</div>
+                          <div className="profile-image">{!isEmpty && user.profileImg ? <img src={user.profileImg} alt={user.name} loading="lazy" decoding="async" /> : <div className="profile-placeholder"></div>}</div>
                           <div className="profile-info">
                             <div className="profile-name">
                               {isEmpty ? (
@@ -9158,7 +9200,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     style={{ cursor: isEmpty ? "default" : "pointer" }}
                   >
                     <div className="card-profile">
-                      <div className="profile-image">{!isEmpty && user.profileImg ? <img src={user.profileImg} alt={user.name} /> : <div className="profile-placeholder"></div>}</div>
+                      <div className="profile-image">{!isEmpty && user.profileImg ? <img src={user.profileImg} alt={user.name} loading="lazy" decoding="async" /> : <div className="profile-placeholder"></div>}</div>
                       <div className="profile-info">
                         <div className="profile-name-row">
                           <div className="profile-name">

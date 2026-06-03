@@ -11,6 +11,7 @@ import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
 import { isPxRoute, isEcRoute, withPxRoute, getOrgConfigFromPathname, getGraduationWeeksFromPathname } from "@/lib/cluster-route";
 import type { AdminCluster4WeeklyCardDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto, Cluster4RateDto } from "@/shared/cluster4.contracts";
 import type { Cluster3StatsCards } from "@/lib/cluster3StatsCardsTypes";
+import { Skeleton } from "@/components/ui/skeleton/Skeleton";
 
 const truncate = (text: string | null | undefined, maxLen: number = 5): string => {
   const t = text || "-";
@@ -417,6 +418,10 @@ const Cluster41Content = () => {
   const [isLoadingWeeks, setIsLoadingWeeks] = useState(true);
   const [isPendingApproval, setIsPendingApproval] = useState(false);
   const [isNotLoggedIn, setIsNotLoggedIn] = useState(false);
+  // 인적사항/성장 요약(프로필 응답) 준비 여부. 프로필 fetch 가 끝나기 전에는
+  // 요약 카드(시즌/성장 주차 집계·배지)를 0/'-'/'로딩 중...' 대신 Skeleton 으로 가린다.
+  // ※ 표시 전용 게이트일 뿐, 데이터/값/배선은 일절 바꾸지 않는다.
+  const [summaryReady, setSummaryReady] = useState(false);
 
   const [joinedWeekStartDate, setJoinedWeekStartDate] = useState<string | null>(null);
   // weekly-cards 로드 실패(504/비-JSON/네트워크) 시 기존 데이터를 유지하면서 표시할 에러 상태.
@@ -439,8 +444,14 @@ const Cluster41Content = () => {
         // (동일 userId 의 중도 실패는 effect 가 재실행되지 않으므로 여기서 초기화되지 않고 기존 데이터가 보존된다.)
         setDbWeeklyData([]);
         setWeeklyLoadError(false);
+        setSummaryReady(false);
 
-        const profileUrl = targetUserId ? `/api/profile?userId=${targetUserId}${demoQS}` : '/api/profile';
+        // context=cluster41: cluster-4-1 이 응답에서 읽지 않는 무거운 계산(실무 카운트 라인쿼리·
+        // resume-card settings·point DTO·club-rank 외부프록시)을 백엔드에서 스킵하는 경량 분기.
+        // growthInfo/growthPeriodStats/currentSeasonInfo/seasonHistories 값은 plain 과 100% 동일.
+        const profileUrl = targetUserId
+          ? `/api/profile?userId=${targetUserId}${demoQS}&context=cluster41`
+          : '/api/profile?context=cluster41';
         const profileRes = await fetch(profileUrl, { signal: abortController.signal });
         const profileResult = await profileRes.json();
         if (isStale()) return;
@@ -452,6 +463,9 @@ const Cluster41Content = () => {
           }
           setDbWeeklyData([]);
           setIsLoadingWeeks(false);
+          // 프로필 실패 시: 요약 카드가 (targetUserId 보기에서) 무한 Skeleton 으로 멈추지 않도록
+          // 게이트를 풀어 기존 '-' fallback 을 노출한다(에러 상태는 별도 빈/안내 블록이 처리).
+          setSummaryReady(true);
           return;
         }
 
@@ -497,6 +511,8 @@ const Cluster41Content = () => {
           setSeasonCards([]);
         }
         setIsLoadingSeasons(false);
+        // 프로필 응답이 모두 반영된 시점 — 이제 요약 카드를 실데이터로 노출(Skeleton 해제).
+        setSummaryReady(true);
 
         const weeklyRes = await fetch(`/api/cluster4/weekly-cards?userId=${userId}${demoQS}`, { signal: abortController.signal });
         if (isStale()) return;
@@ -666,7 +682,8 @@ const Cluster41Content = () => {
     return ["전체 (all)", ...Array.from(set)];
   }, [dbWeeklyData]);
 
-  const filteredDbData = dbWeeklyData.filter((week) => {
+  // 필터 결과를 매 렌더마다 재계산하지 않도록 메모이즈(입력/계산식 동일 — 출력 불변).
+  const filteredDbData = React.useMemo(() => dbWeeklyData.filter((week) => {
     const seasonMatch =
       selectedSeason === "역대 시즌" || seasonOfLabel(week.weekLabel) === selectedSeason;
     const resultMatch =
@@ -674,17 +691,17 @@ const Cluster41Content = () => {
       selectedResult === "전체 (all)" ||
       week.statusLabel === selectedResult;
     return seasonMatch && resultMatch;
-  });
+  }), [dbWeeklyData, selectedSeason, selectedResult]);
 
   const itemsPerPage = 10;
   const totalPages = Math.max(1, Math.ceil(filteredDbData.length / itemsPerPage));
-  const paginatedDbData = filteredDbData.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
+  // 화면에 그릴 카드 목록도 메모이즈 — 페이지/모바일 노출수/필터가 바뀔 때만 재계산.
+  const visibleCards: AdminCluster4WeeklyCardDto[] = React.useMemo(
+    () => isMobile
+      ? filteredDbData.slice(0, mobileVisibleCount)
+      : filteredDbData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage),
+    [filteredDbData, isMobile, mobileVisibleCount, currentPage]
   );
-  const visibleCards: AdminCluster4WeeklyCardDto[] = isMobile
-    ? filteredDbData.slice(0, mobileVisibleCount)
-    : paginatedDbData;
 
   console.log('[weekly-cards] render lengths', {
     cards: dbWeeklyData.length,
@@ -795,14 +812,18 @@ const Cluster41Content = () => {
                 <svg className="badge-border" viewBox="0 0 124 50" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M0.84668 0.846558H122.847V26.7666L98.4467 48.8466H0.84668V0.846558Z" fill={isPX ? '#1E9503' : isEC ? '#FF4B70' : '#FAAB07'} stroke={isPX ? '#1E9503' : isEC ? '#FF4B70' : '#FAAB07'} strokeWidth="1.69311"/>
                 </svg>
-                <span className="badge-text">{getGrowthBadgeText(
-                  userStatus,
-                  // 상태값 SoT: admin stats-cards(process) 우선 → growthStatusLabel → growthStatus,
-                  // 데모/로딩/실패 시 기존 /api/profile growthStatus fallback.
-                  statsCards?.process.growthStatusLabel
-                    ?? statsCards?.process.growthStatus
-                    ?? growthStatus
-                )}</span>
+                {summaryReady ? (
+                  <span className="badge-text">{getGrowthBadgeText(
+                    userStatus,
+                    // 상태값 SoT: admin stats-cards(process) 우선 → growthStatusLabel → growthStatus,
+                    // 데모/로딩/실패 시 기존 /api/profile growthStatus fallback.
+                    statsCards?.process.growthStatusLabel
+                      ?? statsCards?.process.growthStatus
+                      ?? growthStatus
+                  )}</span>
+                ) : (
+                  <Skeleton width={64} height={15} radius={4} />
+                )}
               </div>
             </div>
 
@@ -826,7 +847,12 @@ const Cluster41Content = () => {
                   <span className="collection-label">Add new passion, hardship and growth</span>
                 </div>
                 <p className="collection-text">
-                  {currentSeasonInfo?.isBreakSeason ? (
+                  {!summaryReady ? (
+                    <>
+                      <Skeleton width="100%" height={14} radius={4} style={{ display: 'block', marginBottom: 6 }} />
+                      <Skeleton width="70%" height={14} radius={4} style={{ display: 'block' }} />
+                    </>
+                  ) : currentSeasonInfo?.isBreakSeason ? (
                     <>현재 클럽은, <strong>{currentSeasonInfo.year}년 {currentSeasonInfo.fromSeason} 시즌</strong>에서 <strong>{currentSeasonInfo.year}년 {currentSeasonInfo.toSeason} 시즌</strong>으로 가는 휴식(시즌 전환) 중에 있습니다.</>
                   ) : (
                     <>현재 클럽은, <strong>{currentSeasonInfo ? `${currentSeasonInfo.year}년 ${currentSeasonInfo.name} 시즌, ${currentSeasonInfo.currentWeek}주차` : '로딩 중...'}</strong>를 {currentSeasonInfo?.isClubBreak ? `휴식 (${currentSeasonInfo.holidayName || '공식'})` : '진행'} 중에 있습니다.</>
@@ -847,7 +873,9 @@ const Cluster41Content = () => {
                 <div className="detail-row">
                   <span className="detail-label">성장 시작 주차</span>
                   <span className="detail-value">
-                    {startWeekInfo && startWeekInfo.year
+                    {!summaryReady ? (
+                      <Skeleton width={170} height={14} radius={4} />
+                    ) : startWeekInfo && startWeekInfo.year
                       ? startWeekInfo.isBreak
                         ? `${startWeekInfo.year}년, ${startWeekInfo.seasonName} 시즌, 전환 주차`
                         : `${startWeekInfo.year}년, ${startWeekInfo.seasonName} 시즌, ${startWeekInfo.weekNumber}주차`
@@ -857,31 +885,49 @@ const Cluster41Content = () => {
                 <div className="detail-row">
                   <span className="detail-label">성장 가능 주차</span>
                   <span className="detail-value">
-                    <span className="number">{growthWeeks.available ?? '-'}</span><span className="orange-highlight">({growthPeriodStats?.availableSeasons ?? '-'})</span> <span className="white-text">개 주차</span>
+                    {!summaryReady ? (
+                      <Skeleton width={90} height={14} radius={4} />
+                    ) : (
+                      <><span className="number">{growthWeeks.available ?? '-'}</span><span className="orange-highlight">({growthPeriodStats?.availableSeasons ?? '-'})</span> <span className="white-text">개 주차</span></>
+                    )}
                   </span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">성장 성공 주차</span>
                   <span className="detail-value">
-                    <span className="number">{growthWeeks.approved ?? '-'}</span> <span className="white-text">개 주차</span>
+                    {!summaryReady ? (
+                      <Skeleton width={70} height={14} radius={4} />
+                    ) : (
+                      <><span className="number">{growthWeeks.approved ?? '-'}</span> <span className="white-text">개 주차</span></>
+                    )}
                   </span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">성장 실패 주차</span>
                   <span className="detail-value">
-                    <span className="number">{growthWeeks.unapproved ?? '-'}</span> <span className="white-text">개 주차</span>
+                    {!summaryReady ? (
+                      <Skeleton width={70} height={14} radius={4} />
+                    ) : (
+                      <><span className="number">{growthWeeks.unapproved ?? '-'}</span> <span className="white-text">개 주차</span></>
+                    )}
                   </span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">성장 휴식 주차</span>
                   <span className="detail-value">
-                    <span className="number">{growthWeeks.rest ?? '-'}</span> <span className="white-text">개 주차</span>
+                    {!summaryReady ? (
+                      <Skeleton width={70} height={14} radius={4} />
+                    ) : (
+                      <><span className="number">{growthWeeks.rest ?? '-'}</span> <span className="white-text">개 주차</span></>
+                    )}
                   </span>
                 </div>
                 <div className="detail-row">
                   <span className="detail-label">성장 종료 주차</span>
                   <span className="detail-value">
-                    {endWeekInfo && endWeekInfo.year
+                    {!summaryReady ? (
+                      <Skeleton width={170} height={14} radius={4} />
+                    ) : endWeekInfo && endWeekInfo.year
                       ? `${endWeekInfo.year}년, ${endWeekInfo.seasonName} 시즌${endWeekInfo.isBreak ? ', 전환 주차' : (endWeekInfo.weekNumber ? `, ${endWeekInfo.weekNumber}주차` : '')} (${getGrowthBadgeText(userStatus, growthStatus)})`
                       : `~ing (${getGrowthBadgeText(userStatus, growthStatus)})`}
                   </span>
@@ -1251,7 +1297,37 @@ const Cluster41Content = () => {
         {/* 주차 카드 리스트 */}
         <div className="weekly-cards">
           {isLoadingWeeks ? (
-            <div style={{ padding: '20px', textAlign: 'center', color: '#888' }}>주차 데이터 로딩 중...</div>
+            // 로딩 중에는 0/더미 카드 대신 동일 레이아웃의 Skeleton 카드를 노출(CLS 방지).
+            Array.from({ length: 5 }).map((_, i) => (
+              <div className="weekly-card" key={`weekly-skeleton-${i}`} style={{ pointerEvents: 'none' }}>
+                <div className="weekly-card-image">
+                  <Skeleton width="100%" height="100%" radius={12} style={{ display: 'block', minHeight: 120 }} />
+                </div>
+                <div className="weekly-card-content">
+                  <div className="weekly-card-header" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <Skeleton width={180} height={18} radius={4} />
+                    <Skeleton width={150} height={13} radius={4} />
+                  </div>
+                  <div className="weekly-card-info" style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+                    <Skeleton width={120} height={13} radius={4} />
+                    <Skeleton width={120} height={13} radius={4} />
+                    <Skeleton width={90} height={13} radius={4} />
+                  </div>
+                  <div className="weekly-card-main-progress" style={{ marginTop: 12 }}>
+                    <Skeleton width="100%" height={8} radius={6} style={{ display: 'block' }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+                    <Skeleton width={160} height={13} radius={4} />
+                    <Skeleton width={160} height={13} radius={4} />
+                    <Skeleton width={160} height={13} radius={4} />
+                    <Skeleton width={160} height={13} radius={4} />
+                  </div>
+                </div>
+                <div className="weekly-card-status-badge">
+                  <Skeleton width={56} height={56} radius={10} />
+                </div>
+              </div>
+            ))
           ) : (isNotLoggedIn || isPendingApproval) && !targetUserId ? (
             <div style={{ padding: '40px 20px', textAlign: 'center', color: '#aaa' }}>
               <p style={{ fontSize: '16px' }}>현재 해당 하는 시즌이 없습니다.</p>
@@ -1444,7 +1520,7 @@ const Cluster41Content = () => {
                       style={{ textDecoration: 'none', color: 'inherit' }}
                     >
                       <div className={`weekly-card-image ${isPersonalRest || isFail ? 'rest-personal-overlay' : ''}`} style={{ '--divider-color': dividerColor } as React.CSSProperties}>
-                        <img src={imagePaths.primary} alt={altTitle} data-stripped-src={imagePaths.stripped !== imagePaths.primary ? imagePaths.stripped : undefined} onError={handleWeekImageError} />
+                        <img src={imagePaths.primary} alt={altTitle} loading="lazy" decoding="async" data-stripped-src={imagePaths.stripped !== imagePaths.primary ? imagePaths.stripped : undefined} onError={handleWeekImageError} />
                         <div className="image-badges">
                           <div className={`badge-tag ${badgeToneClass}`}>{statusLabel}</div>
                         </div>
@@ -1524,7 +1600,7 @@ const Cluster41Content = () => {
                 <Link href={weekHref} key={week.weekId} className="weekly-card" style={{ textDecoration: 'none', color: 'inherit' }}>
                   {/* 왼쪽 이미지 */}
                   <div className={`weekly-card-image ${isPersonalRest || isFail ? 'rest-personal-overlay' : ''}`} style={{ '--divider-color': dividerColor } as React.CSSProperties}>
-                    <img src={imagePaths.primary} alt={altTitle} data-stripped-src={imagePaths.stripped !== imagePaths.primary ? imagePaths.stripped : undefined} onError={handleWeekImageError} />
+                    <img src={imagePaths.primary} alt={altTitle} loading="lazy" decoding="async" data-stripped-src={imagePaths.stripped !== imagePaths.primary ? imagePaths.stripped : undefined} onError={handleWeekImageError} />
                     {isPersonalRest && (
                       <div className="rest-message">
                         <span className="rest-text-line">충분히 <span className="rest-emoji">🥰</span></span>

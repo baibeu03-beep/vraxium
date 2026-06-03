@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useState, useEffect, useRef } from "react";
+import { Suspense, useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Animations from "@/components/shared/Animations";
@@ -247,9 +247,13 @@ function CrewsContent() {
   };
 
   const totalPages = Math.ceil(filteredCrews.length / ITEMS_PER_PAGE);
-  const paginatedCrews = filteredCrews.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
+  // 현재 페이지 슬라이스 메모이즈 — 드롭다운 토글 등 무관한 리렌더 시 배열 재생성 방지.
+  const paginatedCrews = useMemo(
+    () => filteredCrews.slice(
+      (currentPage - 1) * ITEMS_PER_PAGE,
+      currentPage * ITEMS_PER_PAGE
+    ),
+    [filteredCrews, currentPage]
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -784,6 +788,8 @@ function CrewsContent() {
                               <img
                                 src={crew.profileImg}
                                 alt={crew.name}
+                                loading="lazy"
+                                decoding="async"
                                 style={{ width: "100%", height: "100%", objectFit: "cover" }}
                               />
                             ) : (
@@ -826,6 +832,8 @@ function CrewsContent() {
                                       <img
                                         src={crew.profileImg}
                                         alt={crew.name}
+                                        loading="lazy"
+                                        decoding="async"
                                         style={{ width: "100%", height: "100%", objectFit: "cover" }}
                                       />
                                     ) : (
