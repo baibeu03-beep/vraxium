@@ -1366,10 +1366,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         // phase(진행 중/집계 중) 와 무관하게 운영진이 마킹한 휴식 여부.
         // 활동 라인 단위(실무 정보/역량/경험/경력) 판정에서 사용.
         // ⚠️ 스키마 마이그레이션: 구 weeks.is_club_break → weeks.is_official_rest.
-        //    /api/profile(adaptedCurrentWeek/adaptedWeeklyGrowth)·데모 경로는 이미 is_official_rest 로 내려주는데
-        //    이 실유저 경로만 구 필드(is_club_break)를 읽어 항상 undefined → 14~16 휴식(공식) 주차에서
-        //    baseOfficialRestForWeek=false → isRestMode=false → 4개 파트 not_applicable 강제가 풀리는 버그.
-        const baseOfficialRestForWeek = !isCurrentWeekOnboarding && (isBreakSeason || !!weeklyGrowth?.is_official_rest || (!weeklyGrowth && !!currentWeek.is_official_rest));
+        //    /api/profile(adaptedCurrentWeek/adaptedWeeklyGrowth)·데모 경로는 이미 is_official_rest 로 내려준다.
+        // 공식 휴식 SoT = 주차 단위 weeks.is_official_rest(=currentWeek.is_official_rest) 최우선 (정책 개정 2026-06-03).
+        //   per-user user_week_statuses(weeklyGrowth.status='success' 등)와 충돌해도 주차 휴식 플래그가 우선한다
+        //   — 즉 weeks.is_official_rest=true 면 그 주차는 전원 휴식으로 본다. (weeklyGrowth.is_official_rest 는 보조)
+        const baseOfficialRestForWeek = !isCurrentWeekOnboarding && (isBreakSeason || !!currentWeek.is_official_rest || !!weeklyGrowth?.is_official_rest);
         // 전환 주차(봄·가을 17주차 / 여름·겨울 9주차)는 휴식(공식)으로 계산·표시하지 않는다.
         const isTransitionForWeek = isTransitionWeek(rawSeasonName, currentWeek.week_number);
         const userIsOnOfficialRestForWeek = isOfficialRestWeek(rawSeasonName, currentWeek.week_number, baseOfficialRestForWeek);
@@ -5985,11 +5986,51 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 기본값 설정
   const restImage = "/images/0/cluster4/주차%20이미지/휴식(개인,공식).png";
 
-  // 휴식 모드 체크 (휴식(개인), 휴식(공식)일 때 모든 카드 비활성화)
-  // phase(진행 중/집계 중) 와 무관하게 운영진이 마킹한 휴식 여부를 본다 — 봄 9주차가 아직
-  // 결과 결정 시점 이전이라 growthStatus 가 "집계 중" 으로 잡혀도, 개인 휴식 크루의
-  // 활동 라인은 '해당 없음' 으로 표시되어야 한다.
-  const isRestMode = !!(weekData?.isPersonalRest || weekData?.isOfficialRest);
+  // ── 상태배지·휴식 판정 공용 헬퍼 (헤더 배지와 본문 4파트 단일 출처) ──
+  // 카드 목록(weekly-card-status-badge)과 "동일 규칙": statusTone→톤, statusLabel(라벨) 우선→className.
+  // (휴식 판정 isRestMode 와 헤더 배지 양쪽에서 쓰므로 이 위치에서 1회 정의한다.)
+  const cardStatusToneClass = (tone: unknown): string => {
+    switch (String(tone ?? "").toLowerCase()) {
+      case "success": return "success";
+      case "fail": return "fail";
+      case "progress": return "in-progress";
+      case "rest": return "rest";
+      case "counting": return "counting";
+      default: return "";
+    }
+  };
+  const cardBadgeClassFromLabel = (label: string, fallback: string): string => {
+    if (label.includes("실패")) return "fail";
+    if (label.includes("성공")) return "success";
+    if (label.includes("진행")) return "in-progress";
+    if (label.includes("집계")) return "counting";
+    if (label.includes("개인")) return "rest-personal";
+    if (label.includes("공식")) return "rest-official";
+    return fallback || "";
+  };
+  // weeklyCardMeta 에서 시즌(봄/여름/가을/겨울) 추출 — 전환 주차 판정용.
+  const metaSeasonRaw = (() => {
+    const card = weeklyCardMeta as Record<string, unknown> | null;
+    if (!card) return null;
+    if (typeof card.seasonName === "string" && (card.seasonName as string).trim()) return card.seasonName as string;
+    const label = `${weeklyCardMeta?.displayTitle ?? ""} ${weeklyCardMeta?.weekLabel ?? ""}`;
+    const m = label.match(/(봄|여름|가을|겨울)/);
+    return m ? m[1] : null;
+  })();
+  // 전환 주차(봄·가을 17주차 / 여름·겨울 9주차)는 어드민 DTO 가 '휴식(공식)'으로 와도 휴식으로 보지 않는다.
+  const metaIsTransitionRest = !!weeklyCardMeta
+    && cardBadgeClassFromLabel(weeklyCardMeta.statusLabel ?? "", cardStatusToneClass(weeklyCardMeta.statusTone)) === "rest-official"
+    && isTransitionWeek(metaSeasonRaw, typeof weeklyCardMeta.weekNumber === "number" ? weeklyCardMeta.weekNumber : null);
+
+  // ── 휴식 모드 체크 — 휴식(공식) SoT = 로컬 weeks.is_official_rest 최우선 (정책 개정 2026-06-03) ──
+  // weekData.isOfficialRest = isOfficialRestWeek(...) 결과(전환 주차 제외 + weeks.is_official_rest 반영).
+  // 충돌 시 official_rest 우선: admin DTO statusLabel 이 '성장(성공)' 등으로 와도 로컬이 휴식이면 휴식으로 본다.
+  // admin DTO statusLabel 은 진행/성공/실패 등 "상태(헤더)" 표시용으로만 쓰고, 휴식 여부 판정에는 쓰지 않는다.
+  // 전환 주차는 weekData.isOfficialRest=false(isOfficialRestWeek 가 제외) → 휴식 아님.
+  // 본문 4파트(정보/경험/역량/경력)는 isRestMode 일 때 기본 not_applicable, 단 그 주차 귀속 라인이 있으면
+  // 본문(라인 내용)만 예외적으로 노출(상태는 여전히 not_applicable) — 기존 effective*/matchedAbilityCard 로직 유지.
+  const isOfficialRestLocal = !!weekData?.isOfficialRest;
+  const isRestMode = !!(weekData?.isPersonalRest || isOfficialRestLocal);
 
   // 시즌명과 주차번호로 월/주차 계산하여 이미지 경로 생성
   // primary 는 holiday_name 접미사를 포함한 1차 경로, stripped 는 holiday 없는 폴백.
@@ -6081,46 +6122,23 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   //       톤이 갈릴 수 있었다. 카드 목록과 같은 함수 규칙으로 통일한다.
   //   - 아이콘 = 위 className → ASCII 정적자산 맵. 카드 목록(statusIconPath)은 한글 경로라 일부 환경에서 404 가
   //       나므로, "동일 상태 → 동일 아이콘"을 유지하되 경로만 ASCII 로 통일(404 면역)한다.
-  const cardStatusToneClass = (tone: unknown): string => {
-    switch (String(tone ?? "").toLowerCase()) {
-      case "success": return "success";
-      case "fail": return "fail";
-      case "progress": return "in-progress";
-      case "rest": return "rest";
-      case "counting": return "counting";
-      default: return "";
-    }
-  };
-  const cardBadgeClassFromLabel = (label: string, fallback: string): string => {
-    if (label.includes("실패")) return "fail";
-    if (label.includes("성공")) return "success";
-    if (label.includes("진행")) return "in-progress";
-    if (label.includes("집계")) return "counting";
-    if (label.includes("개인")) return "rest-personal";
-    if (label.includes("공식")) return "rest-official";
-    return fallback || "";
-  };
-  // 전환 주차(봄·가을 17주차 / 여름·겨울 9주차)는 휴식(공식)으로 표시하지 않는다.
-  // 어드민 DTO statusLabel 이 '휴식(공식)'으로 와도 중립 '전환 주차'로 강등한다.
-  const metaSeasonRaw = (() => {
-    const card = weeklyCardMeta as Record<string, unknown> | null;
-    if (!card) return null;
-    if (typeof card.seasonName === "string" && (card.seasonName as string).trim()) return card.seasonName as string;
-    const label = `${weeklyCardMeta?.displayTitle ?? ""} ${weeklyCardMeta?.weekLabel ?? ""}`;
-    const m = label.match(/(봄|여름|가을|겨울)/);
-    return m ? m[1] : null;
-  })();
-  const metaIsTransitionRest = !!weeklyCardMeta
-    && cardBadgeClassFromLabel(weeklyCardMeta.statusLabel ?? "", cardStatusToneClass(weeklyCardMeta.statusTone)) === "rest-official"
-    && isTransitionWeek(metaSeasonRaw, typeof weeklyCardMeta.weekNumber === "number" ? weeklyCardMeta.weekNumber : null);
+  // cardStatusToneClass / cardBadgeClassFromLabel / metaSeasonRaw / metaIsTransitionRest 는
+  // 휴식 판정(isRestMode)과 공유하기 위해 위쪽(휴식 모드 체크 직전)에서 1회 정의한다.
   // 상태 텍스트/톤 = DTO statusLabel/statusTone 단일 출처. DTO 가 없으면 날짜로 추정하지 않고
   // 중립 placeholder("상태 확인 중", .is-pending)로 표시한다('집계 중' 등 실제 상태처럼 보이는 문구 금지).
   const NEUTRAL_STATUS_TEXT = "상태 확인 중";
+  // 헤더 우선순위(정책 개정 2026-06-03): ① 전환 주차 → ② 로컬 공식 휴식 보정 → ③ DTO statusLabel → ④ 중립.
+  // ②: 로컬 weeks.is_official_rest(=isOfficialRestLocal)가 true 면 admin DTO statusLabel 이 '성장(성공)' 등으로
+  //    와도 헤더를 '휴식(공식)'으로 보정한다(본문 isRestMode 와 충돌 방지 — official_rest 우선 정책).
   const headerStatusText = metaIsTransitionRest
     ? TRANSITION_WEEK_LABEL
+    : isOfficialRestLocal
+    ? "휴식(공식)"
     : (weeklyCardMeta?.statusLabel ?? NEUTRAL_STATUS_TEXT);
   const headerStatusClass = metaIsTransitionRest
     ? ""
+    : isOfficialRestLocal
+    ? "rest-official"
     : weeklyCardMeta
     ? cardBadgeClassFromLabel(weeklyCardMeta.statusLabel ?? "", cardStatusToneClass(weeklyCardMeta.statusTone))
     : "is-pending";
@@ -6133,8 +6151,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     "rest-personal": "/images/0/cluster4/icon/icon-rest-personal.png",
     "rest-official": "/images/0/cluster4/icon/icon-rest-official.png",
   };
-  // DTO 가 없거나(중립) 톤 매칭 아이콘이 없으면 빈 문자열 → 아이콘 미표시(아래 markup 에서 가드).
-  const headerStatusIcon = weeklyCardMeta ? (STATUS_CLASS_ICON_URL[headerStatusClass] ?? "") : "";
+  // className 매칭 아이콘이 없으면(중립 is-pending / 전환 "") 빈 문자열 → 아이콘 미표시(아래 markup 에서 가드).
+  // 로컬 공식 휴식 보정(rest-official)은 DTO 미수신이어도 휴식 아이콘을 노출해야 하므로 weeklyCardMeta 게이트 제거.
+  const headerStatusIcon = STATUS_CLASS_ICON_URL[headerStatusClass] ?? "";
 
   // 날짜 배지
   const headerStartDate = weeklyCardMeta?.startDate ?? weekData?.startDate ?? null;
