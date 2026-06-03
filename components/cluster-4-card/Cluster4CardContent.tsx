@@ -692,7 +692,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 실무 경험 관리(5번) 슬롯 잠금 판단을 이력서 표시와 일치시키기 위해 사용.
   const [membershipLevel, setMembershipLevel] = useState<string | null>(null);
   const [weekPoints, setWeekPoints] = useState<{ star: number; lightning: number; shield: number }>({ star: 0, lightning: 0, shield: 0 });
-  const [cumulativeInjeolmi, setCumulativeInjeolmi] = useState<number>(0);
   const [cumulativeApprovedWeeks, setCumulativeApprovedWeeks] = useState<number>(0);
 
   // 이전/다음 주차 ID
@@ -1161,7 +1160,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         setPartName(dummyExtra.teamPart.partName);
         setRoleLabel(dummyExtra.roleLabel);
         setWeekPoints(dummyExtra.points);
-        setCumulativeInjeolmi(dummyExtra.points.shield);
       }
 
       // Phase 1 (dw-01 외부 파일 이관): DUMMY_WEEK_CARD에 해당 주차가 있으면 외부 데이터 사용.
@@ -1454,14 +1452,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           const shield = weekPointsData.filter((p: any) => p.point_type === "shield").reduce((sum: number, p: any) => sum + p.points, 0);
           setWeekPoints({ star, lightning, shield });
         }
-
-        // 누적 인절미 계산 (현재 시즌 내, 현재 주차까지의 shield 합계 - lightning 합계)
-        const currentSeasonId = seasonData?.id;
-        const seasonWeekIds = new Set(allWeeksForCumulative.filter((w: any) => w.season_id === currentSeasonId).map((w: any) => w.id));
-        const seasonPointsData = allPointsData.filter((p: any) => seasonWeekIds.has(p.week_id));
-        const totalShields = seasonPointsData.filter((p: any) => p.point_type === "shield").reduce((sum: number, p: any) => sum + p.points, 0);
-        const totalLightnings = seasonPointsData.filter((p: any) => p.point_type === "lightning").reduce((sum: number, p: any) => sum + p.points, 0);
-        setCumulativeInjeolmi(totalShields - totalLightnings);
 
         // 누적 성공 주차 수 계산
         let currentApprovedCount = 0;
@@ -6247,18 +6237,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const headerWeekHighlight: string | number = isCountingWeek ? "+1" : headerWeekApproved;
   const headerWeekSuffix = ` / ${headerWeekTotal} 주차`;
 
-  // 단감/인절미/어흥: 주차 카드 목록과 "동일 source/규칙".
-  //   카드 목록(Cluster41Content): 단감 = points.star, 어흥 = points.lightning,
-  //                               인절미 = week.cumulativeInjeolmi ?? points.shield (← '누적' 개념 그대로 표기).
-  //   기존 header 는 인절미 = |shield - lightning| 라 카드 목록과 값이 어긋났다(보고 #7).
-  //   → 카드 목록과 동일하게 cumulativeInjeolmi(없으면 points.shield) 를 인절미로 쓴다.
+  // 단감/인절미/어흥: 주차 카드 목록과 "동일 source/규칙" — 모두 "해당 주차(per-week)" 값.
+  //   카드 목록(Cluster41Content): 단감 = points.star, 인절미 = points.shield, 어흥 = points.lightning.
+  //   한 카드 안에서 세 포인트의 기준(per-week)을 통일한다. 누적(cumulativeInjeolmi=Σadvantages)은
+  //   '누적 방패'가 아니며 주차 칸에 쓰지 않는다(과거 보고 #7 의 누적 표기를 되돌림). 누적 방패가
+  //   필요한 자리는 별도 영역에서 net(Σshield-Σlightning) 기준으로만 표기.
   const headerCardPoints = weeklyCardMeta?.points ?? null;
   const headerDangam = headerCardPoints?.star ?? weekPoints.star ?? 0;
-  const headerInjeolmi = weeklyCardMeta
-    ? (typeof weeklyCardMeta.cumulativeInjeolmi === "number" && Number.isFinite(weeklyCardMeta.cumulativeInjeolmi)
-        ? weeklyCardMeta.cumulativeInjeolmi
-        : (typeof headerCardPoints?.shield === "number" && Number.isFinite(headerCardPoints.shield) ? headerCardPoints.shield : 0))
-    : Math.abs(weekPoints.shield - weekPoints.lightning);
+  const headerInjeolmi =
+    typeof headerCardPoints?.shield === "number" && Number.isFinite(headerCardPoints.shield)
+      ? headerCardPoints.shield
+      : (typeof weekPoints.shield === "number" && Number.isFinite(weekPoints.shield) ? weekPoints.shield : 0);
   const headerEoheung = headerCardPoints
     ? (typeof headerCardPoints.lightning === "number" && Number.isFinite(headerCardPoints.lightning) ? headerCardPoints.lightning : 0)
     : Math.abs(weekPoints.lightning);

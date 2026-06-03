@@ -1450,11 +1450,11 @@ const Cluster41Content = () => {
                   ? pointsObj.lightning
                   : 0;
 
-              // 인절미: cumulativeInjeolmi 우선, 없으면 points?.shield (null → 0)
-              const cumulativeInjeolmi =
-                typeof week.cumulativeInjeolmi === 'number' && Number.isFinite(week.cumulativeInjeolmi)
-                  ? week.cumulativeInjeolmi
-                  : typeof pointsObj.shield === 'number' && Number.isFinite(pointsObj.shield)
+              // 인절미(방패): 별/번개와 동일하게 "해당 주차" 값 = points.shield (per-week, null → 0).
+              //   누적(cumulativeInjeolmi)은 주차별 칸에 쓰지 않는다 — 한 카드 안에서 단감/인절미/어흥의
+              //   기준(per-week)을 통일. 누적 방패는 별도 누적 영역(net=Σshield-Σlightning)에서만 표기.
+              const shieldCount =
+                typeof pointsObj.shield === 'number' && Number.isFinite(pointsObj.shield)
                   ? pointsObj.shield
                   : 0;
 
@@ -1603,7 +1603,7 @@ const Cluster41Content = () => {
 
                         <div className="weekly-card-details-bottom">
                           <div className="metric">{getOrgAliasFromPathname(pathname, "단감")?.label ?? "단감"} <strong>{starCount}</strong></div>
-                          <div className="metric">{getOrgAliasFromPathname(pathname, "인절미")?.label ?? "인절미"} <strong>{cumulativeInjeolmi}</strong></div>
+                          <div className="metric">{getOrgAliasFromPathname(pathname, "인절미")?.label ?? "인절미"} <strong>{shieldCount}</strong></div>
                           <div className="metric">{getOrgAliasFromPathname(pathname, "어흥")?.label ?? "어흥"} <strong>{lightningCount}</strong></div>
                           <div className="metric">주차 평판 <strong>{reputationCount}</strong><span className="sub">/{reputationTotal}</span></div>
                         </div>
@@ -1699,7 +1699,7 @@ const Cluster41Content = () => {
                             <span className="info-divider">·</span>
                             {renderItem("단감", starCount, "/images/0/cluster4/icon/icon - 단감.png")}
                             <span className="info-divider">·</span>
-                            {renderItem("인절미", cumulativeInjeolmi, "/images/0/cluster4/icon/icon - 인절미.png")}
+                            {renderItem("인절미", shieldCount, "/images/0/cluster4/icon/icon - 인절미.png")}
                             <span className="info-divider">·</span>
                             {renderItem("어흥", lightningCount, "/images/0/cluster4/icon/icon - 어흥.png")}
                           </div>
