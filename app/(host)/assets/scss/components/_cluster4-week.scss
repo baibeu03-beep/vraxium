@@ -1300,6 +1300,20 @@
               }
             }
 
+            // 어드민 DTO 상태(statusLabel)가 아직 없을 때의 중립 placeholder.
+            // 날짜로 상태를 추정하지 않으므로, 실제 상태 색(초록/빨강/분홍 등)과 구분되는
+            // 무채색·약발광 없는 톤으로 "최종 상태 아님"을 시각적으로 드러낸다.
+            &.is-pending {
+              span {
+                font-family: "Manrope", sans-serif;
+                font-size: 18px;
+                font-weight: 700;
+                color: rgba(255, 255, 255, 0.55);
+                line-height: 19px;
+                text-transform: none;
+              }
+            }
+
             img {
               width: 49px;
               height: 54px;

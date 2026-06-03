@@ -1281,7 +1281,6 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         setCurrentUserId(userId);
         // 카드 소유자 조직 — 연계동료 후보를 동일 조직으로 제한하는 필터 기준.
         setCardOwnerOrg(profileResult.data.organization_slug ?? null);
-        const apiActivityWeekIds = profileResult.activityWeekIds || [];
         const apiRestWeekIds = profileResult.restWeekIds || [];
         const apiApprovedActivities = profileResult.approvedActivities || [];
         const apiActivityRecords = profileResult.activityRecords || [];
@@ -1360,57 +1359,33 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         const allWeeksForCumulative = allUserWeeksData.filter((w: any) => w.end_date && w.end_date <= currentWeek.end_date);
         const allWeeksResult = { data: allWeeksForCumulative };
 
-        // 성장 상태 결정 (Cluster41Content 와 동일한 phase 로직 — 동기화 필수)
-        //   - VISIBLE_OFFSET_MINUTES  = N(월) 00:01   = 1m
-        //   - COUNTING_START_HOURS    = N(일) 00:00   = 144h
-        //   - RESULT_DECIDED_MINUTES  = N+1(목) 12:01 = 252h 1m
-        //     라인 카드 '강화 대기 → 강화 성공' 도 동일 시점에 확정 — computeResultDecidedMs / resultsDecided 와 동기.
-        const VISIBLE_OFFSET_MINUTES = 1;
-        const COUNTING_START_HOURS = 144;
-        const RESULT_DECIDED_MINUTES = 252 * 60 + 1;
-
         const weeklyGrowth = weeklyGrowthData;
         const onboardingWeekId = profileResult.onboardingWeekId;
         const isCurrentWeekOnboarding = weekId === onboardingWeekId;
 
         // phase(진행 중/집계 중) 와 무관하게 운영진이 마킹한 휴식 여부.
         // 활동 라인 단위(실무 정보/역량/경험/경력) 판정에서 사용.
-        const baseOfficialRestForWeek = !isCurrentWeekOnboarding && (isBreakSeason || !!weeklyGrowth?.is_club_break || (!weeklyGrowth && !!currentWeek.is_club_break));
+        // ⚠️ 스키마 마이그레이션: 구 weeks.is_club_break → weeks.is_official_rest.
+        //    /api/profile(adaptedCurrentWeek/adaptedWeeklyGrowth)·데모 경로는 이미 is_official_rest 로 내려주는데
+        //    이 실유저 경로만 구 필드(is_club_break)를 읽어 항상 undefined → 14~16 휴식(공식) 주차에서
+        //    baseOfficialRestForWeek=false → isRestMode=false → 4개 파트 not_applicable 강제가 풀리는 버그.
+        const baseOfficialRestForWeek = !isCurrentWeekOnboarding && (isBreakSeason || !!weeklyGrowth?.is_official_rest || (!weeklyGrowth && !!currentWeek.is_official_rest));
         // 전환 주차(봄·가을 17주차 / 여름·겨울 9주차)는 휴식(공식)으로 계산·표시하지 않는다.
         const isTransitionForWeek = isTransitionWeek(rawSeasonName, currentWeek.week_number);
         const userIsOnOfficialRestForWeek = isOfficialRestWeek(rawSeasonName, currentWeek.week_number, baseOfficialRestForWeek);
         const userIsOnPersonalRestForWeek = !isCurrentWeekOnboarding && (!!weeklyGrowth?.is_resting || (!weeklyGrowth && apiRestWeekIds.includes(currentWeek.id)));
 
-        // 휴식만 phase 우회 — 온보딩 주차도 일반 phase(진행 중 → 집계 중) 거치고 결정 시점에 무조건 성공.
-        let growthStatus = "실패";
+        // 상태 phase(진행 중/집계 중/성공/실패)는 프론트에서 날짜(Date.now/weekStart/144h·252h)로 계산하지 않는다.
+        // 상태 배지의 단일 출처는 어드민 weekly-cards DTO(weeklyCardMeta.statusLabel/statusTone)이며,
+        // DTO 미수신 시에도 날짜로 상태를 추정하지 않고 중립 placeholder 로 표시한다(헤더 배지 fallback 참조).
+        // 여기서는 DTO 와 무관하게 보존이 필요한 phase-독립 플래그(전환/휴식)만 라벨로 둔다(미해당 시 빈 값 → 중립).
+        let growthStatus = "";
         if (isTransitionForWeek && baseOfficialRestForWeek) {
-          // 전환 주차: 휴식(공식)으로 표시·계산하지 않고 중립 '전환 주차'로 둔다(실패 폴백 방지).
           growthStatus = TRANSITION_WEEK_LABEL;
         } else if (userIsOnOfficialRestForWeek) {
-          // 클럽 공식 휴식 주차는 phase 우회하고 카드 노출 시점부터 바로 '휴식(공식)'.
           growthStatus = "휴식(공식)";
         } else if (userIsOnPersonalRestForWeek) {
-          // 개인 휴식 크루도 phase 우회하고 카드 노출 시점부터 바로 '휴식(개인)'.
           growthStatus = "휴식(개인)";
-        } else {
-          const weekStartMs = new Date(currentWeek.start_date + "T00:00:00+09:00").getTime();
-          const elapsedMs = Date.now() - weekStartMs;
-          const hoursSinceStart = elapsedMs / 3600000;
-          const minutesSinceStart = elapsedMs / 60000;
-
-          if (minutesSinceStart >= VISIBLE_OFFSET_MINUTES && hoursSinceStart < COUNTING_START_HOURS) {
-            growthStatus = "진행 중";
-          } else if (hoursSinceStart >= COUNTING_START_HOURS && minutesSinceStart < RESULT_DECIDED_MINUTES) {
-            growthStatus = "집계 중";
-          } else if (isCurrentWeekOnboarding) {
-            // N+1(목) 12:01 이후 — 온보딩(무적) 주차는 무조건 성공.
-            growthStatus = "성공";
-          } else if (weeklyGrowth) {
-            // 휴식은 위에서 이미 처리됨 — 여기는 성공/실패만 결정.
-            growthStatus = weeklyGrowth.is_success ? "성공" : "실패";
-          } else if (apiActivityWeekIds.includes(currentWeek.id)) {
-            growthStatus = "성공";
-          }
         }
 
         setWeekData({
@@ -1424,7 +1399,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           toSeasonName,
           startDate: currentWeek.start_date,
           endDate: currentWeek.end_date,
-          isClubBreak: currentWeek.is_club_break || false,
+          isClubBreak: currentWeek.is_official_rest || false,
           holidayName: currentWeek.holiday_name,
           growthStatus,
           isPersonalRest: userIsOnPersonalRestForWeek,
@@ -1511,7 +1486,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           }
         }
         // 현재 주차가 활동 주차이면 eligible 체크에 포함 (+1)
-        const currentWeekIsActive = !currentWeek.is_club_break && weekId !== onboardingWeekIdForCount;
+        const currentWeekIsActive = !currentWeek.is_official_rest && weekId !== onboardingWeekIdForCount;
         const currentWeekAlreadyInSuccess = successWeeksData.some((sw: any) => sw.week_id === weekId);
         const cumulativeForEligible = currentApprovedCount + (currentWeekIsActive && !currentWeekAlreadyInSuccess ? 1 : 0);
         setCumulativeApprovedWeeks(cumulativeForEligible);
@@ -1615,7 +1590,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
           // 실무 역량: 평소 매주 최대 1개. 공식 휴식 주차는 기본 0이지만, 예외적으로 개설된 활동이 있으면 1.
           const hasActiveCompetency = activeActivities.some((a) => competencyTypesList.includes(a.activity_type_id));
-          const competencyTotal = currentWeek.is_club_break || isBreakSeason ? (hasActiveCompetency ? 1 : 0) : 1;
+          const competencyTotal = currentWeek.is_official_rest || isBreakSeason ? (hasActiveCompetency ? 1 : 0) : 1;
 
           // 실무 경험: 해당 주차에 개설된 experience 활동 중 eligible 조건 체크
           // eligible_min/max 룰 적용 시점: 2026년 봄 시즌 9주차부터
@@ -6064,64 +6039,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 작성 가능 여부 제어는 기존 canEdit·작성기간 검증 로직을 그대로 따르며, 고객 앱은
   // 시즌/주차/주차 기간(weekDateRange)만 표시한다.
 
-  // 성장 상태에 따른 뱃지 정보 — '성장 (xxx)' / '휴식 (xxx)' 통일
-  // TODO: [백엔드 작업 필요] '진행 중' / '집계 중' 상태 결정 로직 추가 — 현재는 더미 맨 위 2장에서 진입 시 표시
-  const getStatusBadgeInfo = (status: string | undefined) => {
-    switch (status) {
-      case "성공":
-        return {
-          className: "success",
-          text: "성장 (성공)",
-          icon: "/images/0/cluster4/icon/icon-growth-success.png",
-        };
-      case "실패":
-        return {
-          className: "fail",
-          text: "성장 (실패)",
-          icon: "/images/0/cluster4/icon/icon-growth-fail.png",
-        };
-      case "휴식(개인)":
-        return {
-          className: "rest-personal",
-          text: "휴식 (개인)",
-          icon: "/images/0/cluster4/icon/icon-rest-personal.png",
-        };
-      case "휴식(공식)":
-        return {
-          className: "rest-official",
-          text: "휴식 (공식)",
-          icon: "/images/0/cluster4/icon/icon-rest-official.png",
-        };
-      case "전환 주차":
-        return {
-          className: "",
-          text: "전환 주차",
-          icon: "/images/0/cluster4/icon/icon-growth-running.png",
-        };
-      case "진행 중":
-        return {
-          className: "in-progress",
-          text: "성장 (진행 중)",
-          icon: "/images/0/cluster4/icon/icon-growth-running.png",
-        };
-      case "집계 중":
-        return {
-          className: "counting",
-          text: "성장 (집계 중)",
-          icon: "/images/0/cluster4/icon/icon-growth-tallying.png",
-        };
-      default:
-        return {
-          className: "success",
-          text: "성장 (성공)",
-          icon: "/images/0/cluster4/icon/icon-growth-success.png",
-        };
-    }
-  };
+  // 상태 배지는 어드민 weekly-cards DTO(weeklyCardMeta.statusLabel/statusTone)만을 단일 출처로 쓴다.
+  // 과거의 getStatusBadgeInfo(날짜 기반 growthStatus → 라벨/색) 로컬 계산은 제거됨:
+  // DTO 가 없을 때는 날짜로 상태를 추정하지 않고 중립 placeholder 로 표시한다(아래 headerStatus* 참조).
 
-  const statusBadgeInfo = getStatusBadgeInfo(weekData?.growthStatus);
-
-  // ── section1-header 단일 출처: 어드민 weekly-cards DTO(weeklyCardMeta) 우선, 없으면 기존 로컬 계산값 fallback ──
+  // ── section1-header 단일 출처: 어드민 weekly-cards DTO(weeklyCardMeta) 우선, 없으면 중립 placeholder ──
   // 백엔드 미수정 — 이미 fetch 중인 /api/cluster4/weekly-cards 의 matchedCard(AdminCluster4WeeklyCardDto) 재사용.
   // 값이 null/undefined 면 로컬 계산값으로 폴백하고, 표시 단계에서 "-"/0 으로 안전 처리.
 
@@ -6191,14 +6113,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const metaIsTransitionRest = !!weeklyCardMeta
     && cardBadgeClassFromLabel(weeklyCardMeta.statusLabel ?? "", cardStatusToneClass(weeklyCardMeta.statusTone)) === "rest-official"
     && isTransitionWeek(metaSeasonRaw, typeof weeklyCardMeta.weekNumber === "number" ? weeklyCardMeta.weekNumber : null);
+  // 상태 텍스트/톤 = DTO statusLabel/statusTone 단일 출처. DTO 가 없으면 날짜로 추정하지 않고
+  // 중립 placeholder("상태 확인 중", .is-pending)로 표시한다('집계 중' 등 실제 상태처럼 보이는 문구 금지).
+  const NEUTRAL_STATUS_TEXT = "상태 확인 중";
   const headerStatusText = metaIsTransitionRest
     ? TRANSITION_WEEK_LABEL
-    : (weeklyCardMeta?.statusLabel ?? statusBadgeInfo.text);
+    : (weeklyCardMeta?.statusLabel ?? NEUTRAL_STATUS_TEXT);
   const headerStatusClass = metaIsTransitionRest
     ? ""
     : weeklyCardMeta
-    ? (cardBadgeClassFromLabel(weeklyCardMeta.statusLabel ?? "", cardStatusToneClass(weeklyCardMeta.statusTone)) || statusBadgeInfo.className)
-    : statusBadgeInfo.className;
+    ? cardBadgeClassFromLabel(weeklyCardMeta.statusLabel ?? "", cardStatusToneClass(weeklyCardMeta.statusTone))
+    : "is-pending";
   // className → ASCII 아이콘 (카드 목록 statusIconPath 의 시각적 대응; 경로만 ASCII 로 통일해 404 면역).
   const STATUS_CLASS_ICON_URL: Record<string, string> = {
     "in-progress": "/images/0/cluster4/icon/icon-growth-running.png",
@@ -6208,7 +6133,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     "rest-personal": "/images/0/cluster4/icon/icon-rest-personal.png",
     "rest-official": "/images/0/cluster4/icon/icon-rest-official.png",
   };
-  const headerStatusIcon = STATUS_CLASS_ICON_URL[headerStatusClass] ?? statusBadgeInfo.icon;
+  // DTO 가 없거나(중립) 톤 매칭 아이콘이 없으면 빈 문자열 → 아이콘 미표시(아래 markup 에서 가드).
+  const headerStatusIcon = weeklyCardMeta ? (STATUS_CLASS_ICON_URL[headerStatusClass] ?? "") : "";
 
   // 날짜 배지
   const headerStartDate = weeklyCardMeta?.startDate ?? weekData?.startDate ?? null;
@@ -8888,7 +8814,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <h1 className="section1-title">{headerTitle || "-"}</h1>
               <div className={`status-badge ${headerStatusClass}`}>
                 <span>{headerStatusText || "-"}</span>
-                <img src={headerStatusIcon} alt={headerStatusText || "-"} />
+                {headerStatusIcon ? <img src={headerStatusIcon} alt={headerStatusText || "-"} /> : null}
               </div>
             </div>
             <div className="header-info-row">
