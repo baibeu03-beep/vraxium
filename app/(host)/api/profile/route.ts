@@ -8,6 +8,7 @@ import { seasonLabel } from "@/lib/cluster4-types";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import { DemoModeError, resolveDemoProfileUserId } from "@/lib/demoMode";
 import { requireOwnerOrAdmin } from "@/lib/api-auth";
+import { resolveMembershipDisplay } from "@/lib/membership";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -648,10 +649,13 @@ export async function GET(request: NextRequest) {
       // 최종학력 (sort_order=0 가 ASC 정렬상 첫 행)
       const eduFirst = (eduResult.data ?? [])[0] ?? null;
 
-      // is_current=true 우선, 없으면 임의 row
+      // team_name 이 채워진 row 우선 (is_current 가 전부 false 인 레거시 동기화 케이스 대응).
+      // 공용 규칙 — lib/membership.ts. 비면 user_profiles.current_*_name 으로 폴백.
       const memberships = membershipResult.data ?? [];
-      const currentMembership =
-        memberships.find((m) => m.is_current === true) ?? memberships[0] ?? null;
+      const resolvedMembership = resolveMembershipDisplay(memberships, {
+        current_team_name: profile.current_team_name,
+        current_part_name: profile.current_part_name,
+      });
 
       // school/major: edu 가 있으면 우선 (truth source). 없으면 기존 컬럼 유지.
       if (eduFirst?.school_name) profile.school_name = eduFirst.school_name;
@@ -661,10 +665,10 @@ export async function GET(request: NextRequest) {
       }
 
       // team/part/membership: enriched keys (response-only, raw 컬럼 충돌 없음).
-      profile.team_name = currentMembership?.team_name ?? null;
-      profile.part_name = currentMembership?.part_name ?? null;
-      profile.membership_level = currentMembership?.membership_level ?? null;
-      profile.membership_state = currentMembership?.membership_state ?? null;
+      profile.team_name = resolvedMembership.teamName;
+      profile.part_name = resolvedMembership.partName;
+      profile.membership_level = resolvedMembership.membershipLevel;
+      profile.membership_state = resolvedMembership.membershipState;
 
       // weeks counters
       profile.approved_weeks = growthResult.data?.approved_weeks ?? 0;

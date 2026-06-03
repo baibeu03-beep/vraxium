@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-server";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import type { Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
+import { resolveMembershipDisplay } from "@/lib/membership";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -101,6 +102,72 @@ async function enrichLineRatings(rawBody: string, userId: string | null): Promis
   return JSON.stringify(root);
 }
 
+// 카드 헤더(teamName/partName/membershipStatusLabel) 보강.
+// ─────────────────────────────────────────────────────────────────────
+// admin weekly-cards 스냅샷 빌더는 team/part 를 user_memberships(is_current=true) 기준으로
+// 채운다. 그런데 일부 실 사용자(카카오 로그인)는 모든 멤버십 row 가 is_current=false 라
+// 스냅샷 teamName/partName 이 null → 주차 카드 목록이 "-" 로 표시된다.
+// (데모/테스트 유저는 is_current=true 라 정상 → "데모는 되는데 카카오는 안 됨" 증상.)
+// 여기서 user_memberships(team_name 우선 픽) + user_profiles.current_*_name 폴백으로
+// 비어 있는 헤더 필드만 비파괴 보강한다. lineRating 주입과 동일 패턴 — 실패 시 원본 반환.
+async function enrichCardHeaders(rawBody: string, userId: string | null): Promise<string> {
+  if (!userId) return rawBody;
+  let json: unknown;
+  try {
+    json = JSON.parse(rawBody);
+  } catch {
+    return rawBody;
+  }
+  const root = json as { success?: boolean; data?: Array<Record<string, unknown>> };
+  const cards = Array.isArray(root?.data) ? root.data : null;
+  if (!cards || cards.length === 0) return rawBody;
+
+  const blank = (v: unknown) => !(typeof v === "string" && v.trim() !== "");
+  const needsTeamPart = cards.some((c) => blank(c.teamName) || blank(c.partName));
+  const needsMembership = cards.some((c) => blank(c.membershipStatusLabel) && blank(c.roleLabel));
+  if (!needsTeamPart && !needsMembership) return rawBody; // 대부분의 사용자는 추가 쿼리 없이 통과
+
+  try {
+    const supabase = createAdminClient();
+    const [membershipRes, profileRes] = await Promise.all([
+      supabase
+        .from("user_memberships")
+        .select("team_name, part_name, membership_level, membership_state, is_current")
+        .eq("user_id", userId),
+      supabase
+        .from("user_profiles")
+        .select("current_team_name, current_part_name")
+        .eq("user_id", userId)
+        .maybeSingle(),
+    ]);
+    const resolved = resolveMembershipDisplay(membershipRes.data ?? [], profileRes.data ?? null);
+    // 역할 칩 표기(roleLabel || membershipStatusLabel) 폴백값 — state 우선, 없으면 level.
+    const membershipLabel = resolved.membershipState ?? resolved.membershipLevel ?? null;
+
+    let patched = 0;
+    for (const card of cards) {
+      if (blank(card.teamName) && resolved.teamName) { card.teamName = resolved.teamName; patched++; }
+      if (blank(card.partName) && resolved.partName) { card.partName = resolved.partName; }
+      if (blank(card.membershipStatusLabel) && blank(card.roleLabel) && membershipLabel) {
+        card.membershipStatusLabel = membershipLabel;
+      }
+    }
+    if (patched > 0) {
+      console.log("[weekly-cards proxy] 카드 헤더 team/part 보강", {
+        userId,
+        team: resolved.teamName,
+        part: resolved.partName,
+        membershipLabel,
+        cardsPatched: patched,
+      });
+    }
+    return JSON.stringify(root);
+  } catch (e) {
+    console.warn("[weekly-cards proxy] 헤더 보강 예외 — 원본 반환", (e as Error)?.message);
+    return rawBody;
+  }
+}
+
 export async function GET(request: NextRequest) {
   const adminApiBaseUrl = await resolveAdminBaseUrl();
 
@@ -164,11 +231,12 @@ export async function GET(request: NextRequest) {
       elapsedMs,
     });
 
-    // 정상 JSON 응답에 한해 experience line 에 lineRating 보강 주입 (비파괴 — 실패 시 원본).
+    // 정상 JSON 응답에 한해 (1) experience line lineRating, (2) 카드 헤더 team/part/membership
+    // 을 비파괴 보강한다 (실패 시 각 단계에서 원본 반환).
     const userId = sourceUrl.searchParams.get("userId");
     const enrichedBody =
       upstream.ok && contentType.includes("application/json")
-        ? await enrichLineRatings(body, userId)
+        ? await enrichCardHeaders(await enrichLineRatings(body, userId), userId)
         : body;
 
     return new NextResponse(enrichedBody, {
