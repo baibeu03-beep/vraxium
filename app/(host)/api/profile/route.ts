@@ -274,6 +274,95 @@ async function fetchAdminCluster1Resume(request: NextRequest, userId: string | n
   }
 }
 
+// Admin /api/cluster1/resume 의 seasonRecords DTO를 고객 Sidebar 호환 shape으로 변환한다.
+// Sidebar 는 seasonHistories[].approved_weeks / total_weeks 와 seasons.* 를 읽으므로
+// 고객 자체 user_season_histories 기본값(0/0) 대신 admin canonical 값을 우선 사용한다.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapAdminSeasonRecordsToSeasonHistories(adminResume: any | null | undefined): any[] | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const records: any[] | undefined =
+    adminResume?.seasonRecords ??
+    adminResume?.season_records ??
+    adminResume?.seasonHistory ??
+    adminResume?.seasonHistories;
+
+  if (!Array.isArray(records) || records.length === 0) return null;
+
+  const numberField = (source: Record<string, unknown>, keys: string[], fallback = 0) => {
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === "number" && Number.isFinite(value)) return value;
+      if (typeof value === "string" && value.trim() !== "") {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) return parsed;
+      }
+    }
+    return fallback;
+  };
+
+  const stringField = (source: Record<string, unknown>, keys: string[], fallback: string | null = null) => {
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === "string" && value.trim() !== "") return value;
+    }
+    return fallback;
+  };
+
+  const toYear = (record: Record<string, unknown>) => {
+    const direct = numberField(record, ["seasonYear", "year"], NaN);
+    if (Number.isFinite(direct)) return direct;
+    const label = stringField(record, ["seasonName", "seasonLabel", "name", "label"], "") || "";
+    const match = label.match(/(20\d{2})/);
+    return match ? Number(match[1]) : null;
+  };
+
+  return records.map((record, index) => {
+    const season = (record.season && typeof record.season === "object" ? record.season : {}) as Record<string, unknown>;
+    const approvedWeeks = numberField(record, ["approvedWeeks", "approved_weeks"]);
+    const totalWeeks = numberField(record, ["totalWeeks", "total_weeks"]);
+    const seasonName =
+      stringField(record, ["seasonName", "seasonLabel", "name", "label"]) ??
+      stringField(season, ["name", "season_label", "seasonLabel", "label"]) ??
+      "";
+    const seasonId =
+      stringField(record, ["seasonId", "season_id"]) ??
+      stringField(season, ["id"]) ??
+      `admin-season-${index}`;
+    const historyId =
+      stringField(record, ["seasonHistoryId", "season_history_id", "id"]) ??
+      `${seasonId}-history`;
+    const progressStatus =
+      stringField(record, ["progressStatus", "progress_status"]) ??
+      (totalWeeks > 0 && approvedWeeks >= totalWeeks ? "completed" : "in_progress");
+    const reviewStatus = stringField(record, ["reviewStatus", "review_status"], "approved");
+
+    return {
+      ...record,
+      id: historyId,
+      season_id: seasonId,
+      role_in_season: stringField(record, ["roleInSeason", "role_in_season", "role", "roleLabel", "membershipLevel"]),
+      approved_weeks: approvedWeeks,
+      total_weeks: totalWeeks,
+      progress_status: progressStatus,
+      review_status: reviewStatus,
+      is_qualified: Boolean(record.isQualified ?? record.is_qualified ?? false),
+      seasons: {
+        id: seasonId,
+        name: seasonName,
+        season_label: stringField(record, ["seasonLabel", "seasonName", "label"], seasonName),
+        season_type: stringField(record, ["seasonType", "season_type"]),
+        year: toYear(record),
+        start_date:
+          stringField(record, ["startDate", "start_date"]) ??
+          stringField(season, ["startDate", "start_date", "started_at"]),
+        end_date:
+          stringField(record, ["endDate", "end_date"]) ??
+          stringField(season, ["endDate", "end_date", "ended_at"]),
+      },
+    };
+  });
+}
+
 // GET: 프로필 조회 (userId 쿼리 파라미터로 다른 유저 조회 가능)
 export async function GET(request: NextRequest) {
   try {
@@ -1658,6 +1747,7 @@ export async function GET(request: NextRequest) {
 
     // 기존 유저: 현재 진행 중인 시즌의 레코드가 없으면 자동 생성
     if (finalSeasonHistories.length > 0 && supabaseAdmin) {
+      const client = supabaseAdmin;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const existingSeasonIds = new Set(finalSeasonHistories.map((sh: any) => sh.seasons?.id).filter(Boolean));
       // 오늘 날짜 기준 진행 중인 시즌 (break 시즌 제외)
@@ -1673,7 +1763,7 @@ export async function GET(request: NextRequest) {
         // 그 외 컬럼은 schema 에 없으므로 attachSeasons() 기본값 보정에 의존.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const insertPromises = missingSeasons.map(async (season: any) => {
-          await supabaseAdmin
+          await client
             .from('user_season_histories')
             .insert({
               user_id: profile.id,
@@ -1684,7 +1774,7 @@ export async function GET(request: NextRequest) {
         await Promise.all(insertPromises);
 
         // 다시 조회 — minimal select (실제 schema 에 존재하는 컬럼만)
-        const { data: refreshed } = await supabaseAdmin
+        const { data: refreshed } = await client
           .from('user_season_histories')
           .select(
             "id, user_id, season_id, rating, review, created_at, updated_at"
@@ -2012,9 +2102,13 @@ export async function GET(request: NextRequest) {
       return updatedItem;
     });
 
-    console.log('[Profile API] response seasonHistories length', finalSeasonHistoriesWithOnboarding.length);
-    if (finalSeasonHistoriesWithOnboarding.length > 0) {
-      console.log('[Profile API] response seasonHistories[0].id', finalSeasonHistoriesWithOnboarding[0]?.id);
+    const adminSeasonHistories = mapAdminSeasonRecordsToSeasonHistories(adminResume);
+    const responseSeasonHistories = adminSeasonHistories ?? finalSeasonHistoriesWithOnboarding;
+
+    console.log('[Profile API] response seasonHistories source', adminSeasonHistories ? 'adminResume.seasonRecords' : 'local');
+    console.log('[Profile API] response seasonHistories length', responseSeasonHistories.length);
+    if (responseSeasonHistories.length > 0) {
+      console.log('[Profile API] response seasonHistories[0].id', responseSeasonHistories[0]?.id);
     }
 
     return NextResponse.json({
@@ -2043,7 +2137,8 @@ export async function GET(request: NextRequest) {
         advantage: cumulativePointDto?.total_advantages ?? 0,
         penalty: cumulativePointDto?.total_penalties ?? 0,
       },
-      seasonHistories: finalSeasonHistoriesWithOnboarding,
+      seasonRecords: adminResume?.seasonRecords ?? adminResume?.season_records ?? undefined,
+      seasonHistories: responseSeasonHistories,
       // 현재 진행 시즌/주차 (cluster-4-1 상단 문구 SoT) — 서버 canonical 값
       currentSeasonInfo,
       growthStartWeek: resolvedGrowthStart.growthStartWeek,
