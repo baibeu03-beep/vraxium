@@ -2224,7 +2224,29 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           .map((c) => c.weekId as string);
         const curIdx = weekId ? orderedWeekIds.indexOf(weekId) : -1;
         const prevWeekId = curIdx > 0 ? orderedWeekIds[curIdx - 1] : null;
-        if (weekId && prevWeekId) {
+        // ── 휴식(공식) 주차 가드 — 라인 귀속 주차(line.weekId) ≠ 현재 기입 가능 상태 분리 ──
+        // N-1 carry-forward 는 "현재 주차로 개설된 라인이 직전 주차(N-1)에 있을 때" 그 라인을
+        // 현재 카드로 끌어와 즉시 기입하게 하는 정상 운영 정책이다. 하지만 현재 주차가
+        // 휴식(공식) 주차(예: 14~16주차)라면, 직전 주차(13주차) 라인이 아직 기입 가능하다는
+        // 이유만으로 휴식 카드에 끌려와 "섞여 보이는" 버그가 된다. 휴식(공식) 주차에는 carry-forward 를
+        // 수행하지 않아, 직전 주차 라인이 그 주차 카드에만 남게 한다(전환 주차는 휴식(공식) 아님 → isOfficialRestWeek 가 제외).
+        // 어드민 weekly-cards DTO(AdminCluster4WeeklyCardDto)의 상태 SoT 는 statusLabel("휴식(공식)" 등)이다
+        // (로컬 빌더 DTO 의 resultStatus 가 아님). 시즌은 seasonName 우선, 없으면 displayTitle/weekLabel 에서
+        // 봄·여름·가을·겨울 추출 — section1-header 의 metaIsTransitionRest 판정과 동일 규칙. 전환 주차는
+        // isOfficialRestWeek 가 false 로 강등하므로 이번 가드 영향 없음.
+        const currentCardMeta = cards.find((c) => c.weekId === weekId) as Record<string, unknown> | undefined;
+        const currentIsOfficialRest = (() => {
+          if (!currentCardMeta) return false;
+          const statusLabel = typeof currentCardMeta.statusLabel === "string" ? (currentCardMeta.statusLabel as string) : "";
+          const baseOfficialRest = statusLabel.includes("공식"); // "휴식(공식)" → rest-official
+          const seasonRaw =
+            typeof currentCardMeta.seasonName === "string" && (currentCardMeta.seasonName as string).trim()
+              ? (currentCardMeta.seasonName as string)
+              : (`${currentCardMeta.displayTitle ?? ""} ${currentCardMeta.weekLabel ?? ""}`.match(/(봄|여름|가을|겨울)/)?.[1] ?? null);
+          const weekNumber = typeof currentCardMeta.weekNumber === "number" ? (currentCardMeta.weekNumber as number) : null;
+          return isOfficialRestWeek(seasonRaw, weekNumber, baseOfficialRest);
+        })();
+        if (weekId && prevWeekId && !currentIsOfficialRest) {
           // ── 개설 라인 content 보유 판정 ──
           // (정책) career 미선발 / info·experience synthetic fail 라인은 lineTargetId=null 이어도
           //   개설 라인 content(mainTitle/lineName/projectCode/companyName/outputLinks/outputImages)를
