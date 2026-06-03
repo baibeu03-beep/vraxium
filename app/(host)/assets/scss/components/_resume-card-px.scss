@@ -111,9 +111,23 @@
   .resume-activities {
     .activity-row .activity-line {
       .activity-badge {
+        // 진행상태 5종 모두 동일 색상 (정상 졸업 = modifier 없는 base 포함)
+        color: #ffec8f !important;
+
         &.active,
-        &.complete {
-          color: var(--px-accent-soft, #B2FF8F) !important;
+        &.complete,
+        &.rest,
+        &.suspended {
+          color: #ffec8f !important;
+        }
+      }
+
+      .activity-check {
+        &.pending {
+          color: #96ed0a !important;
+        }
+        &.approved {
+          color: #65e3ff !important;
         }
       }
     }

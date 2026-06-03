@@ -893,21 +893,36 @@
     overflow: visible;
     margin-left: 10px;
 
-    // Complete일 때 오버레이 제거 + 금장 glow 효과
+    // Complete(.no-overlay)일 때 오버레이 제거 + 금장 glow 효과
+    // Complete = crewStatus === "Complete" (data.status === "graduated") → Sidebar.tsx 에서 .no-overlay 부여.
     &.no-overlay {
       .medal-image-wrapper {
         &::before {
           display: none;
         }
 
+        // Complete: 배지 이미지를 선명하게 + 살짝 확대해 강조
         img {
           box-shadow: none;
+          opacity: 1;
+          filter: none;
+          transform: scale(1.02);
         }
       }
 
       // 리본 박스(배경 PNG)에 금장 glow
       .medal-text {
         filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.9)) drop-shadow(0 0 16px rgba(255, 165, 0, 0.6));
+      }
+    }
+
+    // Complete가 아닌 상태(Running/On Rest/Recharging/Next Challenge):
+    // 배지 이미지 <img> 에만 흐림/반투명 적용. 주차 숫자(.medal-week-num)·리본 텍스트(.medal-text)는
+    // img 형제/외부 요소라 영향받지 않는다.
+    &:not(.no-overlay) {
+      .medal-image-wrapper img {
+        opacity: 0.48;
+        filter: grayscale(0.45) blur(0.35px) brightness(0.82);
       }
     }
 
@@ -933,6 +948,8 @@
         overflow: hidden;
         position: relative;
         z-index: 0;
+        // Complete ↔ 비-Complete 전환 시 자연스럽게 선명/흐림 애니메이션
+        transition: opacity 0.35s ease, filter 0.35s ease, transform 0.35s ease;
       }
 
       .medal-week-num {
@@ -1148,12 +1165,14 @@
             overflow: hidden;
             text-overflow: ellipsis;
             text-align: center;
+            // 진행상태 5종(진행중/정상 완료/통합 휴식/활동 중단/정상 졸업)
+            // 모두 동일 색상. 정상 졸업은 modifier 없는 base 클래스로 렌더됨.
+            color: #ffec8f;
 
-            &.active {
-              color: #ffec8f;
-            }
-
-            &.complete {
+            &.active,
+            &.complete,
+            &.rest,
+            &.suspended {
               color: #ffec8f;
             }
           }
@@ -1168,7 +1187,7 @@
             text-align: center;
 
             &.pending {
-              color: #9dfa07;
+              color: #96ed0a;
             }
 
             &.approved {
@@ -1506,22 +1525,24 @@
           }
 
           .activity-badge {
-            &.active {
-              color: #ff98a6 !important;
-            }
+            // 진행상태 5종 모두 동일 색상 (정상 졸업 = modifier 없는 base 포함)
+            color: #ffec8f !important;
 
-            &.complete {
-              color: #ff98a6 !important;
+            &.active,
+            &.complete,
+            &.rest,
+            &.suspended {
+              color: #ffec8f !important;
             }
           }
 
           .activity-check {
             &.pending {
-              color: #999 !important;
+              color: #96ed0a !important;
             }
 
             &.approved {
-              color: #fff !important;
+              color: #65e3ff !important;
             }
           }
         }
@@ -1635,18 +1656,23 @@
       }
 
       .activity-badge {
+        // 진행상태 5종 모두 동일 색상 (정상 졸업 = modifier 없는 base 포함)
+        color: #ffec8f !important;
+
         &.active,
-        &.complete {
-          color: #b2ff8f !important;
+        &.complete,
+        &.rest,
+        &.suspended {
+          color: #ffec8f !important;
         }
       }
 
       .activity-check {
         &.pending {
-          color: #999 !important;
+          color: #96ed0a !important;
         }
         &.approved {
-          color: #fff !important;
+          color: #65e3ff !important;
         }
       }
     }

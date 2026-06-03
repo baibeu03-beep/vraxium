@@ -443,28 +443,44 @@ const Sidebar = () => {
   };
 
   // 진행 상태 변환
+  // status 는 두 소스에서 올 수 있다: 고객 로컬(영문 key: in_progress/completed…)과
+  // admin /api/cluster1/resume DTO(한글 라벨: "진행 중"/"정상 완료"…). 양쪽 모두,
+  // 그리고 공백 유무까지 흡수해 동일 className(active/complete…)으로 매핑한다.
   const getProgressStatus = (status: string) => {
-    switch (status) {
+    const key = (status ?? "").replace(/\s/g, "");
+    switch (key) {
       case "completed":
+      case "정상완료":
+      case "완료":
         return { text: "정상 완료", className: "complete" };
       case "in_progress":
+      case "inprogress":
+      case "진행중":
         return { text: "진행중", className: "active" };
       case "full_rest":
+      case "fullrest":
+      case "통합휴식":
         return { text: "통합 휴식", className: "rest" };
       case "suspended":
       case "discontinued":
+      case "활동중단":
         return { text: "활동 중단", className: "suspended" };
       default:
         return { text: status, className: "" };
     }
   };
 
-  // 검수 상태 변환
+  // 검수 상태 변환 (영문 key + admin 한글 라벨, 공백 무시)
   const getReviewStatus = (status: string) => {
-    switch (status) {
+    const key = (status ?? "").replace(/\s/g, "");
+    switch (key) {
       case "approved":
+      case "승인완료":
+      case "승인":
         return { text: "승인 완료", className: "approved" };
       case "reviewing":
+      case "검수중":
+      case "검수":
         return { text: "검수중", className: "pending" };
       default:
         return { text: status, className: "" };

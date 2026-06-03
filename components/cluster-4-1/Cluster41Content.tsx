@@ -12,6 +12,7 @@ import { isPxRoute, isEcRoute, withPxRoute, getOrgConfigFromPathname, getGraduat
 import type { AdminCluster4WeeklyCardDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto, Cluster4RateDto } from "@/shared/cluster4.contracts";
 import type { Cluster3StatsCards } from "@/lib/cluster3StatsCardsTypes";
 import { Skeleton } from "@/components/ui/skeleton/Skeleton";
+import { isTransitionWeek } from "@/lib/cluster4-transition-week";
 
 const truncate = (text: string | null | undefined, maxLen: number = 5): string => {
   const t = text || "-";
@@ -109,11 +110,24 @@ const statusDividerColor = (className: string): string => {
   return "#9dfa07";
 };
 
+const STATUS_ICON_DIR = "/images/0/cluster4/icon";
+// className → 실제 public 파일명(원본 한글/공백/괄호 그대로). 파일명이 상태별로 제각각(공백
+// 유무가 다름: "성장 (집계 중)" vs "성장(성공)")이라 문자열 가공 대신 정적 매핑으로 못 박는다.
+// encodeURIComponent 로 직렬화하므로 한글/공백/괄호 경로 불일치가 재발하지 않는다.
+const STATUS_ICON_FILE: Record<string, string> = {
+  "in-progress": "icon - 성장 (진행 중).png",
+  counting: "icon - 성장 (집계 중).png",
+  success: "icon - 성장(성공).png",
+  fail: "icon - 성장(실패).png",
+  "rest-personal": "icon - 휴식(개인).png",
+  "rest-official": "icon - 휴식(공식).png",
+};
+
 const statusIconPath = (statusLabel: string, className: string): string => {
-  if (className === "in-progress") return "/images/0/cluster4/icon/icon%20-%20성장%20%28진행%20중%29.png";
-  if (className === "counting") return "/images/0/cluster4/icon/icon%20-%20성장%20%28집계%20중%29.png";
-  const normalized = statusLabel.replace(/\s+\(/g, "(");
-  return `/images/0/cluster4/icon/icon%20-%20${encodeURIComponent(normalized)}.png`;
+  // statusTone(className) 누락/불일치 대비: 라벨 기반으로 클래스를 한 번 더 정규화해 매핑한다.
+  const resolvedClass = badgeClassFromLabel(statusLabel, className);
+  const file = STATUS_ICON_FILE[resolvedClass] ?? STATUS_ICON_FILE.success;
+  return `${STATUS_ICON_DIR}/${encodeURIComponent(file)}`;
 };
 
 const PART_LINE_ORDER = ["information", "competency", "experience", "career"] as const;
@@ -684,6 +698,9 @@ const Cluster41Content = () => {
 
   // 필터 결과를 매 렌더마다 재계산하지 않도록 메모이즈(입력/계산식 동일 — 출력 불변).
   const filteredDbData = React.useMemo(() => dbWeeklyData.filter((week) => {
+    // 전환 주차(봄·가을 17주차 / 여름·겨울 9주차)는 주차 카드 목록에서 아예 제외한다.
+    // → 목록/카드 개수/페이지네이션/필터 결과 모두에서 빠진다(이 배열이 단일 소스).
+    if (isTransitionWeek(seasonFromCard(week), week.weekNumber)) return false;
     const seasonMatch =
       selectedSeason === "역대 시즌" || seasonOfLabel(week.weekLabel) === selectedSeason;
     const resultMatch =
@@ -1352,6 +1369,7 @@ const Cluster41Content = () => {
               const statusLabel = week.statusLabel ?? '-';
               const toneClass = statusToneClass(week.statusTone);
               // 기존 프론트 className 체계: statusLabel 우선, 없으면 statusTone fallback.
+              // (전환 주차는 filteredDbData 단계에서 이미 목록에서 제외됨 — 여기 도달하지 않음.)
               const badgeToneClass = badgeClassFromLabel(statusLabel, toneClass);
               const isFail = badgeToneClass === 'fail';
               const isPersonalRest = badgeToneClass === 'rest-personal';

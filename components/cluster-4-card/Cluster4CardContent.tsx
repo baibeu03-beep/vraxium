@@ -16,6 +16,7 @@ import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
 import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getGraduationWeeksFromPathname } from "@/lib/cluster-route";
 import { formatSeasonLabel, formatSeasonWeekTitle } from "@/lib/cluster4-types";
+import { isTransitionWeek, isOfficialRestWeek, TRANSITION_WEEK_LABEL } from "@/lib/cluster4-transition-week";
 import { REPUTATION_KEYWORD_GROUPS } from "@/lib/reputation-keywords";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
@@ -1374,13 +1375,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
         // phase(진행 중/집계 중) 와 무관하게 운영진이 마킹한 휴식 여부.
         // 활동 라인 단위(실무 정보/역량/경험/경력) 판정에서 사용.
-        const userIsOnOfficialRestForWeek = !isCurrentWeekOnboarding && (isBreakSeason || !!weeklyGrowth?.is_club_break || (!weeklyGrowth && !!currentWeek.is_club_break));
+        const baseOfficialRestForWeek = !isCurrentWeekOnboarding && (isBreakSeason || !!weeklyGrowth?.is_club_break || (!weeklyGrowth && !!currentWeek.is_club_break));
+        // 전환 주차(봄·가을 17주차 / 여름·겨울 9주차)는 휴식(공식)으로 계산·표시하지 않는다.
+        const isTransitionForWeek = isTransitionWeek(rawSeasonName, currentWeek.week_number);
+        const userIsOnOfficialRestForWeek = isOfficialRestWeek(rawSeasonName, currentWeek.week_number, baseOfficialRestForWeek);
         const userIsOnPersonalRestForWeek = !isCurrentWeekOnboarding && (!!weeklyGrowth?.is_resting || (!weeklyGrowth && apiRestWeekIds.includes(currentWeek.id)));
 
         // 휴식만 phase 우회 — 온보딩 주차도 일반 phase(진행 중 → 집계 중) 거치고 결정 시점에 무조건 성공.
         let growthStatus = "실패";
-        if (userIsOnOfficialRestForWeek) {
-          // 클럽 공식 휴식 주차(전환 주차 포함)는 phase 우회하고 카드 노출 시점부터 바로 '휴식(공식)'.
+        if (isTransitionForWeek && baseOfficialRestForWeek) {
+          // 전환 주차: 휴식(공식)으로 표시·계산하지 않고 중립 '전환 주차'로 둔다(실패 폴백 방지).
+          growthStatus = TRANSITION_WEEK_LABEL;
+        } else if (userIsOnOfficialRestForWeek) {
+          // 클럽 공식 휴식 주차는 phase 우회하고 카드 노출 시점부터 바로 '휴식(공식)'.
           growthStatus = "휴식(공식)";
         } else if (userIsOnPersonalRestForWeek) {
           // 개인 휴식 크루도 phase 우회하고 카드 노출 시점부터 바로 '휴식(개인)'.
@@ -6063,6 +6070,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           text: "휴식 (공식)",
           icon: "/images/0/cluster4/icon/icon-rest-official.png",
         };
+      case "전환 주차":
+        return {
+          className: "",
+          text: "전환 주차",
+          icon: "/images/0/cluster4/icon/icon-growth-running.png",
+        };
       case "진행 중":
         return {
           className: "in-progress",
@@ -6143,8 +6156,25 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     if (label.includes("공식")) return "rest-official";
     return fallback || "";
   };
-  const headerStatusText = weeklyCardMeta?.statusLabel ?? statusBadgeInfo.text;
-  const headerStatusClass = weeklyCardMeta
+  // 전환 주차(봄·가을 17주차 / 여름·겨울 9주차)는 휴식(공식)으로 표시하지 않는다.
+  // 어드민 DTO statusLabel 이 '휴식(공식)'으로 와도 중립 '전환 주차'로 강등한다.
+  const metaSeasonRaw = (() => {
+    const card = weeklyCardMeta as Record<string, unknown> | null;
+    if (!card) return null;
+    if (typeof card.seasonName === "string" && (card.seasonName as string).trim()) return card.seasonName as string;
+    const label = `${weeklyCardMeta?.displayTitle ?? ""} ${weeklyCardMeta?.weekLabel ?? ""}`;
+    const m = label.match(/(봄|여름|가을|겨울)/);
+    return m ? m[1] : null;
+  })();
+  const metaIsTransitionRest = !!weeklyCardMeta
+    && cardBadgeClassFromLabel(weeklyCardMeta.statusLabel ?? "", cardStatusToneClass(weeklyCardMeta.statusTone)) === "rest-official"
+    && isTransitionWeek(metaSeasonRaw, typeof weeklyCardMeta.weekNumber === "number" ? weeklyCardMeta.weekNumber : null);
+  const headerStatusText = metaIsTransitionRest
+    ? TRANSITION_WEEK_LABEL
+    : (weeklyCardMeta?.statusLabel ?? statusBadgeInfo.text);
+  const headerStatusClass = metaIsTransitionRest
+    ? ""
+    : weeklyCardMeta
     ? (cardBadgeClassFromLabel(weeklyCardMeta.statusLabel ?? "", cardStatusToneClass(weeklyCardMeta.statusTone)) || statusBadgeInfo.className)
     : statusBadgeInfo.className;
   // className → ASCII 아이콘 (카드 목록 statusIconPath 의 시각적 대응; 경로만 ASCII 로 통일해 404 면역).

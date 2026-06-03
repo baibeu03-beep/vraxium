@@ -17,6 +17,7 @@ import { DUMMY_SEASON_DATA, DUMMY_SEASON_HISTORIES, REVIEW_COMMENT_DEFAULT } fro
 import { dedupedJson } from "@/lib/fetch-dedupe";
 import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getOrgConfigFromPathname } from "@/lib/cluster-route";
 import { formatSeasonLabel, formatSeasonWeekTitle } from "@/lib/cluster4-types";
+import { isOfficialRestWeek } from "@/lib/cluster4-transition-week";
 import { REPUTATION_KEYWORDS } from "@/lib/reputation-keywords";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
@@ -1855,7 +1856,8 @@ const Cluster4Content = () => {
           seasonLabel: seasonData?.season_label || null,
           seasonType: seasonData?.season_type || rawSeasonName || null,
           currentWeek: currentWeekData.week_number,
-          isClubBreak: currentWeekData.is_official_rest || false,
+          // 전환 주차(봄·가을 17주차 / 여름·겨울 9주차)는 휴식(공식)으로 계산·표시하지 않는다.
+          isClubBreak: isOfficialRestWeek(rawSeasonName, currentWeekData.week_number, currentWeekData.is_official_rest || false),
           holidayName: currentWeekData.holiday_name || null,
           isBreakSeason,
           fromSeason,
