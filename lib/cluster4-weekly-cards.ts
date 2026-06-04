@@ -379,7 +379,15 @@ export async function buildWeeklyCards(supabase: any, userId: string, opts: {
     const isClubBreak = isOnboarding ? false : (!!w.is_official_rest || isBreakSeason);
     const status = weekStatuses.get(w.id) || "실패";
 
-    const pts = pointsMap.get(w.id) || { star: 0, shield: 0, lightning: 0 };
+    // 포인트 표시 정책(2026-06-04 통일): 카드 노출 points 는 표시 최종값.
+    //   별 = points · 방패 = net(advantages−penalty) · 번개 = −penalty (음수 표기).
+    //   pointsMap 은 raw(내부 집계용 — cumulativeInjeolmi net 계산에 사용) 유지.
+    const ptsRaw = pointsMap.get(w.id) || { star: 0, shield: 0, lightning: 0 };
+    const pts = {
+      star: ptsRaw.star,
+      shield: ptsRaw.shield - ptsRaw.lightning,
+      lightning: -ptsRaw.lightning,
+    };
     const { teamName, partName } = resolveTeamPart(w.start_date, w.id, isBreakSeason);
     const role = resolveRole(w.start_date, isBreakSeason && !isOnboarding);
     // 등급 SoT = membership_level. role 코드 단독으로 "심화(파트장)" 매핑 금지 (cluster4-role-label 정책).

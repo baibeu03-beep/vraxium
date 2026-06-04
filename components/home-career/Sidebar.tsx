@@ -2028,9 +2028,11 @@ const Sidebar = () => {
       animateNumber(setStat2, currentStats.stat2, 1000),
       // 배지 데이터 SoT: /api/profile 의 point DTO (check/advantage/penalty).
       //   point 미수신 시 badgeData(stars/shields/lightnings) → 데모 currentStats 순 폴백.
+      // 포인트 표시 정책(2026-06-04): 방패=net·번개=−n 은 서버 표시 최종값 — 그대로 렌더.
+      //   (구 Math.abs(lightnings) 가공 제거. 데모 시드 penalty 도 −n 으로 변환해 동일 정책 유지.)
       animateNumber(setBadge1, pointData ? pointData.check : (hasBadgeData ? badgeData.stars : currentStats.badge1), 1000), // icon-graphic10 ← point.check
-      animateNumber(setBadge2, pointData ? pointData.advantage : (hasBadgeData ? badgeData.shields : currentStats.badge2), 1000), // icon-shield ← point.advantage
-      animateNumber(setBadge3, pointData ? pointData.penalty : (hasBadgeData ? Math.abs(badgeData.lightnings || 0) : currentStats.badge3), 1000), // icon-graphic13(red) ← point.penalty
+      animateNumber(setBadge2, pointData ? pointData.advantage : (hasBadgeData ? badgeData.shields : currentStats.badge2), 1000), // icon-shield ← point.advantage(net)
+      animateNumber(setBadge3, pointData ? pointData.penalty : (hasBadgeData ? (badgeData.lightnings || 0) : -Math.abs(currentStats.badge3)), 1000), // icon-graphic13(red) ← point.penalty(−n)
       animateNumber(setSkill1, currentStats.skill1, 1000),
       animateNumber(setSkill2, currentStats.skill2, 1000),
       animateNumber(setSkill3, currentStats.skill3, 1000),

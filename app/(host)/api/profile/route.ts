@@ -524,10 +524,11 @@ export async function GET(request: NextRequest) {
           },
           // point DTO (legacy 경로) — crew_list_view 에는 check/advantage/penalty 집계가 없음.
           // 전용 컬럼(total_checks/advantages/penalties) 부재 → 모두 0 (null 아님).
+          // penalty 부호: 2026-06-04 정책(−n 표기)과 동일하게 음수화 (현재는 항상 0).
           point: {
             check: legacy.total_checks ?? 0,
             advantage: legacy.total_advantages ?? 0,
-            penalty: legacy.total_penalties ?? 0,
+            penalty: -(legacy.total_penalties ?? 0),
           },
           seasonHistories: [],
           growthInfo: {
@@ -2202,10 +2203,11 @@ export async function GET(request: NextRequest) {
         total_weeks: seasonTotalWeeks,
         review_status: correctedReviewStatus,
         progress_status: correctedProgressStatus,
+        // 포인트 표시 정책(2026-06-04 통일): 방패=net, 번개=−penalty (음수 표기). raw 미노출.
         seasonPoints: {
           stars: seasonPoints.stars,           // 단감
-          shields: netShields,                 // 인절미 (계산된 값)
-          lightnings: seasonPoints.lightnings  // 어흥
+          shields: netShields,                 // 인절미 (net = raw 방패 − 번개)
+          lightnings: -seasonPoints.lightnings // 어흥 (−n 표기)
         },
         seasonStats: {
           // 주차 활용도
@@ -2246,22 +2248,24 @@ export async function GET(request: NextRequest) {
       careerActivityCount,
       reliabilityRate: finalGrowthPeriodStats.reliabilityRate,
       completionRate,
-      // 별=total_checks, 방패=total_advantages, 번개=total_penalties (admin getResumeCardForCrew 와 동일 매핑).
+      // 포인트 표시 정책(2026-06-04 통일): 고객 노출 값은 표시 최종값.
+      //   별=total_checks, 방패=total_advantages(net — 캐시 컬럼 자체가 raw−penalty),
+      //   번개=−total_penalties (음수 표기). raw advantage(total_raw_advantages)는 미노출.
       badges: {
         stars: cumulativePoints?.total_checks ?? 0,
-        lightnings: cumulativePoints?.total_penalties ?? 0,
+        lightnings: -(cumulativePoints?.total_penalties ?? 0),
         shields: cumulativePoints?.total_advantages ?? 0,
       },
       // resume-card .resume-badges 표시용 point DTO.
       // source table: user_cumulative_points (전용 컬럼, cumulativePointDto 로 분리 조회)
       //   point.check     → total_checks
-      //   point.advantage → total_advantages (음수 가능 — || 가 아닌 ?? 사용)
-      //   point.penalty   → total_penalties
+      //   point.advantage → total_advantages = net(raw−penalty) 표시 최종값 (음수 가능 — ?? 사용)
+      //   point.penalty   → −total_penalties (음수 표기, 2026-06-04 정책)
       // 행/값 미존재 시 null 이 아니라 0 으로 내려준다. 기존 badges 필드는 유지(append-only).
       point: {
         check: cumulativePointDto?.total_checks ?? 0,
         advantage: cumulativePointDto?.total_advantages ?? 0,
-        penalty: cumulativePointDto?.total_penalties ?? 0,
+        penalty: -(cumulativePointDto?.total_penalties ?? 0),
       },
       seasonRecords: adminResume?.seasonRecords ?? adminResume?.season_records ?? undefined,
       seasonHistories: responseSeasonHistories,

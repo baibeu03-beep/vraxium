@@ -22,10 +22,12 @@ export interface Cluster4WeeklyCardDto {
   teamName: string | null;
   partName: string | null;
   roleLabel: string | null;
+  // 포인트 표시 정책(2026-06-04 통일): 표시 최종값 — 별=check · 방패=net(adv−pen) · 번개=−pen.
+  // raw advantage 는 내부 집계 전용(고객 DTO 미노출).
   points: {
     star: number;
-    shield: number;
-    lightning: number;
+    shield: number; // net = advantages − penalty (per-week)
+    lightning: number; // −penalty (음수 표기)
   };
   cumulativeInjeolmi: number;
   growthRate: Cluster4RateDto;
@@ -290,6 +292,7 @@ export interface AdminCluster4WeeklyCardDto {
   partName?: string | null;
   roleLabel?: string | null;
   membershipStatusLabel?: string | null;
+  // 포인트 표시 정책(2026-06-04 통일): 방패=net(adv−pen) · 번개=−pen (음수 표기).
   points?: {
     star?: number | null;
     shield?: number | null;

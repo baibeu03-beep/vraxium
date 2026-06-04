@@ -234,9 +234,12 @@ const Sidebar = () => {
     const timers = [
       animateNumber(setStat1, reliabilityRate, 1500),
       animateNumber(setStat2, 80, 1500),
+      // 렌더 슬롯: badge1=icon-graphic10(별) · badge2=icon-shield(방패) · badge3=icon-graphic13(번개·red).
+      // (종전 badge2←lightnings/badge3←shields 는 아이콘과 값이 교차되는 버그 — 2026-06-04 교정.)
+      // 포인트 표시 정책: 방패=net·번개=−n 서버 표시 최종값 그대로 렌더(가공 금지).
       animateNumber(setBadge1, badgeData.stars, 1500),       // 별
-      animateNumber(setBadge2, badgeData.lightnings, 1500),  // 번개
-      animateNumber(setBadge3, badgeData.shields, 1500),     // 방패
+      animateNumber(setBadge2, badgeData.shields, 1500),     // 방패(net)
+      animateNumber(setBadge3, badgeData.lightnings, 1500),  // 번개(−n)
       animateNumber(setSkill1, practicalData.competency, 1500),  // 실무역량
       animateNumber(setSkill2, practicalData.experience, 1500),  // 실무경험
       animateNumber(setSkill3, practicalData.info, 1500),        // 실무정보

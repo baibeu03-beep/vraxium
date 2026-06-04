@@ -2195,7 +2195,8 @@ const Cluster3Content = () => {
     : {
         dangam: pointsData.dangam,
         injeolmi: pointsData.injeolmi,
-        eoheung: pointsData.eoheung,
+        // 포인트 표시 정책(2026-06-04): 번개=−n 표기. 데모 시드(양수 penalty)도 동일 정책으로 변환.
+        eoheung: -Math.abs(pointsData.eoheung),
       };
 
   return (
@@ -2410,7 +2411,8 @@ const Cluster3Content = () => {
                 }> = [
                   { name: "단감", value: pointCard.dangam, defaultSrc: "/images/0/cluster 3/icon/Ok01.png", defaultIconClass: "label-icon orange" },
                   { name: "인절미", value: pointCard.injeolmi, defaultSrc: "/images/0/cluster 3/icon/OK02.png", defaultIconClass: "label-icon" },
-                  { name: "어흥", value: Math.abs(pointCard.eoheung), defaultSrc: "/images/0/cluster 3/icon/Ok03.png", defaultIconClass: "label-icon" },
+                  // 포인트 표시 정책(2026-06-04): 번개=−n 그대로 렌더 (Math.abs 가공 금지).
+                  { name: "어흥", value: pointCard.eoheung, defaultSrc: "/images/0/cluster 3/icon/Ok03.png", defaultIconClass: "label-icon" },
                 ];
                 return rows.map((row) => {
                   // org-aware alias (PX → 투구/방패/화살, EC → 별/방패/번개).
