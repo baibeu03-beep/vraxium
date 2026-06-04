@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-server";
-import { getCachedTeams, getCachedParts } from "@/lib/cached-data";
+import { buildPersonProfileMap } from "@/lib/personProfiles";
 import { getUserProfile } from "@/lib/get-user-profile";
 import { extractTargetUserId, isAdminEmail } from "@/lib/admin";
 import { DemoModeError, resolveDemoProfileUserIdFromRequest } from "@/lib/demoMode";
@@ -96,79 +96,37 @@ export async function GET(request: Request) {
     if (data && data.length > 0) {
       const reviewerIds = Array.from(new Set(data.map(d => d.reviewer_id)));
 
-      // reviewer 프로필 조회 (university, major_first 제거)
-      const { data: reviewers, error: reviewerError } = await supabase
-        .from("user_profiles")
-        .select("user_id, display_name, gender, birth_date, profile_photo_url, vision")
-        .in("user_id", reviewerIds);
+      // 인적사항 조인 — weekly-cards 스냅샷 DTO(fromProfile)와 동일 규칙(buildPersonProfileMap).
+      // 평판 카드 표시 대상 = "평판을 남긴 사람(reviewer)" — 이미지/이름/팀/파트 모두 reviewer 기준.
+      // 종전: user_educations + user_team_parts(미존재 테이블) + vision 단독 조인이라
+      //   스냅샷 경로와 값이 갈려("-"/잘못된 값) 표시 분기의 원인이었다.
+      const profileMap = await buildPersonProfileMap(reviewerIds);
 
-      if (reviewerError) {
-        console.error("[weekly-reputations] reviewer 조회 오류:", reviewerError);
-      }
-
-      // reviewer 학력 정보 조회 (user_educations에서)
-      const { data: educations } = await supabase
-        .from("user_educations")
-        .select("user_id, school_name, major_name_1, sort_order")
-        .in("user_id", reviewerIds)
-        .order("sort_order", { ascending: true });
-
-      // user_id별 학력 정보 Map (첫 번째 학력만 사용)
-      const educationMap: { [key: string]: { school_name: string | null; major_name_1: string | null } } = {};
-      educations?.forEach(edu => {
-        if (!educationMap[edu.user_id]) {
-          educationMap[edu.user_id] = {
-            school_name: edu.school_name,
-            major_name_1: edu.major_name_1,
-          };
-        }
-      });
-
-      // reviewer의 팀/파트 정보 조회 (현재 활성화된 것만)
-      const { data: userTeamParts } = await supabase
-        .from("user_team_parts")
-        .select("user_id, team_id, part_id")
-        .in("user_id", reviewerIds)
-        .is("left_at", null);
-
-      // 팀/파트 이름 조회 - 캐시 사용
-      const teams = await getCachedTeams();
-      const parts = await getCachedParts();
-
-      // 팀/파트 이름 매핑
-      const teamMap: { [key: string]: string } = {};
-      const partMap: { [key: string]: string } = {};
-      teams?.forEach(t => { teamMap[t.id] = t.name; });
-      parts?.forEach(p => { partMap[p.id] = p.name; });
-
-      // 유저별 팀/파트 매핑
-      const userTeamPartMap: { [key: string]: { teamName: string | null; partName: string | null } } = {};
-      userTeamParts?.forEach(utp => {
-        userTeamPartMap[utp.user_id] = {
-          teamName: utp.team_id ? teamMap[utp.team_id] || null : null,
-          partName: utp.part_id ? partMap[utp.part_id] || null : null,
+      // legacy alias 키(display_name/profile_photo_url/university/major_first/teamName/partName/vision)
+      // 유지 — 기존 소비처(resolvePersonalInfo alias fallback)와 호환.
+      const dataWithReviewers = data.map(d => {
+        const p = profileMap.get(d.reviewer_id) ?? null;
+        return {
+          ...d,
+          reviewer: p
+            ? {
+                user_id: p.userId,
+                display_name: p.name,
+                gender: p.gender,
+                birth_date: p.birthDate,
+                profile_photo_url: p.profileImageUrl,
+                vision: p.profileTagline,
+                profileTagline: p.profileTagline,
+                university: p.school,
+                major_first: p.department,
+                teamName: p.team,
+                partName: p.part,
+                membershipLevel: p.membershipLevel,
+                role: p.role,
+              }
+            : null,
         };
       });
-
-      // Object로 매핑
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const reviewerObj: { [key: string]: any } = {};
-      reviewers?.forEach(r => {
-        const teamPart = userTeamPartMap[r.user_id];
-        const education = educationMap[r.user_id];
-        reviewerObj[r.user_id] = {
-          ...r,
-          university: education?.school_name || null,
-          major_first: education?.major_name_1 || null,
-          teamName: teamPart?.teamName || null,
-          partName: teamPart?.partName || null,
-        };
-      });
-
-      const dataWithReviewers = data.map(d => ({
-        ...d,
-        reviewer: reviewerObj[d.reviewer_id] || null
-      }));
 
       return NextResponse.json({
         success: true,

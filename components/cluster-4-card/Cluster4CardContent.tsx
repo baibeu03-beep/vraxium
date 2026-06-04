@@ -2092,6 +2092,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // section1-header 단일 출처(어드민 DTO) — 현재 주차 카드 메타. 같은 weekly-cards 응답에서
   // 이미 받아온 matchedCard 를 그대로 보관. 없으면(데모/미매칭/실패) 기존 로컬 계산값 fallback.
   const [weeklyCardMeta, setWeeklyCardMeta] = useState<AdminCluster4WeeklyCardDto | null>(null);
+  // 평판/연계동료 저장 직후 weekly-cards DTO 재조회 트리거 — 저장 API 가 snapshot 재계산을
+  // await 하므로(triggerAdminSnapshotRecompute) 응답 후 재조회하면 fresh DTO 가 온다.
+  // 재조회 없이는 화면이 legacy fallback(selectedColleagues/weeklyReputations)과 섞여
+  // 미리보기/모달 간 DTO 분기가 생긴다 — 단일 출처(DTO) 유지를 위해 저장 성공 시 bump.
+  const [weeklyCardsRefreshKey, setWeeklyCardsRefreshKey] = useState(0);
 
   useEffect(() => {
     // fetch 실행 여부/차단 사유를 항상 로깅 (early-return 진단)
@@ -2326,7 +2331,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     return () => {
       controller.abort();
     };
-  }, [isDemoMode, weekId, urlUserId, session?.user?.id]);
+  }, [isDemoMode, weekId, urlUserId, session?.user?.id, weeklyCardsRefreshKey]);
 
   // ── canEdit 매칭 helper ──
   // 반드시 weekId === 현재 주차 + partType 일치 + lineTargetId 존재 + sub-line key 일치
@@ -4909,7 +4914,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       major: picked.major || "-",
       team: picked.team || "-",
       part: picked.part || "-",
-      nickname: picked.nickname || "-",
+      // "닉네임" 칸 = 한줄소개 체인(profile_tagline → profile_keyword → vision) —
+      // weekly-cards DTO(colleagueProfile.profileTagline)와 동일 규칙. /api/crews 가
+      // profileTagline 을 내려주며, 구버전 응답 호환으로 nickname(vision) 폴백 유지.
+      nickname: (picked as any).profileTagline || picked.nickname || "-",
       role: picked.role || "",
       rank: nextRank,
       message: colleagueEditData.content.trim(),
@@ -4957,6 +4965,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       //    selectedColleagues 갱신 → displayedColleagues/colleagueData/count(N/3) 즉시 반영.
       setSelectedColleagues(updatedList);
       fetchWeeklyColleagues();
+      // weekly-cards DTO(스냅샷) 재조회 — 저장 API 가 snapshot 재계산을 끝낸 뒤 응답하므로
+      // 여기서 bump 하면 미리보기/모달이 legacy 가 아닌 동일 DTO(colleagueProfile)로 갱신된다.
+      setWeeklyCardsRefreshKey((k) => k + 1);
       await popup.alert("저장되었습니다.");
       setIsColleagueEditing(false);
       setHeaderModalOpen(false);
@@ -5722,6 +5733,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         await fetchWeeklyReputations();
+        // weekly-cards DTO(스냅샷) 재조회 — DELETE 가 snapshot 재계산을 끝낸 뒤 응답하므로
+        // bump 로 카드 그리드(dtoWeeklyReputations)도 동일 DTO 기준으로 즉시 갱신.
+        setWeeklyCardsRefreshKey((k) => k + 1);
       }
 
       // sentReputationsThisWeek 정합성 — 타인 페이지(isOwner=false)에서 내가 보낸 평판 삭제 시
@@ -5882,6 +5896,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     // 6. 일반 모드: DB 재조회로 reputation-section 최신화 (데모는 saveWeeklyReputation에서 이미 로컬 append)
     if (!isDemoMode) {
       await fetchWeeklyReputations();
+      // weekly-cards DTO(스냅샷) 재조회 — 저장 API 가 snapshot 재계산을 끝낸 뒤 응답하므로
+      // bump 로 카드 그리드(dtoWeeklyReputations)도 동일 DTO 기준으로 즉시 갱신.
+      setWeeklyCardsRefreshKey((k) => k + 1);
     }
 
     // 7. 스냅샷 업데이트 — 저장 직후 isDirty false 보장
@@ -6367,8 +6384,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       dtoWeeklyReputations && dtoWeeklyReputations.length > 0
         ? dtoWeeklyReputations.map((rep, index) => {
             const fp: any = rep.fromProfile || {};
-            // fromProfile 이 비어있을 때만 legacy reviewer(동일 id, 없으면 동일 index) 로 보강.
-            const legacy: any = (rep.id != null ? legacyRepById.get(String(rep.id)) : null) || weeklyReputations[index] || {};
+            // fromProfile 이 비어있을 때만 legacy reviewer 로 보강 — 반드시 "동일 id" 행만 사용한다.
+            // (종전 index 기반 폴백은 정렬/개수 차이 시 다른 평판의 작성자 인적사항·이미지가
+            //  섞일 수 있어 제거 — 표시 대상은 항상 해당 행의 reviewer 여야 한다.)
+            const legacy: any = (rep.id != null ? legacyRepById.get(String(rep.id)) : null) || {};
             const rv: any = legacy.reviewer || (rep as any).reviewer || {};
             // 나이: fromProfile.age 우선, 없으면 legacy birth_date 로 계산
             let age: string | number = "-";

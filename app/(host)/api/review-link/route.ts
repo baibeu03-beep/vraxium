@@ -4,6 +4,10 @@ import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { isAdminEmail } from "@/lib/admin";
 import { resolveWriteUserId } from "@/lib/api-auth";
+import {
+  findReviewLinkOrderViolation,
+  reviewLinkOrderErrorMessage,
+} from "@/lib/reviewLinkOrder";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -401,6 +405,36 @@ export async function PUT(request: Request) {
       const week = Number(entry?.weekIndex ?? entry?.week_index);
       if (!VALID_WEEK_SET.has(week)) continue;
       byWeek.set(week, sanitizePersistedUrl(entry?.url));
+    }
+
+    // ── 순차 작성 검증 (전사 공통 정책) ──
+    // 클럽 리뷰는 3 → 6 → … → 27 → 30(Total Complete) 순서대로만 작성/삭제할 수 있다.
+    // "이번 요청에서 변경되는 슬롯"만 검사한다(레거시로 이미 순서가 깨진 데이터가 있어도
+    // 무관한 슬롯 저장은 막지 않음 — lib/reviewLinkOrder 참조).
+    // 데모(테스트 유저)/일반/어드민 모두 동일 적용.
+    if (byWeek.size > 0) {
+      const { data: existingRows, error: existingError } = await supabaseAdmin
+        .from("user_review_links")
+        .select("week_index, url")
+        .eq("user_id", userId);
+      if (existingError) {
+        console.error(TAG, "PUT existing links lookup failed", existingError);
+        return NextResponse.json(
+          errorPayload("order_check_lookup", existingError.message, existingError),
+          { status: 500 },
+        );
+      }
+      const existingByWeek = new Map<number, string | null>();
+      for (const row of (existingRows ?? []) as Array<{ week_index: number; url: string | null }>) {
+        existingByWeek.set(row.week_index, sanitizePersistedUrl(row.url));
+      }
+      const violation = findReviewLinkOrderViolation(existingByWeek, byWeek);
+      if (violation) {
+        return NextResponse.json(
+          errorPayload("order_violation", reviewLinkOrderErrorMessage(violation), violation),
+          { status: 400 },
+        );
+      }
     }
 
     // upsert payload — 보낸 슬롯만 갱신. 보내지 않은 슬롯은 기존 값 유지.

@@ -22,6 +22,8 @@ import { SECTION1_PHOTO_DEFAULTS } from "@/constants/dummyData/cluster2-section1
 import { SECTION2_SLOGAN_DEFAULTS } from "@/constants/dummyData/cluster2-section2-default";
 // admin 레포 (vraxium-admin) 의 lib/cluster2SloganOptions.ts 와 mirror.
 import { CLUSTER2_SLOGAN_OPTIONS as sloganOptions } from "@/lib/cluster2SloganOptions";
+// 클럽 리뷰 링크 순차 작성 정책 — 저장 API(PUT /api/review-link)와 동일 헬퍼.
+import { canWriteReviewLinkWeek, findReviewLinkOrderViolation, reviewLinkOrderErrorMessage } from "@/lib/reviewLinkOrder";
 
 // 학력 데이터 타입
 interface EduData {
@@ -651,6 +653,10 @@ const Cluster2Content = () => {
   const isSection2Dirty = () => isDirtyBySnapshot(editingSloganData, sloganSnapshot);
   const [section2FooterNotice, setSection2FooterNotice] = useState<"default" | "error">("default");
   const [sloganAuthorName, setSloganAuthorName] = useState("");
+  // quote-author 프로필 이미지 — 실제 프로필 이미지(user_profiles.profile_photo_url = sidebarPhoto)
+  // 우선, 없을 때만 sub photo 폴백. 두 quote-author(slogan2/slogan3) 모두 동일 소스를 쓴다.
+  // (종전: 첫 번째=subPhotos[0], 두 번째=subPhotos[2] 로 분기 → sub_photo_3 미업로드 시 두 번째만 누락)
+  const quoteAuthorPhoto = sidebarPhoto || subPhotos[0] || subPhotos[2] || null;
 
   // DB에서 슬로건 로드
   const fetchSlogans = async () => {
@@ -1710,6 +1716,24 @@ const Cluster2Content = () => {
     return EDIT_WINDOW_LOCKED_MESSAGE;
   };
 
+  // 링크 배열(UI index 순: 0=30, 1=3, …, 9=27) → 주차별 url 맵(빈 값은 null).
+  // 모달 입력 게이트 + 저장 전 검증이 같은 맵을 본다(서버 PUT 검증과 동일 정책).
+  const buildUrlByWeek = (links: string[]): Map<number, string | null> => {
+    const byWeek = new Map<number, string | null>();
+    REVIEW_LINK_WEEK_INDICES.forEach((weekIndex, index) => {
+      const trimmed = links[index]?.trim();
+      byWeek.set(weekIndex, trimmed ? trimmed : null);
+    });
+    return byWeek;
+  };
+  const buildFilledByWeek = (links: string[]): Map<number, boolean> => {
+    const filled = new Map<number, boolean>();
+    REVIEW_LINK_WEEK_INDICES.forEach((weekIndex, index) => {
+      filled.set(weekIndex, Boolean(links[index]?.trim()));
+    });
+    return filled;
+  };
+
   // 리뷰 링크 저장
   const handleSaveReviewLinks = async () => {
     if (reviewPermissionLoading) {
@@ -1719,6 +1743,18 @@ const Cluster2Content = () => {
     if (!canEditClubReview) {
       showAlert(getReviewPermissionMessage());
       return;
+    }
+    // 순차 작성 검증 — 데모(로컬 더미)/테스트/일반 모두 동일 정책. 서버 PUT 도 재검증한다.
+    // 기존 저장 상태(reviewLinks) 대비 "이번에 변경되는 슬롯"만 검사(서버와 동일 헬퍼).
+    {
+      const violation = findReviewLinkOrderViolation(
+        buildUrlByWeek(reviewLinks),
+        buildUrlByWeek(editingReviewLinks),
+      );
+      if (violation) {
+        showAlert(reviewLinkOrderErrorMessage(violation));
+        return;
+      }
     }
     if (isDemoMode) {
       setReviewLinks([...editingReviewLinks]);
@@ -2334,7 +2370,7 @@ const Cluster2Content = () => {
               <p className="quote-text">{sloganData.slogan2.content}</p>
               <div className="quote-footer">
                 <div className="quote-author">
-                  {subPhotos[0] && <img src={subPhotos[0]} alt="" />}
+                  {quoteAuthorPhoto && <img src={quoteAuthorPhoto} alt="" />}
                   <div className="author-info">
                     <span className="author-name">{sloganAuthorName || (!urlUserId ? session?.user?.name : "") || "Unknown"}</span>
                     <span className="author-role">{sloganData.slogan2.content ? sloganData.slogan2.option : SECTION2_SLOGAN_DEFAULTS.slogans[1].option}</span>
@@ -2406,7 +2442,7 @@ const Cluster2Content = () => {
               <p className="quote-text">{sloganData.slogan3.content}</p>
               <div className="quote-footer">
                 <div className="quote-author">
-                  {subPhotos[2] && <img src={subPhotos[2]} alt="" />}
+                  {quoteAuthorPhoto && <img src={quoteAuthorPhoto} alt="" />}
                   <div className="author-info">
                     <span className="author-name">{sloganAuthorName || (!urlUserId ? session?.user?.name : "") || "Unknown"}</span>
                     <span className="author-role">{sloganData.slogan3.content ? sloganData.slogan3.option : SECTION2_SLOGAN_DEFAULTS.slogans[2].option}</span>
@@ -3869,19 +3905,31 @@ const Cluster2Content = () => {
               {reviewPermissions.map((perm, index) => {
                 const hasContent = editingReviewLinks[index]?.trim().length > 0;
                 const medalWeeks = index === 0 ? 30 : [3, 6, 9, 12, 15, 18, 21, 24, 27][index - 1];
+                // 순차 작성 게이트 — 시퀀스(3·6·…·27·30)는 직전 주차들이 모두 채워져야 입력 가능.
+                // Total Complete(30)도 시퀀스 마지막 — 27주차까지 작성돼야 열린다.
+                // 편집 중 값(editingReviewLinks) 기준이라 3주차를 입력하면 6주차가 즉시 열린다.
+                // 서버 PUT 이 동일 규칙으로 재검증한다.
+                const weekIndex = REVIEW_LINK_WEEK_INDICES[index];
+                const orderUnlocked = canWriteReviewLinkWeek(weekIndex, buildFilledByWeek(editingReviewLinks));
+                const editable = perm.isOpen && canEditClubReview && orderUnlocked;
+                const placeholder = !perm.isOpen || !canEditClubReview
+                  ? getReviewPermissionMessage()
+                  : orderUnlocked
+                    ? "링크를 입력하세요 (https://...)"
+                    : "이전 주차 리뷰를 먼저 작성해주세요";
                 return (
-                  <div key={index} className={`link-edit-item${!perm.isOpen ? " slot-disabled" : ""}${hasContent ? " slot-filled" : ""}`}>
+                  <div key={index} className={`link-edit-item${!perm.isOpen || !orderUnlocked ? " slot-disabled" : ""}${hasContent ? " slot-filled" : ""}`}>
                     <div className="link-item-header">
                       <img src={`/images/0/cluster 2/icon/medal ${medalWeeks}.png`} alt="" className="link-medal" />
                       <span className="link-label">{perm.label}</span>
                     </div>
                     <input
                       type="url"
-                      placeholder={perm.isOpen && canEditClubReview ? "링크를 입력하세요 (https://...)" : getReviewPermissionMessage()}
+                      placeholder={placeholder}
                       value={editingReviewLinks[index]}
-                      disabled={!perm.isOpen || reviewPermissionLoading || !canEditClubReview}
+                      disabled={!editable || reviewPermissionLoading}
                       onChange={(e) => {
-                        if (perm.isOpen && canEditClubReview) {
+                        if (editable) {
                           const newLinks = [...editingReviewLinks];
                           newLinks[index] = e.target.value;
                           setEditingReviewLinks(newLinks);

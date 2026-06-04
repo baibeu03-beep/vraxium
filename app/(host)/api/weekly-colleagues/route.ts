@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-server";
-import { getCachedTeams, getCachedParts } from "@/lib/cached-data";
+import { buildPersonProfileMap } from "@/lib/personProfiles";
 import { resolveWriteActor } from "@/lib/api-auth";
 import { DemoModeError, resolveDemoProfileUserIdFromRequest } from "@/lib/demoMode";
 import { getUserProfile } from "@/lib/get-user-profile";
@@ -99,86 +99,35 @@ export async function GET(request: Request) {
     if (data && data.length > 0) {
       const colleagueIds = Array.from(new Set(data.map((d) => d.colleague_id)));
 
-      const { data: colleagues } = await supabase
-        .from("user_profiles")
-        .select("user_id, display_name, gender, birth_date, profile_photo_url, vision")
-        .in("user_id", colleagueIds);
+      // 인적사항 조인 — weekly-cards 스냅샷 DTO(colleagueProfile)와 동일 규칙(buildPersonProfileMap).
+      // 종전: user_educations + user_team_parts(미존재 테이블) + vision 단독 조인이라
+      //   스냅샷 경로와 값이 갈려("-") 테스트/일반 모드 간 표시 분기의 원인이었다.
+      const profileMap = await buildPersonProfileMap(colleagueIds);
 
-      const { data: educations } = await supabase
-        .from("user_educations")
-        .select("user_id, school_name, major_name_1, sort_order")
-        .in("user_id", colleagueIds)
-        .order("sort_order", { ascending: true });
-
-      const educationMap: {
-        [key: string]: { school_name: string | null; major_name_1: string | null };
-      } = {};
-      educations?.forEach((edu) => {
-        if (!educationMap[edu.user_id]) {
-          educationMap[edu.user_id] = {
-            school_name: edu.school_name,
-            major_name_1: edu.major_name_1,
-          };
-        }
-      });
-
-      const { data: userTeamParts } = await supabase
-        .from("user_team_parts")
-        .select("user_id, team_id, part_id")
-        .in("user_id", colleagueIds)
-        .is("left_at", null);
-
-      const teams = await getCachedTeams();
-      const parts = await getCachedParts();
-
-      const teamMap: { [key: string]: string } = {};
-      const partMap: { [key: string]: string } = {};
-      teams?.forEach((t) => {
-        teamMap[t.id] = t.name;
-      });
-      parts?.forEach((p) => {
-        partMap[p.id] = p.name;
-      });
-
-      const userTeamPartMap: {
-        [key: string]: { teamName: string | null; partName: string | null };
-      } = {};
-      userTeamParts?.forEach((utp) => {
-        userTeamPartMap[utp.user_id] = {
-          teamName: utp.team_id ? teamMap[utp.team_id] || null : null,
-          partName: utp.part_id ? partMap[utp.part_id] || null : null,
+      const dataWithColleagues = data.map((d) => {
+        const p = profileMap.get(d.colleague_id) ?? null;
+        return {
+          ...d,
+          colleague: p
+            ? {
+                id: p.userId,
+                name: p.name || "-",
+                gender: p.gender || "-",
+                age: p.age ?? "-",
+                profileImg: p.profileImageUrl || "",
+                university: p.school || "-",
+                major: p.department || "-",
+                team: p.team || "-",
+                part: p.part || "-",
+                // "닉네임" 칸 표시값 = 한줄소개 체인(profile_tagline → profile_keyword → vision).
+                nickname: p.profileTagline || "-",
+                profileTagline: p.profileTagline,
+                membershipLevel: p.membershipLevel,
+                role: p.role || "",
+              }
+            : null,
         };
       });
-
-      const colleagueObj: { [key: string]: any } = {};
-      colleagues?.forEach((c) => {
-        let age = null;
-        if (c.birth_date) {
-          const birthYear = new Date(c.birth_date).getFullYear();
-          const currentYear = new Date().getFullYear();
-          age = currentYear - birthYear;
-        }
-
-        const teamPart = userTeamPartMap[c.user_id];
-        const education = educationMap[c.user_id];
-        colleagueObj[c.user_id] = {
-          id: c.user_id,
-          name: c.display_name || "-",
-          gender: c.gender || "-",
-          age: age || "-",
-          profileImg: c.profile_photo_url || "",
-          university: education?.school_name || "-",
-          major: education?.major_name_1 || "-",
-          team: teamPart?.teamName || "-",
-          part: teamPart?.partName || "-",
-          nickname: c.vision || "-",
-        };
-      });
-
-      const dataWithColleagues = data.map((d) => ({
-        ...d,
-        colleague: colleagueObj[d.colleague_id] || null,
-      }));
 
       return NextResponse.json({
         success: true,

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-server";
+import { resolveMembershipDisplay } from "@/lib/membership";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -14,6 +15,8 @@ interface UserProfileRow {
   contact_email: string | null;
   profile_photo_url: string | null;
   vision: string | null;
+  profile_tagline: string | null;
+  profile_keyword: string | null;
   status: string | null;
   growth_status: string | null;
   organization_slug: string | null;
@@ -21,6 +24,8 @@ interface UserProfileRow {
   department_name: string | null;
   gender: string | null;
   birth_date: string | null;
+  current_team_name: string | null;
+  current_part_name: string | null;
 }
 
 interface CrewListViewRow {
@@ -105,9 +110,17 @@ function mergeRow(
   view: CrewListViewRow | null,
   edu: UserEducationRow | null,
   growth: UserGrowthStatsRow | null,
-  membership: UserMembershipRow | null,
+  memberships: UserMembershipRow[],
   starsTotal: number | null,
 ) {
+  // 팀/파트/등급 — 공용 resolver(resolveMembershipDisplay)로 통일.
+  //   team_name 보유 row 우선(is_current 단독 신뢰 금지) + user_profiles.current_*_name 폴백.
+  //   종전 "is_current 우선 → 아무 row" 픽은 team_name 이 NULL 인 row 를 골라 "-" 를 만들었다
+  //   (연계동료 모달 후보 미리보기 팀/파트 빈칸의 원인 — 2026-06-04 통일).
+  const resolved = resolveMembershipDisplay(memberships, {
+    current_team_name: profile.current_team_name,
+    current_part_name: profile.current_part_name,
+  });
   // 우선순위: user_educations(최종학력 sort_order=0) > user_profiles > crew_list_view(legacy) > "-".
   // user_educations 가 truth source — educations PUT(educations/route.ts:297-374)이
   // user_educations 만 갱신하고 user_profiles.school_name/department_name 은 sync 하지
@@ -128,10 +141,17 @@ function mergeRow(
     // legacy 호환 alias — 페이지가 이 키들로 렌더링 중이라 함께 노출.
     university: schoolName,
     major: majorName,
-    // 우선순위: user_memberships(is_current=true 우선) > crew_list_view(legacy) > "-".
-    team: membership?.team_name ?? view?.team_name ?? view?.team ?? "-",
-    part: membership?.part_name ?? view?.part_name ?? view?.part ?? "-",
+    // 우선순위: user_memberships(team_name 보유 우선 resolver) > crew_list_view(legacy) > "-".
+    team: resolved.teamName ?? view?.team_name ?? view?.team ?? "-",
+    part: resolved.partName ?? view?.part_name ?? view?.part ?? "-",
     nickname: profile.vision ?? view?.vision ?? view?.nickname ?? "-",
+    // 한줄소개 체인(profile_tagline → profile_keyword → vision) — 연계동료/평판 카드의
+    // "닉네임" 칸 표시값과 동일 규칙(personProfiles.buildPersonProfileMap mirror). additive 필드.
+    profileTagline:
+      (profile.profile_tagline?.trim() || null) ??
+      (profile.profile_keyword?.trim() || null) ??
+      (profile.vision?.trim() || null),
+    membershipLevel: resolved.membershipLevel,
     club: view?.club ?? "-",
     universityMajor: [schoolName, majorName].filter((v) => v && v !== "-").join(" ") || "-",
     status: profile.status ?? view?.status ?? "-",
@@ -162,7 +182,7 @@ export async function GET(request: Request) {
     // 1) Roster from user_profiles (source of truth for org membership + identity + 학교/학과).
     let profileQuery = supabase
       .from("user_profiles")
-      .select("user_id, display_name, contact_email, profile_photo_url, vision, status, growth_status, organization_slug, school_name, department_name, gender, birth_date");
+      .select("user_id, display_name, contact_email, profile_photo_url, vision, profile_tagline, profile_keyword, status, growth_status, organization_slug, school_name, department_name, gender, birth_date, current_team_name, current_part_name");
 
     if (orgFilter) {
       profileQuery = profileQuery.eq("organization_slug", orgFilter);
@@ -279,22 +299,17 @@ export async function GET(request: Request) {
     const growthMap = new Map<string, UserGrowthStatsRow>();
     for (const row of growthStats ?? []) growthMap.set(row.user_id, row);
 
-    // --- memberships (Pass1: is_current=true 우선, Pass2: 없으면 비-current 폴백) ---
+    // --- memberships — user 별 전체 row 를 모아 resolveMembershipDisplay(공용 resolver)로 픽 ---
     const { data: memberships, error: membershipError } = membershipRes;
     console.log("[/api/crews] membership rows=", memberships?.length ?? 0, "err=", membershipError?.message);
     if (membershipError) {
       console.error("user_memberships enrichment failed (continuing without it):", JSON.stringify(membershipError));
     }
-    const membershipMap = new Map<string, UserMembershipRow>();
+    const membershipMap = new Map<string, UserMembershipRow[]>();
     for (const m of memberships ?? []) {
-      if (m.is_current === true && !membershipMap.has(m.user_id)) {
-        membershipMap.set(m.user_id, m);
-      }
-    }
-    for (const m of memberships ?? []) {
-      if (!membershipMap.has(m.user_id)) {
-        membershipMap.set(m.user_id, m);
-      }
+      const list = membershipMap.get(m.user_id) ?? [];
+      list.push(m);
+      membershipMap.set(m.user_id, list);
     }
 
     console.log("[/api/crews] star point users=", starsByUser.size);
@@ -306,7 +321,7 @@ export async function GET(request: Request) {
         viewMap.get(p.user_id) ?? null,
         eduMap.get(p.user_id) ?? null,
         growthMap.get(p.user_id) ?? null,
-        membershipMap.get(p.user_id) ?? null,
+        membershipMap.get(p.user_id) ?? [],
         starsByUser.get(p.user_id) ?? null,
       ),
     );
