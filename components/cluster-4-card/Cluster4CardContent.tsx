@@ -4796,7 +4796,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // ⚠ 과거엔 canEdit!==true 일 때 requireWriteWindow(고정 시간창)로 fallback 했다. 그러나 서버 POST 엔
   //   그 시간창 fallback 이 없어(오직 hasOpenEditWindow), "고정 시간창엔 들지만 어드민 창은 닫힘" 구간에서
   //   모달은 열리고 저장만 403 EDIT_WINDOW_CLOSED 가 났다 → fallback 제거(판정 기준 일치).
-  //   창이 닫혔으면 모달 오픈 단계에서 정확한 안내로 막는다(저장까지 못 가게).
+  //   창이 닫혔으면 모달 오픈 단계에서 조용히 막는다(저장까지 못 가게 — 안내 팝업은 정책상 미노출).
   // demo/admin 정책: 기존과 동일(데모는 로컬 작성 허용, 비데모 어드민은 항상 허용).
   const requireWeeklyColleaguesWriteAccess = async (): Promise<boolean> => {
     if (isDemoMode) return true;
@@ -4822,12 +4822,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
 
     if (!canEdit) {
+      // 정책(2026-06-04): 작성 창 닫힘 안내 팝업 제거 — 별도 alert 없이 조용히 차단만 한다.
+      //   (백엔드 hasOpenEditWindow 판정/저장 403 차단은 그대로 유지)
       console.log("[weekly-colleagues-gate] 작성 창 닫힘 — 모달 오픈/저장 차단", {
         weekId,
         weekNumber: weekData?.weekNumber ?? null,
         permission: permissionForLog,
       });
-      await popup.alert("관리자 허가를 받은 기간에만 작성할 수 있습니다. 어드민에서 위클리 연계동료 작성 기간을 열어주세요.");
       return false;
     }
     console.log("[weekly-colleagues-gate] 작성 창 열림 — 허용", {
@@ -6053,7 +6054,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const computedWeekPaths = weekData ? getWeekImagePath(weekData) : null;
   const currentImage = isRestMode ? restImage : computedWeekPaths ? computedWeekPaths.primary : "/images/0/cluster4/주차 이미지/겨울 1주차 (1월 1주차).png";
   const currentImageStripped = !isRestMode && computedWeekPaths && computedWeekPaths.stripped !== computedWeekPaths.primary ? computedWeekPaths.stripped : null;
-  const currentTitle = weekData ? (weekData.isBreakSeason ? `${formatSeasonLabel({ seasonLabel: weekData.seasonLabel, seasonName: weekData.toSeasonName || weekData.seasonName, seasonType: weekData.seasonType, year: weekData.seasonYear })} 전환 주차` : formatSeasonWeekTitle({ seasonLabel: weekData.seasonLabel, seasonName: weekData.seasonName, seasonType: weekData.seasonType, year: weekData.seasonYear, weekNumber: weekData.weekNumber })) : "로딩 중...";
+  const currentTitle = weekData ? (weekData.isBreakSeason ? `${formatSeasonLabel({ seasonLabel: weekData.seasonLabel, seasonName: weekData.toSeasonName || weekData.seasonName, seasonType: weekData.seasonType, year: weekData.seasonYear })}, 전환 주차` : formatSeasonWeekTitle({ seasonLabel: weekData.seasonLabel, seasonName: weekData.seasonName, seasonType: weekData.seasonType, year: weekData.seasonYear, weekNumber: weekData.weekNumber })) : "로딩 중...";
 
   // 날짜 포맷팅 함수 (2025 - 01 - 06 (월) 형식)
   const formatDateWithDay = (dateString: string) => {
@@ -6245,15 +6246,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   //   한 카드 안에서 세 포인트의 기준(per-week)을 통일한다. 누적(cumulativeInjeolmi=Σadvantages)은
   //   '누적 방패'가 아니며 주차 칸에 쓰지 않는다(과거 보고 #7 의 누적 표기를 되돌림). 누적 방패가
   //   필요한 자리는 별도 영역에서 net(Σshield-Σlightning) 기준으로만 표기.
+  // 포인트 표시 정책(2026-06-04 통일): DTO(points.*)는 서버 표시 최종값(방패=net, 번개=−n) —
+  //   그대로 렌더. legacy fallback(weekPoints — raw point_type 합산)도 동일 정책으로 변환해
+  //   방패=raw−penalty(net), 번개=−penalty 를 표시한다 (양수 penalty/Math.abs 표기 금지).
   const headerCardPoints = weeklyCardMeta?.points ?? null;
   const headerDangam = headerCardPoints?.star ?? weekPoints.star ?? 0;
   const headerInjeolmi =
     typeof headerCardPoints?.shield === "number" && Number.isFinite(headerCardPoints.shield)
       ? headerCardPoints.shield
-      : (typeof weekPoints.shield === "number" && Number.isFinite(weekPoints.shield) ? weekPoints.shield : 0);
+      : (typeof weekPoints.shield === "number" && Number.isFinite(weekPoints.shield)
+          ? weekPoints.shield - Math.abs(weekPoints.lightning || 0)
+          : 0);
   const headerEoheung = headerCardPoints
     ? (typeof headerCardPoints.lightning === "number" && Number.isFinite(headerCardPoints.lightning) ? headerCardPoints.lightning : 0)
-    : Math.abs(weekPoints.lightning);
+    : -Math.abs(weekPoints.lightning || 0);
 
   // 태그 색상 배열
   const tagColors = ["tag--pink", "tag--red", "tag--yellow", "tag--purple", "tag--green", "tag--cyan", "tag--mint", "tag--dark"];
@@ -9202,7 +9208,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       return;
                     }
                     // 모달 오픈 시점 작성 창 체크 — 서버 POST hasOpenEditWindow 와 동일 판정.
-                    // 닫혀 있으면 게이트가 안내 팝업을 띄우고 false → 모달(검색/입력 UI) 미오픈.
+                    // 닫혀 있으면 게이트가 조용히 false 반환(안내 팝업 미노출 정책) → 모달(검색/입력 UI) 미오픈.
                     if (!(await requireWeeklyColleaguesWriteAccess())) return;
                     handleEditClick(() => {
                       handleOpenColleagueEdit();

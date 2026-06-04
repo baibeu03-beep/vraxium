@@ -3405,7 +3405,7 @@ const Cluster4Content = () => {
                 <div className="detail-row">
                   <span className="detail-label">성장 시작 시즌</span>
                   <span className="detail-value">
-                    {growthStartInfo && growthStartInfo.year ? (growthStartInfo.isBreak ? `${formatSeasonLabel({ seasonName: growthStartInfo.seasonName, year: growthStartInfo.year })} 전환 주차` : formatSeasonWeekTitle({ seasonName: growthStartInfo.seasonName, year: growthStartInfo.year, weekNumber: growthStartInfo.weekNumber })) : "-"}
+                    {growthStartInfo && growthStartInfo.year ? (growthStartInfo.isBreak ? `${formatSeasonLabel({ seasonName: growthStartInfo.seasonName, year: growthStartInfo.year })}, 전환 주차` : formatSeasonWeekTitle({ seasonName: growthStartInfo.seasonName, year: growthStartInfo.year, weekNumber: growthStartInfo.weekNumber })) : "-"}
                   </span>
                 </div>
                 <div className="detail-row">
@@ -3605,7 +3605,9 @@ const Cluster4Content = () => {
                       ) : (
                         <img src={defaultSrcMap[name]} alt={name} className="stat-icon" />
                       )}{" "}
-                      <strong className="number">{Math.abs(valueMap[name])}</strong>
+                      {/* 포인트 표시 정책(2026-06-04): 서버 표시 최종값 그대로 렌더 —
+                          방패=net(음수 가능), 번개=−n. Math.abs 가공 금지. */}
+                      <strong className="number">{valueMap[name]}</strong>
                       <span className="unit">개</span>
                     </span>
                   );
