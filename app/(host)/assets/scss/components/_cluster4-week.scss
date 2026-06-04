@@ -2777,8 +2777,9 @@
               top: 50%;
               left: 50%;
               transform: translate(-50%, -50%);
-              font-size: 11px;
-              color: rgba(255, 255, 255, 0.5);
+              font-size: 13px;
+              font-weight: 600;
+              color: #fff;
               font-family: "Pretendard", sans-serif;
               white-space: nowrap;
               z-index: 1;
@@ -2813,6 +2814,7 @@
             color: #fff;
             font-family: "Black Ops One", cursive;
             line-height: 35px;
+            margin-left: 0.2em; // number와 % 사이 시각적 간격
           }
         }
       }
@@ -3030,6 +3032,18 @@
               opacity 0.2s ease,
               filter 0.2s ease;
             cursor: pointer;
+          }
+
+          // 비활성 카드(Faded Card) — not_applicable(해당 없음) + void(미개설) 통합 정책(2026-06-04).
+          // 판정 SoT = lib/cluster4-faded-card.ts isFadedCardStatus (TSX 에서 .faded-card 부착).
+          // 텍스트 뱃지 없이 카드 톤다운으로만 상태 표현. 레이아웃/크기/여백 불변.
+          // status-badge(아이콘)는 .card-content-area 형제라 톤다운 영향 없음.
+          &.faded-card {
+            background: #0a0a0a;
+
+            .card-content-area {
+              opacity: 0.4;
+            }
           }
 
           .card-content-area {
@@ -3473,6 +3487,19 @@
         padding: 14px;
         min-height: 200px;
         gap: 12px;
+
+        // 비활성 카드(Faded Card) — not_applicable(해당 없음) + void(미개설/보이드) 통합 정책(2026-06-04).
+        // 판정 SoT = lib/cluster4-faded-card.ts isFadedCardStatus (TSX 에서 .faded-card 부착).
+        // 텍스트 뱃지 없이 카드 톤다운으로만 상태 표현. 레이아웃/크기/여백 불변.
+        // status-badge(아이콘)는 형제 요소라 톤다운 영향 없음.
+        &.faded-card {
+          background: #0a0a0a;
+
+          .card-icon-area,
+          .card-content-area {
+            opacity: 0.4;
+          }
+        }
 
         .card-icon-area {
           width: 60px;
@@ -3970,6 +3997,19 @@
           opacity: 1;
         }
 
+        // 비활성 카드(Faded Card) — not_applicable(해당 없음) + void(미개설 .empty 슬롯) 통합 정책(2026-06-04).
+        // 판정 SoT = lib/cluster4-faded-card.ts isFadedCardStatus (TSX 에서 .faded-card 부착).
+        // 텍스트 뱃지 없이 카드 톤다운으로만 상태 표현. 레이아웃/크기/여백 불변.
+        // status-badge(아이콘)는 row 형제라 톤다운 영향 없음. .locked 슬롯만 제외(TSX 가드).
+        &.faded-card {
+          background: #0a0a0a;
+
+          .card-top-row,
+          .card-bottom-area {
+            opacity: 0.4;
+          }
+        }
+
         // 5번째 슬롯 잠금 상태: 기존 empty 카드 마크업/스타일은 그대로 유지하고,
         // 카드 위에 .lock-overlay 만 덮어 dark + lock icon + "잠금 중" 텍스트를 표현한다.
         // 클릭은 TSX에서 onClick 미부착으로 차단(여기서는 cursor만 not-allowed).
@@ -4417,7 +4457,9 @@
           opacity: 1;
         }
 
-        &.not-applicable {
+        // 비활성 카드(Faded Card) — not_applicable(해당 없음/미배정) + void(미개설 빈 슬롯) 통합 정책(2026-06-04).
+        // 판정 SoT = lib/cluster4-faded-card.ts isFadedCardStatus (TSX 에서 .faded-card 부착).
+        &.faded-card {
           background: #0a0a0a;
           border: 1px solid #000;
 
@@ -10662,6 +10704,24 @@
 }
 
 // ============================================================================
+// 실무 경험 비활성 카드(Faded Card) 빛바램 — 톱레벨 직접 셀렉터 (조상 스코프 의존 제거)
+// ----------------------------------------------------------------------------
+// 중첩 룰(.work-exp-section/.work-career-section > .work-exp-cards > .work-exp-card.faded-card)이
+// wrapper(.weekly-card-detail) 체인에 의존하므로, DOM 구조에 직접 매칭되는 본 룰을 추가로 둔다.
+// not_applicable(해당 없음) + void(미개설 .empty 슬롯) 통합 정책(2026-06-04).
+// 판정 SoT = lib/cluster4-faded-card.ts isFadedCardStatus (TSX 에서 .faded-card 부착).
+// .locked 슬롯엔 클래스가 붙지 않으며(TSX 가드), fail/success/waiting 도 영향 없음.
+// ============================================================================
+.work-exp-card.faded-card {
+  background: #0a0a0a;
+
+  .card-top-row,
+  .card-bottom-area {
+    opacity: 0.4;
+  }
+}
+
+// ============================================================================
 // workInfo View Modal ??媛濡쒗삎_? 1468횞855 (1李? ?ㅻ뜑/?명꽣/state)
 // ----------------------------------------------------------------------------
 // ??? workInfo 蹂닿린/?몄쭛 紐⑤떖留? workAbility/workExp/workCareer view 紐⑤떖怨?
@@ -15054,4 +15114,11 @@
     opacity: 1;
     transform: translate(-50%, -100%);
   }
+}
+
+// ============================================================
+// 허브 강화율 % 기호 — 숫자(.highlight)와의 시각적 간격 (4개 허브 섹션 공통)
+// ============================================================
+.section-title-right .rate-value .percent-sign {
+  margin-left: 0.2em;
 }

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveUserProfileAccess } from "@/lib/user-profile-access";
+import { resolveGoogleAccountAccess } from "@/lib/auth-account-access";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -11,7 +12,13 @@ export async function GET() {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.user?.email) {
+    // provider 분기 — google 은 세션의 sub(providerUserId) 키 매칭, 그 외(kakao)는
+    // 기존 email 매칭 경로 그대로. 결과 계약이 동일해 아래 DTO 매핑은 공유된다.
+    const provider = (session as { provider?: string } | null)?.provider;
+    const providerUserId = (session as { providerUserId?: string } | null)?.providerUserId;
+    const isGoogleSession = provider === "google" && !!providerUserId;
+
+    if (isGoogleSession ? !session?.user : !session?.user?.email) {
       return NextResponse.json(
         { error: "로그인이 필요합니다." },
         { status: 401 },
@@ -25,12 +32,19 @@ export async function GET() {
       );
     }
 
-    const access = await resolveUserProfileAccess(supabaseAdmin, {
-      email: session.user.email,
-      name: session.user.name,
-      fallbackProfileId: session.user.id,
-      ensureApplicantOnPending: true,
-    });
+    const access = isGoogleSession
+      ? await resolveGoogleAccountAccess(supabaseAdmin, {
+          providerUserId: providerUserId!,
+          email: session?.user?.email,
+          name: session?.user?.name,
+          ensureApplicantOnPending: true,
+        })
+      : await resolveUserProfileAccess(supabaseAdmin, {
+          email: session!.user!.email!,
+          name: session!.user!.name,
+          fallbackProfileId: session!.user!.id,
+          ensureApplicantOnPending: true,
+        });
 
     if (access.status === "approved") {
       // userId 는 user_profiles.user_id — /crews "보기" 버튼이 cluster-4-* 페이지로

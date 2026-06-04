@@ -659,6 +659,7 @@ const Cluster41Content = () => {
     approved: statsCards?.period.successWeeks ?? growthPeriodStats?.approvedWeeks ?? null,
     unapproved: statsCards?.period.failWeeks ?? growthPeriodStats?.unapprovedWeeks ?? null,
     rest: statsCards?.period.personalRestWeeks ?? growthPeriodStats?.restWeeks ?? null,
+    restSeasons: statsCards?.period.personalRestSeasons ?? growthPeriodStats?.restSeasons ?? null,
   };
 
   const updateSeasonPos = () => {
@@ -676,6 +677,22 @@ const Cluster41Content = () => {
       setResultBtnPos({ top, left });
     }
   };
+
+  // 드롭다운 열림 중 스크롤/리사이즈 시 fixed 메뉴 위치를 버튼 기준으로 재계산
+  // (capture: true — window 스크롤뿐 아니라 내부 스크롤 컨테이너에도 반응)
+  useEffect(() => {
+    if (!seasonDropdownOpen && !resultDropdownOpen) return;
+    const reposition = () => {
+      if (seasonDropdownOpen) updateSeasonPos();
+      if (resultDropdownOpen) updateResultPos();
+    };
+    window.addEventListener("scroll", reposition, { capture: true, passive: true });
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, { capture: true } as EventListenerOptions);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [seasonDropdownOpen, resultDropdownOpen]);
 
   const seasonOptions = React.useMemo(() => {
     const unique = new Map<string, string>();
@@ -905,7 +922,7 @@ const Cluster41Content = () => {
                     {!summaryReady ? (
                       <Skeleton width={90} height={14} radius={4} />
                     ) : (
-                      <><span className="number">{growthWeeks.available ?? '-'}</span><span className="orange-highlight">({growthPeriodStats?.availableSeasons ?? '-'})</span> <span className="white-text">개 주차</span></>
+                      <><span className="number">{growthWeeks.available ?? '-'}</span> <span className="white-text">개 주차</span></>
                     )}
                   </span>
                 </div>
@@ -935,7 +952,7 @@ const Cluster41Content = () => {
                     {!summaryReady ? (
                       <Skeleton width={70} height={14} radius={4} />
                     ) : (
-                      <><span className="number">{growthWeeks.rest ?? '-'}</span> <span className="white-text">개 주차</span></>
+                      <><span className="number">{growthWeeks.rest ?? '-'}</span>{(growthWeeks.restSeasons ?? 0) >= 1 && <span className="orange-highlight">({growthWeeks.restSeasons})</span>} <span className="white-text">개 주차</span></>
                     )}
                   </span>
                 </div>

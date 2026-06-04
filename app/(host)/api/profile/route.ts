@@ -224,6 +224,60 @@ async function fetchClubRankAvgPercentile(request: NextRequest, userId: string |
   }
 }
 
+// 이력서 카드 medal-week-num(성장 성공 주차) canonical source.
+// Details 카드(Cluster41 statsCards.period.successWeeks)와 동일 SoT —
+// admin GET /api/cluster3/stats-cards 의 period.successWeeks 를 그대로 사용한다.
+// (resolved 주차 기반: 진행/집계 중 주차는 tallying 으로 빠져 미포함, 전환 주차 제외,
+//  experience verdict fail 전환 반영 — raw user_week_statuses 카운트와 다를 수 있음.)
+// club-rank 와 동일한 resolveAdminBaseUrl + x-internal-api-key 패턴.
+// best-effort — 실패/미설정 시 null 반환(호출부에서 로컬 확정 주차 카운트로 폴백).
+async function fetchAdminSuccessWeeks(request: NextRequest, userId: string | null): Promise<number | null> {
+  if (!userId) return null;
+
+  const adminApiBaseUrl = await resolveAdminBaseUrl();
+  if (!adminApiBaseUrl) {
+    console.warn("[profile] admin backend 미발견 — stats-cards successWeeks 조회 불가");
+    return null;
+  }
+
+  const targetUrl = new URL(`${adminApiBaseUrl}/api/cluster3/stats-cards`);
+  targetUrl.searchParams.set("userId", userId);
+
+  const internalApiKey = process.env.INTERNAL_API_KEY;
+  if (!internalApiKey) console.warn("[profile] INTERNAL_API_KEY missing — stats-cards 호출");
+
+  const headers = new Headers();
+  headers.set("Content-Type", "application/json");
+  headers.set("x-internal-api-key", internalApiKey ?? "");
+  const cookie = request.headers.get("cookie");
+  if (cookie) headers.set("cookie", cookie);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  try {
+    const upstream = await fetch(targetUrl.toString(), {
+      method: "GET",
+      headers,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!upstream.ok) {
+      console.warn("[profile] stats-cards upstream non-OK", upstream.status, targetUrl.toString());
+      return null;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const json: any = await upstream.json();
+    const raw = json?.data?.period?.successWeeks;
+    const num = typeof raw === "number" ? raw : parseFloat(raw);
+    return Number.isFinite(num) ? num : null;
+  } catch (e) {
+    console.warn("[profile] stats-cards fetch 실패 — successWeeks null", (e as Error)?.message || String(e));
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // 사이드바 이력서 카드 SoT — admin canonical route(/api/cluster1/resume)의 getCluster1Resume DTO.
 // 활동완료율(activityCompletion.rate)·실무 4종(practicalStats)을 고객 측에서 자체 계산하지 않고
 // 이 단일 DTO 에서 가져간다. club-rank 와 동일한 resolveAdminBaseUrl + x-internal-api-key 패턴.
@@ -923,6 +977,12 @@ export async function GET(request: NextRequest) {
     // 사이드바 이력서 카드 단일 SoT — admin getCluster1Resume DTO. DB 쿼리들과 병렬 선행 호출.
     const adminResumePromise = fetchAdminCluster1Resume(request, profile.id);
 
+    // 이력서 카드 medal-week-num SoT — admin stats-cards period.successWeeks (Details 카드와 동일 값).
+    // cluster41 은 statsCards 프록시를 직접 호출하므로 중복 외부 호출 스킵 (club-rank 와 동일 정책).
+    const adminSuccessWeeksPromise = isCluster41
+      ? Promise.resolve<number | null>(null)
+      : fetchAdminSuccessWeeks(request, profile.id);
+
     // 모든 쿼리를 병렬로 실행 (성능 최적화)
     const [
       joinedWeekResult,
@@ -997,7 +1057,8 @@ export async function GET(request: NextRequest) {
       supabaseAdmin.from("user_growth_stats").select("approved_weeks, unapproved_weeks, rest_weeks, club_break_weeks, passed_weeks, available_weeks, available_weeks_club, available_seasons, rest_seasons, approved_seasons, reliability_rate").eq("user_id", profile.id).maybeSingle(),
 
       // 모든 주차 (실시간 계산용) - 미래 주차 포함 (시즌 전체 주차 수 계산용)
-      supabaseAdmin.from("weeks").select("id, start_date, end_date, is_official_rest, season_key, week_number").order("start_date", { ascending: true }),
+      // result_published_at: 주차 결과 확정(공표) 여부 — medal-week-num 로컬 폴백의 확정 주차 필터용.
+      supabaseAdmin.from("weeks").select("id, start_date, end_date, is_official_rest, season_key, week_number, result_published_at").order("start_date", { ascending: true }),
 
       // 해당 유저의 승인된 휴식 요청
       supabaseAdmin.from("rest_requests").select("week_id").eq("user_id", profile.id).eq("status", "approved"),
@@ -1183,6 +1244,8 @@ export async function GET(request: NextRequest) {
     const clubRankAvgPercentile = await clubRankAvgPercentilePromise;
     // 이력서 카드 SoT DTO (활동완료율·실무성적). 실패 시 null → 아래에서 로컬 계산 폴백.
     const adminResume = await adminResumePromise;
+    // 이력서 카드 medal-week-num — admin Details 와 동일 값. 실패 시 null → 로컬 확정 주차 카운트 폴백.
+    const adminSuccessWeeks = await adminSuccessWeeksPromise;
     const growthStats = growthStatsResult.data;
     const allWeeks = allWeeksResult.data || [];
     const allRests = allRestsResult.data || [];
@@ -1356,6 +1419,37 @@ export async function GET(request: NextRequest) {
     if (wsRows.length === 0) {
       console.warn(`[Profile API] user_week_statuses EMPTY for user ${profile.id} — Period will be all 0`);
     }
+
+    // ─── 이력서 카드 medal-week-num 로컬 폴백: 확정(공표)된 성공 주차만 카운트 ───
+    // 위 approvedWeeksCount(raw)는 진행/집계 중 주차의 잠정 success 행까지 포함하므로
+    // medal-week-num 에는 쓰지 않는다. 정책: 확정된 성장 성공 주차만 표시
+    //   = success ∧ 주차 결과 공표 완료(weeks.result_published_at) ∧ 비전환(break 시즌 제외).
+    // 캐노니컬은 admin stats-cards period.successWeeks(adminSuccessWeeks) — 이 값은 admin 미가용 시 근사 폴백
+    // (published 주차의 experience verdict fail 전환까지는 반영하지 못함).
+    const confirmedApprovedWeeksCount = (() => {
+      const wsRowsFull = ((userWeeklyGrowthResult as {
+        data: Array<{ week_start_date: string | null; status: string }> | null;
+      })?.data) ?? [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const breakSeasonKeys = new Set(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        allSeasonsRaw.filter((s: any) => String(s?.season_type || "").includes("break")).map((s: any) => s.season_key),
+      );
+      const weekMetaByStart = new Map<string, { result_published_at: string | null; season_key: string | null }>();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (allWeeks as any[]).forEach((w) => {
+        if (w?.start_date) weekMetaByStart.set(w.start_date, { result_published_at: w.result_published_at ?? null, season_key: w.season_key ?? null });
+      });
+      let count = 0;
+      for (const r of wsRowsFull) {
+        if (r.status !== "success" || !r.week_start_date) continue;
+        const wk = weekMetaByStart.get(r.week_start_date);
+        if (!wk?.result_published_at) continue; // 미공표(진행/집계 중) 주차 제외
+        if (wk.season_key && breakSeasonKeys.has(wk.season_key)) continue; // 전환 주차 제외
+        count++;
+      }
+      return count;
+    })();
 
     // 일정 신뢰도: i = (a+c)/(h-d) * 100, 올림
     const totalWeeks = approvedWeeksCount + unapprovedWeeksCount + restWeeksCount + clubBreakWeeksCount; // h
@@ -1836,9 +1930,9 @@ export async function GET(request: NextRequest) {
     const approvedSeasonsCount = approvedSeasonsFromTable;
 
     // 클럽 온보딩 주차 반영: 온보딩 시즌의 approved_weeks에 +1
+    // (onboardingSeasonId 는 weekStartToSeasonUuid 구성 이후 uuid 로 산출 — 키 체계 통일)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const onboardingWeek = allWeeks.find((w: any) => w.id === profile.onboarding_week_id);
-    const onboardingSeasonId = onboardingWeek?.season_key;
 
     // 시즌별 포인트 집계 — 캐노니컬 user_weekly_points 기준.
     // ⚠ 두 시즌 시스템: 소비자(finalSeasonHistoriesWithOnboarding)는 seasons(uuid) 테이블 id 로
@@ -1857,6 +1951,22 @@ export async function GET(request: NextRequest) {
         w.start_date <= String(s.ended_at).slice(0, 10));
       if (hit) weekStartToSeasonUuid.set(w.start_date, hit.id);
     });
+
+    // 전환 주차(시즌 정규 주수+1) 판정 — weeks.week_number 는 시즌 상대 주차.
+    // admin isTransitionWeekStart 와 동일 정책: 여름/겨울 8주·봄/가을 16주 초과분 = 전환.
+    // 전환 주차는 admin seasonRecords 와 동일하게 인정/총 주차 집계에서 제외한다.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const isTransitionWeekMeta = (w: any): boolean => {
+      if (!w?.season_key || typeof w.week_number !== "number") return false;
+      const regularWeeks = /-(summer|winter)$/.test(String(w.season_key)) ? 8 : 16;
+      return w.week_number > regularWeeks;
+    };
+
+    // 온보딩 시즌 id 도 seasons.id(uuid) 키 체계로 통일 (seasonSuccessWeeksMap 과 동일).
+    const onboardingSeasonId = onboardingWeek?.start_date
+      ? weekStartToSeasonUuid.get(onboardingWeek.start_date)
+      : undefined;
+
     const seasonPointsMap = new Map<string, { stars: number; lightnings: number; shields: number }>();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1905,9 +2015,13 @@ export async function GET(request: NextRequest) {
     userWeeklyGrowthData.forEach((ws: any) => {
       const weekMeta = weekByStartDate.get(ws.week_start_date);
       if (!weekMeta) return;
-      const seasonId = weekMeta.season_key;
+      // ⚠ 키 체계 통일: 소비자(finalSeasonHistoriesWithOnboarding)는 seasons.id(uuid)로
+      //   get() 하므로 seasonPointsMap 과 동일하게 uuid 로 키잉한다.
+      //   (종전 weekMeta.season_key 텍스트 키잉 → uuid lookup 영구 miss → approved_weeks 항상 0 버그)
+      const seasonId = weekStartToSeasonUuid.get(ws.week_start_date);
 
-      if (ws.status === "success" && seasonId) {
+      // 전환 주차 success 는 admin seasonRecords 와 동일하게 인정 주차에서 제외.
+      if (ws.status === "success" && seasonId && !isTransitionWeekMeta(weekMeta)) {
         seasonSuccessWeeksMap.set(seasonId, (seasonSuccessWeeksMap.get(seasonId) || 0) + 1);
       }
       if (ws.status === "personal_rest" && weekMeta.id) {
@@ -1949,7 +2063,11 @@ export async function GET(request: NextRequest) {
       // 해당 시즌의 주차들 필터링 (유저 가입일 이후, 현재 진행 중인 주차 제외)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const seasonWeeks = allWeeks.filter((w: any) => {
-        if (w.season_key !== seasonId) return false;
+        // uuid 키 체계 통일 — seasonId 는 seasons.id(uuid)이므로 season_key(텍스트) 직접 비교는
+        // 영구 false (주차 통계 전부 0 버그). week → seasons.id 매핑으로 비교한다.
+        if (weekStartToSeasonUuid.get(w.start_date) !== seasonId) return false;
+        // 전환 주차 제외 (admin 집계와 동일 정책)
+        if (isTransitionWeekMeta(w)) return false;
         // 유저 가입일 이후 주차만 포함
         if (growthStartDate && w.start_date < growthStartDate) return false;
         // 현재 진행 중인 주차 제외
@@ -1963,9 +2081,13 @@ export async function GET(request: NextRequest) {
       const operatingWeeks = seasonWeeks.filter((w: any) => !w.is_official_rest);
       const totalOperatingWeeks = operatingWeeks.length;
 
-      // 시즌 전체 주차 수 (미래 주차 포함, 공식 휴식 포함) - total_weeks 표시용
+      // 시즌 전체 주차 수 (미래 주차 포함, 공식 휴식 포함, 전환 주차 제외) - total_weeks 표시용
+      // uuid 키 체계 통일 + 전환 제외 → 봄/가을 16·여름/겨울 8 (admin totalWeeks 정책과 동일)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const allSeasonWeeks = allWeeks.filter((w: any) => w.season_key === seasonId);
+      const allSeasonWeeks = allWeeks.filter(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (w: any) => weekStartToSeasonUuid.get(w.start_date) === seasonId && !isTransitionWeekMeta(w),
+      );
       const seasonTotalWeeks = allSeasonWeeks.length;
 
       // 해당 시즌의 주차 ID 목록
@@ -2163,7 +2285,10 @@ export async function GET(request: NextRequest) {
         gradeLabel: gradeStats.grade_label || '정 9품',
       } : null,
       growthPeriodStats: {
-        approvedWeeks: finalGrowthPeriodStats.approvedWeeks,           // 실시간 계산 값 사용
+        // 이력서 카드 medal-week-num — 확정된 성장 성공 주차만 (진행/집계 중·휴식·전환 제외).
+        // 1순위: admin stats-cards period.successWeeks (Details 카드와 동일 SoT, verdict 전환 반영).
+        // 폴백: 로컬 확정 주차 카운트 (success ∧ result_published_at ∧ 비전환).
+        approvedWeeks: adminSuccessWeeks ?? confirmedApprovedWeeksCount,
         unapprovedWeeks: finalGrowthPeriodStats.unapprovedWeeks,       // 실시간 계산 값 사용
         restWeeks: finalGrowthPeriodStats.restWeeks,                   // 실시간 계산 값 사용 (개인 휴식만)
         clubBreakWeeks: finalGrowthPeriodStats.clubBreakWeeks,         // 실시간 계산 값 사용

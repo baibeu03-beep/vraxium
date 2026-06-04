@@ -3,6 +3,8 @@
 // Kept temporarily because legacy weekly-growth routes still import buildWeeklyCards.
 
 import { seasonLabel, formatSeasonLabel } from "@/lib/cluster4-types";
+import { pickPrimaryMembership } from "@/lib/membership";
+import { resolveMembershipRoleLabel } from "@/lib/cluster4-role-label";
 import type { Cluster4WeeklyCardDto } from "@/shared/cluster4.contracts";
 
 export type WeeklyCardDto = Cluster4WeeklyCardDto;
@@ -78,7 +80,7 @@ export async function buildWeeklyCards(supabase: any, userId: string, opts: {
 
   const [
     weeksRes, growthRes, pointsRes, actRecRes, actTypesRes, restRes,
-    teamPartsRes, roleHistRes, teamsRes, partsRes,
+    teamPartsRes, roleHistRes, teamsRes, partsRes, membershipRes,
   ] = await Promise.all([
     weeksQ,
     supabase.from("user_week_statuses").select("week_start_date, status").eq("user_id", userId),
@@ -90,6 +92,8 @@ export async function buildWeeklyCards(supabase: any, userId: string, opts: {
     supabase.from("user_role_history").select("role, started_at, ended_at").eq("user_id", userId),
     supabase.from("teams").select("id, name"),
     supabase.from("parts").select("id, name"),
+    // 등급 SoT — user_memberships.membership_level (role 은 보조값, lib/cluster4-role-label.ts 정책).
+    supabase.from("user_memberships").select("team_name, part_name, membership_level, membership_state, is_current").eq("user_id", userId),
   ]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -217,6 +221,9 @@ export async function buildWeeklyCards(supabase: any, userId: string, opts: {
 
   const teamParts: any[] = teamPartsRes.data || [];
   const roleHistory: any[] = roleHistRes.data || [];
+  // 등급 SoT — 유저당 여러 멤버십 row 가능 → 공용 픽 규칙(lib/membership.ts)으로 단일 선택.
+  const membershipLevel: string | null =
+    pickPrimaryMembership(membershipRes.data ?? [])?.membership_level ?? null;
 
   // ── Helper: resolve team/part for a date ──
   function resolveTeamPart(dateStr: string, weekId: string, isBreakSeason: boolean): { teamName: string | null; partName: string | null } {
@@ -375,7 +382,10 @@ export async function buildWeeklyCards(supabase: any, userId: string, opts: {
     const pts = pointsMap.get(w.id) || { star: 0, shield: 0, lightning: 0 };
     const { teamName, partName } = resolveTeamPart(w.start_date, w.id, isBreakSeason);
     const role = resolveRole(w.start_date, isBreakSeason && !isOnboarding);
-    const roleLbl = role ? (ROLE_LABELS[role] || role) : null;
+    // 등급 SoT = membership_level. role 코드 단독으로 "심화(파트장)" 매핑 금지 (cluster4-role-label 정책).
+    const roleLbl = role
+      ? resolveMembershipRoleLabel({ role, membershipLevel, roleBasedLabel: ROLE_LABELS[role] || role })
+      : null;
 
     const isPersonalRest = status === "휴식(개인)";
     const hideRates = isPersonalRest || isOnboarding || (isClubBreak && !(weekActTypeIds.get(w.id)?.size));

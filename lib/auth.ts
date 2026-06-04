@@ -5,8 +5,15 @@ import DiscordProvider from "next-auth/providers/discord";
 import KakaoProvider from "next-auth/providers/kakao";
 import { supabaseAdmin } from "./supabase";
 import { resolveUserProfileAccess } from "./user-profile-access";
+import { resolveGoogleAccountAccess } from "./auth-account-access";
 
 const isProd = process.env.NODE_ENV === "production";
+
+// 고객 앱 소셜 로그인 provider 매칭 정책 — 결과 계약(UserProfileAccessResult)과
+// 승인(isApproved)·token.id=user_profiles.user_id 플로우는 동일하고, 매칭 키만 다르다:
+//  * kakao  → email(auth_email/contact_email) 매칭 (resolveUserProfileAccess, 기존 그대로)
+//  * google → id_token sub 기반 (provider, provider_user_id) 매칭 (resolveGoogleAccountAccess)
+//    같은 email 의 kakao 계정이 있어도 자동 병합하지 않는다.
 
 const kakaoProviderConfig: Parameters<typeof KakaoProvider>[0] = {
   clientId: process.env.KAKAO_CLIENT_ID ?? "",
@@ -81,12 +88,12 @@ export const authOptions: AuthOptions = {
         try {
           const email = user.email;
           if (!email) {
-            console.error("Kakao login email missing");
+            console.error(`${account?.provider} login email missing`);
             return true;
           }
 
           if (!supabaseAdmin) {
-            console.error("Kakao login supabaseAdmin missing");
+            console.error(`${account?.provider} login supabaseAdmin missing`);
             return true;
           }
 
@@ -98,6 +105,24 @@ export const authOptions: AuthOptions = {
         } catch (error) {
           console.error("signIn callback error:", error);
         }
+      } else if (account?.provider === "google") {
+        try {
+          if (!supabaseAdmin) {
+            console.error("google login supabaseAdmin missing");
+            return true;
+          }
+
+          // providerAccountId = OIDC 검증된 id_token 의 sub — email 이 아닌 고유 식별자
+          await resolveGoogleAccountAccess(supabaseAdmin, {
+            providerUserId: account.providerAccountId,
+            email: user.email,
+            name: user.name,
+            picture: user.image,
+            ensureApplicantOnPending: true,
+          });
+        } catch (error) {
+          console.error("google signIn callback error:", error);
+        }
       }
 
       return true;
@@ -107,6 +132,15 @@ export const authOptions: AuthOptions = {
         token.id = user.id;
         token.email = user.email;
         token.accessToken = (user as { accessToken?: string }).accessToken;
+      }
+
+      // 최초 로그인 시 provider 식별 정보를 토큰에 고정 — check-status 등이
+      // 세션만으로 kakao(email)/google(sub) 매칭 경로를 분기할 수 있게 한다.
+      if (account?.provider) {
+        token.provider = account.provider;
+      }
+      if (account?.provider === "google") {
+        token.providerUserId = account.providerAccountId;
       }
 
       if (account?.provider === "kakao" && user?.email && supabaseAdmin) {
@@ -127,6 +161,25 @@ export const authOptions: AuthOptions = {
           console.error("jwt callback error:", error);
           token.isApproved = false;
         }
+      } else if (account?.provider === "google" && supabaseAdmin) {
+        try {
+          const access = await resolveGoogleAccountAccess(supabaseAdmin, {
+            providerUserId: account.providerAccountId,
+            email: user?.email,
+            name: user?.name,
+            picture: user?.image,
+          });
+
+          if (access.status === "approved") {
+            token.id = access.profile.user_id ?? token.id;
+            token.isApproved = true;
+          } else {
+            token.isApproved = false;
+          }
+        } catch (error) {
+          console.error("google jwt callback error:", error);
+          token.isApproved = false;
+        }
       }
 
       return token;
@@ -137,6 +190,10 @@ export const authOptions: AuthOptions = {
         session.user.email = token.email as string;
         (session as { accessToken?: string }).accessToken = token.accessToken as string;
         (session as { isApproved?: boolean }).isApproved = token.isApproved as boolean;
+        // provider 분기용 — 기존(kakao) 세션 토큰에는 없을 수 있는 additive 필드
+        (session as { provider?: string }).provider = token.provider as string | undefined;
+        (session as { providerUserId?: string }).providerUserId =
+          token.providerUserId as string | undefined;
       }
       return session;
     },

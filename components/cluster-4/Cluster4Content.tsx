@@ -297,6 +297,15 @@ const formatSeasonReputationTime = (timestamp: string | null | undefined): strin
   }
 };
 
+// 로컬 더미(localStorage demoMode) 데모 사용자 하드코딩 성장 상태.
+// /api/profile growthInfo 가 status 를 주지 못할 때만 fallback 으로 사용한다 —
+// 백엔드 DTO 가 항상 우선(데모/일반 모두 같은 growthInfo 기준으로 졸업/진행 표시).
+const DEMO_GROWTH_STATUS_FALLBACK: Record<string, { us: string | null; gs: string | null }> = {
+  전민경: { us: "graduated", gs: "졸업 완료" },
+  곽예원: { us: "weekly_rest", gs: "주차 휴식 중" },
+  김의환: { us: "suspended", gs: "활동 중단" },
+};
+
 const Cluster4Content = () => {
   // 세션 및 본인 프로필 여부 확인
   const { data: session } = useSession();
@@ -350,18 +359,10 @@ const Cluster4Content = () => {
       try {
         const json = await dedupedJson<any>(`/api/profile/?userId=${urlUserId}`);
         if (json) {
-          const name = json.data?.display_name || null;
-          setDemoUserName(name);
-          // 데모 모드 사용자별 성장 상태 설정
-          const demoStatusMap: Record<string, { us: string | null; gs: string | null }> = {
-            전민경: { us: "graduated", gs: "졸업 완료" },
-            곽예원: { us: "weekly_rest", gs: "주차 휴식 중" },
-            김의환: { us: "suspended", gs: "활동 중단" },
-          };
-          if (name && demoStatusMap[name]) {
-            setUserStatus(demoStatusMap[name].us);
-            setGrowthStatus(demoStatusMap[name].gs);
-          }
+          // 성장 상태(userStatus/growthStatus)는 여기서 세팅하지 않는다 —
+          // 데모/일반 모두 fetchUserStatus 효과가 같은 /api/profile growthInfo DTO 로 단일 처리
+          // (하드코딩 맵은 DEMO_GROWTH_STATUS_FALLBACK 으로 그쪽에서 fallback 으로만 사용).
+          setDemoUserName(json.data?.display_name || null);
         }
       } catch {
         // API 실패 시 기존 더미 문구로 fallback
@@ -2155,123 +2156,77 @@ const Cluster4Content = () => {
   }, [session?.user?.id, urlUserId]);
 
   // 사용자 프로필에서 status, growth_status, growthEndInfo, growthStartInfo, growthPeriodStats, role 가져오기
+  // 데모(로컬 더미) 모드도 페이지 주인(urlUserId)이 있으면 같은 /api/profile DTO 를 그대로 사용한다 —
+  // 예전처럼 통째로 스킵하면 growthEndInfo 가 영영 null 이라 백엔드가 졸업(종료)이어도
+  // 화면은 항상 "~ing (성장 진행 중)" 으로 굳는다. demoUserId/일반/데모 전부 단일 매핑 경로.
   useEffect(() => {
-    if (isDemoMode) return; // 데모 모드에서는 API 호출 스킵
+    // 대상이 전혀 없는 데모 모드(비로그인 + userId 없음)만 기존처럼 스킵.
+    if (isDemoMode && !urlUserId) return;
+    // urlUserId(= userId/userID/demoUserId fold-in)가 있으면 해당 사용자, 없으면 본인 프로필 조회
+    const profileUrl = urlUserId ? `/api/profile/?userId=${urlUserId}` : session?.user?.id ? "/api/profile/" : null;
+    if (!profileUrl) return;
     const fetchUserStatus = async () => {
       try {
-        // urlUserId가 있으면 해당 사용자, 없으면 본인 프로필 조회
-        if (urlUserId) {
-          const json = await dedupedJson<any>(`/api/profile/?userId=${urlUserId}`).catch(() => null);
-          if (json) {
-            setUserStatus(json.growthInfo?.status || null);
-            setGrowthStatus(json.growthInfo?.growthStatus || null);
-            // user_profiles.role 기본값 저장
-            if (json.data?.role) {
-              setUserDefaultRole(json.data.role);
-            }
-            // 성장 시작 정보 설정
-            if (json.growthInfo?.startWeekInfo) {
-              setGrowthStartInfo({
-                year: json.growthInfo.startWeekInfo.year,
-                seasonName: json.growthInfo.startWeekInfo.seasonName,
-                weekNumber: json.growthInfo.startWeekInfo.weekNumber,
-                isBreak: json.growthInfo.startWeekInfo.isBreak,
-              });
-            } else {
-              setGrowthStartInfo(null);
-            }
-            // 성장 종료 정보 설정
-            if (json.growthInfo?.endWeekInfo) {
-              setGrowthEndInfo({
-                year: json.growthInfo.endWeekInfo.year,
-                seasonName: json.growthInfo.endWeekInfo.seasonName,
-                weekNumber: json.growthInfo.endWeekInfo.weekNumber,
-                isBreak: json.growthInfo.endWeekInfo.isBreak,
-              });
-            } else {
-              setGrowthEndInfo(null);
-            }
-            // 성장 기간 통계 설정
-            if (json.growthPeriodStats) {
-              setGrowthPeriodStats({
-                availableSeasons: json.growthPeriodStats.availableSeasons ?? 0,
-                approvedSeasons: json.growthPeriodStats.approvedSeasons ?? 0,
-                restSeasons: json.growthPeriodStats.restSeasons ?? 0,
-              });
-            }
-            // 시즌 히스토리 설정
-            if (json.seasonHistories && json.seasonHistories.length > 0) {
-              const formattedSeasons = formatSeasonHistories(json.seasonHistories, json.userRoleHistory || [], json.userTeamParts || [], json.teams || [], json.parts || []);
-              setSeasonHistories(formattedSeasons);
-            }
-            // 역할/팀/파트 이력 설정
-            if (json.userRoleHistory) setUserRoleHistory(json.userRoleHistory);
-            if (json.userTeamParts) setUserTeamParts(json.userTeamParts);
-            if (json.teams) setTeams(json.teams);
-            if (json.parts) setParts(json.parts);
-            // 메인 프로필 사진 설정
-            if (json.data?.profile_photo_url) setProfilePhotoUrl(json.data.profile_photo_url);
-          }
-        } else if (session?.user?.id) {
-          const json = await dedupedJson<any>("/api/profile/").catch(() => null);
-          if (json) {
-            setUserStatus(json.growthInfo?.status || null);
-            setGrowthStatus(json.growthInfo?.growthStatus || null);
-            // user_profiles.role 기본값 저장
-            if (json.data?.role) {
-              setUserDefaultRole(json.data.role);
-            }
-            // 성장 시작 정보 설정
-            if (json.growthInfo?.startWeekInfo) {
-              setGrowthStartInfo({
-                year: json.growthInfo.startWeekInfo.year,
-                seasonName: json.growthInfo.startWeekInfo.seasonName,
-                weekNumber: json.growthInfo.startWeekInfo.weekNumber,
-                isBreak: json.growthInfo.startWeekInfo.isBreak,
-              });
-            } else {
-              setGrowthStartInfo(null);
-            }
-            // 성장 종료 정보 설정
-            if (json.growthInfo?.endWeekInfo) {
-              setGrowthEndInfo({
-                year: json.growthInfo.endWeekInfo.year,
-                seasonName: json.growthInfo.endWeekInfo.seasonName,
-                weekNumber: json.growthInfo.endWeekInfo.weekNumber,
-                isBreak: json.growthInfo.endWeekInfo.isBreak,
-              });
-            } else {
-              setGrowthEndInfo(null);
-            }
-            // 성장 기간 통계 설정
-            if (json.growthPeriodStats) {
-              setGrowthPeriodStats({
-                availableSeasons: json.growthPeriodStats.availableSeasons ?? 0,
-                approvedSeasons: json.growthPeriodStats.approvedSeasons ?? 0,
-                restSeasons: json.growthPeriodStats.restSeasons ?? 0,
-              });
-            }
-            // 시즌 히스토리 설정
-            if (json.seasonHistories && json.seasonHistories.length > 0) {
-              const formattedSeasons = formatSeasonHistories(json.seasonHistories, json.userRoleHistory || [], json.userTeamParts || [], json.teams || [], json.parts || []);
-              setSeasonHistories(formattedSeasons);
-            }
-            // 역할/팀/파트 이력 설정
-            if (json.userRoleHistory) setUserRoleHistory(json.userRoleHistory);
-            if (json.userTeamParts) setUserTeamParts(json.userTeamParts);
-            if (json.teams) setTeams(json.teams);
-            if (json.parts) setParts(json.parts);
-            // 메인 프로필 사진 설정
-            if (json.data?.profile_photo_url) setProfilePhotoUrl(json.data.profile_photo_url);
-          }
+        const json = await dedupedJson<any>(profileUrl).catch(() => null);
+        if (!json) return;
+        // 졸업/진행 상태 — 백엔드 growthInfo 가 단일 SoT.
+        // 데모 모드 하드코딩 맵은 백엔드가 status 를 못 줄 때만 fallback.
+        const demoFallback = isDemoMode ? DEMO_GROWTH_STATUS_FALLBACK[json.data?.display_name ?? ""] : undefined;
+        setUserStatus(json.growthInfo?.status || demoFallback?.us || null);
+        setGrowthStatus(json.growthInfo?.growthStatus || demoFallback?.gs || null);
+        // user_profiles.role 기본값 저장
+        if (json.data?.role) {
+          setUserDefaultRole(json.data.role);
         }
+        // 성장 시작 정보 설정
+        if (json.growthInfo?.startWeekInfo) {
+          setGrowthStartInfo({
+            year: json.growthInfo.startWeekInfo.year,
+            seasonName: json.growthInfo.startWeekInfo.seasonName,
+            weekNumber: json.growthInfo.startWeekInfo.weekNumber,
+            isBreak: json.growthInfo.startWeekInfo.isBreak,
+          });
+        } else {
+          setGrowthStartInfo(null);
+        }
+        // 성장 종료 정보 설정
+        if (json.growthInfo?.endWeekInfo) {
+          setGrowthEndInfo({
+            year: json.growthInfo.endWeekInfo.year,
+            seasonName: json.growthInfo.endWeekInfo.seasonName,
+            weekNumber: json.growthInfo.endWeekInfo.weekNumber,
+            isBreak: json.growthInfo.endWeekInfo.isBreak,
+          });
+        } else {
+          setGrowthEndInfo(null);
+        }
+        // 성장 기간 통계 설정
+        if (json.growthPeriodStats) {
+          setGrowthPeriodStats({
+            availableSeasons: json.growthPeriodStats.availableSeasons ?? 0,
+            approvedSeasons: json.growthPeriodStats.approvedSeasons ?? 0,
+            restSeasons: json.growthPeriodStats.restSeasons ?? 0,
+          });
+        }
+        // 시즌 히스토리 설정
+        if (json.seasonHistories && json.seasonHistories.length > 0) {
+          const formattedSeasons = formatSeasonHistories(json.seasonHistories, json.userRoleHistory || [], json.userTeamParts || [], json.teams || [], json.parts || []);
+          setSeasonHistories(formattedSeasons);
+        }
+        // 역할/팀/파트 이력 설정
+        if (json.userRoleHistory) setUserRoleHistory(json.userRoleHistory);
+        if (json.userTeamParts) setUserTeamParts(json.userTeamParts);
+        if (json.teams) setTeams(json.teams);
+        if (json.parts) setParts(json.parts);
+        // 메인 프로필 사진 설정
+        if (json.data?.profile_photo_url) setProfilePhotoUrl(json.data.profile_photo_url);
       } catch (error) {
         console.error("Error fetching user status:", error);
       }
     };
 
     fetchUserStatus();
-  }, [urlUserId, session?.user?.id]);
+  }, [isDemoMode, urlUserId, session?.user?.id]);
 
   // 시즌 평판 데이터 가져오기 함수
   const fetchSeasonReputations = async (targetId: string, seasonHistoryId: string) => {
@@ -3456,7 +3411,7 @@ const Cluster4Content = () => {
                 <div className="detail-row">
                   <span className="detail-label">성장 가능 시즌</span>
                   <span className="detail-value">
-                    <span className="number">{seasonHistories.length}</span> <span className="white-text">개 시즌</span>
+                    <span className="number">{growthPeriodStats?.availableSeasons ?? "-"}</span> <span className="white-text">개 시즌</span>
                   </span>
                 </div>
                 <div className="detail-row">

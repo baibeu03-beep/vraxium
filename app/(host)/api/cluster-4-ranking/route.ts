@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { seasonLabel, type GrowthStatusKey } from "@/lib/cluster4-types";
+import { pickPrimaryMembership, type MembershipRow } from "@/lib/membership";
+import { resolveMembershipRoleLabel } from "@/lib/cluster4-role-label";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -102,25 +104,46 @@ export async function GET(request: NextRequest) {
 
     // 해당 주차 시점에 가입되어 있던 모든 활성 사용자 가져오기
     // (joined_week의 start_date <= 해당 주차의 start_date)
-    const { data: allProfiles } = await supabaseAdmin
+    // 현 스키마 정합: user_profiles 에 id/joined_week_id/onboarding_week_id 컬럼이 없음
+    // (PK=user_id, 가입 시점=activity_started_at). 기존 select 는 42703(column does not exist)
+    // 으로 실패해 rankings 가 항상 빈 배열이었다. 가입/온보딩 주차는 activity_started_at 이
+    // 속한 주차로 도출한다 (weekly-growth/route.ts startWeekInfo 와 동일 방식).
+    const { data: rawProfiles } = await supabaseAdmin
       .from('user_profiles')
-      .select('id, display_name, profile_photo_url, status, role, joined_week_id, onboarding_week_id')
-      .not('joined_week_id', 'is', null)
+      .select('user_id, display_name, profile_photo_url, status, role, activity_started_at')
+      .not('activity_started_at', 'is', null)
       .in('status', ['active', 'seasonal_rest', 'weekly_rest', 'graduated']);
 
+    // 가입일이 속한 주차 ID 도출 (allWeeks 는 종료된 전체 주차 — break 시즌 포함)
+    const findWeekIdByDate = (dateStr: string): string | null => {
+      const d = dateStr.split('T')[0];
+      const w = (allWeeks || []).find(wk => wk.start_date <= d && d <= wk.end_date);
+      return w?.id ?? null;
+    };
+
+    // 다운스트림(profileMap/userIds 등)이 기대하는 id/joined_week_id 키로 정규화
+    const allProfiles = (rawProfiles || []).map(p => ({
+      ...p,
+      id: p.user_id,
+      joined_week_id: findWeekIdByDate(String(p.activity_started_at)),
+    }));
+
     // 해당 주차에 이미 가입되어 있던 사용자만 필터링
-    const eligibleProfiles = (allProfiles || []).filter(profile => {
-      if (!profile.joined_week_id) return false;
-      const joinedWeekStartDate = weekStartDateMap.get(profile.joined_week_id);
-      if (!joinedWeekStartDate) return false;
-      return joinedWeekStartDate <= selectedWeekStartDate;
+    const eligibleProfiles = allProfiles.filter(profile => {
+      if (profile.joined_week_id) {
+        const joinedWeekStartDate = weekStartDateMap.get(profile.joined_week_id);
+        if (!joinedWeekStartDate) return false;
+        return joinedWeekStartDate <= selectedWeekStartDate;
+      }
+      // 가입일이 기록된 주차 범위 밖(클럽 1주차 이전 가입 등) — 가입일 직접 비교 fallback
+      return String(profile.activity_started_at).split('T')[0] <= selectedWeekStartDate;
     });
 
-    // 온보딩 주차 ID 매핑 (userId -> onboarding_week_id)
+    // 온보딩 주차 ID 매핑 (userId -> 가입일이 속한 주차)
     const userOnboardingWeekMap = new Map<string, string>();
     eligibleProfiles.forEach(p => {
-      if (p.onboarding_week_id) {
-        userOnboardingWeekMap.set(p.id, p.onboarding_week_id);
+      if (p.joined_week_id) {
+        userOnboardingWeekMap.set(p.id, p.joined_week_id);
       }
     });
 
@@ -172,7 +195,8 @@ export async function GET(request: NextRequest) {
       careerRecordsResult,
       careerProjectsResult,
       restRequestsResult,
-      introductionsResult
+      introductionsResult,
+      membershipsResult
     ] = await Promise.all([
       // 해당 주차의 성장 상태 (user_week_statuses SoT 기반)
       supabaseAdmin
@@ -314,6 +338,11 @@ export async function GET(request: NextRequest) {
       supabaseAdmin
         .from('user_introductions')
         .select('user_id, sub_photo_5, sub_photo_1, sub_photo_2, sub_photo_3, sub_photo_4')
+        .in('user_id', userIdArray),
+      // 등급 SoT — user_memberships.membership_level (role 은 보조값, lib/cluster4-role-label.ts 정책).
+      supabaseAdmin
+        .from('user_memberships')
+        .select('user_id, team_name, part_name, membership_level, membership_state, is_current')
         .in('user_id', userIdArray)
     ]);
 
@@ -473,6 +502,20 @@ export async function GET(request: NextRequest) {
       'operations_teamleader': '운영진(팀장)',
     };
 
+    // 멤버십 등급 Map — 상태 표기 SoT (user_memberships.membership_level).
+    // 유저당 여러 row 가능 → 공용 픽 규칙(lib/membership.ts pickPrimaryMembership)으로 단일 선택.
+    const membershipRows = (membershipsResult.data || []) as Array<MembershipRow & { user_id: string }>;
+    const membershipRowsByUser = new Map<string, Array<MembershipRow & { user_id: string }>>();
+    membershipRows.forEach(m => {
+      const arr = membershipRowsByUser.get(m.user_id) || [];
+      arr.push(m);
+      membershipRowsByUser.set(m.user_id, arr);
+    });
+    const membershipLevelMap = new Map<string, string | null>();
+    membershipRowsByUser.forEach((rows, uid) => {
+      membershipLevelMap.set(uid, pickPrimaryMembership(rows)?.membership_level ?? null);
+    });
+
     // 팀/파트 Map 생성 (O(1) 조회용)
     const teamMap = new Map(teams.map(t => [t.id, t]));
     const partMap = new Map(parts.map(p => [p.id, p]));
@@ -547,6 +590,12 @@ export async function GET(request: NextRequest) {
       });
       const team = userTP?.team_id ? teamMap.get(userTP.team_id) : null;
       const part = userTP?.part_id ? partMap.get(userTP.part_id) : null;
+      // 팀/파트 폴백 — teams/parts/user_team_parts 가 현 스키마에 미노출(PGRST205)이라 항상
+      // 비어 있음 → user_memberships 공용 픽(lib/membership.ts)으로 보강 (weekly-cards 프록시
+      // enrichCardHeaders 와 동일 정책). 멤버십에는 시점 정보가 없어 현재 소속 기준.
+      const primaryMembership = pickPrimaryMembership(membershipRowsByUser.get(userId) || []);
+      const teamName = team?.name || primaryMembership?.team_name || null;
+      const partName = part?.name || primaryMembership?.part_name || null;
 
       // 역할 정보
       const userRole = (roleHistories || []).find(rh => {
@@ -555,7 +604,16 @@ export async function GET(request: NextRequest) {
         const endedAt = rh.ended_at ? new Date(rh.ended_at) : null;
         return startedAt <= weekStartDate && (!endedAt || endedAt > weekStartDate);
       });
-      const roleLabel = userRole ? (roleLabels[userRole.role] || userRole.role) : (profile.role ? roleLabels[profile.role] || profile.role : '일반');
+      // 등급 SoT = membership_level. role 코드 단독으로 "심화(파트장)" 매핑 금지 (cluster4-role-label 정책).
+      const roleCode = userRole?.role ?? profile.role ?? null;
+      const roleBasedLabel = userRole
+        ? (roleLabels[userRole.role] || userRole.role)
+        : (profile.role ? roleLabels[profile.role] || profile.role : '일반');
+      const roleLabel = resolveMembershipRoleLabel({
+        role: roleCode,
+        membershipLevel: membershipLevelMap.get(userId) ?? null,
+        roleBasedLabel,
+      });
 
       // 누적 인정 주차 — cluster-4-card L1276-1302 와 동일 산식 (실시간).
       // 1) 온보딩 이후 ~ selectedWeek.endDate 까지 success(is_success=true) 카운트
@@ -654,8 +712,8 @@ export async function GET(request: NextRequest) {
         // 사진[1] profile_photo_url → 사진[2~6] user_introductions sub_photo 폴백 (crews API 와 동일).
         profilePhotoUrl: profile.profile_photo_url || subPhotoMap.get(userId) || null,
         status: profile.status,
-        teamName: team?.name || null,
-        partName: part?.name || null,
+        teamName,
+        partName,
         roleLabel,
         star,
         lightning,

@@ -65,7 +65,7 @@ async function listProfilesByColumn(
   return (data ?? []) as UserProfileAccessRow[];
 }
 
-async function getProfileById(
+export async function getProfileById(
   supabase: SupabaseClient,
   profileId: string,
 ) {
@@ -83,10 +83,14 @@ async function getProfileById(
 }
 
 async function getApplicantByEmail(supabase: SupabaseClient, email: string) {
+  // kakao(email 매칭) 흐름 전용 — google 신청 row 는 (provider, provider_user_id) 키로
+  // lib/auth-account-access.ts 가 따로 관리한다. 같은 email 의 google row 가 공존해도
+  // maybeSingle 이 깨지지 않도록 제외(기존 데이터는 provider null/kakao 뿐이라 결과 불변).
   const { data, error } = await supabase
     .from("applicants")
     .select("id, name, email, status, applied_date")
     .eq("email", email)
+    .or("provider.is.null,provider.neq.google")
     .maybeSingle();
 
   if (error) {

@@ -53,7 +53,8 @@ const PostLoginPage = () => {
           // 우선순위:
           //   1) 명시 callbackUrl (자동 기본값 /cluster-4 는 explicit 으로 취급 X)
           //   2) organizationSlug + userId 로 본인 카드 페이지
-          //   3) /cluster-4 fallback (slug/userId 결손 또는 알 수 없는 slug)
+          //   3) 조직 미배정(slug/userId 결손 또는 알 수 없는 slug) → 조직 배정 대기 안내.
+          //      특정 조직 카드 페이지(/cluster-4-marketing)로 임의 진입시키지 않는다.
           // 무한 redirect 방지: hasCheckedRef 로 1회만 실행, 모든 분기는 절대 경로.
           if (explicitCallbackUrl) {
             router.replace(explicitCallbackUrl);
@@ -63,7 +64,7 @@ const PostLoginPage = () => {
             result.data?.organizationSlug,
             result.data?.userId ?? result.data?.id,
           );
-          router.replace(cardPath ?? DEFAULT_APPROVED_CALLBACK_URL);
+          router.replace(cardPath ?? "/auth/access?status=no-organization");
           return;
         }
 

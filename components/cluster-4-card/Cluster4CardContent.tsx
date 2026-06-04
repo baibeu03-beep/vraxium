@@ -17,6 +17,7 @@ import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constant
 import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getGraduationWeeksFromPathname } from "@/lib/cluster-route";
 import { formatSeasonLabel, formatSeasonWeekTitle } from "@/lib/cluster4-types";
 import { isTransitionWeek, isOfficialRestWeek, TRANSITION_WEEK_LABEL } from "@/lib/cluster4-transition-week";
+import { isFadedCardStatus } from "@/lib/cluster4-faded-card";
 import { REPUTATION_KEYWORD_GROUPS } from "@/lib/reputation-keywords";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
@@ -2590,16 +2591,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         rate: typeof infoRate.rate === "number" ? infoRate.rate : null,
       };
     }
-    // 2) fallback — 백엔드 집계 미수신 시에만 DTO 라인 배열로 재계산.
+    // 2) fallback — DTO 라인의 numerator/denominator(백엔드 breakdownFromLines SoT, not_applicable
+    //    제외 보정 완료)를 그대로 읽는다(careerStatsAdmin 동일 패턴 — 프론트 재계산 금지).
+    //    (구버그) lines.length 를 세면 not_applicable placeholder(미개설 주차 UI 완결용 보이드)까지
+    //    분모에 포함돼 "실제 개설 카드 0개인데 총 1개" + 주차 성장률 분모(합산)와 불일치가 났다.
     if (infoLinesInWeek.length === 0) {
       // 어드민 라인도 미수신 → 기존 로컬 계산값 유지
       return { total: Number(infoStats.total) || 0, success: Number(infoStats.success) || 0, rate: null };
     }
-    const total = infoLinesInWeek.length;
-    const success = infoLinesInWeek.filter(
-      (l) => String(l.enhancementStatus ?? "").toLowerCase() === "success",
-    ).length;
-    return { total: Number(total) || 0, success: Number(success) || 0, rate: null };
+    const den = infoLinesInWeek.map((l) => l.denominator).find((d) => typeof d === "number") ?? null;
+    const num = infoLinesInWeek.map((l) => l.numerator).find((n) => typeof n === "number") ?? null;
+    const lineRate = infoLinesInWeek.map((l) => l.rate).find((r) => typeof r === "number") ?? null;
+    // denominator null = 백엔드 A=0(미개설/휴식) → 0/0 (placeholder 를 세지 않는다)
+    return { total: Number(den) || 0, success: Number(num) || 0, rate: typeof lineRate === "number" ? lineRate : null };
   })();
   // 강화율: 백엔드 rate 가 있으면 그대로, 없으면 프론트 fallback 재계산(Math.round((B/A)*100)).
   // 총 개수 0 → 0 (NaN/Infinity 방지). 소수점 없이 정수 반올림.
@@ -2632,11 +2636,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     if (competencyLinesForStats.length === 0) {
       return { total: Number(competencyStats.total) || 0, success: Number(competencyStats.success) || 0, rate: null };
     }
-    const total = competencyLinesForStats.length;
-    const success = competencyLinesForStats.filter(
-      (l) => String(l.enhancementStatus ?? "").toLowerCase() === "success",
-    ).length;
-    return { total: Number(total) || 0, success: Number(success) || 0, rate: null };
+    // DTO 라인 numerator/denominator(백엔드 SoT, na 제외 보정 완료) 직접 사용 — infoStatsAdmin 와 동일.
+    // (구버그) lines.length 카운트는 na placeholder 포함 → "개설 0개인데 총 1개" 불일치.
+    const den = competencyLinesForStats.map((l) => l.denominator).find((d) => typeof d === "number") ?? null;
+    const num = competencyLinesForStats.map((l) => l.numerator).find((n) => typeof n === "number") ?? null;
+    const lineRate = competencyLinesForStats.map((l) => l.rate).find((r) => typeof r === "number") ?? null;
+    return { total: Number(den) || 0, success: Number(num) || 0, rate: typeof lineRate === "number" ? lineRate : null };
   })();
   const competencySuccessRate =
     typeof competencyStatsAdmin.rate === "number"
@@ -2801,22 +2806,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     line: Cluster4WeeklyLineDto | undefined,
   ): { src: string; alt: string; text: string; toneClass: string } | null => {
     const s = (line?.enhancementStatus as string | null | undefined) ?? null;
-    // (정책 2026-06-02 개정) 강화 상태 뱃지는 백엔드 enhancementStatus 를 우선 사용한다.
-    //   - competency + lineTargetId 없음 + fail            → 아래에서 '강화 실패'(개설+본인 미배정)
-    //   - competency + lineTargetId 없음 + not_applicable  → 아래에서 '해당 없음/미배정'(미개설)
-    // 단 '강화 대기'(pending)는 실제 배정 라인(lineTargetId 보유)에만 허용한다 — lineTargetId=null
-    // competency 가 pending(또는 상태 미상)으로 내려와도 '강화 대기'로 렌더하지 않고 '해당 없음/미배정'
-    // 으로만 표시한다. (information/experience/career 는 별도 표시 정책이 있어 제외.)
-    if (
-      line &&
-      normalizePartType(line.partType) === "competency" &&
-      !line.lineTargetId &&
-      (s === "pending" || s == null || s === "")
-    ) {
-      const reason = (line?.enhancementReason as string | null | undefined) ?? null;
-      const text = reason === "target_missing_not_required_non_career" ? "미배정" : "해당 없음";
-      return { src: "/images/0/cluster4/icon/8 해당 없음.png", alt: "not_applicable", text, toneClass: "not_applicable" };
-    }
+    // (정책 2026-06-04 v14 개정) 강화 상태 뱃지는 백엔드 enhancementStatus 를 그대로 사용한다.
+    // 역량은 1인·1주차 단일 칸 정규화 — 백엔드가 success/pending/fail 을 항상 내려주고,
+    // 선택 과제 미수행(라인 0개 포함)은 pending("강화 대기")이다. 구 2026-06-02 보이드 정책의
+    // "미배정 competency pending → 해당 없음" 강등은 폐기 — 활동 주차 역량에 해당 없음 금지.
     if (process.env.NODE_ENV !== "production" && line) {
       console.log("[cluster4-enhancement]", {
         partType: line.partType,
@@ -2840,6 +2833,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     }
     return null;
   };
+
+  // ── 라인 카드 모달 오픈 게이트 (2026-06-04 정책) ──
+  // not_applicable / void / empty(placeholder) 카드는 화면에 그대로 표시하되 클릭해도 모달을 열지 않는다.
+  // 오픈 가능 = pending(=waiting) / success / fail(=failed) 만. 판정 입력값은 각 카드의 "표시 상태"
+  // (enhancementStatusBadge toneClass 우선 → legacy 카드 enum) — 뱃지와 게이트가 항상 같은 기준을 본다.
+  // ※ 모달 금지 상태(not_applicable/void/empty)는 곧 비활성 카드(Faded Card) 빛바램 대상 —
+  //   컨테이너 .faded-card 부착 판정 SoT 는 lib/cluster4-faded-card.ts isFadedCardStatus (동일 표시 상태 입력).
+  const MODAL_OPENABLE_STATUSES = new Set(["pending", "waiting", "success", "fail", "failed"]);
+  const canOpenLineModal = (status: string | null | undefined): boolean =>
+    MODAL_OPENABLE_STATUSES.has(String(status ?? "").trim().toLowerCase());
 
   // ── 실무 경력(career) 등급/점수/평가 상태 표시 (백엔드 DTO 단일 출처) ──
   // 프론트 재계산 금지: line.careerGrade / careerGradePoints / careerRatingStatus / enhancementReason 값만 사용한다.
@@ -7519,22 +7522,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 프론트 재계산 금지 — DTO 값만 사용. 휴식/온보딩 특수 주차 또는 DTO 값 부재 시에만 legacy getEnhancementStatus.
   const mapAbilityEnhancementStatus = (line: Cluster4WeeklyLineDto | null | undefined, activityTypeId: string): EnhancementStatus => {
     if (isOnboardingWeek || weekData?.isPersonalRest || isRestMode) return getEnhancementStatus(activityTypeId);
-    // (정책 2026-06-02 개정) 백엔드 enhancementStatus 를 우선 사용한다 — lineTargetId 유무로 상태를
-    // 덮어쓰지 않는다. success/fail/not_applicable 은 그대로 반영:
-    //   - lineTargetId 없음 + fail            → 강화 실패 (개설됐지만 본인 미배정)
-    //   - lineTargetId 없음 + not_applicable  → 해당 없음 (해당 주차 competency 미개설)
-    //   - lineTargetId 있음 + success/fail    → 강화 성공/실패
-    // 단 '강화 대기'(pending/waiting)는 실제 배정 라인(lineTargetId 보유)에만 허용한다.
-    //   lineTargetId=null 이 pending(또는 상태 미상)으로 내려와도 절대 '강화 대기'로 렌더하지 않는다
-    //   ('if (line) return "waiting"' 식 blanket fallback 금지 — competency 보이드 정책).
-    const ltid = (line?.lineTargetId as string | null | undefined) ?? null;
+    // (정책 2026-06-04 v14 개정) 백엔드 enhancementStatus 를 그대로 반영한다 — 역량은 1인·1주차
+    // 단일 칸 정규화로 백엔드가 success/pending/fail 중 하나를 항상 내려주며(미수행·미개설=pending
+    // "강화 대기" placeholder), 활동 주차에 '해당 없음'은 존재할 수 없다.
+    //   - pending 은 lineTargetId 유무와 무관하게 '강화 대기'로 렌더한다 (구 2026-06-02 보이드
+    //     정책의 "미배정 pending → 해당 없음" 강등 폐기 — 선택 과제 미수행=대기).
+    //   - not_applicable 은 휴식/전환 주차 placeholder 에서만 내려온다(그대로 반영).
     const raw = String(line?.enhancementStatus ?? "").toLowerCase();
     if (raw === "success") return "success";
     if (raw === "fail" || raw === "failed") return "failed";
     if (raw === "not_applicable") return "not_applicable";
-    if (raw === "pending") return ltid ? "waiting" : "not_applicable";
-    // enhancementStatus 미상/빈 값: 배정 라인(ltid 보유)만 미평가 → 강화 대기, 미배정이면 해당 없음.
-    if (line) return ltid ? "waiting" : "not_applicable";
+    if (raw === "pending") return "waiting";
+    // enhancementStatus 미상/빈 값: 라인이 있으면 미평가 → 강화 대기 (해당 없음 금지).
+    if (line) return "waiting";
     return getEnhancementStatus(activityTypeId);
   };
 
@@ -7622,7 +7622,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       mapping?.lineName ||
       (line.activityTypeName as string | null | undefined) ||
       "";
-    return {
+    const card: WorkAbilityCard = {
       id: index + 1,
       lineTargetId: (line.lineTargetId as string | null | undefined) ?? null,
       competencyLineMasterId: (line.competencyLineMasterId as string | null | undefined) ?? null,
@@ -7647,6 +7647,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       isEmpty: false,
       hasActivity: true,
     };
+    // 실패 시 내용 차폐는 공용 voidAbilityCardOnFail(아래)에서 일괄 적용 — 역량 실패=보이드 최종 정책.
+    return card;
   };
 
   // legacy 하드코딩 맵 기반 카드 빌더 — DTO competency 라인이 전혀 없을 때만 fallback(데모/회귀 방지).
@@ -7701,10 +7703,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     };
   };
 
-  const workAbilityCards: WorkAbilityCard[] =
+  // 역량 실패 = 보이드 내용 차폐 (역량 전용 최종 정책 — DTO/legacy 빌더 공통 적용).
+  const voidAbilityCardOnFail = (card: WorkAbilityCard): WorkAbilityCard =>
+    card.enhancementStatus === "failed"
+      ? { ...card, code: "-", lineCode: "-", lineName: "-", badge: "-", title: "", subTitle: "", growthPoint: "", outputLinks: [], images: null, imageCaptions: null, icon: "" }
+      : card;
+
+  const workAbilityCards: WorkAbilityCard[] = (
     competencyLinesInWeek.length > 0
       ? competencyLinesInWeek.map((line, index) => buildAbilityCardFromLine(line, index))
-      : workAbilityCardLineCodes.map((lineCodeKey, index) => buildLegacyAbilityCard(lineCodeKey, index));
+      : workAbilityCardLineCodes.map((lineCodeKey, index) => buildLegacyAbilityCard(lineCodeKey, index))
+  ).map(voidAbilityCardOnFail);
 
   // 휴식 모드(공식/개인) — 본문(Main Title, lineCode, lineName, Sub Title) 모두 강제 '-'.
   // 휴식 주차에는 실무 역량 라인이 의미 없으므로 본문 전부 차폐, 상태도 '해당 없음'.
@@ -7729,16 +7738,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 휴식 주차 — 모든 카드가 not_applicable 이라 status 기반 매칭이 안 되므로, 운영진이 실제
   // 개설한 라인(hasActivity) 을 우선 찾아 본문(Main Title 등) 을 보여주고 상태만 '해당 없음'.
   const matchedAbilityCard = isRestMode ? effectiveWorkAbilityCards.find((c) => c.hasActivity) : effectiveWorkAbilityCards.find((c) => c.enhancementStatus !== "not_applicable");
-  const isAbilityCardVoid = !matchedAbilityCard;
-  // void 폴백 상태: 휴식/온보딩이면 '해당 없음'. 활동 주차에서도 이 크루의 역량 라인이 전부 not_applicable 이면
-  // (백엔드가 명시적으로 not_applicable 로 내려준 경우) '강화 실패'가 아니라 '해당 없음'으로 표시한다.
-  // 역량 라인/카드가 아예 0개일 때만 기존처럼 '강화 실패'로 폴백한다.
+  // void 폴백 상태: 휴식/온보딩이면 '해당 없음'. 활동 주차에서 역량 카드가 매칭되지 않으면
+  // '강화 대기' — 역량은 선택 과제라 미수행=대기이며 '해당 없음'이 존재할 수 없다(2026-06-04 v14).
+  // (백엔드는 비휴식 주차에 항상 단일 역량 칸(success/pending/fail)을 fold 해 내리므로 이 폴백은
+  //  DTO 미수신 legacy 경로에서만 보인다.)
   const abilityVoidFallbackStatus: EnhancementStatus =
-    isRestMode || isOnboardingWeek
-      ? "not_applicable"
-      : effectiveWorkAbilityCards.some((c) => c.enhancementStatus === "not_applicable")
-        ? "not_applicable"
-        : "failed";
+    isRestMode || isOnboardingWeek ? "not_applicable" : "waiting";
   const displayedAbilityCard: WorkAbilityCard = matchedAbilityCard ?? {
     id: 0,
     lineTargetId: null,
@@ -7758,10 +7763,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     status: abilityVoidFallbackStatus,
     statusIcon: enhancementStatusIcons[abilityVoidFallbackStatus],
     enhancementStatus: abilityVoidFallbackStatus,
-    isFailed: abilityVoidFallbackStatus === "failed",
+    // 폴백은 해당없음(휴식/온보딩) 또는 강화 대기뿐 — 실패 아님 (v14: 미수행=대기).
+    isFailed: false,
     isEmpty: true,
     hasActivity: false,
   };
+  // 실무 역량 = 1인·1주차 단일 카드 정규화 (2026-06-04 v14 정책).
+  // 라인이 0/1/N개여도 화면에는 항상 정확히 1장 — 백엔드가 success>pending>fail 우선으로 라인을
+  // 1개로 fold 해 내리고(미개설=강화 대기 placeholder, 해당 없음 금지), 프론트도 단일 카드만 렌더.
+  // section-count(총 1) == 표시 카드 1 == 주차 성장률 분모 기여 1.
+  const displayedAbilityCards: WorkAbilityCard[] = [displayedAbilityCard];
 
   // 실무 경험 카드 데이터 — 이 크루에게 어드민/시스템이 실제로 처리한 라인만 동적 생성.
   // 운영진이 크루별로 실무 경험 라인을 임의 대체/지정 가능 → hardcoded workExpLineMap 6 라인을
@@ -8195,6 +8206,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     if (r && typeof r.total === "number" && typeof r.count === "number") {
       return { total: Number(r.total) || 0, success: Number(r.count) || 0, rate: typeof r.rate === "number" ? r.rate : null };
     }
+    // DTO 라인 numerator/denominator(백엔드 breakdownFromLines SoT) 직접 사용 — info/competency/career
+    // 와 동일 단일 산식(주차 성장률 분모 = 4허브 합산 보장). 라인 미수신 시에만 카드 파생값 fallback.
+    if (experienceLinesInWeek.length > 0) {
+      const den = experienceLinesInWeek.map((l) => l.denominator).find((d) => typeof d === "number") ?? null;
+      const num = experienceLinesInWeek.map((l) => l.numerator).find((n) => typeof n === "number") ?? null;
+      const lineRate = experienceLinesInWeek.map((l) => l.rate).find((x) => typeof x === "number") ?? null;
+      return { total: Number(den) || 0, success: Number(num) || 0, rate: typeof lineRate === "number" ? lineRate : null };
+    }
     return { total: Number(experienceStatsDisplay.total) || 0, success: Number(experienceStatsDisplay.success) || 0, rate: null };
   })();
   const experienceSuccessRate =
@@ -8212,13 +8231,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       (l) => (l.weekId ?? null) === weekId && normalizePartType(l.partType) === "career",
     );
     if (careerLines.length > 0) {
-      const total = careerLines.reduce((sum, line) => sum + (typeof line.denominator === "number" ? line.denominator : 0), 0);
-      const success = careerLines.reduce((sum, line) => sum + (typeof line.numerator === "number" ? line.numerator : 0), 0);
-      const singleLineRate = careerLines.length === 1 && typeof careerLines[0]?.rate === "number" ? careerLines[0].rate : null;
+      // line.numerator/denominator 는 part 단위 집계값이 모든 라인에 동일하게 실린 것 — 첫 값만 읽는다.
+      // (구버그) 라인별 합산(reduce)은 v11 career 6칸 패딩에서 분모가 칸 수만큼 곱으로 부풀었다(A=1 → 총 6).
+      const den = careerLines.map((l) => l.denominator).find((d) => typeof d === "number") ?? null;
+      const num = careerLines.map((l) => l.numerator).find((n) => typeof n === "number") ?? null;
+      const lineRate = careerLines.map((l) => l.rate).find((x) => typeof x === "number") ?? null;
+      const total = Number(den) || 0;
+      const success = Number(num) || 0;
       return {
         total,
         success,
-        rate: singleLineRate ?? (total > 0 ? Math.round((success / total) * 100) : 0),
+        rate: typeof lineRate === "number" ? lineRate : total > 0 ? Math.round((success / total) * 100) : 0,
       };
     }
     return { total: 0, success: 0, rate: 0 };
@@ -8240,13 +8263,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     if (typeof metaTotal === "number" && typeof metaSuccess === "number" && typeof metaRate === "number") {
       return { total: metaTotal, success: metaSuccess, rate: metaRate };
     }
-    const growthPartTypes = new Set(["information", "experience", "competency", "career"]);
+    const growthPartTypes = ["information", "experience", "competency", "career"] as const;
     const currentWeekLines = cluster4Lines.filter(
-      (l) => (l.weekId ?? null) === weekId && growthPartTypes.has(normalizePartType(l.partType)),
+      (l) => (l.weekId ?? null) === weekId && (growthPartTypes as readonly string[]).includes(normalizePartType(l.partType)),
     );
     if (currentWeekLines.length > 0) {
-      const total = currentWeekLines.reduce((sum, line) => sum + (typeof line.denominator === "number" ? line.denominator : 0), 0);
-      const success = currentWeekLines.reduce((sum, line) => sum + (typeof line.numerator === "number" ? line.numerator : 0), 0);
+      // part 별 첫 denominator/numerator(=part 집계값) 합산 — 라인별 reduce 는 같은 part 값이
+      // 라인 수만큼 중복 가산돼 분모가 부풀었다(허브 4개 section-count 합산과도 불일치).
+      let total = 0;
+      let success = 0;
+      for (const p of growthPartTypes) {
+        const ls = currentWeekLines.filter((l) => normalizePartType(l.partType) === p);
+        total += Number(ls.map((l) => l.denominator).find((d) => typeof d === "number") ?? 0) || 0;
+        success += Number(ls.map((l) => l.numerator).find((n) => typeof n === "number") ?? 0) || 0;
+      }
       return { total, success, rate: total > 0 ? Math.ceil((success / total) * 100) : 0 };
     }
     return { total: 0, success: 0, rate: 0 };
@@ -8266,6 +8296,28 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const careerLinesForWeek = cluster4Lines.filter(
     (l) => (l.weekId ?? null) === weekId && normalizePartType(l.partType) === "career",
   );
+  // ── 실무 경력 void(미개설) vs not_applicable(개설+미배정) 분리 (2026-06-04 정책) ──
+  // 백엔드 placeholder 라인(미개설 빈 슬롯: status="void", statusLabel="미개설",
+  // enhancementReason="target_missing_not_required_career")도 enhancementStatus="not_applicable" 로
+  // 내려온다. 이 라인을 그대로 카드로 만들면 "해당 없음" 카드로 잘못 표시됨 → 라인 개설 데이터
+  // (open/close 시각 또는 타깃/프로젝트/코드/타이틀/기업 실데이터)가 하나라도 있어야 "개설된 라인"으로
+  // 카드화하고, 전부 없는 placeholder 는 6슬롯 패딩과 동일한 void(emptyCareerCard) 슬롯으로 처리한다.
+  //  - not_applicable(해당 없음) = 개설 데이터 존재 + 본인 미배정/미선발 (개설 라인은 미선발이어도
+  //    projectCode/companyName 등 content 를 채워 내려옴 — 위 N-1 carry 블록 isContentLine 과 동일 전제)
+  //  - void(보이드) = 개설 데이터 자체가 없음 (placeholder 카드: Main/Sub Title "-", 기본 기업 이미지)
+  // ※ career 전용 판정 — information/experience/competency 의 기존 상태 판정에는 사용하지 않는다.
+  const hasCareerLineOpenData = (l: Cluster4WeeklyLineDto): boolean =>
+    !!(
+      l.submissionOpensAt ||
+      l.submissionClosesAt ||
+      l.lineTargetId ||
+      (typeof l.careerProjectId === "string" && l.careerProjectId.trim()) ||
+      (typeof l.projectCode === "string" && l.projectCode.trim()) ||
+      (typeof l.lineCode === "string" && l.lineCode.trim()) ||
+      (typeof l.mainTitle === "string" && l.mainTitle.trim()) ||
+      (typeof l.companyName === "string" && l.companyName.trim())
+    );
+  const openedCareerLinesForWeek = careerLinesForWeek.filter(hasCareerLineOpenData);
   const findCareerRecordForLine = (line: Cluster4WeeklyLineDto): CareerRecord | null =>
     careerRecords.find(
       (r) =>
@@ -8370,9 +8422,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     };
   };
 
+  // source 선택은 careerLinesForWeek(주차 career 라인 존재 여부) 기준 유지 — placeholder-only 주차에서
+  // legacy careerRecords 로 폴백하지 않는다(lines[] 가 SoT). 카드화는 개설 라인만.
   const workCareerCards =
     careerLinesForWeek.length > 0
-      ? careerLinesForWeek.map((line, index) => buildCareerCardFromLine(line, index, findCareerRecordForLine(line)))
+      ? openedCareerLinesForWeek.map((line, index) => buildCareerCardFromLine(line, index, findCareerRecordForLine(line)))
       : careerRecords.length > 0
       ? careerRecords.map((record, index) => {
           // 강화 상태 계산: pending → 결정 시점(N+1 목 12:01 KST) 이후에만 enhanced 로 승격.
@@ -8513,11 +8567,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     return nameA.localeCompare(nameB, "ko", { sensitivity: "base" });
   });
 
-  // 데이터 수만큼만 표시, 0개면 빈 카드 1개만
-  const displayWorkCareerCards = sortedWorkCareerCards.length > 0 ? sortedWorkCareerCards : [emptyCareerCard(1)];
-
-  // 페이지네이션: 6개씩 한 페이지
+  // ── 실무 경력 고정 6슬롯 (2026-06-04 정책) ──
+  // 어떤 주차든 카드 수 = 6의 배수(최소 6). 개설된 라인(실카드)을 앞에 채우고 나머지는
+  // void(미개설 빈 슬롯 = emptyCareerCard, isEmpty=true)로 패딩한다.
+  //  - void(미개설): 표시만, 모달 금지 (canOpenLineModal 게이트)
+  //  - not_applicable(개설 + 미지원/미선발): 표시만, 모달 금지
+  //  - pending/success/fail(선발자): 모달 가능
   const CAREER_CARDS_PER_PAGE = 6;
+  const displayWorkCareerCards = (() => {
+    const cards: ((typeof sortedWorkCareerCards)[number] | ReturnType<typeof emptyCareerCard>)[] = [...sortedWorkCareerCards];
+    const target = Math.max(CAREER_CARDS_PER_PAGE, Math.ceil(cards.length / CAREER_CARDS_PER_PAGE) * CAREER_CARDS_PER_PAGE);
+    for (let i = cards.length; i < target; i++) cards.push(emptyCareerCard(1001 + i));
+    return cards;
+  })();
   const totalCareerPages = Math.ceil(displayWorkCareerCards.length / CAREER_CARDS_PER_PAGE);
   const currentCareerCards = displayWorkCareerCards.slice(careerPage * CAREER_CARDS_PER_PAGE, (careerPage + 1) * CAREER_CARDS_PER_PAGE);
 
@@ -9418,7 +9480,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
                   {isRestMode ? "-" : infoSuccessRate}
                 </span>
-                %
+                <span className="percent-sign">%</span>
               </span>
             </div>
           </div>
@@ -9440,20 +9502,39 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 (card.title as string | null | undefined) ||
                 "-";
               // 강화 상태 단일 출처 = 백엔드 matchedLine (뱃지와 동일). 로컬 card.status 는 fallback.
-              // 미리보기 아이콘 흐림(빛바램)도 이 값 기준 — 뱃지=성공인데 아이콘만 흐려지는 불일치 방지.
               const enh = isEmpty ? null : enhancementStatusBadge(matchedLine);
               const effectiveStatus = (enh?.toneClass as string | null | undefined) ?? (card.status as string | null | undefined) ?? "not_applicable";
-              // 오버레이/빛바램은 '해당 없음'에서만. 성공/대기/실패는 원래 색상 그대로.
-              const isNotApplicable = effectiveStatus === "not_applicable";
+              // 미리보기 뱃지(강화 상태): 경험/역량 카드와 동일 패턴 — 컨테이너 위에서 1회 계산해
+              // '해당 없음' 빛바램 클래스와 toneClass 를 공유한다(렌더된 뱃지 == 클래스 기준, drift 방지).
+              const infoBadge =
+                !isEmpty && card.status !== "empty"
+                  ? (() => {
+                      const src = enh?.src ?? (card.statusIcon as string | null | undefined);
+                      const alt = enh?.alt ?? ((card.status as string | null | undefined) ?? "강화 상태");
+                      if (!src) return null;
+                      return { src, alt, toneClass: effectiveStatus };
+                    })()
+                  : null;
+              // 비활성 카드(Faded Card) — not_applicable / void 통합 정책(2026-06-04, isFadedCardStatus SoT).
+              // 카드 컨테이너 .faded-card(빛바램)로만 표현 — 실무 경력 카드와 동일 패턴.
+              // void(isEmpty/empty placeholder)는 "void" 로 환산해 동일 판정. 성공/대기/실패는 영향 없음.
+              const isFadedCard = isFadedCardStatus(isEmpty || card.status === "empty" ? "void" : effectiveStatus);
+              // 모달 오픈 게이트: void(isEmpty/empty placeholder)·해당없음 카드는 클릭해도 모달 금지 (표시는 유지).
+              const canOpenModal = !isEmpty && card.status !== "empty" && canOpenLineModal(effectiveStatus);
               return (
                 <div
                   key={card.id}
-                  className={`work-info-card ${isEmpty ? "empty" : ""} ${card.status === "empty" ? "is-empty-card" : ""}`}
-                  onClick={async () => {
-                    setSelectedWorkInfoCard(card);
-                    setWorkInfoViewModalOpen(true);
-                  }}
-                  style={{ cursor: "pointer" }}
+                  className={`work-info-card ${isEmpty ? "empty" : ""} ${card.status === "empty" ? "is-empty-card" : ""} ${isFadedCard ? "faded-card" : ""}`}
+                  onClick={
+                    canOpenModal
+                      ? async () => {
+                          setSelectedWorkInfoCard(card);
+                          setWorkInfoViewModalOpen(true);
+                        }
+                      : undefined
+                  }
+                  style={{ cursor: canOpenModal ? "pointer" : "default" }}
+                  aria-disabled={canOpenModal ? undefined : true}
                 >
                   <div className="card-content-area">
                     <div className="card-title-row">
@@ -9464,25 +9545,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       {!isEmpty && card.category && <span className={`tag ${card.tagColor}`}>{card.category}</span>}
                     </div>
                     <div className="card-body-row">
-                      {/* 흐림(빛바램) 오버레이는 '해당 없음'(not_applicable)에서만. 성공/대기/실패는 원래 색상 그대로. */}
+                      {/* '해당 없음' 빛바램은 카드 컨테이너 .not-applicable 로 일괄 처리 — 아이콘 단독 흐림(opacity 0.3) 제거. */}
                       <div className={`card-icon-area ${!isEmpty && card.isFruit ? "fruit" : ""}`}>
-                        {!isEmpty && card.icon ? <img src={card.icon} alt={card.category} style={{ opacity: isNotApplicable ? 0.3 : 1 }} /> : <div className="icon-placeholder"></div>}
+                        {!isEmpty && card.icon ? <img src={card.icon} alt={card.category} /> : <div className="icon-placeholder"></div>}
                       </div>
                       <span className="card-desc">{isEmpty ? "-" : lineName}</span>
                       {!isEmpty && <img src="/images/0/cluster4/icon - 더보기.png" alt="더보기" className="card-arrow" />}
                     </div>
                   </div>
-                  {!isEmpty && card.status !== "empty" && (() => {
-                    // 뱃지(강화 상태)는 위에서 계산한 matchedLine/enh(백엔드 단일 출처) 재사용 — 아이콘 흐림과 동일 기준.
-                    const src = enh?.src ?? (card.statusIcon as string | null | undefined);
-                    const alt = enh?.alt ?? ((card.status as string | null | undefined) ?? "강화 상태");
-                    if (!src) return null;
-                    return (
-                      <div className="status-badge">
-                        <img src={src} alt={alt} />
-                      </div>
-                    );
-                  })()}
+                  {/* 뱃지(강화 상태)는 위에서 계산한 infoBadge(백엔드 단일 출처) 재사용 — 컨테이너 .not-applicable 와 동일 기준. */}
+                  {infoBadge && (
+                    <div className="status-badge">
+                      <img src={infoBadge.src} alt={infoBadge.alt} />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -9533,7 +9609,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
                   {isOnboardingWeek || isRestMode ? "-" : experienceSuccessRate}
                 </span>
-                %
+                <span className="percent-sign">%</span>
               </span>
             </div>
           </div>
@@ -9546,12 +9622,53 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               const card = slot.card;
               const isEmpty = slot.isEmpty;
               const isLocked = slot.isLocked;
+              // 미리보기 뱃지(강화 상태): weekId+partType(experience)+experienceLineMasterId/lineCode 로 matchedLine 매칭 후
+              // enhancementStatusBadge 헬퍼 재사용 → img src/alt 결정 (프론트 재계산 금지). matchedLine 없으면 legacy fallback.
+              // ※ 뱃지는 카드 본문(void/내용)과 무관하게 enhancementStatus 기준으로 표시한다.
+              //   라인 status="void"(미개설/빈 슬롯)여도 enhancementStatus="not_applicable" 이면 '해당 없음' 뱃지를 보인다(숨김 금지).
+              // 컨테이너 '해당 없음' 빛바램 클래스와 toneClass 를 공유하기 위해 여기(컨테이너 위)서 1회만 계산한다.
+              const expBadge =
+                !isLocked && card.enhancementStatus !== "empty"
+                  ? (() => {
+                      const matchedLine = findCluster4Line(
+                        {
+                          partType: "experience",
+                          experienceLineMasterId: (card as { experienceLineMasterId?: string | null }).experienceLineMasterId ?? null,
+                          lineCode: (card.code as string | null | undefined) ?? null,
+                        },
+                        { requireLineTargetId: false },
+                      );
+                      const enh = enhancementStatusBadge(matchedLine);
+                      const legacy = (() => {
+                        const statusImages: Record<string, string> = {
+                          success: "/images/0/cluster4/icon/5 강화 성공.png",
+                          waiting: "/images/0/cluster4/icon/6 강화 대기.png",
+                          failed: "/images/0/cluster4/icon/7 강화 실패.png",
+                          not_applicable: "/images/0/cluster4/icon/8 해당 없음.png",
+                        };
+                        // void(빈 슬롯) 카드는 card.enhancementStatus="not_applicable" → '해당 없음'.
+                        // 내용 있는 카드인데 활동/라인이 없으면(이론상) '강화 실패'로만 폴백한다.
+                        const fallbackStatus: EnhancementStatus =
+                          isRestMode || isOnboardingWeek ? "not_applicable" : !isEmpty && !card.hasActivity ? "failed" : card.enhancementStatus;
+                        return { src: statusImages[fallbackStatus] || statusImages["not_applicable"], alt: fallbackStatus, tone: fallbackStatus };
+                      })();
+                      return { toneClass: enh?.toneClass ?? legacy.tone, src: enh?.src ?? legacy.src, alt: enh?.alt ?? legacy.alt };
+                    })()
+                  : null;
+              // 비활성 카드(Faded Card) — not_applicable / void 통합 정책(2026-06-04, isFadedCardStatus SoT).
+              // 뱃지와 동일 toneClass 기준, 빈 슬롯(.empty)은 badge 부재 시 "void" 환산으로 동일 판정.
+              // 잠금(.locked) 슬롯은 명시 가드로 제외(lock-overlay 가 카드를 덮음). 성공/대기/실패는 영향 없음.
+              const expEffectiveStatus = expBadge?.toneClass ?? (isEmpty ? "void" : (card.enhancementStatus as string));
+              const isExpFadedCard = !isLocked && isFadedCardStatus(expEffectiveStatus);
+              // 모달 오픈 게이트: 잠금/void(empty)/해당없음 슬롯은 모달 금지. 뱃지와 동일 기준
+              // (expBadge.toneClass = 백엔드 enhancementStatus 우선, 부재 시 legacy 카드 enum).
+              const canOpenExpModal = !isLocked && canOpenLineModal(expEffectiveStatus);
               return (
                 <div
                   key={`work-exp-slot-${slot.order}-${slot.category}`}
-                  className={`work-exp-card ${isEmpty ? "empty" : ""}${isLocked ? " locked" : ""}`}
+                  className={`work-exp-card ${isEmpty ? "empty" : ""}${isLocked ? " locked" : ""}${isExpFadedCard ? " faded-card" : ""}`}
                   onClick={
-                    isLocked
+                    !canOpenExpModal
                       ? undefined
                       : async () => {
                           // 실제 라인이 있는 슬롯(slot.primary)만 그 슬롯의 카드를 세팅한다.
@@ -9566,8 +9683,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           setWorkExpViewModalOpen(true);
                         }
                   }
-                  style={{ cursor: isLocked ? "not-allowed" : "pointer" }}
-                  aria-disabled={isLocked ? true : undefined}
+                  style={{ cursor: canOpenExpModal ? "pointer" : isLocked ? "not-allowed" : "default" }}
+                  aria-disabled={canOpenExpModal ? undefined : true}
                 >
                   <div className="card-top-row">
                     <div className={`card-icon-area ${!isEmpty && card.enhancementStatus === "failed" ? "failed" : ""}`}>
@@ -9627,42 +9744,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     </span>
                     {!isEmpty && <img src="/images/0/cluster4/icon - 더보기.png" alt="더보기" className="card-arrow" />}
                   </div>
-                  {!isLocked && card.enhancementStatus !== "empty" && (() => {
-                    // 미리보기 뱃지(강화 상태): weekId+partType(experience)+experienceLineMasterId/lineCode 로 matchedLine 매칭 후
-                    // enhancementStatusBadge 헬퍼 재사용 → img src/alt 결정 (프론트 재계산 금지). matchedLine 없으면 legacy fallback.
-                    // ※ 뱃지는 카드 본문(void/내용)과 무관하게 enhancementStatus 기준으로 표시한다.
-                    //   라인 status="void"(미개설/빈 슬롯)여도 enhancementStatus="not_applicable" 이면 '해당 없음' 뱃지를 보인다(숨김 금지).
-                    const matchedLine = findCluster4Line(
-                      {
-                        partType: "experience",
-                        experienceLineMasterId: (card as { experienceLineMasterId?: string | null }).experienceLineMasterId ?? null,
-                        lineCode: (card.code as string | null | undefined) ?? null,
-                      },
-                      { requireLineTargetId: false },
-                    );
-                    const enh = enhancementStatusBadge(matchedLine);
-                    const legacy = (() => {
-                      const statusImages: Record<string, string> = {
-                        success: "/images/0/cluster4/icon/5 강화 성공.png",
-                        waiting: "/images/0/cluster4/icon/6 강화 대기.png",
-                        failed: "/images/0/cluster4/icon/7 강화 실패.png",
-                        not_applicable: "/images/0/cluster4/icon/8 해당 없음.png",
-                      };
-                      // void(빈 슬롯) 카드는 card.enhancementStatus="not_applicable" → '해당 없음'.
-                      // 내용 있는 카드인데 활동/라인이 없으면(이론상) '강화 실패'로만 폴백한다.
-                      const fallbackStatus: EnhancementStatus =
-                        isRestMode || isOnboardingWeek ? "not_applicable" : !isEmpty && !card.hasActivity ? "failed" : card.enhancementStatus;
-                      return { src: statusImages[fallbackStatus] || statusImages["not_applicable"], alt: fallbackStatus, tone: fallbackStatus };
-                    })();
-                    const toneClass = enh?.toneClass ?? legacy.tone;
-                    const src = enh?.src ?? legacy.src;
-                    const alt = enh?.alt ?? legacy.alt;
-                    return (
-                      <div className={`status-badge ${toneClass}`}>
-                        <img src={src} alt={alt} />
-                      </div>
-                    );
-                  })()}
+                  {expBadge && (
+                    <div className={`status-badge ${expBadge.toneClass}`}>
+                      <img src={expBadge.src} alt={expBadge.alt} />
+                    </div>
+                  )}
                   {isLocked && (
                     <div className="lock-overlay" aria-hidden="true">
                       <img src="/images/0/cluster4/icon/lock.png" alt="" className="lock-overlay-icon" />
@@ -9722,23 +9808,63 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
                   {isOnboardingWeek || isRestMode ? "-" : competencySuccessRate}
                 </span>
-                %
+                <span className="percent-sign">%</span>
               </span>
             </div>
           </div>
           <div className="work-ability-cards">
-            {[displayedAbilityCard].map((card) => {
+            {displayedAbilityCards.map((card, abilityCardIdx) => {
               const isFailedCard = card.enhancementStatus === "failed";
-              const usePlaceholder = isAbilityCardVoid;
+              // void placeholder 는 displayedAbilityCards 가 단일 fallback 카드일 때만 (isEmpty 표식).
+              const usePlaceholder = !!card.isEmpty;
+              // 미리보기 뱃지(강화 상태): weekId+partType(competency)+competencyLineMasterId/lineCode 로 matchedLine 매칭 후
+              // enhancementStatusBadge 헬퍼 재사용 → img src/alt 결정 (프론트 재계산 금지). matchedLine 없으면 legacy fallback.
+              // 컨테이너 '해당 없음' 빛바램 클래스와 toneClass 를 공유하기 위해 여기(컨테이너 위)서 1회만 계산한다.
+              const abilityBadge =
+                card.enhancementStatus !== "empty"
+                  ? (() => {
+                      const matchedLine = findCluster4Line(
+                        {
+                          partType: "competency",
+                          competencyLineMasterId: (card as { competencyLineMasterId?: string | null }).competencyLineMasterId ?? null,
+                          lineCode: ((card.lineCode as string | null | undefined) ?? (card.code as string | null | undefined)) ?? null,
+                        },
+                        { requireLineTargetId: false },
+                      );
+                      const enh = enhancementStatusBadge(matchedLine);
+                      const src = enh?.src ?? (card.statusIcon as string | null | undefined);
+                      const alt = enh?.alt ?? "강화 상태";
+                      if (!src) return null;
+                      return { src, alt, toneClass: enh?.toneClass ?? (card.enhancementStatus as string) };
+                    })()
+                  : null;
+              // 비활성 카드(Faded Card) — not_applicable / void 통합 정책(2026-06-04, isFadedCardStatus SoT).
+              // 뱃지와 동일 toneClass 기준, void placeholder 는 badge 부재 시 "void" 환산으로 동일 판정.
+              // 성공/대기/실패는 영향 없음.
+              const abilityEffectiveStatus = abilityBadge?.toneClass ?? (usePlaceholder ? "void" : (card.enhancementStatus as string));
+              const isAbilityFadedCard = isFadedCardStatus(abilityEffectiveStatus);
+              // 모달 오픈 게이트: void placeholder·해당없음 카드는 모달 금지. 뱃지와 동일 기준
+              // (abilityBadge.toneClass = 백엔드 enhancementStatus 우선, 부재 시 legacy 카드 enum).
+              // ── 역량 전용 예외(2026-06-04 최종 정책): 강화 실패 = 보이드 — 내용 차폐 + 모달 금지.
+              //    (정보/경험/경력은 실패여도 내용 표시·모달 오픈 — 기존 동작 유지, canOpenLineModal 공용 게이트 불변.)
+              const abilityFailedVoid =
+                abilityEffectiveStatus === "failed" || abilityEffectiveStatus === "fail";
+              const canOpenAbilityModal =
+                !usePlaceholder && !abilityFailedVoid && canOpenLineModal(abilityEffectiveStatus);
               return (
                 <div
-                  key={isAbilityCardVoid ? "void" : card.code}
-                  className={`work-ability-card ${usePlaceholder ? "empty" : ""}`}
-                  onClick={async () => {
-                    setSelectedWorkAbilityCard(card);
-                    setWorkAbilityViewModalOpen(true);
-                  }}
-                  style={{ cursor: "pointer" }}
+                  key={usePlaceholder ? "void" : `${card.code}-${abilityCardIdx}`}
+                  className={`work-ability-card ${usePlaceholder ? "empty" : ""}${isAbilityFadedCard ? " faded-card" : ""}`}
+                  onClick={
+                    canOpenAbilityModal
+                      ? async () => {
+                          setSelectedWorkAbilityCard(card);
+                          setWorkAbilityViewModalOpen(true);
+                        }
+                      : undefined
+                  }
+                  style={{ cursor: canOpenAbilityModal ? "pointer" : "default" }}
+                  aria-disabled={canOpenAbilityModal ? undefined : true}
                 >
                   <div className={`card-icon-area ${isFailedCard ? "failed" : ""}`}>
                     {card.icon ? <img src={card.icon} alt={card.lineName} style={{ opacity: isFailedCard ? 0.3 : 1 }} /> : <div className="icon-placeholder"></div>}
@@ -9772,27 +9898,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <span className="sub-desc">{usePlaceholder ? "-" : card.subTitle || "-"}</span>
                     <img src="/images/0/cluster4/icon - 더보기.png" alt="더보기" className="card-arrow" />
                   </div>
-                  {card.enhancementStatus !== "empty" && (() => {
-                    // 미리보기 뱃지(강화 상태): weekId+partType(competency)+competencyLineMasterId/lineCode 로 matchedLine 매칭 후
-                    // enhancementStatusBadge 헬퍼 재사용 → img src/alt 결정 (프론트 재계산 금지). matchedLine 없으면 legacy fallback.
-                    const matchedLine = findCluster4Line(
-                      {
-                        partType: "competency",
-                        competencyLineMasterId: (card as { competencyLineMasterId?: string | null }).competencyLineMasterId ?? null,
-                        lineCode: ((card.lineCode as string | null | undefined) ?? (card.code as string | null | undefined)) ?? null,
-                      },
-                      { requireLineTargetId: false },
-                    );
-                    const enh = enhancementStatusBadge(matchedLine);
-                    const src = enh?.src ?? (card.statusIcon as string | null | undefined);
-                    const alt = enh?.alt ?? "강화 상태";
-                    if (!src) return null;
-                    return (
-                      <div className="status-badge">
-                        <img src={src} alt={alt} />
-                      </div>
-                    );
-                  })()}
+                  {abilityBadge && (
+                    <div className="status-badge">
+                      <img src={abilityBadge.src} alt={abilityBadge.alt} />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -9846,7 +9956,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 <span className="highlight" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
                   {isOnboardingWeek || isRestMode ? "-" : careerSuccessRate}
                 </span>
-                %
+                <span className="percent-sign">%</span>
               </span>
             </div>
           </div>
@@ -9869,15 +9979,30 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     { requireLineTargetId: false },
                   );
               const careerInfo = careerGradeInfo(careerLine, card);
+              // 모달 오픈 게이트: void(미개설 빈 슬롯=isEmpty)·해당없음 카드는 모달 금지. 뱃지와 동일 기준
+              // (careerLine enhancementStatus 우선, 부재 시 legacy 카드 플래그로 환산).
+              const careerEffectiveStatus = isEmpty
+                ? "void"
+                : (enhancementStatusBadge(careerLine)?.toneClass ??
+                    (card.isNotApplicable ? "not_applicable" : card.isFailed ? "failed" : card.verified ? "success" : "waiting"));
+              const canOpenCareerModal = canOpenLineModal(careerEffectiveStatus);
+              // 비활성 카드(Faded Card) — not_applicable / void 통합 정책(2026-06-04, isFadedCardStatus SoT).
+              // careerEffectiveStatus(isEmpty → "void", 그 외 뱃지 toneClass 우선) 그대로 판정 — 게이트와 동일 기준.
+              const isCareerFadedCard = isFadedCardStatus(careerEffectiveStatus);
               return (
                 <div key={card.id} className="work-career-card-wrapper">
                   <div
-                    className={`work-career-card ${isEmpty ? "empty" : ""} ${card.isFailed ? "failed" : ""} ${card.isNotApplicable ? "not-applicable" : ""}`}
-                    onClick={async () => {
-                      setSelectedWorkCareerCard(card);
-                      setWorkCareerViewModalOpen(true);
-                    }}
-                    style={{ cursor: "pointer" }}
+                    className={`work-career-card ${isEmpty ? "empty" : ""} ${card.isFailed ? "failed" : ""} ${isCareerFadedCard ? "faded-card" : ""}`}
+                    onClick={
+                      canOpenCareerModal
+                        ? async () => {
+                            setSelectedWorkCareerCard(card);
+                            setWorkCareerViewModalOpen(true);
+                          }
+                        : undefined
+                    }
+                    style={{ cursor: canOpenCareerModal ? "pointer" : "default" }}
+                    aria-disabled={canOpenCareerModal ? undefined : true}
                   >
                     {card.isFailed && <div className="card-overlay failed"></div>}
                     <div className="card-top-row">

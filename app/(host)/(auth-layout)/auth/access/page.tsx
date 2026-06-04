@@ -8,7 +8,14 @@ const ACCESS_COPY = {
   pending: {
     title: "승인 대기 중",
     description:
-      "카카오 로그인은 완료되었지만 아직 가입 승인 대기 상태입니다. 승인 후 기존 프로필과 연결되어 이용할 수 있습니다.",
+      "로그인은 완료되었지만 아직 가입 승인 대기 상태입니다. 승인 후 기존 프로필과 연결되어 이용할 수 있습니다.",
+  },
+  // 승인은 됐지만 소속 조직(organization_slug) 미배정 — 특정 조직 카드 페이지로
+  // 자동 진입시키지 않고 여기서 안내한다 (post-login 조직 분기의 no-org 폴백).
+  "no-organization": {
+    title: "조직 배정 대기",
+    description:
+      "가입 승인은 완료되었지만 아직 소속 조직이 배정되지 않았습니다. 운영진이 조직을 배정하면 본인 카드 페이지로 진입할 수 있습니다.",
   },
   not_registered: {
     title: "등록 안내",
@@ -19,7 +26,9 @@ const ACCESS_COPY = {
 
 const AccessPage = () => {
   const searchParams = useSearchParams();
-  const status = searchParams.get("status") === "pending" ? "pending" : "not_registered";
+  const rawStatus = searchParams.get("status");
+  const status =
+    rawStatus === "pending" || rawStatus === "no-organization" ? rawStatus : "not_registered";
   const copy = ACCESS_COPY[status];
 
   return (

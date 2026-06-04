@@ -4,8 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Fragment, useEffect, useState } from "react";
-import { signIn, signOut, useSession } from "next-auth/react";
-import { buildPostLoginRedirectUrl } from "@/lib/auth-redirect";
+import { signOut, useSession } from "next-auth/react";
 import Cart from "./Cart";
 import Message from "./header/Message";
 import Notification from "./header/Notification";
@@ -176,9 +175,6 @@ const menu = [
 const Header = () => {
   const { data: session, status } = useSession();
   const isLoading = status === "loading";
-  // 헤더의 카카오 로그인 버튼은 사용자가 어떤 페이지를 명시한 게 아니므로 callbackUrl 없이
-  // post-login 으로 보내 조직 분기 redirect 가 적용되도록 한다.
-  const kakaoLoginRedirectUrl = buildPostLoginRedirectUrl();
   const [search, setSearch] = useState(false);
   const [cartIsOpen, setCartIsOpen] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -295,9 +291,11 @@ const Header = () => {
                         Log Out
                       </button>
                     ) : (
-                      <button onClick={() => signIn("kakao", { callbackUrl: kakaoLoginRedirectUrl })} className="btn--primary">
+                      // 헤더 로그인은 provider 직행 대신 /sign-in 선택 화면으로 — OAuth 는
+                      // 선택 화면에서 Kakao/Google 버튼을 눌렀을 때만 시작된다.
+                      <Link href="/sign-in" className="btn--primary">
                         Log - In
-                      </button>
+                      </Link>
                     ))}
                     <button onClick={() => setCartIsOpen(true)} className={`icon-drop cart-ic open-cart ${cartIsOpen && "cart-ic-active"}`} aria-label="view notifications" title="view notifications">
                       <i className="ti ti-bell"></i>
@@ -398,9 +396,10 @@ const Header = () => {
                   Log Out
                 </button>
               ) : (
-                <button onClick={() => signIn("kakao", { callbackUrl: kakaoLoginRedirectUrl })} className="btn--primary">
+                // 모바일 헤더도 동일 — /sign-in 선택 화면 경유
+                <Link href="/sign-in" className="btn--primary">
                   Log - In
-                </button>
+                </Link>
               ))}
             </div>
             <ul className="mobile-menu__social social nav-fade">
