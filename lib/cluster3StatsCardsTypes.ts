@@ -13,6 +13,12 @@ export interface Cluster3StatsCardsProcess {
   /** 성장 상태 표시값(서버가 한글 라벨로 제공: 예 "성장 중"). 매핑의 주 소스 */
   growthStatus: string;
   /**
+   * 성장 상태 10종 안정 키(admin GrowthStatusKey: graduated/suspended/paused/graduating/
+   * seasonal_rest/weekly_rest/official_rest/onboarding/extra_growth/active).
+   * 라벨 문자열 매칭보다 우선 사용한다 — 라벨 표기가 바뀌어도 상태 판정이 흔들리지 않는 단일 키.
+   */
+  growthStatusKey?: string | null;
+  /**
    * 성장 상태 별도 라벨. 현재 admin DTO 에는 없으나(=undefined),
    * 백엔드가 추후 추가할 수 있어 optional 로 둔다. 있으면 우선 사용, 없으면 growthStatus fallback.
    */

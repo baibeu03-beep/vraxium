@@ -383,10 +383,28 @@ const Cluster3Content = () => {
   // 데모 모드에서는 null 로 두고 기존 더미 시드(growthInfo·growthPeriodStats·pointsData)를 사용한다.
   const [statsCards, setStatsCards] = useState<Cluster3StatsCards | null>(null);
 
-  // 성장 상태 표시 (DB에 저장된 값 그대로 또는 영문값 변환)
+  // 성장 상태 10종 키 → 한글 라벨 (admin shared/growth.contracts GROWTH_STATUS_LABELS 와 1:1).
+  // stats-cards 의 growthStatusKey(안정 키)가 있으면 이 맵이 단일 SoT — 라벨 문자열 추측 매핑 금지.
+  const GROWTH_STATUS_LABEL_BY_KEY: Record<string, string> = {
+    graduated: "성장 완료(졸업)",
+    suspended: "성장 중단",
+    paused: "성장 유보",
+    graduating: "졸업 절차 중",
+    seasonal_rest: "시즌 휴식 중",
+    weekly_rest: "휴식(개인) 중",
+    official_rest: "휴식(공식) 중",
+    onboarding: "클럽 온보딩 중",
+    extra_growth: "추가 성장 중",
+    active: "성장 중",
+  };
+
+  // 성장 상태 표시 (DB에 저장된 값 그대로 또는 영문값 변환) — growthStatusKey 부재 시 fallback 전용.
   const getGrowthStatusText = (status: string, growthStatus: string): string => {
     // 이미 한글로 저장된 경우 그대로 반환
-    const koreanStatuses = ["클럽 온보딩 중", "활동 중", "휴식(개인) 중", "휴식(공식) 중", "시즌 휴식 중", "성장 유보", "성장 중단", "졸업 절차 중", "성장 완료(졸업)", "추가 성장 중"];
+    // ⚠ "성장 중"(admin stats-cards 의 active 라벨) 누락 + 미인식 기본값 "클럽 온보딩 중" 조합이
+    //   성장 중 유저 전원을 온보딩으로 오표시하던 결함(2026-06-04 수정) — 목록에 "성장 중" 추가,
+    //   기본값은 받은 라벨 pass-through(임의 상태로 추측 표기 금지).
+    const koreanStatuses = ["클럽 온보딩 중", "활동 중", "성장 중", "휴식(개인) 중", "휴식(공식) 중", "시즌 휴식 중", "성장 유보", "성장 중단", "졸업 절차 중", "성장 완료(졸업)", "추가 성장 중"];
 
     if (koreanStatuses.includes(growthStatus)) {
       // '활동 중'은 '성장 중'으로 표시
@@ -394,19 +412,18 @@ const Cluster3Content = () => {
       return growthStatus;
     }
 
-    // 영문 growthStatus 값 변환 (10개)
+    // 안정 키(admin GrowthStatusKey 10종) 변환 — stats-cards growthStatusKey 와 동일 vocabulary.
+    if (GROWTH_STATUS_LABEL_BY_KEY[growthStatus]) return GROWTH_STATUS_LABEL_BY_KEY[growthStatus];
+
+    // 레거시 영문 growthStatus 값 변환
     if (growthStatus === "pending") return "클럽 온보딩 중";
-    if (growthStatus === "active") return "성장 중";
     if (growthStatus === "resting") return "휴식(개인) 중";
-    if (growthStatus === "official_rest") return "휴식(공식) 중";
     if (growthStatus === "season_rest") return "시즌 휴식 중";
     if (growthStatus === "deferred") return "성장 유보";
-    if (growthStatus === "suspended") return "성장 중단";
-    if (growthStatus === "graduating") return "졸업 절차 중";
-    if (growthStatus === "graduated") return "성장 완료(졸업)";
     if (growthStatus === "reinforcing") return "추가 성장 중";
 
-    return "클럽 온보딩 중";
+    // 미인식 값: 받은 라벨 그대로 노출(비어 있으면 "-"). "클럽 온보딩 중" 기본값 금지.
+    return growthStatus || "-";
   };
 
   // 날짜 포맷 변환 (2025-02-22 → 2025년 02월 22일 (토))
@@ -2145,10 +2162,15 @@ const Cluster3Content = () => {
   // pending 괄호값은 number 이면 표시, null 이면 괄호 미표시.
   const processCard = statsCards
     ? {
-        statusText: getGrowthStatusText(
-          statsCards.process.growthStatus ?? "",
-          statsCards.process.growthStatusLabel ?? statsCards.process.growthStatus ?? "",
-        ),
+        // 성장 상태 SoT = growthStatusKey(10종 안정 키). 키가 있으면 키→라벨 맵 직독,
+        // 없을 때만 라벨 문자열 fallback(getGrowthStatusText) — 라벨 표기 변경에 면역.
+        statusText:
+          (statsCards.process.growthStatusKey &&
+            GROWTH_STATUS_LABEL_BY_KEY[statsCards.process.growthStatusKey]) ||
+          getGrowthStatusText(
+            statsCards.process.growthStatus ?? "",
+            statsCards.process.growthStatusLabel ?? statsCards.process.growthStatus ?? "",
+          ),
         startDate: statsCards.process.growthStartDate,
         endDate: statsCards.process.growthEndDate,
         isBeCluving: statsCards.process.isBeCluving,
