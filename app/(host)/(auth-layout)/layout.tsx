@@ -1,4 +1,4 @@
-import errorThumb from "@/public/images/error/error-thumb.png";
+import authThumb from "@/public/images/0/18.png";
 import logo from "@/public/images/logo-alt.png";
 import Image from "next/image";
 import Link from "next/link";
@@ -11,7 +11,7 @@ export default function RootLayout({
   return (
     <div className="nftg-app-alt a-cursor sidebar-add">
       <div className="nftg-thumb">
-        <Image src={errorThumb} alt="Page Not Found" className="parallax-image" />
+        <Image src={authThumb} alt="Sign in" className="parallax-image" />
       </div>
       {/* <!-- ==== / thumb end ==== --> */}
 

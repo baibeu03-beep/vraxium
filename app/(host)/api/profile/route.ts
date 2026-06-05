@@ -281,7 +281,9 @@ async function fetchAdminSuccessWeeks(request: NextRequest, userId: string | nul
 // 사이드바 이력서 카드 SoT — admin canonical route(/api/cluster1/resume)의 getCluster1Resume DTO.
 // 활동완료율(activityCompletion.rate)·실무 4종(practicalStats)을 고객 측에서 자체 계산하지 않고
 // 이 단일 DTO 에서 가져간다. club-rank 와 동일한 resolveAdminBaseUrl + x-internal-api-key 패턴.
-// best-effort — 실패/미설정 시 null 반환(호출부에서 기존 로컬 계산으로 폴백).
+// 실패/미설정 시 null 반환 — 호출부는 레거시 자체 계산값으로 "조용히 폴백"하지 않고
+// 해당 필드를 null('-' 표시)로 내린다 (2026-06-05: 9/7/7·24건·0% 같은 stale 폴백값이
+// 정상값처럼 보이던 silent fallback 제거).
 // 반환 shape: { activityCompletion:{rate,availableActivities,completedActivities}, practicalStats:{...}, ... } | null
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchAdminCluster1Resume(request: NextRequest, userId: string | null): Promise<any | null> {
@@ -305,8 +307,14 @@ async function fetchAdminCluster1Resume(request: NextRequest, userId: string | n
   const cookie = request.headers.get("cookie");
   if (cookie) headers.set("cookie", cookie);
 
+  // 타임아웃 20s (2026-06-05: 8s → 20s 상향).
+  //   8s 시절 admin getCluster1Resume 가 40주 사용자 기준 10~12s 걸려 매번 abort → 레거시
+  //   폴백값(9/7/7·24건·0%)이 노출되는 사고가 있었다. 근본 해결은 admin 측 snapshot 직독
+  //   경량화(~0.5s)이고, 이 상향은 회귀 대비 보조 안전망이다.
+  const RESUME_GRAFT_TIMEOUT_MS = 20000;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  const timeoutId = setTimeout(() => controller.abort(), RESUME_GRAFT_TIMEOUT_MS);
+  const startedAt = Date.now();
   try {
     const upstream = await fetch(targetUrl.toString(), {
       method: "GET",
@@ -315,14 +323,27 @@ async function fetchAdminCluster1Resume(request: NextRequest, userId: string | n
       signal: controller.signal,
     });
     if (!upstream.ok) {
-      console.warn("[profile] cluster1 resume upstream non-OK", upstream.status, targetUrl.toString());
+      console.warn("[profile] admin resume graft failed — upstream non-OK", {
+        status: upstream.status,
+        url: targetUrl.toString(),
+        elapsedMs: Date.now() - startedAt,
+      });
       return null;
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const json: any = await upstream.json();
     return json?.success ? (json.data ?? null) : null;
   } catch (e) {
-    console.warn("[profile] cluster1 resume fetch 실패 — null", (e as Error)?.message || String(e));
+    const err = e as { name?: string; message?: string };
+    const isAbort = err?.name === "AbortError";
+    // AbortError = admin 응답이 타임아웃을 초과(성능 회귀 신호) — 원인 구분해 남긴다.
+    console.warn("[profile] admin resume graft failed", {
+      isAbort,
+      name: err?.name,
+      message: err?.message || String(e),
+      elapsedMs: Date.now() - startedAt,
+      timeoutMs: RESUME_GRAFT_TIMEOUT_MS,
+    });
     return null;
   } finally {
     clearTimeout(timeoutId);
@@ -1702,8 +1723,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 단일 SoT: admin getCluster1Resume.practicalStats 우선. 프록시 실패 시에만 로컬 cluster4 라인 집계로 폴백.
-    //   (로컬 집계도 cluster4 라인 기준이라 통상 동일하지만, 어드민 DTO 를 정본으로 고정한다.)
+    // 단일 SoT: admin getCluster1Resume.practicalStats — 정책(공표+평가확정 필터)이 로컬
+    // 집계와 다르므로 그래프트 실패 시 로컬 값으로 "조용히 폴백"하지 않는다 (2026-06-05:
+    // 폴백 24건이 정답 22건처럼 보이던 silent fallback 제거). 실패 시 null → Sidebar 가 '-' 표시.
     const practicalStats = adminResume?.practicalStats
       ? {
           infoCount: adminResume.practicalStats.infoCount ?? 0,
@@ -1711,20 +1733,28 @@ export async function GET(request: NextRequest) {
           abilityUnitCount: adminResume.practicalStats.abilityUnitCount ?? 0,
           careerProjectCount: adminResume.practicalStats.careerProjectCount ?? 0,
         }
-      : {
-          infoCount: infoLineSuccessCount,
-          experienceCount: experienceLineSuccessCount,
-          abilityUnitCount: competencyLineSuccessCount,
-          careerProjectCount: careerLineSuccessCount,
-        };
-    const practicalCounts = {
-      competency: practicalStats.abilityUnitCount,
-      experience: practicalStats.experienceCount,
-      info: practicalStats.infoCount,
-      career: practicalStats.careerProjectCount,
-    };
-    const careerProjectCount = practicalStats.careerProjectCount;
-    const careerActivityCount = practicalStats.careerProjectCount;
+      : null;
+    if (!practicalStats) {
+      // 레거시 로컬 집계값은 표시하지 않되, 진단용으로 로그에만 남긴다.
+      console.warn("[profile] admin resume graft 실패 — practicalStats null('-' 표시), 레거시 집계값 미사용", {
+        legacyLocal: {
+          info: infoLineSuccessCount,
+          experience: experienceLineSuccessCount,
+          competency: competencyLineSuccessCount,
+          career: careerLineSuccessCount,
+        },
+      });
+    }
+    const practicalCounts = practicalStats
+      ? {
+          competency: practicalStats.abilityUnitCount,
+          experience: practicalStats.experienceCount,
+          info: practicalStats.infoCount,
+          career: practicalStats.careerProjectCount,
+        }
+      : null;
+    const careerProjectCount = practicalStats?.careerProjectCount ?? null;
+    const careerActivityCount = practicalStats?.careerProjectCount ?? null;
 
     // completionRate 계산: (R / P) × 100
     // P = 가입 주차 이후 열린 모든 활동 수 (weekly_activities, break 시즌 제외)
@@ -1762,11 +1792,18 @@ export async function GET(request: NextRequest) {
 
     // ── 단일 SoT override ──
     // 위 로컬 경로는 weekly_activities / activity_records 에 의존하는데 두 테이블은 cluster4
-    // 라인 체계로 전환되며 제거되어(스키마 부재) totalP=0 → 항상 null 이 된다. 따라서 활동완료율은
-    // admin getCluster1Resume.activityCompletion.rate (허브 개설라인 기준, 전체기간 이행/개설)로
-    // 대체한다. 프록시 실패 시에만 위 로컬 결과를 유지한다(= 기존 폴백 동작).
+    // 라인 체계로 전환되며 제거되어(스키마 부재) totalP=0 → 항상 null 이 된다. 활동완료율은
+    // admin getCluster1Resume.activityCompletion.rate (허브 개설라인 기준, 전체기간 이행/개설)
+    // 단일 SoT — 그래프트 실패 시에도 레거시 결과로 폴백하지 않고 명시적으로 null('-' 표시)
+    // 로 내린다 (2026-06-05 silent fallback 제거).
     if (adminResume?.activityCompletion && typeof adminResume.activityCompletion.rate === "number") {
       completionRate = adminResume.activityCompletion.rate;
+    } else {
+      console.warn("[profile] admin resume graft 실패 — completionRate null('-' 표시)", {
+        hadAdminResume: Boolean(adminResume),
+        legacyLocal: completionRate,
+      });
+      completionRate = null;
     }
 
     // 시즌 이름에서 순서 매핑 (겨울 시작: winter=1, spring=2, summer=3, fall=4)
@@ -2460,7 +2497,15 @@ export async function GET(request: NextRequest) {
         : null;
 
     const adminSeasonHistories = graftRealHistoryIds(mapAdminSeasonRecordsToSeasonHistories(adminResume));
-    const responseSeasonHistories = adminSeasonHistories ?? mergedSeasonHistories;
+    // admin 그래프트 실패 시 로컬 ush 행의 approved_weeks(stale 분자 — 미공표 주차 포함 가능)를
+    // 정상값처럼 노출하지 않는다 (2026-06-05 silent fallback 제거: 9/7/7 합 23 ≠ 누적 22 사고).
+    // 행 자체(id/rating/review/시즌 메타)는 시즌 리뷰·평판 기능이 쓰므로 보존하고,
+    // 주차 분자만 null → Sidebar 가 '-' 표시. total_weeks(시즌 고정 분모)는 유지.
+    const responseSeasonHistories = adminSeasonHistories
+      ?? mergedSeasonHistories.map((h: Record<string, unknown>) => ({ ...h, approved_weeks: null }));
+    if (!adminSeasonHistories) {
+      console.warn("[profile] admin resume graft 실패 — seasonHistories approved_weeks null('-' 표시), 로컬 stale 분자 미사용");
+    }
 
     console.log('[Profile API] response seasonHistories source', adminSeasonHistories ? 'adminResume.seasonRecords' : 'local');
     console.log('[Profile API] response seasonHistories length', responseSeasonHistories.length);

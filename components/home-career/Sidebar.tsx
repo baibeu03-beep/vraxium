@@ -343,7 +343,8 @@ const Sidebar = () => {
   interface SeasonHistory {
     id: string;
     role_in_season: string;
-    approved_weeks: number;
+    // null = admin 그래프트 실패로 분자 미확정('-' 표시) — stale 로컬 값 노출 금지 (2026-06-05)
+    approved_weeks: number | null;
     total_weeks: number;
     progress_status: string;
     review_status: string;
@@ -2784,7 +2785,8 @@ const Sidebar = () => {
                                 <span style={{ color: "#767676" }}>시즌</span>
                               </span>
                               <span className="activity-period">
-                                {history.approved_weeks}주 <span style={{ color: "#767676" }}>/ {displayTotalWeeks}주</span>
+                                {/* approved_weeks null = admin 그래프트 실패(분자 미확정) — 레거시 stale 값 대신 '-' (2026-06-05) */}
+                                {history.approved_weeks ?? "-"}주 <span style={{ color: "#767676" }}>/ {displayTotalWeeks}주</span>
                               </span>
                               <span className="activity-role">{displayRoleLabel}</span>
                               <span className={`activity-badge ${progressStatus.className}`}>{progressStatus.text}</span>

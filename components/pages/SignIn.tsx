@@ -94,7 +94,7 @@ const SignIn = () => {
                   )}
 
                   <div className="oauth-tab">
-                    <div className="oauth-btns">
+                    <div className="oauth-btns oauth-btns--stacked">
                       <button
                         onClick={handleKakaoLogin}
                         disabled={isLoading}
@@ -126,15 +126,9 @@ const SignIn = () => {
                     </div>
                   </div>
 
-                  <div className="mt-60 h-a text-start">
+                  <div className="mt-60 h-a text-center">
                     <p className="mt-8">
-                      계정 연결이 되지 않으면 <Link href="/auth/access?status=pending">승인 대기 상태</Link>를 확인하세요.
-                    </p>
-                    <p className="mt-8">
-                      운영자 이메일 로그인은 별도 Admin 경로에서 계속 사용됩니다.
-                    </p>
-                    <p className="mt-8">
-                      처음 방문하셨나요? <Link href="/sign-up">카카오로 시작하기</Link>
+                      <Link href="/">홈으로 돌아가기</Link>
                     </p>
                   </div>
                 </div>
