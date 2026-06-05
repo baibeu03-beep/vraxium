@@ -800,6 +800,42 @@ const Sidebar = () => {
     }
   }, [cachedProfile]);
 
+  // ── 사용자 전환(targetUserId 변경) 시 이전 사용자 카드 즉시 제거 ──
+  // hasData=false + fetchSettled=false 로 렌더 게이트(Skeleton "Loading…")를 다시 띄우고,
+  // 이전 대상의 늦은 응답은 epoch 비교로 폐기한다(A 카드가 B 화면에 남는 문제 방지).
+  const profileEpochRef = useRef(0);
+  const prevTargetUserIdRef = useRef(targetUserId);
+  useEffect(() => {
+    if (prevTargetUserIdRef.current === targetUserId) return;
+    prevTargetUserIdRef.current = targetUserId;
+    profileEpochRef.current += 1;
+    if (demoMode) return; // 더미 모드는 demo seed effect 가 전담
+    pendingSloganRef.current = null;
+    setHasData(false);
+    setFetchSettled(false);
+    setUserProfile(null);
+    setSeasonHistories([]);
+    setHasSeasonData(false);
+    setBadgeData({ stars: 0, lightnings: 0, shields: 0 });
+    setHasBadgeData(false);
+    setPointData(null);
+    setCompletionRate(null);
+    setHasCompletionData(false);
+    setReliabilityRate(null);
+    setHasReliabilityData(false);
+    setPracticalCompetency(0);
+    setPracticalCompetencyCount(null);
+    setPracticalExperience(0);
+    setPracticalExperienceCount(null);
+    setPracticalInfo(0);
+    setPracticalInfoCount(null);
+    setPracticalCareerCount(null);
+    setHasActivityData(false);
+    setApprovedWeeksCount(null);
+    setCrewStatus("Running");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetUserId, demoMode]);
+
   // 아이콘 링크 state — admin resumeCardSettings 가 있으면 마운트 후 덮어씌움
   const [iconLink1, setIconLink1] = useState("https://www.google.com/");
   const [iconLink2, setIconLink2] = useState("https://youtu.be/xf6q5dgn1hU?si=tNK3I1-QIsJ9JmvF");
@@ -1191,14 +1227,19 @@ const Sidebar = () => {
       }
     }
     console.log("[fetchUserProfile] started", { targetUserId, sessionStatus, sessionUserId, forceRefresh });
+    // 사용자 전환 레이스 가드 — targetUserId 가 바뀌면 epoch 가 올라가고,
+    // 이전 대상의 늦은 응답은 아래 비교에서 폐기된다.
+    const epoch = profileEpochRef.current;
 
     try {
       // ProfileContext의 캐시된 데이터 사용 (페이지 이동 시 재호출 방지)
       let cachedResult = await fetchCachedProfile(targetUserId || undefined, forceRefresh);
+      if (epoch !== profileEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
 
       // targetUserId로 조회 실패 시, 로그인 사용자 본인 프로필로 폴백 시도
       if ((!cachedResult || !cachedResult.data) && targetUserId && sessionUserId) {
         const fallbackResult = await fetchCachedProfile(undefined, true);
+        if (epoch !== profileEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
         if (fallbackResult?.data?.id === sessionUserId) {
           // 본인 프로필인지 확인: 세션 ID가 URL의 userId를 포함하는지 체크 (UUID 잘림 대응)
           if (sessionUserId === targetUserId || sessionUserId.startsWith(targetUserId)) {
@@ -1360,18 +1401,23 @@ const Sidebar = () => {
     } catch (error) {
       console.error("프로필 로드 오류:", error);
       console.log("[hasData] catch에서 false로 설정됨", error);
-      setHasData(false);
-      setHasSeasonData(false);
+      if (epoch === profileEpochRef.current) {
+        setHasData(false);
+        setHasSeasonData(false);
+      }
     } finally {
-      setFetchSettled(true);
+      // superseded 된 이전 대상 fetch 가 새 로딩의 Skeleton 게이트를 조기 해제하지 못하게 한다.
+      if (epoch === profileEpochRef.current) setFetchSettled(true);
     }
   };
 
   // 학력 데이터 가져오기 (최종학력)
   const fetchEducations = async () => {
+    const epoch = profileEpochRef.current;
     try {
       const apiUrl = targetUserId ? `/api/educations?userId=${targetUserId}` : "/api/educations";
       const result: any = await dedupedJson(apiUrl);
+      if (epoch !== profileEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
 
       if (result?.success && result.data && result.data.length > 0) {
         // 최종학력 (isFinal: true) 찾기
@@ -1404,9 +1450,11 @@ const Sidebar = () => {
   // 사용자 페이지가 stale 한 옛 값(pending/cached)을 그대로 표시하지 않도록 한다.
   // (currentProfile 단계에서 빈 값 → SECTION2_SLOGAN_DEFAULTS 로 fallback 처리됨.)
   const fetchSlogan = async () => {
+    const epoch = profileEpochRef.current;
     try {
       const apiUrl = targetUserId ? `/api/slogans?userId=${targetUserId}` : "/api/slogans";
       const result: any = await dedupedJson(apiUrl);
+      if (epoch !== profileEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
 
       if (!result?.success) {
         return;

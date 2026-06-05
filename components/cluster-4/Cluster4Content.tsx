@@ -15,6 +15,7 @@ import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { DUMMY_SEASON_DATA, DUMMY_SEASON_HISTORIES, REVIEW_COMMENT_DEFAULT } from "@/constants/dummyData";
 import { dedupedJson } from "@/lib/fetch-dedupe";
+import LoadingPanel from "@/components/ui/loading/LoadingPanel";
 import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getOrgConfigFromPathname } from "@/lib/cluster-route";
 import { formatSeasonLabel, formatSeasonWeekTitle } from "@/lib/cluster4-types";
 import { isOfficialRestWeek } from "@/lib/cluster4-transition-week";
@@ -308,7 +309,7 @@ const DEMO_GROWTH_STATUS_FALLBACK: Record<string, { us: string | null; gs: strin
 
 const Cluster4Content = () => {
   // 세션 및 본인 프로필 여부 확인
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const { mask } = useDataMasking();
   const searchParams = useSearchParams();
   const popup = usePopup();
@@ -349,6 +350,71 @@ const Cluster4Content = () => {
     }
     return path;
   };
+
+  // ── 초기 로딩 게이트 + 사용자 전환 레이스 가드 ──────────────────────
+  // userKey 가 바뀌면 epoch 를 올려, 이전 사용자 대상 fetch 응답이 늦게 도착해도
+  // 새 화면 state 를 덮어쓰지 못하게 한다(주요 fetch 가 epoch 캡처 후 비교).
+  const loadEpochRef = useRef(0);
+  const userKey = `${urlUserId ?? ""}|${session?.user?.id ?? ""}|${isDemoMode ? "demo" : "live"}`;
+  const userKeyRef = useRef(userKey);
+  if (userKeyRef.current !== userKey) {
+    // 렌더 중 ref 갱신 — "이전 값 추적" 패턴. fetch effect 보다 먼저 epoch 가 올라가야 한다.
+    userKeyRef.current = userKey;
+    loadEpochRef.current += 1;
+  }
+  // 주요 초기 fetch settle 추적 — 전부 끝나기 전에는 "-"/0 placeholder 대신 LoadingPanel.
+  const CLUSTER4_SECTION_KEYS = ["profileStatus", "snapshot", "seasonGrowth"] as const;
+  const [loadedSections, setLoadedSections] = useState<Record<string, boolean>>({});
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const markSectionLoaded = (key: (typeof CLUSTER4_SECTION_KEYS)[number]) => {
+    setLoadedSections((prev) => (prev[key] ? prev : { ...prev, [key]: true }));
+  };
+  useEffect(() => {
+    if (initialLoadDone) return;
+    if (CLUSTER4_SECTION_KEYS.every((k) => loadedSections[k])) setInitialLoadDone(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadedSections, initialLoadDone]);
+
+  // 사용자 전환 시 이전 사용자 데이터 즉시 제거 + 게이트 재가동.
+  // 로컬 더미(isDemoMode) 모드는 [isDemoMode] 키 시드 effect 가 재실행되지 않으므로 리셋 제외.
+  // (state setter 들은 아래에서 선언되지만 effect 콜백은 렌더 후 실행되므로 안전)
+  const resetAppliedKeyRef = useRef(userKey);
+  useEffect(() => {
+    if (resetAppliedKeyRef.current === userKey) return;
+    resetAppliedKeyRef.current = userKey;
+    setLoadedSections({});
+    setInitialLoadDone(false);
+    if (isDemoMode) return;
+    setUserStatus(null);
+    setGrowthStatus(null);
+    setUserDefaultRole(null);
+    setGrowthStartInfo(null);
+    setGrowthEndInfo(null);
+    setGrowthPeriodStats(null);
+    setSeasonHistories([]);
+    setSeasonSummary(null);
+    setSeasonPointSummary(null);
+    setSeasonSummaries([]);
+    setSeasonActivityStatuses([]);
+    setSnapshotCircles(null);
+    setSnapshotAreaProgress(null);
+    setSeasonReviewerProfile({ displayName: "", profilePhotoUrl: "", gender: "", age: null, school: "", major: "", vision: "" });
+    setOwnerProfileData(null);
+    setProfilePhotoUrl("/images/0/cluster4/cluster4-1/이안0.png");
+    setSeasonReputations([]);
+    setUserRoleHistory([]);
+    setUserTeamParts([]);
+    setTeams([]);
+    setParts([]);
+    setActivityStats({
+      info: { total: 0, success: 0 },
+      competency: { total: 0, success: 0 },
+      experience: { total: 0, success: 0 },
+      career: { total: 0, success: 0 },
+    });
+    setSection3Page(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userKey]);
 
   // 데모 모드에서 사용자별 collection-content 문구 분기용
   const [demoUserName, setDemoUserName] = useState<string | null>(null);
@@ -1563,11 +1629,14 @@ const Cluster4Content = () => {
           setSnapshotCircles(null);
           setSnapshotAreaProgress(null);
         }
+      } finally {
+        if (!cancelled) markSectionLoaded("snapshot");
       }
     })();
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlUserId, demoQS]);
 
   // area-6-circles 표시값 — 스냅샷 로드 전/실패 시 0 세트(snapshot SoT, legacy 폴백 금지).
@@ -1769,11 +1838,19 @@ const Cluster4Content = () => {
   // 진입 화면 시즌 정보/누적 포인트 — GET /api/cluster4/weekly-growth (data.seasonSummary / data.seasonPointSummary).
   // 일반 모드(세션) + demoUserId 테스트 모드(urlUserId=demoUserId) 동일 경로. 로컬 더미(isDemoMode)만 스킵.
   useEffect(() => {
-    if (isDemoMode) return; // 로컬 더미 모드는 API 호출 스킵(기존 패턴)
+    if (isDemoMode) {
+      markSectionLoaded("seasonGrowth"); // 로컬 더미 모드는 API 호출 스킵(기존 패턴)
+      return;
+    }
+    // 세션 판별 전(본인 조회 예정)에는 게이트를 유지한다.
+    if (!urlUserId && sessionStatus === "loading") return;
     const abortController = new AbortController();
     const fetchSeasonGrowth = async () => {
       const uid = urlUserId || session?.user?.id;
-      if (!uid) return;
+      if (!uid) {
+        markSectionLoaded("seasonGrowth"); // fetch 대상 없음 — 게이트 통과
+        return;
+      }
       try {
         const res = await fetch(
           `/api/cluster4/weekly-growth?userId=${encodeURIComponent(uid)}${demoQS}`,
@@ -1796,9 +1873,12 @@ const Cluster4Content = () => {
         console.error("[cluster4/weekly-growth] 시즌 요약 로드 오류:", err);
       }
     };
-    fetchSeasonGrowth();
+    fetchSeasonGrowth().finally(() => {
+      if (!abortController.signal.aborted) markSectionLoaded("seasonGrowth");
+    });
     return () => abortController.abort();
-  }, [urlUserId, session?.user?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlUserId, session?.user?.id, sessionStatus, isDemoMode]);
 
   // 현재 시즌 정보 가져오기
   useEffect(() => {
@@ -1873,6 +1953,7 @@ const Cluster4Content = () => {
   // 활동 통계 가져오기 (현재 주차 기준)
   useEffect(() => {
     if (isDemoMode) return; // 데모 모드에서는 API 호출 스킵
+    const epoch = loadEpochRef.current;
     const fetchActivityStats = async () => {
       if (!session?.user?.id && !urlUserId) return;
 
@@ -2137,6 +2218,7 @@ const Cluster4Content = () => {
 
       // 온보딩 주차도 정상 계산 (팀/파트 + 강화 성공/실패 표시)
       {
+        if (epoch !== loadEpochRef.current) return; // 사용자 전환 — stale 결과 폐기
         const infoStats = calcStats(infoTypeIds);
         const competencyStats = calcStats(competencyTypeIds);
         const experienceStats = calcExperienceStats(); // eligible 조건 적용
@@ -2161,13 +2243,23 @@ const Cluster4Content = () => {
   // 화면은 항상 "~ing (성장 진행 중)" 으로 굳는다. demoUserId/일반/데모 전부 단일 매핑 경로.
   useEffect(() => {
     // 대상이 전혀 없는 데모 모드(비로그인 + userId 없음)만 기존처럼 스킵.
-    if (isDemoMode && !urlUserId) return;
+    if (isDemoMode && !urlUserId) {
+      markSectionLoaded("profileStatus");
+      return;
+    }
+    // 세션 판별 전(본인 프로필 조회 예정)에는 게이트를 유지한다.
+    if (!urlUserId && sessionStatus === "loading") return;
+    const epoch = loadEpochRef.current;
     // urlUserId(= userId/userID/demoUserId fold-in)가 있으면 해당 사용자, 없으면 본인 프로필 조회
     const profileUrl = urlUserId ? `/api/profile/?userId=${urlUserId}` : session?.user?.id ? "/api/profile/" : null;
-    if (!profileUrl) return;
+    if (!profileUrl) {
+      markSectionLoaded("profileStatus"); // fetch 대상 없음 — 게이트 통과
+      return;
+    }
     const fetchUserStatus = async () => {
       try {
         const json = await dedupedJson<any>(profileUrl).catch(() => null);
+        if (epoch !== loadEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
         if (!json) return;
         // 졸업/진행 상태 — 백엔드 growthInfo 가 단일 SoT.
         // 데모 모드 하드코딩 맵은 백엔드가 status 를 못 줄 때만 fallback.
@@ -2225,8 +2317,11 @@ const Cluster4Content = () => {
       }
     };
 
-    fetchUserStatus();
-  }, [isDemoMode, urlUserId, session?.user?.id]);
+    fetchUserStatus().finally(() => {
+      if (epoch === loadEpochRef.current) markSectionLoaded("profileStatus");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDemoMode, urlUserId, session?.user?.id, sessionStatus]);
 
   // 시즌 평판 데이터 가져오기 함수
   const fetchSeasonReputations = async (targetId: string, seasonHistoryId: string) => {
@@ -3260,6 +3355,16 @@ const Cluster4Content = () => {
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, [isDragging9]);
+
+  // 초기 로딩 게이트 — 데이터 도착 전 "-"/0 placeholder 노출 금지.
+  // 로컬 더미(isDemoMode) 모드는 동기 주입이라 게이트 불필요.
+  if (!isDemoMode && !initialLoadDone) {
+    return (
+      <div className="cluster4-content">
+        <LoadingPanel message="성장 기록을 정리하고 있어요…" minHeight="calc(100vh - 200px)" />
+      </div>
+    );
+  }
 
   return (
     <div className="cluster4-content">

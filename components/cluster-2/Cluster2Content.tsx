@@ -14,8 +14,9 @@ import { isPxRoute, isEcRoute, getOrgConfigFromPathname } from "@/lib/cluster-ro
 import { usePopup } from "@/components/ui/popup";
 import { useDemoUserMode } from "@/hooks/useDemoUserMode";
 import { useProfile } from "@/contexts/ProfileContext";
-import { invalidateDedupe } from "@/lib/fetch-dedupe";
+import { dedupedJson, invalidateDedupe } from "@/lib/fetch-dedupe";
 import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
+import LoadingPanel from "@/components/ui/loading/LoadingPanel";
 import { logEvent } from "@/utils/blackScreenDiagnostics";
 import { CLUSTER2_DUMMY_PHOTOS, CLUSTER2_DUMMY_SLOGANS, CLUSTER2_DUMMY_VIDEOS, CLUSTER2_DUMMY_EDUCATIONS, CLUSTER2_DUMMY_REVIEWS, CLUSTER2_DUMMY_INTRO, CLUSTER2_DUMMY_BY_USER, DEFAULT_DEMO_USER } from "@/constants/dummyData";
 import { SECTION1_PHOTO_DEFAULTS } from "@/constants/dummyData/cluster2-section1-default";
@@ -104,6 +105,49 @@ interface Ripple {
   y: number;
 }
 
+// 초기 로딩 게이트가 추적하는 섹션 fetch 목록 — 전부 settle 되기 전에는
+// "-"/빈 값 placeholder 대신 LoadingPanel 을 보여준다(값 오해 방지).
+const CLUSTER2_SECTION_KEYS = ["photos", "slogans", "videos", "educations", "reviewLink", "intro"] as const;
+type Cluster2SectionKey = (typeof CLUSTER2_SECTION_KEYS)[number];
+
+// 빈 슬로건 상태 팩토리 — 사용자 전환 시 이전 사용자 데이터 즉시 제거용.
+const createEmptySloganData = () => ({
+  slogan1: { option: "", content: "", rating: 0 },
+  slogan2: { option: "", content: "", rating: 0 },
+  slogan3: { option: "", content: "", rating: 0 },
+});
+
+// 영상 섹션 초기 상태 팩토리 — useState 초기값과 사용자 전환 리셋이 공유.
+const createInitialVideoData = () => [
+  {
+    id: 1,
+    title: "Eclipse Journey",
+    author: "Eng Name",
+    viewers: "9.9k Viewers",
+    thumbnail: "/images/0/cluster 2/영상 01.jpeg",
+    isBookmarked: true,
+    videoUrl: "",
+  },
+  {
+    id: 2,
+    title: "Eclipse Journey",
+    author: "Eng Name",
+    viewers: "9.9k Viewers",
+    thumbnail: "999",
+    isBookmarked: true,
+    videoUrl: "",
+  },
+  {
+    id: 3,
+    title: "Eclipse Journey",
+    author: "Eng Name",
+    viewers: "9.9k Viewers",
+    thumbnail: "999",
+    isBookmarked: true,
+    videoUrl: "",
+  },
+];
+
 // Slogan 옵션은 @/lib/cluster2SloganOptions 에서 import (admin 레포와 mirror).
 
 // 바이트 기반 텍스트 truncate (한글=2, 영문/기호=1, maxBytes 기준)
@@ -169,6 +213,62 @@ const Cluster2Content = () => {
     }
     return path;
   };
+
+  // ── 초기 로딩 게이트 + 사용자 전환 레이스 가드 ──────────────────────
+  // userKey = 조회 대상 식별자(urlUserId/demoUserId + 세션 유저 + 모드).
+  // 키가 바뀌면 epoch 를 올려, 이전 사용자 대상 fetch 응답이 늦게 도착해도
+  // 새 화면 state 를 덮어쓰지 못하게 한다(각 fetch 가 epoch 캡처 후 비교).
+  const loadEpochRef = useRef(0);
+  const userKey = `${urlUserId ?? ""}|${session?.user?.id ?? ""}|${isDemoMode ? "demo" : "live"}`;
+  const userKeyRef = useRef(userKey);
+  if (userKeyRef.current !== userKey) {
+    // 렌더 중 ref 갱신 — "이전 값 추적" 패턴. fetch effect 보다 먼저 epoch 가 올라가야 한다.
+    userKeyRef.current = userKey;
+    loadEpochRef.current += 1;
+  }
+  // 섹션별 초기 fetch settle 여부. 전부 true 가 되면 initialLoadDone 래치.
+  const [loadedSections, setLoadedSections] = useState<Record<string, boolean>>({});
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const markSectionLoaded = useCallback((key: Cluster2SectionKey) => {
+    setLoadedSections((prev) => (prev[key] ? prev : { ...prev, [key]: true }));
+  }, []);
+  useEffect(() => {
+    if (initialLoadDone) return;
+    if (CLUSTER2_SECTION_KEYS.every((k) => loadedSections[k])) setInitialLoadDone(true);
+  }, [loadedSections, initialLoadDone]);
+
+  // 사용자 전환 시 이전 사용자 데이터 즉시 제거 + 게이트 재가동.
+  // (state setter 들은 아래에서 선언되지만 effect 콜백은 렌더 후 실행되므로 안전)
+  const resetAppliedKeyRef = useRef(userKey);
+  useEffect(() => {
+    if (resetAppliedKeyRef.current === userKey) return;
+    resetAppliedKeyRef.current = userKey;
+    setLoadedSections({});
+    setInitialLoadDone(false);
+    // 섹션 1 — 사진
+    setSidebarPhoto(null);
+    setMainPhoto(null);
+    setSubPhotos([null, null, null, null]);
+    setPhotos([...SECTION1_PHOTO_DEFAULTS.photos]);
+    // 섹션 2 — 슬로건
+    const emptySlogans = createEmptySloganData();
+    setSloganData(emptySlogans);
+    setEditingSloganData(emptySlogans);
+    setSloganAuthorName("");
+    // 섹션 2-1 — 영상
+    const freshVideos = createInitialVideoData();
+    setVideoData(freshVideos);
+    setEditingVideoData(freshVideos);
+    // 섹션 3 — 학력
+    setEducationData(initialEducationData);
+    setEditingEduData(initialEducationData);
+    // 섹션 4 — 리뷰 링크
+    setReviewLinks(["", "", "", "", "", "", "", "", "", ""]);
+    setEditingReviewLinks(["", "", "", "", "", "", "", "", "", ""]);
+    // 섹션 5 — 자기소개서
+    setIntroCards((prev) => prev.map((card) => ({ ...card, content: "-" })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userKey]);
 
   const [currentPage, setCurrentPage] = useState(0);
   const [isWiggling, setIsWiggling] = useState(false);
@@ -406,11 +506,14 @@ const Cluster2Content = () => {
       return;
     }
     setPhotoLoading(true);
+    const epoch = loadEpochRef.current;
     try {
-      // 비소유자인 경우 userId 쿼리 파라미터로 조회
+      // 비소유자인 경우 userId 쿼리 파라미터로 조회 (URL=캐시 키 — userId/demoUserId 포함)
       const url = urlUserId ? `/api/photos?userId=${urlUserId}` : "/api/photos";
-      const response = await fetch(url);
-      const result = await response.json();
+      const result = await dedupedJson<any>(url);
+
+      // 사용자 전환 후 도착한 이전 대상 응답은 폐기 (stale overwrite 방지)
+      if (epoch !== loadEpochRef.current) return;
 
       if (result.success && result.data) {
         // 이미지 프리로드: URL을 받자마자 브라우저가 다운로드 시작
@@ -436,12 +539,17 @@ const Cluster2Content = () => {
 
   // 세션 변경 시 또는 다른 유저 프로필 조회 시 사진 로드
   useEffect(() => {
-    if (isOwner && session) {
-      fetchPhotos();
-    } else if (urlUserId) {
-      fetchPhotos();
+    if (sessionStatus === "loading") return; // 세션 판별 전 — 게이트 유지
+    const epoch = loadEpochRef.current;
+    const done = () => {
+      if (epoch === loadEpochRef.current) markSectionLoaded("photos");
+    };
+    if ((isOwner && session) || urlUserId) {
+      fetchPhotos().finally(done);
+    } else {
+      done(); // fetch 대상 없음 — 게이트 통과
     }
-  }, [session, isOwner, urlUserId]);
+  }, [sessionStatus, session, isOwner, urlUserId]);
 
   // 사진 저장 함수
   const handleSavePhotos = async () => {
@@ -518,6 +626,8 @@ const Cluster2Content = () => {
         // user_profiles.profile_photo_url 에 저장되며 Sidebar 가 이 값을 읽는다.
         // 비우지 않으면 클러스터 전환/재진입 시 stale 캐시로 이전 사진이 복원된다.
         clearProfileCache();
+        // fetchPhotos 가 dedupedJson(30s) 을 쓰므로 저장 후 endpoint 캐시도 무효화.
+        invalidateDedupe("/api/photos");
         showAlert("저장되었습니다.");
         setSection1ModalOpen(false);
       } else {
@@ -673,10 +783,12 @@ const Cluster2Content = () => {
       setSloganAuthorName(userData.slogans.engName);
       return;
     }
+    const epoch = loadEpochRef.current;
     try {
       const url = urlUserId ? `/api/slogans?userId=${urlUserId}` : "/api/slogans";
-      const response = await fetch(url);
-      const result = await response.json();
+      const result = await dedupedJson<any>(url);
+
+      if (epoch !== loadEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
 
       if (result.success && result.data) {
         const newSloganData = {
@@ -711,12 +823,17 @@ const Cluster2Content = () => {
 
   // 세션 변경 시 또는 다른 유저 프로필 조회 시 슬로건 로드
   useEffect(() => {
-    if (isOwner && session) {
-      fetchSlogans();
-    } else if (urlUserId) {
-      fetchSlogans();
+    if (sessionStatus === "loading") return;
+    const epoch = loadEpochRef.current;
+    const done = () => {
+      if (epoch === loadEpochRef.current) markSectionLoaded("slogans");
+    };
+    if ((isOwner && session) || urlUserId) {
+      fetchSlogans().finally(done);
+    } else {
+      done();
     }
-  }, [session, isOwner, urlUserId]);
+  }, [sessionStatus, session, isOwner, urlUserId]);
 
   // 슬로건 저장
   const handleSaveSlogans = async () => {
@@ -794,35 +911,7 @@ const Cluster2Content = () => {
     return `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
   };
 
-  const [videoData, setVideoData] = useState([
-    {
-      id: 1,
-      title: "Eclipse Journey",
-      author: "Eng Name",
-      viewers: "9.9k Viewers",
-      thumbnail: "/images/0/cluster 2/영상 01.jpeg",
-      isBookmarked: true,
-      videoUrl: "",
-    },
-    {
-      id: 2,
-      title: "Eclipse Journey",
-      author: "Eng Name",
-      viewers: "9.9k Viewers",
-      thumbnail: "999",
-      isBookmarked: true,
-      videoUrl: "",
-    },
-    {
-      id: 3,
-      title: "Eclipse Journey",
-      author: "Eng Name",
-      viewers: "9.9k Viewers",
-      thumbnail: "999",
-      isBookmarked: true,
-      videoUrl: "",
-    },
-  ]);
+  const [videoData, setVideoData] = useState(createInitialVideoData);
   const [editingVideoData, setEditingVideoData] = useState(videoData);
   const [videoSaving, setVideoSaving] = useState(false);
   const [videoSnapshot, setVideoSnapshot] = useState(videoData);
@@ -856,10 +945,12 @@ const Cluster2Content = () => {
       });
       return;
     }
+    const epoch = loadEpochRef.current;
     try {
       const url = urlUserId ? `/api/videos?userId=${urlUserId}` : "/api/videos";
-      const response = await fetch(url);
-      const result = await response.json();
+      const result = await dedupedJson<any>(url);
+
+      if (epoch !== loadEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
 
       if (result.success && result.data) {
         const authorName = result.data.engName || "Unknown";
@@ -891,12 +982,17 @@ const Cluster2Content = () => {
 
   // 세션 변경 시 또는 다른 유저 프로필 조회 시 영상 로드
   useEffect(() => {
-    if (isOwner && session) {
-      fetchVideos();
-    } else if (urlUserId) {
-      fetchVideos();
+    if (sessionStatus === "loading") return;
+    const epoch = loadEpochRef.current;
+    const done = () => {
+      if (epoch === loadEpochRef.current) markSectionLoaded("videos");
+    };
+    if ((isOwner && session) || urlUserId) {
+      fetchVideos().finally(done);
+    } else {
+      done();
     }
-  }, [session, isOwner, urlUserId]);
+  }, [sessionStatus, session, isOwner, urlUserId]);
 
   // 영상 URL 저장
   const handleSaveVideos = async () => {
@@ -921,6 +1017,8 @@ const Cluster2Content = () => {
       const result = await response.json();
       if (result.success) {
         setVideoData([...editingVideoData]);
+        // fetchVideos 가 dedupedJson(30s) 을 쓰므로 저장 후 endpoint 캐시 무효화.
+        invalidateDedupe("/api/videos");
         showAlert("저장되었습니다.");
         setSection21ModalOpen(false);
       } else {
@@ -1052,7 +1150,8 @@ const Cluster2Content = () => {
     const ro = new ResizeObserver(calculate);
     if (eduContainerRef.current) ro.observe(eduContainerRef.current);
     return () => ro.disconnect();
-  }, [educationData]);
+    // initialLoadDone: 로딩 게이트 해제 후 컨테이너가 마운트된 시점에 재계산 필요.
+  }, [educationData, initialLoadDone]);
 
   // 학력 데이터 로드
   const fetchEducations = async () => {
@@ -1063,10 +1162,11 @@ const Cluster2Content = () => {
       setEditingEduData(userData.educations);
       return;
     }
+    const epoch = loadEpochRef.current;
     try {
       const url = urlUserId ? `/api/educations?userId=${urlUserId}` : "/api/educations";
-      const response = await fetch(url);
-      const result = await response.json();
+      const result = await dedupedJson<any>(url);
+      if (epoch !== loadEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
       if (result.success && result.data && result.data.length > 0) {
         setEducationData(result.data);
         setEditingEduData(result.data);
@@ -1078,12 +1178,17 @@ const Cluster2Content = () => {
 
   // 세션 변경 시 또는 다른 유저 프로필 조회 시 학력 로드
   useEffect(() => {
-    if (isOwner && session) {
-      fetchEducations();
-    } else if (urlUserId) {
-      fetchEducations();
+    if (sessionStatus === "loading") return;
+    const epoch = loadEpochRef.current;
+    const done = () => {
+      if (epoch === loadEpochRef.current) markSectionLoaded("educations");
+    };
+    if ((isOwner && session) || urlUserId) {
+      fetchEducations().finally(done);
+    } else {
+      done();
     }
-  }, [session, isOwner, urlUserId]);
+  }, [sessionStatus, session, isOwner, urlUserId]);
 
   // 학력 저장 함수
   const handleSaveEducations = async (processedData: EduData[]) => {
@@ -1548,11 +1653,12 @@ const Cluster2Content = () => {
       });
       return;
     }
+    const epoch = loadEpochRef.current;
     try {
       const url = urlUserId ? `/api/review-link?userId=${urlUserId}` : "/api/review-link";
-      const response = await fetch(url);
-      const result = await response.json();
+      const result = await dedupedJson<any>(url);
 
+      if (epoch !== loadEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
       if (!result?.success) return;
 
       // 신 shape — links[] 우선
@@ -1583,12 +1689,17 @@ const Cluster2Content = () => {
 
   // 세션 변경 시 또는 다른 유저 프로필 조회 시 리뷰 링크 로드
   useEffect(() => {
-    if (isOwner && session) {
-      fetchReviewLink();
-    } else if (urlUserId) {
-      fetchReviewLink();
+    if (sessionStatus === "loading") return;
+    const epoch = loadEpochRef.current;
+    const done = () => {
+      if (epoch === loadEpochRef.current) markSectionLoaded("reviewLink");
+    };
+    if ((isOwner && session) || urlUserId) {
+      fetchReviewLink().finally(done);
+    } else {
+      done();
     }
-  }, [session, isOwner, urlUserId]);
+  }, [sessionStatus, session, isOwner, urlUserId]);
 
   // DB에서 자기소개서 로드
   const fetchIntroductions = async () => {
@@ -1611,10 +1722,12 @@ const Cluster2Content = () => {
       });
       return;
     }
+    const epoch = loadEpochRef.current;
     try {
       const url = urlUserId ? `/api/introductions?userId=${urlUserId}` : "/api/introductions";
-      const response = await fetch(url);
-      const result = await response.json();
+      const result = await dedupedJson<any>(url);
+
+      if (epoch !== loadEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
 
       if (result.success && result.data) {
         const dbFieldOrder = ["growthStory", "socialExperience", "careerDirection", "workStyle", "personalStory"];
@@ -1640,12 +1753,17 @@ const Cluster2Content = () => {
 
   // 세션 변경 시 또는 다른 유저 프로필 조회 시 자기소개서 로드
   useEffect(() => {
-    if (isOwner && session) {
-      fetchIntroductions();
-    } else if (urlUserId) {
-      fetchIntroductions();
+    if (sessionStatus === "loading") return;
+    const epoch = loadEpochRef.current;
+    const done = () => {
+      if (epoch === loadEpochRef.current) markSectionLoaded("intro");
+    };
+    if ((isOwner && session) || urlUserId) {
+      fetchIntroductions().finally(done);
+    } else {
+      done();
     }
-  }, [session, isOwner, urlUserId]);
+  }, [sessionStatus, session, isOwner, urlUserId]);
 
   // 자기소개서 저장
   const handleSaveIntroduction = async (cardIndex: number, content: string) => {
@@ -1680,6 +1798,8 @@ const Cluster2Content = () => {
         };
         setIntroCards(newCards);
         setIsEditingIntro(false);
+        // fetchIntroductions 가 dedupedJson(30s) 을 쓰므로 저장 후 endpoint 캐시 무효화.
+        invalidateDedupe("/api/introductions");
         showAlert("저장되었습니다.");
       } else {
         showAlert(result.error || "자기소개서 저장에 실패했습니다.");
@@ -1779,6 +1899,8 @@ const Cluster2Content = () => {
       const result = await response.json();
       if (result.success) {
         setReviewLinks([...editingReviewLinks]);
+        // fetchReviewLink 가 dedupedJson(30s) 을 쓰므로 저장 후 endpoint 캐시 무효화.
+        invalidateDedupe("/api/review-link");
         showAlert("저장되었습니다.");
         setSection4ModalOpen(false);
       } else {
@@ -1950,7 +2072,8 @@ const Cluster2Content = () => {
     });
 
     return () => observer.disconnect();
-  }, []);
+    // initialLoadDone: 로딩 게이트 해제 후 본문이 마운트되면 refs 가 채워지므로 재관측 필요.
+  }, [initialLoadDone]);
 
   // 모달 열기
   const openModal = (edu: EduData, e: React.MouseEvent) => {
@@ -2056,6 +2179,17 @@ const Cluster2Content = () => {
       setRipples((prev) => prev.filter((r) => r.id !== newRipple.id));
     }, 2000);
   }, []);
+
+  // 초기 로딩 게이트 — 데이터 도착 전 "-"/빈 값 placeholder 노출 금지.
+  // 데모(localStorage 더미) 모드는 동기 주입이라 게이트 불필요.
+  if (!isDemoMode && !initialLoadDone) {
+    return (
+      <div className="cluster2-content">
+        {isDemo ? <TestUserBanner /> : null}
+        <LoadingPanel message="데이터를 열심히 불러오고 있어요…" minHeight="calc(100vh - 200px)" />
+      </div>
+    );
+  }
 
   return (
     <div className="cluster2-content">

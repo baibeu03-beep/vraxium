@@ -1286,6 +1286,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
         // 프로필 정보 처리 (weekBundle 포함)
         const profileResult = await profileResponse.json();
+        // 주차/유저 전환으로 superseded 된 응답은 새 화면 state 를 덮어쓰지 않는다.
+        if (cancelled) return;
         if (!profileResponse.ok || !profileResult.data?.id) {
           console.error("Failed to fetch profile");
           return;
@@ -1731,7 +1733,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       } catch (error) {
         console.error("주차 데이터 로드 오류:", error);
       } finally {
-        setIsLoadingWeek(false);
+        // 주차/유저 전환으로 superseded 된 이전 fetch 의 finally 가 새 로딩의
+        // Skeleton 게이트(isLoadingWeek)를 조기 해제하지 못하게 한다.
+        if (!cancelled) setIsLoadingWeek(false);
       }
     };
 

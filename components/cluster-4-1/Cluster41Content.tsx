@@ -460,6 +460,15 @@ const Cluster41Content = () => {
         setWeeklyLoadError(false);
         setSummaryReady(false);
 
+        // targetUserId 를 아는 경우(타 유저/데모 조회) weekly-cards 를 프로필과 병렬 시작.
+        // 프로필 ?userId=X 응답의 data.id === X 이므로 동일한 요청이며, 응답 검사·반영
+        // 순서는 기존과 동일(프로필 처리 후). 세션 모드는 userId 를 모르므로 기존 직렬 유지.
+        const earlyWeeklyPromise = targetUserId
+          ? fetch(`/api/cluster4/weekly-cards?userId=${targetUserId}${demoQS}`, { signal: abortController.signal })
+          : null;
+        // 프로필 실패로 조기 return 할 때 unhandled rejection 이 되지 않도록 미리 흡수.
+        if (earlyWeeklyPromise) earlyWeeklyPromise.catch(() => {});
+
         // context=cluster41: cluster-4-1 이 응답에서 읽지 않는 무거운 계산(실무 카운트 라인쿼리·
         // resume-card settings·point DTO·club-rank 외부프록시)을 백엔드에서 스킵하는 경량 분기.
         // growthInfo/growthPeriodStats/currentSeasonInfo/seasonHistories 값은 plain 과 100% 동일.
@@ -528,7 +537,9 @@ const Cluster41Content = () => {
         // 프로필 응답이 모두 반영된 시점 — 이제 요약 카드를 실데이터로 노출(Skeleton 해제).
         setSummaryReady(true);
 
-        const weeklyRes = await fetch(`/api/cluster4/weekly-cards?userId=${userId}${demoQS}`, { signal: abortController.signal });
+        const weeklyRes = earlyWeeklyPromise
+          ? await earlyWeeklyPromise
+          : await fetch(`/api/cluster4/weekly-cards?userId=${userId}${demoQS}`, { signal: abortController.signal });
         if (isStale()) return;
 
         // ★ 504(Gateway Timeout)/HTML 에러 페이지 등 비정상 응답은 json() 이 throw 하거나

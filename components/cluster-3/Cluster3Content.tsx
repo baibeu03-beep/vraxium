@@ -15,7 +15,9 @@ import { isPxRoute, isEcRoute, getThemeClass, ORGANIZATION_CONFIG } from "@/lib/
 import type { Cluster3StatsCards } from "@/lib/cluster3StatsCardsTypes";
 import { usePopup } from "@/components/ui/popup";
 import { useDemoUserMode } from "@/hooks/useDemoUserMode";
+import { dedupedJson, invalidateDedupe } from "@/lib/fetch-dedupe";
 import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
+import LoadingPanel from "@/components/ui/loading/LoadingPanel";
 import {
   CLUSTER3_DUMMY_PROFILE,
   CLUSTER3_DUMMY_ARCHIVES,
@@ -248,6 +250,66 @@ const Cluster3Content = () => {
     }
     return path;
   };
+
+  // ── 초기 로딩 게이트 + 사용자 전환 레이스 가드 ──────────────────────
+  // userKey 가 바뀌면 epoch 를 올려, 이전 사용자 대상 fetch 응답이 늦게 도착해도
+  // 새 화면 state 를 덮어쓰지 못하게 한다(각 fetch 가 epoch 캡처 후 비교).
+  const loadEpochRef = useRef(0);
+  const userKey = `${urlUserId ?? ""}|${session?.user?.id ?? ""}|${isDemoMode ? "demo" : "live"}`;
+  const userKeyRef = useRef(userKey);
+  if (userKeyRef.current !== userKey) {
+    // 렌더 중 ref 갱신 — "이전 값 추적" 패턴. fetch effect 보다 먼저 epoch 가 올라가야 한다.
+    userKeyRef.current = userKey;
+    loadEpochRef.current += 1;
+  }
+  // 초기 fetch settle 추적 — 전부 끝나기 전에는 "-"/0 placeholder 대신 LoadingPanel.
+  const CLUSTER3_SECTION_KEYS = ["profile", "statsCards", "channelCards", "topCards"] as const;
+  const [loadedSections, setLoadedSections] = useState<Record<string, boolean>>({});
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const markSectionLoaded = (key: (typeof CLUSTER3_SECTION_KEYS)[number]) => {
+    setLoadedSections((prev) => (prev[key] ? prev : { ...prev, [key]: true }));
+  };
+  useEffect(() => {
+    if (initialLoadDone) return;
+    if (CLUSTER3_SECTION_KEYS.every((k) => loadedSections[k])) setInitialLoadDone(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadedSections, initialLoadDone]);
+
+  // 사용자 전환 시 이전 사용자 데이터 즉시 제거 + 게이트 재가동.
+  // (state setter / factory 들은 아래에서 선언되지만 effect 콜백은 렌더 후 실행되므로 안전)
+  const resetAppliedKeyRef = useRef(userKey);
+  useEffect(() => {
+    if (resetAppliedKeyRef.current === userKey) return;
+    resetAppliedKeyRef.current = userKey;
+    setLoadedSections({});
+    setInitialLoadDone(false);
+    // 섹션 1 — 신뢰도/프로필
+    setReliabilityRate(null);
+    setHasReliabilityData(true);
+    setProgressOffset(393);
+    setProgressPercent(0);
+    setEngName("Eng Name");
+    setDisplayName("");
+    setPointsData({ dangam: 0, injeolmi: 0, eoheung: 0 });
+    setGradeStats(null);
+    setTopPercent(0);
+    setGrowthPeriodStats(null);
+    setStatsCards(null);
+    // 섹션 3 — 채널 카드 (production initial = 전부 empty)
+    setChannelCards(createEmptyChannelCards());
+    // 섹션 4/5 — Output/Detail 카드 + 썸네일 (초기값 정책과 동일 분기)
+    setOutputCards(isDemoMode ? (CLUSTER3_DUMMY_OUTPUT_CARDS as any) : createInitialOutputCards());
+    setDetailCards(isDemoMode ? (createInitialDetailCardsWithDefault() as any) : createInitialDetailCards());
+    setTopWorksSlides([
+      { id: 1, active: false, link: "" },
+      { id: 2, active: false, link: "" },
+      { id: 3, active: true, link: "" },
+      { id: 4, active: false, link: "" },
+      { id: 5, active: false, link: "" },
+    ]);
+    setDetailThumbnails(Array.from({ length: 10 }, (_, i) => ({ id: i + 1, link: "" })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userKey]);
 
   // scrollTo query parameter 처리 (Sidebar hex3에서 이동 시)
   useEffect(() => {
@@ -561,15 +623,19 @@ const Cluster3Content = () => {
   // 채널 카드 16개 풀 데이터 로드 (portfolio_channel_cards 테이블)
   // 저장된 카드만 응답에 포함되며, 미저장 카드는 emptyCard 상태 그대로 유지
   useEffect(() => {
-    if (isDemoMode) return;
+    if (isDemoMode) {
+      markSectionLoaded("channelCards");
+      return;
+    }
+    if (sessionStatus === "loading") return; // 세션 판별 전 — 게이트 유지
+    const epoch = loadEpochRef.current;
     const fetchChannelCards = async () => {
       try {
         const url = urlUserId
           ? `/api/portfolio-channel-cards?userId=${urlUserId}`
           : "/api/portfolio-channel-cards";
-        const response = await fetch(url);
-        if (!response.ok) return;
-        const result = await response.json();
+        const result = await dedupedJson<any>(url);
+        if (epoch !== loadEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
         if (!result?.success || !Array.isArray(result.cards) || result.cards.length === 0) return;
 
         // cardIndex(1~16) → 응답 카드 매핑
@@ -602,8 +668,11 @@ const Cluster3Content = () => {
         console.error("채널 카드 로드 오류:", error);
       }
     };
-    fetchChannelCards();
-  }, [session?.user?.email, urlUserId, isDemoMode]);
+    fetchChannelCards().finally(() => {
+      if (epoch === loadEpochRef.current) markSectionLoaded("channelCards");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionStatus, session?.user?.email, urlUserId, isDemoMode]);
 
   // sample/default seed 가 PUT 으로 흘러가는 사고 방지용 marker 비교.
   // production 의 initial state 는 emptyCard 만 사용 (createEmptyChannelCards) 이므로
@@ -703,6 +772,8 @@ const Cluster3Content = () => {
       }
 
       const finalCard = { ...card, images: uploadedImages };
+      // 채널 카드 GET 이 dedupedJson(30s) 을 쓰므로 저장 후 endpoint 캐시 무효화.
+      invalidateDedupe("/api/portfolio-channel-cards");
       setChannelCards((prev) => {
         const next = [...prev];
         next[cardIndex - 1] = { ...prev[cardIndex - 1], ...finalCard };
@@ -738,6 +809,8 @@ const Cluster3Content = () => {
 
   // API에서 일정 신뢰도 데이터 가져오기
   useEffect(() => {
+    if (!isDemoMode && sessionStatus === "loading") return; // 세션 판별 전 — 게이트 유지
+    const epoch = loadEpochRef.current;
     const fetchReliabilityRate = async () => {
       if (isDemoMode) {
         const demoUser = demoLookupName || DEFAULT_DEMO_USER;
@@ -758,12 +831,13 @@ const Cluster3Content = () => {
       }
 
       try {
-        // URL에 userId가 있으면 해당 유저의 데이터를 가져옴
+        // URL에 userId가 있으면 해당 유저의 데이터를 가져옴 (URL=캐시 키 — userId/demoUserId 포함)
         const apiUrl = urlUserId ? `/api/profile?userId=${urlUserId}` : "/api/profile";
-        const response = await fetch(apiUrl);
-        const result = await response.json();
+        const result = await dedupedJson<any>(apiUrl);
 
-        if (response.ok && result.reliabilityRate !== undefined) {
+        if (epoch !== loadEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
+
+        if (result.reliabilityRate !== undefined) {
           setReliabilityRate(result.reliabilityRate);
           setHasReliabilityData(true);
         } else {
@@ -792,32 +866,39 @@ const Cluster3Content = () => {
         //  실제 모드 SoT = GET /api/cluster3/stats-cards (아래 별도 effect → setStatsCards).
       } catch (error) {
         console.error("신뢰도 데이터 로드 오류:", error);
-        setHasReliabilityData(false);
+        if (epoch === loadEpochRef.current) setHasReliabilityData(false);
       }
     };
 
-    fetchReliabilityRate();
-  }, [session?.user?.email, urlUserId]);
+    fetchReliabilityRate().finally(() => {
+      if (epoch === loadEpochRef.current) markSectionLoaded("profile");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionStatus, session?.user?.email, urlUserId, isDemoMode]);
 
   // stats-cards (성장 진행 상태/기간 집계/점수 기록) — 실제 모드 SoT.
   // GET /api/cluster3/stats-cards proxy(admin canonical) 응답을 그대로 사용한다.
   // 데모 모드는 더미 시드를 유지하므로 호출하지 않는다.
   useEffect(() => {
-    if (isDemoMode) return;
-    if (!session?.user?.email && !urlUserId) return;
+    if (isDemoMode) {
+      markSectionLoaded("statsCards");
+      return;
+    }
+    if (sessionStatus === "loading") return; // 세션 판별 전 — 게이트 유지
+    if (!session?.user?.email && !urlUserId) {
+      markSectionLoaded("statsCards"); // fetch 대상 없음 — 게이트 통과
+      return;
+    }
 
     let cancelled = false;
+    const epoch = loadEpochRef.current;
     const fetchStatsCards = async () => {
       try {
         const apiUrl = urlUserId
           ? `/api/cluster3/stats-cards?userId=${urlUserId}`
           : "/api/cluster3/stats-cards";
-        const response = await fetch(apiUrl);
-        if (!response.ok) {
-          console.warn("[cluster3/stats-cards] non-OK", response.status);
-          return;
-        }
-        const json = await response.json();
+        const json = await dedupedJson<any>(apiUrl);
+        if (epoch !== loadEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
         const data = (json?.data ?? null) as Cluster3StatsCards | null;
         if (!cancelled && data) setStatsCards(data);
       } catch (error) {
@@ -825,16 +906,21 @@ const Cluster3Content = () => {
       }
     };
 
-    fetchStatsCards();
+    fetchStatsCards().finally(() => {
+      if (epoch === loadEpochRef.current) markSectionLoaded("statsCards");
+    });
     return () => {
       cancelled = true;
     };
-  }, [isDemoMode, session?.user?.email, urlUserId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionStatus, isDemoMode, session?.user?.email, urlUserId]);
 
   // 일정 신뢰도 프로그레스 애니메이션
   useEffect(() => {
     // reliabilityRate가 로드되지 않았으면 대기
     if (reliabilityRate === null) return;
+    // 로딩 게이트가 열린 뒤에 애니메이션 시작 (게이트 중 숨은 채로 소진 방지)
+    if (!isDemoMode && !initialLoadDone) return;
 
     const targetPercent = reliabilityRate;
     // 393 = 전체 반원 길이, 0% = 393, 100% = 0
@@ -865,7 +951,8 @@ const Cluster3Content = () => {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [reliabilityRate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reliabilityRate, initialLoadDone]);
 
   // 섹션 2 스크롤 감지
   useEffect(() => {
@@ -943,7 +1030,8 @@ const Cluster3Content = () => {
     }
 
     return () => observer.disconnect();
-  }, [animationComplete, gradeStats]);
+    // initialLoadDone: 로딩 게이트 해제 후 섹션이 마운트된 시점에 재관측 필요.
+  }, [animationComplete, gradeStats, initialLoadDone]);
 
   // 포트폴리오 채널 카드 데이터 (16개 표시, 10개만 DB 연동)
   // SNS 아이콘 순서: 인스타, 유튜브, 블로그, 티스토리, X, 쓰레드, 틱톡, 비핸스, 기타1, 기타2, (11-16번은 반복)
@@ -1761,6 +1849,8 @@ const Cluster3Content = () => {
         return null;
       }
 
+      // 탑 카드 GET 이 dedupedJson(30s) 을 쓰므로 저장 후 endpoint 캐시 무효화.
+      invalidateDedupe("/api/portfolio-top-cards");
       return { ...card, mainImage: uploadedMain, subImages: uploadedSubs as (string | null)[] };
     } catch (e) {
       console.error("탑 카드 저장 오류:", e);
@@ -1773,15 +1863,19 @@ const Cluster3Content = () => {
 
   // 마운트 시 Output 5 + Detail 10 풀 데이터 한 번에 로드
   useEffect(() => {
-    if (isDemoMode) return;
+    if (isDemoMode) {
+      markSectionLoaded("topCards");
+      return;
+    }
+    if (sessionStatus === "loading") return; // 세션 판별 전 — 게이트 유지
+    const epoch = loadEpochRef.current;
     const fetchTopCards = async () => {
       try {
         const url = urlUserId
           ? `/api/portfolio-top-cards?userId=${urlUserId}`
           : "/api/portfolio-top-cards";
-        const response = await fetch(url);
-        if (!response.ok) return;
-        const result = await response.json();
+        const result = await dedupedJson<any>(url);
+        if (epoch !== loadEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
         if (!result?.success || !Array.isArray(result.cards) || result.cards.length === 0) return;
 
         const outputByIndex = new Map<number, any>();
@@ -1827,8 +1921,11 @@ const Cluster3Content = () => {
         console.error("탑 카드 로드 오류:", error);
       }
     };
-    fetchTopCards();
-  }, [session?.user?.email, urlUserId, isDemoMode]);
+    fetchTopCards().finally(() => {
+      if (epoch === loadEpochRef.current) markSectionLoaded("topCards");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionStatus, session?.user?.email, urlUserId, isDemoMode]);
 
   const handleSaveOutput = async () => {
     const current = outputCards[currentOutputIndex];
@@ -2220,6 +2317,17 @@ const Cluster3Content = () => {
         // 포인트 표시 정책(2026-06-04): 번개=−n 표기. 데모 시드(양수 penalty)도 동일 정책으로 변환.
         eoheung: -Math.abs(pointsData.eoheung),
       };
+
+  // 초기 로딩 게이트 — 데이터 도착 전 "-"/0/빈 카드 placeholder 노출 금지.
+  // 데모(localStorage 더미) 모드는 동기 주입이라 게이트 불필요.
+  if (!isDemoMode && !initialLoadDone) {
+    return (
+      <div className="cluster3-content">
+        {isDemo ? <TestUserBanner /> : null}
+        <LoadingPanel message="성장 기록을 정리하고 있어요…" minHeight="calc(100vh - 200px)" />
+      </div>
+    );
+  }
 
   return (
     <div className="cluster3-content">
