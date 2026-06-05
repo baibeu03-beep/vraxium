@@ -17,6 +17,7 @@ import { usePopup } from "@/components/ui/popup";
 import { logEvent } from "@/utils/blackScreenDiagnostics";
 import koreaRegionsData from "@/data/korea-regions.json";
 import { isPxRoute, isEcRoute, getThemeClass, withPxRoute, ORGANIZATION_CONFIG, type Organization } from "@/lib/cluster-route";
+import { LoadingPanel } from "@/components/ui/loading/LoadingPanel";
 
 const koreaRegions: { [key: string]: string[] } = koreaRegionsData;
 const DEFAULT_PHONE_COMMENT = "평일 오전 10시 ~ 오후 20시 사이에 언제든지 연락가능합니다. 주말은 문자나 텍스트로만 부탁드려요! 😊";
@@ -280,7 +281,13 @@ const Sidebar = () => {
   const sessionUserId = session?.user?.id ?? null;
   const shouldFetchProfile = !!targetUserId || sessionStatus === "authenticated";
   const hasFetchIdentity = !!targetUserId || !!sessionUserId;
-  const { fetchProfile: fetchCachedProfile, profileData: cachedProfile, clearCache: clearProfileCache } = useProfile();
+  const {
+    fetchProfile: fetchCachedProfile,
+    profileData: cachedProfile,
+    clearCache: clearProfileCache,
+    // ProfileContext 캐시(단일 슬롯)의 소유자 — 캐시 적용 전 userKey 일치 검증에 사용.
+    lastFetchedUserId: cachedProfileUserId,
+  } = useProfile();
 
   // 어드민이 다른 유저 편집 시 targetUserId를 API URL에 추가
   const apiUrl = (path: string) => {
@@ -727,6 +734,11 @@ const Sidebar = () => {
   useLayoutEffect(() => {
     if (demoMode) return; // 더미 모드면 캐시 초기화 스킵
     if (cacheInitRef.current || !cachedProfile?.data) return;
+    // [userKey 검증] ProfileContext 캐시는 단일 슬롯 — 마지막 fetch 대상(lastFetchedUserId)이
+    // 현재 표시 대상(targetUserId)과 다르면 이전 사용자 데이터이므로 절대 적용하지 않는다.
+    // (사용자 전환 직후 remount 시 B 화면에 A 캐시가 그래프트되던 레이스의 근원.
+    //  cacheInitRef 는 건드리지 않음 — 이후 현재 대상의 캐시가 도착하면 그때 적용.)
+    if ((cachedProfileUserId ?? null) !== (targetUserId ?? null)) return;
     cacheInitRef.current = true;
 
     const profile = cachedProfile.data;
@@ -798,7 +810,7 @@ const Sidebar = () => {
     if (cachedProfile.growthPeriodStats?.approvedWeeks !== undefined) {
       setApprovedWeeksCount(cachedProfile.growthPeriodStats.approvedWeeks);
     }
-  }, [cachedProfile]);
+  }, [cachedProfile, cachedProfileUserId, targetUserId]);
 
   // ── 사용자 전환(targetUserId 변경) 시 이전 사용자 카드 즉시 제거 ──
   // hasData=false + fetchSettled=false 로 렌더 게이트(Skeleton "Loading…")를 다시 띄우고,
@@ -2187,6 +2199,8 @@ const Sidebar = () => {
   //  hasUserIdentity 기준으로만 식별자 인정)
   const hasUserIdentity = hasFetchIdentity;
 
+  // 이력서 카드 자리(489×1001) 예약 + 공용 LoadingPanel(금장 마스코트) —
+  // cluster2/3/4 로딩 게이트와 동일한 시각 언어. label 은 스크린리더/진단용 문구.
   const renderSkeleton = (label: string) => (
     <div className="home-two-sidebar-col">
       <div
@@ -2201,13 +2215,12 @@ const Sidebar = () => {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          color: "rgba(255, 255, 255, 0.4)",
-          fontSize: "13px",
-          fontFamily: "Pretendard, sans-serif",
-          letterSpacing: "1px",
         }}
       >
-        {label}
+        <LoadingPanel
+          message={label === "Authenticating…" ? "로그인 정보를 확인하고 있어요…" : undefined}
+          minHeight={0}
+        />
       </div>
     </div>
   );
@@ -2233,7 +2246,16 @@ const Sidebar = () => {
     return renderSkeleton("Authenticating…");
   }
 
-  // 3) Fetch 대기 중: 식별자(targetUserId 또는 session.user.id)가 있는데 hasData=false → skeleton.
+  // 3) 사용자 전환 첫 프레임: 전환 reset effect 는 커밋 후(post-paint)에 실행되므로,
+  //    그보다 먼저 평가되는 렌더 시점에 prev↔현재 targetUserId 불일치를 감지해
+  //    이전 사용자(A) 데이터가 새 사용자(B) URL 아래 단 한 프레임도 페인트되지 않게 차단.
+  //    (effect 가 state 를 비우고 ref 를 갱신하면 다음 렌더부터는 4)의 일반 게이트가 이어받는다.)
+  const isUserSwitching = prevTargetUserIdRef.current !== targetUserId;
+  if (!demoMode && isUserSwitching) {
+    return renderSkeleton("Loading…");
+  }
+
+  // 4) Fetch 대기 중: 식별자(targetUserId 또는 session.user.id)가 있는데 hasData=false → skeleton.
   //    (식별자 없으면 fetch가 일어나지 않으므로 무한 skeleton 회피하고 정상 렌더로 fallthrough)
   //    fetchSettled=true 면 fetch 가 한 번이라도 완료된 상태 — 영구 실패(잘못된 UUID/본인 프로필 미존재 등)
   //    여도 무한 skeleton('블랙 화면') 회피하고 defaultProfile 로 fallthrough.
