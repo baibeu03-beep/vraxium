@@ -1037,9 +1037,11 @@ export async function GET(request: NextRequest) {
         : Promise.resolve({ data: null }),
 
       // 성장 종료일 - 시즌 정보 포함
+      // 졸업 판정 SoT 는 user_profiles.growth_status — profile.status 는 전원 'active' 라
+      // status 만 보면 졸업 분기가 영원히 죽는다 (2026-06-05: growth_status 병행 수정).
       profile.status === 'suspended' && profile.suspended_week_id
         ? supabaseAdmin.from("weeks").select("end_date, week_number, season_definitions!inner(season_label, season_type, year)").eq("id", profile.suspended_week_id).maybeSingle()
-        : profile.status === 'graduated'
+        : (profile.status === 'graduated' || profile.growth_status === 'graduated')
           ? supabaseAdmin.from("user_season_histories")
               .select(`season_definitions!inner(season_label, season_type, year)`)
               .eq("user_id", profile.id)
@@ -1168,7 +1170,7 @@ export async function GET(request: NextRequest) {
         weekNumber: endSeasonParsed?.isBreak ? null : (endWeekData.week_number || null),
         isBreak: endSeasonParsed?.isBreak || false
       } : null;
-    } else if (profile.status === 'graduated') {
+    } else if (profile.status === 'graduated' || profile.growth_status === 'graduated') {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const graduatedData = growthEndDateResult.data as any;
       const gradSd = graduatedData?.season_definitions;

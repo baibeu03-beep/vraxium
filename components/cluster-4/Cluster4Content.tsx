@@ -2789,23 +2789,46 @@ const Cluster4Content = () => {
   };
 
   // 성장 상태를 badge 텍스트로 변환 (status와 growth_status 두 개 사용)
+  // growthInfo.growthStatus 는 raw enum(user_profiles.growth_status: "graduated" 등)으로
+  // 내려온다 — 종전에는 한국어 라벨("졸업 완료")과만 비교해 영원히 불일치, 졸업자도
+  // "성장 진행 중"으로 떨어졌다 (2026-06-05 수정: raw enum 비교 추가, 데모 더미의
+  // 한국어 값도 병행 허용). graduating(졸업 절차 중)은 admin deriveEndStatus 와 동일하게
+  // "성장 진행 중"으로 분류한다 (성장 완료 아님).
   const getGrowthBadgeText = (status: string | null, growthStatus: string | null): string => {
-    // 1. 성장 완료 체크 (최우선)
-    if (status === "graduated" || growthStatus === "졸업 완료" || growthStatus === "졸업 절차 중") {
+    // 1. 성장 완료 체크 (최우선) — 실졸업(graduated)만
+    if (status === "graduated" || growthStatus === "graduated" || growthStatus === "졸업 완료") {
       return "성장 완료";
     }
 
     // 2. 성장 중단 체크
-    if (status === "suspended" || growthStatus === "활동 중단" || growthStatus === "활동 유보") {
+    if (
+      status === "suspended" ||
+      growthStatus === "suspended" ||
+      growthStatus === "paused" ||
+      growthStatus === "deferred" ||
+      growthStatus === "활동 중단" ||
+      growthStatus === "활동 유보"
+    ) {
       return "성장 중단";
     }
 
     // 3. 성장 휴식 체크
-    if (status === "weekly_rest" || status === "seasonal_rest" || growthStatus === "주차 휴식 중" || growthStatus === "시즌 휴식 중" || growthStatus === "공식 휴식 중") {
+    if (
+      status === "weekly_rest" ||
+      status === "seasonal_rest" ||
+      growthStatus === "weekly_rest" ||
+      growthStatus === "seasonal_rest" ||
+      growthStatus === "official_rest" ||
+      growthStatus === "resting" ||
+      growthStatus === "season_rest" ||
+      growthStatus === "주차 휴식 중" ||
+      growthStatus === "시즌 휴식 중" ||
+      growthStatus === "공식 휴식 중"
+    ) {
       return "성장 휴식";
     }
 
-    // 4. 기본값
+    // 4. 기본값 (active / graduating / onboarding 등)
     return "성장 진행 중";
   };
 

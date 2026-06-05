@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-server";
 import { seasonLabel } from "@/lib/cluster4-types";
 import { buildWeeklyCards } from "@/lib/cluster4-weekly-cards";
+import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -91,11 +92,11 @@ async function buildSeasonSummaryAndPoints(
 
   // ── 시즌 상태 (4종만 노출) ──
   // status: "active" | "ended" | "rest", seasonResult: "success" | "failed" | "none".
-  // 성공/중단 판별은 status(active/completed)만으로 불가능 → 성장 상태(growth_status/status)로 결정한다.
-  // (Cluster4Content.getGrowthBadgeText 와 동일한 캐노니컬 분류 — 신규 데이터 도입 없이 기존 DTO 재사용.)
+  // 진행 중인 시즌은 성장 상태(graduated/graduating)와 무관하게 "시즌 진행 중"이다.
+  // (종전에는 graduated/graduating 이면 진행 중 시즌도 "시즌 성공"으로 떠서 성장 상태와
+  //  시즌 상태가 합성되는 버그가 있었다 — 2026-06-05 분리. 중단/휴식 판별만 성장 상태 사용.)
   const gs = String(growthStatus || "").toLowerCase();
   const st = String(userStatus || "").toLowerCase();
-  const isSuccessStatus = gs === "graduated" || gs === "graduating";
   const isFailedStatus = gs === "suspended" || gs === "withdrawn" || gs === "expelled" || gs === "deferred" || st === "suspended";
   const isRestStatus = gs === "resting" || gs === "official_rest" || gs === "season_rest" || gs === "seasonal_rest" || gs === "weekly_rest";
   // 현재 주차가 전환(break) 주차면 시즌 휴식으로 본다.
@@ -104,10 +105,7 @@ async function buildSeasonSummaryAndPoints(
 
   let status: "active" | "ended" | "rest";
   let seasonResult: "success" | "failed" | "none";
-  if (isSuccessStatus) {
-    status = "ended";
-    seasonResult = "success";
-  } else if (isFailedStatus) {
+  if (isFailedStatus) {
     status = "ended";
     seasonResult = "failed";
   } else if (inTransition || isRestStatus) {
@@ -122,16 +120,16 @@ async function buildSeasonSummaryAndPoints(
     seasonResult = "none";
   }
 
+  // 현재 시즌 단일 요약은 success 로 떨어질 수 없다 (성공 판정은 종료 시즌 전용 —
+  // deriveSeasonStatus 의 이력서 SoT 경로에서만 발생).
   const statusLabel =
     status === "active"
       ? "시즌 진행 중"
       : status === "rest"
         ? "시즌 휴식"
-        : seasonResult === "success"
-          ? "시즌 성공"
-          : seasonResult === "failed"
-            ? "시즌 중단"
-            : "시즌 휴식";
+        : seasonResult === "failed"
+          ? "시즌 중단"
+          : "시즌 휴식";
 
   const seasonSummary = {
     year,
@@ -174,29 +172,29 @@ async function buildSeasonSummaryAndPoints(
 }
 
 // 시즌 상태(4종) 산출 — buildSeasonSummaries 의 시즌별 status/statusLabel/seasonResult 계산.
-// 성공/중단 판별은 성장 상태(growth_status/status)로만 가능(시즌별 결과 컬럼 부재).
-//   - 현재 시즌(오늘 포함): active/ended/rest + success/failed/none
-//   - 과거 시즌(종료): 기본 "시즌 성공"(완료) 처리
+//   - 현재 시즌(오늘 포함): 성장 상태와 무관하게 "시즌 진행 중" (중단/휴식 상태만 반영).
+//     종전에는 graduated/graduating 이면 진행 중 시즌도 "시즌 성공"으로 합성 — 2026-06-05 분리.
+//   - 과거 시즌(종료): 이력서 카드 시즌 판정 SoT(admin /api/cluster1/resume seasonRecords 의
+//     progressStatus)를 그대로 재사용해 매핑한다 (신규 계산식 도입 금지 — 화면 간 동일 결과 보장).
+//     정상 졸업/정상 완료→시즌 성공, 활동 중단→시즌 중단, 통합 휴식→시즌 휴식.
+//     판정 미확보(graft 실패/레코드 부재) 시 기존 동작(시즌 성공) 보존.
 function deriveSeasonStatus(
   isCurrent: boolean,
   endDate: string | null,
   today: string,
   growthStatus: string | null,
   userStatus: string | null,
+  resumeProgressStatus: string | null,
 ): { status: "active" | "ended" | "rest"; seasonResult: "success" | "failed" | "none"; statusLabel: string } {
   const gs = String(growthStatus || "").toLowerCase();
   const st = String(userStatus || "").toLowerCase();
-  const isSuccess = gs === "graduated" || gs === "graduating";
   const isFailed = gs === "suspended" || gs === "withdrawn" || gs === "expelled" || gs === "deferred" || st === "suspended";
   const isRest = gs === "resting" || gs === "official_rest" || gs === "season_rest" || gs === "seasonal_rest" || gs === "weekly_rest";
 
   let status: "active" | "ended" | "rest";
   let seasonResult: "success" | "failed" | "none";
   if (isCurrent) {
-    if (isSuccess) {
-      status = "ended";
-      seasonResult = "success";
-    } else if (isFailed) {
+    if (isFailed) {
       status = "ended";
       seasonResult = "failed";
     } else if (isRest) {
@@ -207,8 +205,18 @@ function deriveSeasonStatus(
       seasonResult = "none";
     }
   } else if (endDate && today > endDate) {
-    status = "ended";
-    seasonResult = "success";
+    // 종료 시즌 — 이력서 시즌 행과 동일 판정 재사용 (computeSeasonRecords progressStatus).
+    if (resumeProgressStatus === "활동 중단") {
+      status = "ended";
+      seasonResult = "failed";
+    } else if (resumeProgressStatus === "통합 휴식") {
+      status = "rest";
+      seasonResult = "none";
+    } else {
+      // "정상 졸업" / "정상 완료" / 판정 미확보 → 시즌 성공 (기존 기본값 보존)
+      status = "ended";
+      seasonResult = "success";
+    }
   } else {
     status = "active";
     seasonResult = "none";
@@ -227,6 +235,68 @@ function deriveSeasonStatus(
   return { status, seasonResult, statusLabel };
 }
 
+// ── 이력서 시즌 판정 SoT 조회 (admin /api/cluster1/resume seasonRecords) ──
+// 종료 시즌의 성공/중단/휴식 판정을 이력서 카드와 동일하게 맞추기 위해, admin canonical
+// DTO 의 progressStatus 를 season_key 로 매핑해 반환한다 (profile route 의
+// fetchAdminCluster1Resume 와 동일한 resolveAdminBaseUrl + x-internal-api-key 패턴).
+// 실패 시 빈 Map — deriveSeasonStatus 는 기존 기본값(시즌 성공)으로 동작한다.
+const SEASON_NAME_TO_TYPE: Record<string, string> = {
+  봄: "spring",
+  여름: "summer",
+  가을: "autumn",
+  겨울: "winter",
+};
+
+async function fetchResumeSeasonStatusByKey(
+  request: NextRequest,
+  userId: string,
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  try {
+    const adminApiBaseUrl = await resolveAdminBaseUrl();
+    if (!adminApiBaseUrl) {
+      console.warn("[weekly-growth] admin backend 미발견 — 시즌 판정 SoT 조회 불가");
+      return map;
+    }
+    const targetUrl = new URL(`${adminApiBaseUrl}/api/cluster1/resume`);
+    targetUrl.searchParams.set("userId", userId);
+    const headers = new Headers();
+    headers.set("Content-Type", "application/json");
+    headers.set("x-internal-api-key", process.env.INTERNAL_API_KEY ?? "");
+    const cookie = request.headers.get("cookie");
+    if (cookie) headers.set("cookie", cookie);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    try {
+      const upstream = await fetch(targetUrl.toString(), {
+        method: "GET",
+        headers,
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!upstream.ok) {
+        console.warn("[weekly-growth] resume 시즌 판정 graft 실패", { status: upstream.status });
+        return map;
+      }
+      const json: any = await upstream.json();
+      const records: any[] = json?.success ? (json?.data?.seasonRecords ?? []) : [];
+      for (const r of records) {
+        // seasonRecords.year 는 2자리("26"), seasonName 은 한국어("봄") — season_key 로 역매핑.
+        const type = SEASON_NAME_TO_TYPE[String(r?.seasonName ?? "")];
+        const yy = String(r?.year ?? "");
+        if (!type || !/^\d{2}$/.test(yy) || !r?.progressStatus) continue;
+        map.set(`20${yy}-${type}`, String(r.progressStatus));
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  } catch (e: any) {
+    console.warn("[weekly-growth] resume 시즌 판정 graft 실패", { message: e?.message || String(e) });
+  }
+  return map;
+}
+
 // ── 시즌별 요약 배열 (페이지네이션용) ──
 // 유저가 활동한 모든 (비-전환) 시즌을 시작일 DESC 로 반환. 각 시즌은 자기 범위만 누적한 pointSummary 포함.
 // 프론트는 section3Page index 로 seasonSummaries[index] 를 선택해 area-1-title / area-4-stats 에 바인딩한다.
@@ -236,6 +306,7 @@ async function buildSeasonSummaries(
   today: string,
   growthStatus: string | null,
   userStatus: string | null,
+  resumeStatusByKey: Map<string, string>,
 ): Promise<any[]> {
   // 1. 유저가 활동한 주차(포인트 + 주차상태)의 week_start_date 수집
   const [wpRes, wsRes] = await Promise.all([
@@ -314,7 +385,14 @@ async function buildSeasonSummaries(
     const lightning = -pen;
 
     const isCurrent = !!(startDate && endDate && today >= startDate && today <= endDate);
-    const { status, seasonResult, statusLabel } = deriveSeasonStatus(isCurrent, endDate, today, growthStatus, userStatus);
+    const { status, seasonResult, statusLabel } = deriveSeasonStatus(
+      isCurrent,
+      endDate,
+      today,
+      growthStatus,
+      userStatus,
+      resumeStatusByKey.get(seasonKey) ?? null,
+    );
 
     out.push({
       seasonKey,
@@ -491,6 +569,8 @@ export async function GET(request: NextRequest) {
       userProfile?.growth_status || null,
       userProfile?.status || null,
     );
+    // 종료 시즌 성공/중단/휴식 판정 — 이력서 카드 시즌 행과 동일 SoT(admin seasonRecords) 재사용.
+    const resumeStatusByKey = await fetchResumeSeasonStatusByKey(request, userId);
     // 시즌별 요약 배열(페이지네이션용) — 각 시즌 자기 범위만 누적.
     const seasonSummaries = await buildSeasonSummaries(
       supabase,
@@ -498,6 +578,7 @@ export async function GET(request: NextRequest) {
       today,
       userProfile?.growth_status || null,
       userProfile?.status || null,
+      resumeStatusByKey,
     );
 
     return NextResponse.json({

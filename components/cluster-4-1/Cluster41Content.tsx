@@ -636,16 +636,24 @@ const Cluster41Content = () => {
     return () => { abortController.abort(); };
   }, [targetUserId]);
 
+  // growthInfo.growthStatus 는 raw enum(user_profiles.growth_status: "graduated" 등)으로
+  // 내려온다 — 종전에는 한국어 라벨("졸업 완료")과만 비교해 영원히 불일치, 졸업자도
+  // "성장 진행 중"으로 떨어졌다 (2026-06-05 수정: raw enum 비교 추가, 데모 더미의
+  // 한국어 값도 병행 허용). graduating(졸업 절차 중)은 admin deriveEndStatus 와 동일하게
+  // "성장 진행 중"으로 분류한다 (성장 완료 아님). Cluster4Content 와 동일 규칙.
   const getGrowthBadgeText = (status: string | null, growthStatus: string | null): string => {
     if (
       status === 'graduated' ||
-      growthStatus === '졸업 완료' ||
-      growthStatus === '졸업 절차 중'
+      growthStatus === 'graduated' ||
+      growthStatus === '졸업 완료'
     ) {
       return '성장 완료';
     }
     if (
       status === 'suspended' ||
+      growthStatus === 'suspended' ||
+      growthStatus === 'paused' ||
+      growthStatus === 'deferred' ||
       growthStatus === '활동 중단' ||
       growthStatus === '활동 유보'
     ) {
@@ -654,6 +662,11 @@ const Cluster41Content = () => {
     if (
       status === 'weekly_rest' ||
       status === 'seasonal_rest' ||
+      growthStatus === 'weekly_rest' ||
+      growthStatus === 'seasonal_rest' ||
+      growthStatus === 'official_rest' ||
+      growthStatus === 'resting' ||
+      growthStatus === 'season_rest' ||
       growthStatus === '주차 휴식 중' ||
       growthStatus === '시즌 휴식 중' ||
       growthStatus === '공식 휴식 중'
