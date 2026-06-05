@@ -13,6 +13,14 @@
   --sidebar-left-offset: 110px;
   --header-height: 66px;
 
+  // 이력서 카드 shell(.sidebar-card-shell) 첫 페인트 예약 크기 — JS(cardScale) 적용 전
+  // SSR 페인트에서 카드 영역이 497px(scale 1)로 좁게 보였다가 hydration 후 넓어지는
+  // layout shift 방지용. Zone A(<1921px)는 Sidebar.calculateScale 이 항상
+  // viewportHeight=1080 기준 scale≈1.1728 로 수렴 → 497×1.1728≈583 / 875×1.1728≈1026.
+  // hydration 후에는 Sidebar 가 동일 변수를 실측값으로 갱신한다(인라인이 본 기본값을 덮음).
+  --resume-shell-width: 583px;
+  --resume-shell-height: 1026px;
+
   // 간격
   --spacing-xs: 8px;
   --spacing-sm: 16px;
@@ -343,6 +351,9 @@ body {
 // ===== 2560px 이상 대응 =====
 @media (min-width: 1921px) {
   :root {
+    // scale 1.31 기준: 497×1.31≈651 / 875×1.31≈1146 (Sidebar.calculateScale 와 동일 산식)
+    --resume-shell-width: 651px;
+    --resume-shell-height: 1146px;
     --sidebar-width: 651px;
   }
 

@@ -924,7 +924,9 @@ const Sidebar = () => {
   // .resume-card 높이를 뷰포트에 맞게 실시간 재계산
   useResumeCardHeight(cardRef, isMobileView);
 
-  useEffect(() => {
+  // useLayoutEffect — 첫 페인트 전에 cardScale/--sidebar-width 를 확정해
+  // 로딩 skeleton 이 scale 1(=489px) 로 한 프레임 그려졌다가 넓어지는 shift 를 막는다.
+  useLayoutEffect(() => {
     // 고정 너비 레이아웃: 항상 데스크탑
     setIsMobileView(false);
 
@@ -963,6 +965,18 @@ const Sidebar = () => {
 
       setCardScale(scale);
       console.log('[setCardScale]', scale);
+
+      // 카드 shell 실측 크기 — 첫 페인트용 SCSS 기본값(--resume-shell-width/height)을
+      // 실제 viewport 기준 값으로 갱신. skeleton/placeholder 레이아웃 박스가 이 변수를
+      // 사용하므로 SSR 페인트 → hydration → 데이터 렌더 전 과정에서 너비가 변하지 않는다.
+      document.documentElement.style.setProperty(
+        "--resume-shell-width",
+        `${Math.round(BASE_SIDEBAR_WIDTH * scale)}px`
+      );
+      document.documentElement.style.setProperty(
+        "--resume-shell-height",
+        `${Math.round(875 * scale)}px`
+      );
 
       // 사이드바 폭: 1920 이하만 JS로 동적 설정
       // 1921px+ 는 SCSS @media (min-width: 1921px)에서 --sidebar-width: 651px 고정
@@ -2199,44 +2213,60 @@ const Sidebar = () => {
   //  hasUserIdentity 기준으로만 식별자 인정)
   const hasUserIdentity = hasFetchIdentity;
 
-  // 이력서 카드 자리(489×1001) 예약 + 공용 LoadingPanel(금장 마스코트) —
+  // 이력서 카드 자리 예약 + 공용 LoadingPanel(금장 마스코트) —
   // cluster2/3/4 로딩 게이트와 동일한 시각 언어. label 은 스크린리더/진단용 문구.
+  //
+  // [너비 고정 — layout shift 방지] skeleton/placeholder 의 레이아웃 박스는 실제 카드
+  // 렌더와 동일한 .sidebar-card-shell(497×875 × cardScale) 구조를 그대로 사용한다.
+  // 이전에는 489×1001 고정 박스라서 cardScale>1 환경(1080p≈583px, 1921px+≈651px)에서
+  // 로딩 중 사이드바 칼럼이 좁았다가 데이터 도착 후 넓어지는 shift 가 발생했다.
+  // 내부 박스도 실제 .resume-card(489×855)와 동일 크기 + 동일 scale transform.
+  // width/height 는 CSS 변수(--resume-shell-*) — SSR/hydration 전 첫 페인트는 SCSS 기본값
+  // (583/1026, 1921px+ 은 651/1146), 이후엔 calculateScale 이 실측값으로 갱신.
+  // 실카드 shell 도 동일 변수를 쓰므로 로딩↔완료 간 너비가 정의상 일치한다.
+  const reservedShellStyle: React.CSSProperties = {
+    width: isMobileView ? "100%" : "var(--resume-shell-width, 583px)",
+    height: isMobileView ? "auto" : "var(--resume-shell-height, 1026px)",
+    overflow: "visible",
+    display: isMobileView ? "block" : "flex",
+    justifyContent: isMobileView ? undefined : "center",
+  };
   const renderSkeleton = (label: string) => (
     <div className="home-two-sidebar-col">
-      <div
-        aria-busy="true"
-        aria-live="polite"
-        style={{
-          width: "489px",
-          height: "1001px",
-          borderRadius: "12px",
-          backgroundColor: "rgba(255, 255, 255, 0.02)",
-          border: "1px solid rgba(255, 255, 255, 0.04)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <LoadingPanel
-          message={label === "Authenticating…" ? "로그인 정보를 확인하고 있어요…" : undefined}
-          minHeight={0}
-        />
+      <div className="sidebar-card-shell" style={reservedShellStyle}>
+        <div
+          aria-busy="true"
+          aria-live="polite"
+          style={{
+            width: "489px",
+            minWidth: "489px",
+            height: "855px",
+            borderRadius: "12px",
+            backgroundColor: "rgba(255, 255, 255, 0.02)",
+            border: "1px solid rgba(255, 255, 255, 0.04)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            ...(isMobileView
+              ? {}
+              : { transform: `scale(${cardScale})`, transformOrigin: "top center" }),
+          }}
+        >
+          <LoadingPanel
+            message={label === "Authenticating…" ? "로그인 정보를 확인하고 있어요…" : undefined}
+            minHeight={0}
+          />
+        </div>
       </div>
     </div>
   );
 
   // 1) Hydration 가드 (항상 첫 단계): SSR 첫 페인트와 일치시키기 위해 투명 reserve.
+  //    레이아웃 박스는 skeleton/실카드와 동일한 shell 구조 — 너비 점프 방지.
   if (!isMounted) {
     return (
       <div className="home-two-sidebar-col">
-        <div
-          style={{
-            width: "489px",
-            height: "1001px",
-            backgroundColor: "transparent",
-            borderRadius: "12px",
-          }}
-        />
+        <div className="sidebar-card-shell" style={reservedShellStyle} />
       </div>
     );
   }
@@ -2324,11 +2354,9 @@ const Sidebar = () => {
         style={{
           // transform scale은 레이아웃 크기를 바꾸지 않기 때문에,
           // 확대(>1) 시에는 wrapper의 레이아웃 폭도 함께 늘려 "잘림"을 방지한다.
-          width: isMobileView ? "100%" : `${Math.round(497 * cardScale)}px`,
-          height: isMobileView ? "auto" : `${Math.round(875 * cardScale)}px`,
-          overflow: "visible",
-          display: isMobileView ? "block" : "flex",
-          justifyContent: isMobileView ? undefined : "center",
+          // 크기는 skeleton/placeholder 와 공유하는 reservedShellStyle(--resume-shell-*)
+          // 를 그대로 사용 — 로딩 중↔데이터 렌더 후 카드 영역 너비가 정의상 동일.
+          ...reservedShellStyle,
         }}
       >
         <div

@@ -61,7 +61,17 @@ export default function ClusterLayout({
       }}>
         {/* 사이드바 — CSS sticky (_responsive.scss .sidebar-sticky-wrapper) */}
         <div className="sidebar-sticky-wrapper" style={{ flexShrink: 0, zIndex: 100 }}>
-          <Suspense fallback={null}>
+          {/* fallback=null 이면 suspension 동안 사이드바 칼럼이 0px 로 붕괴 →
+              본문이 좌측으로 당겨졌다가 카드 마운트 시 밀려나는 layout shift.
+              카드 shell 과 동일한 --resume-shell-width 만큼 너비를 예약한다. */}
+          <Suspense
+            fallback={
+              <div
+                aria-hidden
+                style={{ width: "var(--resume-shell-width, 583px)", minHeight: "1px" }}
+              />
+            }
+          >
             <Sidebar />
           </Suspense>
         </div>
