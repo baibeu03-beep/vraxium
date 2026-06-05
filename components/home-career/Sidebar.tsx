@@ -16,12 +16,18 @@ import { useModalScroll } from "@/utils/useModalScroll";
 import { usePopup } from "@/components/ui/popup";
 import { logEvent } from "@/utils/blackScreenDiagnostics";
 import koreaRegionsData from "@/data/korea-regions.json";
-import { isPxRoute, isEcRoute, getThemeClass, withPxRoute, ORGANIZATION_CONFIG, type Organization } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, getThemeClass, withPxRoute, getOrgConfigFromPathname, getOrgMascotSrc } from "@/lib/cluster-route";
 import { LoadingPanel } from "@/components/ui/loading/LoadingPanel";
 import { progressStatusToSeasonKey, RESUME_SEASON_BADGE_TEXT, type SeasonStatusKey } from "@/lib/cluster4-status-label";
 
 const koreaRegions: { [key: string]: string[] } = koreaRegionsData;
 const DEFAULT_PHONE_COMMENT = "평일 오전 10시 ~ 오후 20시 사이에 언제든지 연락가능합니다. 주말은 문자나 텍스트로만 부탁드려요! 😊";
+
+// hexagon 아이콘 링크 기본값 — admin resumeCardSettings 미설정 시 fallback.
+// 사용자 전환 reset 과 useState 초기값 두 곳에서 공용(값 표류 방지).
+const DEFAULT_ICON_LINK_1 = "https://www.google.com/";
+const DEFAULT_ICON_LINK_2 = "https://youtu.be/xf6q5dgn1hU?si=tNK3I1-QIsJ9JmvF";
+const DEFAULT_ICON_LINK_3 = "https://www.naver.com/";
 
 // 메달 뱃지 crewStatus 타입/매핑 — 캐시 init·fetch 두 경로 공용 단일 정의.
 type CrewStatus = "Running" | "Complete" | "On Rest" | "Recharging" | "Next Challenge";
@@ -844,13 +850,19 @@ const Sidebar = () => {
     setHasActivityData(false);
     setApprovedWeeksCount(null);
     setCrewStatus("Running");
+    // resume-card admin settings 도 대상별 값 — 리셋하지 않으면 이전 사용자(타 조직)의
+    // medalWeekOverride/notice/hexagon 링크가 새 사용자 카드에 잔존한다.
+    setResumeCardSettings(null);
+    setIconLink1(DEFAULT_ICON_LINK_1);
+    setIconLink2(DEFAULT_ICON_LINK_2);
+    setIconLink3(DEFAULT_ICON_LINK_3);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetUserId, demoMode]);
 
   // 아이콘 링크 state — admin resumeCardSettings 가 있으면 마운트 후 덮어씌움
-  const [iconLink1, setIconLink1] = useState("https://www.google.com/");
-  const [iconLink2, setIconLink2] = useState("https://youtu.be/xf6q5dgn1hU?si=tNK3I1-QIsJ9JmvF");
-  const [iconLink3, setIconLink3] = useState("https://www.naver.com/");
+  const [iconLink1, setIconLink1] = useState(DEFAULT_ICON_LINK_1);
+  const [iconLink2, setIconLink2] = useState(DEFAULT_ICON_LINK_2);
+  const [iconLink3, setIconLink3] = useState(DEFAULT_ICON_LINK_3);
   const [iconLinkErrors, setIconLinkErrors] = useState({ link1: "", link2: "", link3: "" });
 
   // resume-card admin settings (3-tier merge: user > org > site, /api/profile 응답).
@@ -1044,12 +1056,16 @@ const Sidebar = () => {
   const [showSearchTooltip, setShowSearchTooltip] = useState(false);
   const [isDebugPanelOpen, setIsDebugPanelOpen] = useState(false);
   const [debugProfileType, setDebugProfileType] = useState<"본인" | "타크루">("본인");
-  const [debugPanelType, setDebugPanelType] = useState<"OK" | "EC" | "PX">("OK");
   // 라우트 기반 자동 theme — 판정은 lib/cluster-route 로 일원화한다.
   // isPxRoute/isEcRoute 는 canonical(-planning/-entertainment) 과 legacy(-px/-ec)
   // 를 모두 인식하므로 어느 표기로 진입해도 일관된 톤이 적용된다. marketing(기본)
   // 으로 이동하면 "OK" 로 리셋되어 이전 조직 톤이 잔류하지 않는다.
-  // 결과: .resume-card 의 medal 이미지/hexagon 아이콘이 현재 조직과 항상 일치.
+  // 초기값도 pathname 에서 lazy init — 첫 프레임에 "OK"(타 조직 톤/아이콘)가
+  // 그려졌다가 effect 후 바뀌는 플래시를 차단한다.
+  // 결과: .resume-card 의 hexagon/디테일 아이콘·테마 클래스가 현재 조직과 항상 일치.
+  const [debugPanelType, setDebugPanelType] = useState<"OK" | "EC" | "PX">(() =>
+    isPxRoute(pathname) ? "PX" : isEcRoute(pathname) ? "EC" : "OK",
+  );
   useEffect(() => {
     if (!pathname) return;
     if (isPxRoute(pathname)) setDebugPanelType("PX");
@@ -2817,12 +2833,12 @@ const Sidebar = () => {
             <div className={`resume-medal ${crewStatus === "Complete" ? "no-overlay" : ""}`}>
               <div className="medal-image-wrapper">
                 {(() => {
-                  // medalTheme admin override → 기존 debugPanelType fallback.
-                  // 메달 파일명은 ORGANIZATION_CONFIG 단일 정의소에서 가져온다.
-                  const themeCode = resumeCardSettings?.medalTheme || debugPanelType;
-                  const orgKey: Organization =
-                    themeCode === "PX" ? "planning" : themeCode === "EC" ? "entertainment" : "marketing";
-                  const medalSrc = `/images/0/cluster 1/${ORGANIZATION_CONFIG[orgKey].medalFile}`;
+                  // 마스코트(금장)는 현재 분기(라우트 org)만으로 결정 — SoT: getOrgMascotSrc.
+                  // resumeCardSettings.medalTheme(org settings 의 자기 org 코드 미러)은 이미지
+                  // 결정에서 제외한다: 프로필 DTO·stale state 경유로 라우트와 다른 조직
+                  // 마스코트(예: planning 분기에 EC 사슴)가 그래프트되던 채널.
+                  // (medalWeekOverride 등 나머지 settings 는 계속 사용.)
+                  const medalSrc = getOrgMascotSrc(getOrgConfigFromPathname(pathname).organization);
                   return <Image src={medalSrc} alt="Medal" width={512} height={512} />;
                 })()}
                 <span className="medal-week-num">{resumeCardSettings?.medalWeekOverride ?? (demoMode ? 12 : (approvedWeeksCount ?? 0))}</span>

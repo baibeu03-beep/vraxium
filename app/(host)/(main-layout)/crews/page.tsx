@@ -7,7 +7,7 @@ import Breadcrumb from "@/components/shared/Breadcrumb";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { DEMO_CREW_MEMBERS } from "@/constants/dummyData";
-import { getOrgClusterRouteBase, getOrgConfigForSlug } from "@/lib/cluster-route";
+import { getOrgClusterRouteBase, getOrgConfigForSlug, getOrgMascotSrc } from "@/lib/cluster-route";
 import { getOrgAlias } from "@/utils/orgLabelAlias";
 import { appendDemoQuery } from "@/lib/appendDemoQuery";
 
@@ -645,14 +645,9 @@ function CrewsContent() {
                     justifyContent: 'center',
                     minHeight: 'calc(100vh - 200px)',
                   }}>
+                    {/* 마스코트 결정은 공용 SoT(getOrgMascotSrc) 경유 — ?org= slug 만으로 결정. */}
                     <img
-                      src={
-                        org === "phalanx"
-                          ? "/images/0/금장_PX.png"
-                          : org === "encre"
-                          ? "/images/0/금장_EC.png"
-                          : "/images/0/금장_OK.png"
-                      }
+                      src={getOrgMascotSrc(getOrgConfigForSlug(org).organization, "root")}
                       alt="로딩 중"
                       style={{
                         width: '120px',

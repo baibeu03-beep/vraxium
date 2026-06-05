@@ -2,7 +2,7 @@
 
 import React from "react";
 import { usePathname } from "next/navigation";
-import { getOrgConfigFromPathname } from "@/lib/cluster-route";
+import { getOrgConfigFromPathname, getOrgMascotSrc } from "@/lib/cluster-route";
 
 export type LoadingPanelProps = {
   /** 로딩 문구. 미지정 시 기본 문구. */
@@ -29,8 +29,8 @@ export function LoadingPanel({
   style,
 }: LoadingPanelProps) {
   const pathname = usePathname();
-  const orgConfig = getOrgConfigFromPathname(pathname);
-  const mascotSrc = `/images/0/${orgConfig.medalFile}`;
+  // 마스코트 결정은 공용 SoT(getOrgMascotSrc) 경유 — 라우트 org 만으로 결정.
+  const mascotSrc = getOrgMascotSrc(getOrgConfigFromPathname(pathname).organization, "root");
 
   return (
     <div

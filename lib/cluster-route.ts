@@ -509,3 +509,23 @@ export function getOrgConfigForSlug(
   const org = (slug && SLUG_TO_ORGANIZATION[slug]) || "marketing";
   return ORGANIZATION_CONFIG[org];
 }
+
+/**
+ * 조직 마스코트(금장 메달) 이미지 src — 전 화면 공용 SoT.
+ *
+ * org→파일 매핑은 ORGANIZATION_CONFIG.medalFile 단일 정의만 사용한다
+ * (marketing=금장_OK 호랑이 / entertainment=금장_EC 사슴 / planning=금장_PX 고슴도치).
+ * 동일 아트워크가 두 해상도 디렉터리에 존재하므로 base 만 호출부가 선택한다:
+ *   - "cluster1": /images/0/cluster 1/ — resume-card 메달(512px)
+ *   - "root":     /images/0/           — 로딩/리스트 마스코트
+ *
+ * 규칙: 마스코트는 인자로 받은 org 식별자만으로 결정한다. 다른 조직 파일을
+ * fallback/default/loading 값으로 쓰지 않는다 — 조직 간 이미지 혼입 금지.
+ */
+export function getOrgMascotSrc(
+  org: Organization,
+  base: "root" | "cluster1" = "cluster1",
+): string {
+  const dir = base === "root" ? "/images/0/" : "/images/0/cluster 1/";
+  return `${dir}${ORGANIZATION_CONFIG[org].medalFile}`;
+}
