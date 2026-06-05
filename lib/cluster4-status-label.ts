@@ -79,8 +79,12 @@ export function progressStatusToSeasonKey(raw: string | null | undefined): Seaso
 }
 
 // weekly-growth SeasonSummaryDto({status, seasonResult}) → 판정 key.
-// status: "active" | "ended" | "rest" / seasonResult(ended 한정): "success" | "failed" | 기타.
+// status: "active" | "ended" | "rest" / seasonResult: "success" | "failed" | "graduated" | 기타.
 export function seasonSummaryToSeasonKey(s: { status?: string | null; seasonResult?: string | null }): SeasonStatusKey {
+  // 시즌 중 졸업 (2026-06-05 신규 5종째) — status(active/ended)와 무관하게 최우선.
+  // 그 시즌 도중 졸업했다는 사실은 시즌 종료 후에도 변하지 않으므로 해당 시즌 카드에
+  // 영구 유지한다 (종료 시 "시즌 성공"으로 fold 금지 — 기획 확정).
+  if (s.seasonResult === "graduated") return "graduated";
   if (s.status === "rest") return "rest";
   if (s.status === "ended") {
     if (s.seasonResult === "success") return "success";
@@ -91,13 +95,15 @@ export function seasonSummaryToSeasonKey(s: { status?: string | null; seasonResu
 }
 
 // ── 표면별 라벨 테이블 ──────────────────────────────────────────────────────
-// cluster4 / cluster4-1 시즌 상태 배지 — 풀네임 4종 + 정상 졸업.
+// cluster4 / cluster4-1 시즌 상태 배지 — 풀네임 5종 (2026-06-05 "시즌 중 졸업" 추가).
+// graduated = 해당 시즌이 끝나기 전 졸업 조건을 충족해 졸업한 시즌 — 시즌 종료 후에도 유지.
+// (이력서 카드 뱃지는 아래 RESUME_SEASON_BADGE_TEXT 별도 — "정상 졸업" 표기 불변.)
 export const SEASON_STATUS_TEXT: Record<SeasonStatusKey, string> = {
   in_progress: "시즌 진행 중",
   success: "시즌 성공",
   stopped: "시즌 중단",
   rest: "시즌 휴식",
-  graduated: "정상 졸업",
+  graduated: "시즌 중 졸업",
 };
 
 // 이력서 카드 시즌 이력 뱃지 — 확정 5종(2026-06-05, 60px 고정폭 제약).

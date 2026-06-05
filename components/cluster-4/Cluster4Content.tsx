@@ -1718,7 +1718,7 @@ const Cluster4Content = () => {
     displayTitle: string;
     dateRangeLabel: string | null;
     status: string; // "active" | "ended" | "rest"
-    seasonResult?: string; // "success" | "failed" | "none"
+    seasonResult?: string; // "success" | "failed" | "none" | "graduated"(시즌 중 졸업 — 종료 후에도 유지)
     statusLabel: string;
     startDate: string | null;
     endDate: string | null;
@@ -1741,7 +1741,7 @@ const Cluster4Content = () => {
   const [seasonActivityStatuses, setSeasonActivityStatuses] = useState<SeasonActivityStatusDto[]>([]);
 
   // status-badge 텍스트 — 판정은 공용 seasonSummaryToSeasonKey(lib/cluster4-status-label),
-  // 문구는 SEASON_STATUS_TEXT 4종(시즌 진행 중/시즌 성공/시즌 중단/시즌 휴식)만 노출.
+  // 문구는 SEASON_STATUS_TEXT 5종(시즌 진행 중/시즌 성공/시즌 중단/시즌 휴식/시즌 중 졸업)만 노출.
   // ("진행중/종료/예정" 표기 금지 — 이력서 카드/cluster4-1 과 같은 판정 함수 공유)
   const seasonStatusText = (s: SeasonSummaryDto | null): string =>
     s ? SEASON_STATUS_TEXT[seasonSummaryToSeasonKey(s)] : "-";
@@ -1787,6 +1787,19 @@ const Cluster4Content = () => {
     ? `${formatSeasonDate(selectedSeasonSummary.startDate)} - ${formatSeasonDate(selectedSeasonSummary.endDate)}`
     : (selectedSeasonSummary?.dateRangeLabel || "-");
 
+  // ── 시즌 휴식 카드 void 모드 (2026-06-05 표시 규칙) ──────────────────────────
+  // 휴식 시즌 = "데이터가 없는 시즌"이 아니라 "해당 시즌 전체를 휴식한 시즌".
+  // 판정은 상태 배지와 동일한 공용 함수(seasonSummaryToSeasonKey === "rest") — DTO
+  // status 기반 변환만 하므로 배지가 "시즌 휴식"이면 카드도 반드시 void (표면 간 충돌 불가).
+  // void 모드: 영역1(시즌명/기간/상태 배지)만 유지, 나머지 인덱스(영역2·4~9)는 전부 "-".
+  // "-" 는 해당 시즌에 활동 자체가 없었음을 의미 — 실데이터 0 과 구분(0/0%/0개 합성 금지).
+  const isVoidSeason =
+    !!selectedSeasonSummary && seasonSummaryToSeasonKey(selectedSeasonSummary) === "rest";
+  // void 표시 헬퍼 — 수치는 "-", 게이지(원형/바)는 0 으로 비운다. 레이아웃/마크업은 그대로.
+  const voidNum = (n: number | string): number | string => (isVoidSeason ? "-" : n);
+  const voidPct = (n: number): string => (isVoidSeason ? "-" : `${n}%`);
+  const voidFill = (n: number): number => (isVoidSeason ? 0 : n);
+
   // 현재 선택된 시즌 데이터 (데모 모드 → seasonHistories 페이지네이션 우선, 없으면 기본 데이터)
   const currentSeason: SeasonHistoryData = isDemoMode
     ? seasonHistories.length > 0
@@ -1796,6 +1809,18 @@ const Cluster4Content = () => {
       ? seasonHistories[section3Page] || seasonHistories[0]
       : (defaultSeasonData as SeasonHistoryData);
 
+  // 영역 2 Qualified — 휴식 시즌은 시즌 내 활동 자체가 없으므로 전부 UnQualified(inactive) 처리.
+  const isQualifiedView = !isVoidSeason && currentSeason.isQualified;
+  // 영역 5 평점 — 휴식 시즌은 별 0개 + "- / 10" (실평점 0 과 구분).
+  const seasonRatingView = isVoidSeason ? 0 : currentSeason.rating;
+  // 영역 9 시즌 평판 — 휴식 시즌은 수신 평판을 노출하지 않고 기본값 형태(대기 슬롯 7개)만 표시.
+  const displaySeasonReputationsView = isVoidSeason
+    ? Array.from({ length: SEASON_REPUTATION_SLOT_COUNT }, (_, index) => ({
+        id: `season-reputation-void-${index}`,
+        isEmpty: true,
+      }))
+    : displaySeasonReputations;
+
   // area-8-season-status 표시 소스 — 우선순위:
   //   1) 백엔드 seasonActivityStatuses(DTO) — 현재 weekly-growth 라우트는 미제공이라 보통 비어 있음.
   //   2) currentSeason.seasonRoles 패스스루 — 로컬 더미(isDemoMode) 및 역할이력이 채워진 경우.
@@ -1803,6 +1828,8 @@ const Cluster4Content = () => {
   //   4) 빈 배열 → placeholder.
   // (프론트에서 역할/팀/파트를 재계산하지 않는다. profile fallback 은 이미 존재하는 team/part/membership 값을 표시만.)
   const seasonActivityStatusItems: SeasonActivityStatusDto[] = (() => {
+    // 0) 휴식 시즌 void 모드 — 활동 이력 자체가 없는 시즌이므로 빈 배열 → placeholder 3줄.
+    if (isVoidSeason) return [];
     // 1) 백엔드 DTO
     if (seasonActivityStatuses.length > 0) return seasonActivityStatuses;
     // 2) seasonRoles 패스스루(이미 계산된 값 → DTO 모양 rename)
@@ -3595,25 +3622,25 @@ const Cluster4Content = () => {
             <div className={`area-2-qualified ${isTextFading ? "fading" : ""}`}>
               <span className="qualified-text">Qualified</span>
               <div className="qualified-items">
-                <div className={`item-group ${currentSeason.isQualified ? "" : "inactive"}`}>
+                <div className={`item-group ${isQualifiedView ? "" : "inactive"}`}>
                   <span className="item">Part</span>
                   <img src="/images/0/cluster4/icon/icon - part.png" alt="Part" className="qualified-icon" />
-                  <div className={`tooltip ${currentSeason.isQualified ? "" : "unqualified"}`}>{currentSeason.isQualified ? <img src="/images/0/cluster4/sign 1.png" alt="Part tooltip" /> : <span className="unqualified-text">UnQualified</span>}</div>
+                  <div className={`tooltip ${isQualifiedView ? "" : "unqualified"}`}>{isQualifiedView ? <img src="/images/0/cluster4/sign 1.png" alt="Part tooltip" /> : <span className="unqualified-text">UnQualified</span>}</div>
                 </div>
-                <div className={`item-group ${currentSeason.isQualified ? "" : "inactive"}`}>
+                <div className={`item-group ${isQualifiedView ? "" : "inactive"}`}>
                   <span className="item">Team</span>
                   <img src="/images/0/cluster4/icon/icon - team.png" alt="Team" className="qualified-icon" />
-                  <div className={`tooltip ${currentSeason.isQualified ? "" : "unqualified"}`}>{currentSeason.isQualified ? <img src="/images/0/cluster4/sign 2.png" alt="Team tooltip" /> : <span className="unqualified-text">UnQualified</span>}</div>
+                  <div className={`tooltip ${isQualifiedView ? "" : "unqualified"}`}>{isQualifiedView ? <img src="/images/0/cluster4/sign 2.png" alt="Team tooltip" /> : <span className="unqualified-text">UnQualified</span>}</div>
                 </div>
-                <div className={`item-group ${currentSeason.isQualified ? "" : "inactive"}`}>
+                <div className={`item-group ${isQualifiedView ? "" : "inactive"}`}>
                   <span className="item">Cluv</span>
                   <img src="/images/0/cluster4/icon/icon - cluv.png" alt="Cluv" className="qualified-icon" />
-                  <div className={`tooltip ${currentSeason.isQualified ? "" : "unqualified"}`}>{currentSeason.isQualified ? <img src="/images/0/cluster4/sign 3.png" alt="Cluv tooltip" /> : <span className="unqualified-text">UnQualified</span>}</div>
+                  <div className={`tooltip ${isQualifiedView ? "" : "unqualified"}`}>{isQualifiedView ? <img src="/images/0/cluster4/sign 3.png" alt="Cluv tooltip" /> : <span className="unqualified-text">UnQualified</span>}</div>
                 </div>
-                <div className={`item-group ${currentSeason.isQualified ? "" : "inactive"}`}>
+                <div className={`item-group ${isQualifiedView ? "" : "inactive"}`}>
                   <span className="item">Supervise</span>
                   <img src="/images/0/cluster4/icon/icon - supervise.png" alt="Supervise" className="qualified-icon" />
-                  <div className={`tooltip ${currentSeason.isQualified ? "" : "unqualified"}`}>{currentSeason.isQualified ? <img src="/images/0/cluster4/sign 4.png" alt="Supervise tooltip" /> : <span className="unqualified-text">UnQualified</span>}</div>
+                  <div className={`tooltip ${isQualifiedView ? "" : "unqualified"}`}>{isQualifiedView ? <img src="/images/0/cluster4/sign 4.png" alt="Supervise tooltip" /> : <span className="unqualified-text">UnQualified</span>}</div>
                 </div>
               </div>
             </div>
@@ -3681,8 +3708,8 @@ const Cluster4Content = () => {
                         <img src={defaultSrcMap[name]} alt={name} className="stat-icon" />
                       )}{" "}
                       {/* 포인트 표시 정책(2026-06-04): 서버 표시 최종값 그대로 렌더 —
-                          방패=net(음수 가능), 번개=−n. Math.abs 가공 금지. */}
-                      <strong className="number">{valueMap[name]}</strong>
+                          방패=net(음수 가능), 번개=−n. Math.abs 가공 금지. 휴식 시즌은 "-". */}
+                      <strong className="number">{voidNum(valueMap[name])}</strong>
                       <span className="unit">개</span>
                     </span>
                   );
@@ -3703,8 +3730,8 @@ const Cluster4Content = () => {
                       {[1, 2, 3, 4, 5].map((star) => {
                         const fullValue = star * 2;
                         const halfValue = star * 2 - 1;
-                        const isFull = currentSeason.rating >= fullValue;
-                        const isHalf = !isFull && currentSeason.rating >= halfValue;
+                        const isFull = seasonRatingView >= fullValue;
+                        const isHalf = !isFull && seasonRatingView >= halfValue;
                         if (isHalf) {
                           return (
                             <span key={star} className="star-icon star-half" style={{ position: "relative", display: "inline-block" }}>
@@ -3715,7 +3742,7 @@ const Cluster4Content = () => {
                         }
                         return <img key={star} className={`star-icon ${isFull ? "" : "empty"}`} src={isFull ? "/images/0/cluster4/icon - star.png" : "/images/0/cluster4/icon - empty star.png"} alt="star" />;
                       })}
-                      <span className="rating-text">{currentSeason.rating || 0} / 10</span>
+                      <span className="rating-text">{isVoidSeason ? "-" : (currentSeason.rating || 0)} / 10</span>
                     </div>
                     <div className="review-label-group">
                       <span
@@ -3742,6 +3769,7 @@ const Cluster4Content = () => {
                   </div>
                   <p className="review-comment">
                     {(() => {
+                      if (isVoidSeason) return "-"; // 휴식 시즌 — 리뷰 void
                       const r = currentSeason.review || REVIEW_COMMENT_DEFAULT;
                       return r.length > 24 ? r.slice(0, 24) + "..." : r;
                     })()}
@@ -3755,10 +3783,10 @@ const Cluster4Content = () => {
                 <div className="circle-item">
                   <div className="label-sub">
                     <div>
-                      총 <span className="num-fixed">{circlesView.availableWeeks}</span>주 중
+                      총 <span className="num-fixed">{voidNum(circlesView.availableWeeks)}</span>주 중
                     </div>
                     <div>
-                      <span className="highlight">{circlesView.approvedWeeks}</span>주
+                      <span className="highlight">{voidNum(circlesView.approvedWeeks)}</span>주
                     </div>
                   </div>
                   <div className="circle-wrapper">
@@ -3766,9 +3794,9 @@ const Cluster4Content = () => {
                     <div className="circle pink">
                       <svg viewBox="0 0 100 100">
                         <circle className="bg" cx="50" cy="50" r="40" />
-                        <circle className="fill" cx="50" cy="50" r="40" strokeDasharray="251.2" strokeDashoffset={251.2 * (1 - circlesView.weekUsage / 100)} />
+                        <circle className="fill" cx="50" cy="50" r="40" strokeDasharray="251.2" strokeDashoffset={251.2 * (1 - voidFill(circlesView.weekUsage) / 100)} />
                       </svg>
-                      <div className="percent">{circlesView.weekUsage}%</div>
+                      <div className="percent">{voidPct(circlesView.weekUsage)}</div>
                     </div>
                   </div>
                   <div className="label-main">주차 활용도</div>
@@ -3776,10 +3804,10 @@ const Cluster4Content = () => {
                 <div className="circle-item">
                   <div className="label-sub">
                     <div>
-                      총 <span className="num-fixed">{circlesView.availableWeeks}</span>주 중
+                      총 <span className="num-fixed">{voidNum(circlesView.availableWeeks)}</span>주 중
                     </div>
                     <div>
-                      <span className="highlight">{circlesView.reliableWeeks}</span>주
+                      <span className="highlight">{voidNum(circlesView.reliableWeeks)}</span>주
                     </div>
                   </div>
                   <div className="circle-wrapper">
@@ -3787,9 +3815,9 @@ const Cluster4Content = () => {
                     <div className="circle yellow">
                       <svg viewBox="0 0 100 100">
                         <circle className="bg" cx="50" cy="50" r="40" />
-                        <circle className="fill" cx="50" cy="50" r="40" strokeDasharray="251.2" strokeDashoffset={251.2 * (1 - circlesView.scheduleReliability / 100)} />
+                        <circle className="fill" cx="50" cy="50" r="40" strokeDasharray="251.2" strokeDashoffset={251.2 * (1 - voidFill(circlesView.scheduleReliability) / 100)} />
                       </svg>
-                      <div className="percent">{circlesView.scheduleReliability}%</div>
+                      <div className="percent">{voidPct(circlesView.scheduleReliability)}</div>
                     </div>
                   </div>
                   <div className="label-main">일정 신뢰도</div>
@@ -3797,10 +3825,10 @@ const Cluster4Content = () => {
                 <div className="circle-item">
                   <div className="label-sub">
                     <div>
-                      총 <span className="num-fixed">{circlesView.availableLines}</span>개 중
+                      총 <span className="num-fixed">{voidNum(circlesView.availableLines)}</span>개 중
                     </div>
                     <div>
-                      <span className="highlight">{circlesView.completedLines}</span>개
+                      <span className="highlight">{voidNum(circlesView.completedLines)}</span>개
                     </div>
                   </div>
                   <div className="circle-wrapper">
@@ -3808,9 +3836,9 @@ const Cluster4Content = () => {
                     <div className="circle green">
                       <svg viewBox="0 0 100 100">
                         <circle className="bg" cx="50" cy="50" r="40" />
-                        <circle className="fill" cx="50" cy="50" r="40" strokeDasharray="251.2" strokeDashoffset={251.2 * (1 - circlesView.seasonGrowth / 100)} />
+                        <circle className="fill" cx="50" cy="50" r="40" strokeDasharray="251.2" strokeDashoffset={251.2 * (1 - voidFill(circlesView.seasonGrowth) / 100)} />
                       </svg>
-                      <div className="percent">{circlesView.seasonGrowth}%</div>
+                      <div className="percent">{voidPct(circlesView.seasonGrowth)}</div>
                     </div>
                   </div>
                   <div className="label-main">시즌 성장률</div>
@@ -3822,53 +3850,53 @@ const Cluster4Content = () => {
                 <div className="progress-item">
                   <div className="progress-header">
                     <span className="name">
-                      <img src="/images/0/cluster4/icon/1 실무 정보.png" alt="1" className="progress-icon" /> 실무 <span style={{ color: "#FF9B9B" }}>정보</span> 강화율 <span className="rate-number">{progressView.info.rate}</span>%
+                      <img src="/images/0/cluster4/icon/1 실무 정보.png" alt="1" className="progress-icon" /> 실무 <span style={{ color: "#FF9B9B" }}>정보</span> 강화율 <span className="rate-number">{voidNum(progressView.info.rate)}</span>{!isVoidSeason && "%"}
                     </span>
                     <span className="value">
-                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{progressView.info.total}</span> 개 중 <span className="highlight">{progressView.info.completed}</span> 개
+                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{voidNum(progressView.info.total)}</span> 개 중 <span className="highlight">{voidNum(progressView.info.completed)}</span> 개
                     </span>
                   </div>
                   <div className="bar">
-                    <div className="fill yellow" style={{ width: `${progressView.info.rate}%` }}></div>
+                    <div className="fill yellow" style={{ width: `${voidFill(progressView.info.rate)}%` }}></div>
                   </div>
                 </div>
                 <div className="progress-item">
                   <div className="progress-header">
                     <span className="name">
-                      <img src="/images/0/cluster4/icon/2 실무 경험.png" alt="2" className="progress-icon" /> 실무 <span style={{ color: "#FFD09B" }}>경험</span> 강화율 <span className="rate-number">{progressView.experience.rate}</span>%
+                      <img src="/images/0/cluster4/icon/2 실무 경험.png" alt="2" className="progress-icon" /> 실무 <span style={{ color: "#FFD09B" }}>경험</span> 강화율 <span className="rate-number">{voidNum(progressView.experience.rate)}</span>{!isVoidSeason && "%"}
                     </span>
                     <span className="value">
-                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{progressView.experience.total}</span> 개 중 <span className="highlight">{progressView.experience.completed}</span> 개
+                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{voidNum(progressView.experience.total)}</span> 개 중 <span className="highlight">{voidNum(progressView.experience.completed)}</span> 개
                     </span>
                   </div>
                   <div className="bar">
-                    <div className="fill yellow" style={{ width: `${progressView.experience.rate}%` }}></div>
+                    <div className="fill yellow" style={{ width: `${voidFill(progressView.experience.rate)}%` }}></div>
                   </div>
                 </div>
                 <div className="progress-item">
                   <div className="progress-header">
                     <span className="name">
-                      <img src="/images/0/cluster4/icon/3 실무 역량.png" alt="3" className="progress-icon" /> 실무 <span style={{ color: "#A8D8A8" }}>역량</span> 강화율 <span className="rate-number">{progressView.competency.rate}</span>%
+                      <img src="/images/0/cluster4/icon/3 실무 역량.png" alt="3" className="progress-icon" /> 실무 <span style={{ color: "#A8D8A8" }}>역량</span> 강화율 <span className="rate-number">{voidNum(progressView.competency.rate)}</span>{!isVoidSeason && "%"}
                     </span>
                     <span className="value">
-                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{progressView.competency.total}</span> 개 중 <span className="highlight">{progressView.competency.completed}</span> 개
+                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{voidNum(progressView.competency.total)}</span> 개 중 <span className="highlight">{voidNum(progressView.competency.completed)}</span> 개
                     </span>
                   </div>
                   <div className="bar">
-                    <div className="fill yellow" style={{ width: `${progressView.competency.rate}%` }}></div>
+                    <div className="fill yellow" style={{ width: `${voidFill(progressView.competency.rate)}%` }}></div>
                   </div>
                 </div>
                 <div className="progress-item">
                   <div className="progress-header">
                     <span className="name">
-                      <img src="/images/0/cluster4/icon/4 실무 경력.png" alt="4" className="progress-icon" /> 실무 <span style={{ color: "#9BB8FF" }}>경력</span> 강화율 <span className="rate-number">{progressView.career.rate}</span>%
+                      <img src="/images/0/cluster4/icon/4 실무 경력.png" alt="4" className="progress-icon" /> 실무 <span style={{ color: "#9BB8FF" }}>경력</span> 강화율 <span className="rate-number">{voidNum(progressView.career.rate)}</span>{!isVoidSeason && "%"}
                     </span>
                     <span className="value">
-                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{progressView.career.total}</span> 개 중 <span className="highlight">{progressView.career.completed}</span> 개
+                      <img src="/images/0/cluster4/icon/stars.png" alt="stars" className="stars-icon" /> 총 <span className="num-fixed">{voidNum(progressView.career.total)}</span> 개 중 <span className="highlight">{voidNum(progressView.career.completed)}</span> 개
                     </span>
                   </div>
                   <div className="bar">
-                    <div className="fill yellow" style={{ width: `${progressView.career.rate}%` }}></div>
+                    <div className="fill yellow" style={{ width: `${voidFill(progressView.career.rate)}%` }}></div>
                   </div>
                 </div>
               </div>
@@ -3881,7 +3909,7 @@ const Cluster4Content = () => {
                 <h4 className="section-title">
                   <img className="section-icon" src="/images/0/cluster4/icon - 시즌 상태.png" alt="시즌 상태" /> 시즌 상태{" "}
                   <span className="count-label">
-                    <span className="num-fixed">{seasonActivityStatusItems.length}</span>개
+                    <span className="num-fixed">{voidNum(seasonActivityStatusItems.length)}</span>개
                   </span>
                 </h4>
                 <div style={{ position: "relative" }}>
@@ -3962,12 +3990,12 @@ const Cluster4Content = () => {
                   <img className="section-icon" src="/images/0/cluster4/icon - 시즌 평판.png" alt="시즌 평판" />
                   <span className="section-label">시즌 평판</span>
                   <span className="section-count">
-                    <span className="count-num">{seasonReputations.length}</span>/7
+                    <span className="count-num">{voidNum(seasonReputations.length)}</span>/7
                   </span>
                   <span className="fm-badge">
                     <img src="/images/0/cluster4/wifi new.png" alt="wifi" className="wifi-icon" />
                     <span className="fm-label">FM :</span>
-                    <span className="fm-value">{(seasonReputations || []).reduce((sum: number, r: any) => sum + (r?.rating ?? 0) * 3, 0)}</span>
+                    <span className="fm-value">{voidNum((seasonReputations || []).reduce((sum: number, r: any) => sum + (r?.rating ?? 0) * 3, 0))}</span>
                   </span>
                   <div
                     className="edit-icon"
@@ -3998,7 +4026,7 @@ const Cluster4Content = () => {
                 </div>
                 <div style={{ position: "relative" }}>
                   <div ref={profileCardsRef} className="profile-cards season-reputation-list" onScroll={updateScrollbar9}>
-                    {displaySeasonReputations.map((reputation: any) => {
+                    {displaySeasonReputationsView.map((reputation: any) => {
                       if (reputation.isEmpty) {
                         return (
                           <div className="profile-card season-reputation-waiting" key={reputation.id}>

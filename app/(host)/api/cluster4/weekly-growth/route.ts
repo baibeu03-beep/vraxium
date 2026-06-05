@@ -39,6 +39,7 @@ async function buildSeasonSummaryAndPoints(
   today: string,
   growthStatus: string | null,
   userStatus: string | null,
+  resumeStatusByKey: Map<string, string>,
 ): Promise<{ seasonSummary: any | null; seasonPointSummary: { star: number; shield: number; lightning: number } | null }> {
   if (!currentWeek) return { seasonSummary: null, seasonPointSummary: null };
 
@@ -90,11 +91,14 @@ async function buildSeasonSummaryAndPoints(
   const fmt = (d: string | null) => (d ? String(d).replace(/-/g, ".") : null);
   const dateRangeLabel = startDate && endDate ? `${fmt(startDate)} - ${fmt(endDate)}` : null;
 
-  // ── 시즌 상태 (4종만 노출) ──
-  // status: "active" | "ended" | "rest", seasonResult: "success" | "failed" | "none".
-  // 진행 중인 시즌은 성장 상태(graduated/graduating)와 무관하게 "시즌 진행 중"이다.
+  // ── 시즌 상태 (5종 노출 — 2026-06-05 "시즌 중 졸업" 추가) ──
+  // status: "active" | "ended" | "rest", seasonResult: "success" | "failed" | "none" | "graduated".
+  // 진행 중인 시즌은 성장 상태(graduating)와 무관하게 "시즌 진행 중"이다.
   // (종전에는 graduated/graduating 이면 진행 중 시즌도 "시즌 성공"으로 떠서 성장 상태와
   //  시즌 상태가 합성되는 버그가 있었다 — 2026-06-05 분리. 중단/휴식 판별만 성장 상태 사용.)
+  // 단 "시즌 중 졸업"은 예외 — deriveSeasonStatus 와 동일 최우선 판정(이력서 SoT
+  // "정상 졸업", graft 실패 시에만 growth_status=graduated 폴백)을 활성 시즌 단일
+  // 요약에도 적용한다 (seasonSummaries 와 data.seasonSummary 가 갈리면 안 됨).
   const gs = String(growthStatus || "").toLowerCase();
   const st = String(userStatus || "").toLowerCase();
   const isFailedStatus = gs === "suspended" || gs === "withdrawn" || gs === "expelled" || gs === "deferred" || st === "suspended";
@@ -102,10 +106,18 @@ async function buildSeasonSummaryAndPoints(
   // 현재 주차가 전환(break) 주차면 시즌 휴식으로 본다.
   // (공식 휴식 주차 is_official_rest 는 활성 시즌 내 휴일일 뿐이므로 시즌 진행 중을 유지한다.)
   const inTransition = isBreak;
+  const resumeProgressStatus = resumeStatusByKey.get(seasonKey) ?? null;
 
   let status: "active" | "ended" | "rest";
-  let seasonResult: "success" | "failed" | "none";
-  if (isFailedStatus) {
+  let seasonResult: "success" | "failed" | "none" | "graduated";
+  if (
+    resumeProgressStatus === "정상 졸업" ||
+    (resumeStatusByKey.size === 0 && gs === "graduated")
+  ) {
+    // 시즌 중 졸업 — 시즌 종료 여부와 무관하게 영구 유지("시즌 성공" fold 금지).
+    status = endDate && today > endDate ? "ended" : "active";
+    seasonResult = "graduated";
+  } else if (isFailedStatus) {
     status = "ended";
     seasonResult = "failed";
   } else if (inTransition || isRestStatus) {
@@ -123,13 +135,15 @@ async function buildSeasonSummaryAndPoints(
   // 현재 시즌 단일 요약은 success 로 떨어질 수 없다 (성공 판정은 종료 시즌 전용 —
   // deriveSeasonStatus 의 이력서 SoT 경로에서만 발생).
   const statusLabel =
-    status === "active"
-      ? "시즌 진행 중"
-      : status === "rest"
-        ? "시즌 휴식"
-        : seasonResult === "failed"
-          ? "시즌 중단"
-          : "시즌 휴식";
+    seasonResult === "graduated"
+      ? "시즌 중 졸업"
+      : status === "active"
+        ? "시즌 진행 중"
+        : status === "rest"
+          ? "시즌 휴식"
+          : seasonResult === "failed"
+            ? "시즌 중단"
+            : "시즌 휴식";
 
   const seasonSummary = {
     year,
@@ -171,12 +185,18 @@ async function buildSeasonSummaryAndPoints(
   };
 }
 
-// 시즌 상태(4종) 산출 — buildSeasonSummaries 의 시즌별 status/statusLabel/seasonResult 계산.
+// 시즌 상태(5종) 산출 — buildSeasonSummaries 의 시즌별 status/statusLabel/seasonResult 계산.
+//   - 시즌 중 졸업(2026-06-05 신규): 판정 SoT = 이력서 seasonRecords "정상 졸업"
+//     (실졸업자의 마지막 활동 시즌 단 1곳에만 부여 — 진행 중 시즌 포함, admin
+//     computeSeasonRecords). 진행/종료 분기보다 최우선이며, 시즌 종료 후에도 그 시즌
+//     카드에 영구 유지한다 ("시즌 성공" fold 금지 — 기획 확정). graft 실패(맵 미확보)
+//     시에만 현재 시즌 한정 growth_status=graduated 폴백 — graft 가 살아 있으면
+//     이력서 단일 판정을 존중해 시즌 이중 부여를 막는다.
 //   - 현재 시즌(오늘 포함): 성장 상태와 무관하게 "시즌 진행 중" (중단/휴식 상태만 반영).
 //     종전에는 graduated/graduating 이면 진행 중 시즌도 "시즌 성공"으로 합성 — 2026-06-05 분리.
 //   - 과거 시즌(종료): 이력서 카드 시즌 판정 SoT(admin /api/cluster1/resume seasonRecords 의
 //     progressStatus)를 그대로 재사용해 매핑한다 (신규 계산식 도입 금지 — 화면 간 동일 결과 보장).
-//     정상 졸업/정상 완료→시즌 성공, 활동 중단→시즌 중단, 통합 휴식→시즌 휴식.
+//     정상 완료→시즌 성공, 활동 중단→시즌 중단, 통합 휴식→시즌 휴식.
 //     판정 미확보(graft 실패/레코드 부재) 시 기존 동작(시즌 성공) 보존.
 function deriveSeasonStatus(
   isCurrent: boolean,
@@ -185,11 +205,25 @@ function deriveSeasonStatus(
   growthStatus: string | null,
   userStatus: string | null,
   resumeProgressStatus: string | null,
-): { status: "active" | "ended" | "rest"; seasonResult: "success" | "failed" | "none"; statusLabel: string } {
+  resumeGraftLoaded: boolean,
+): { status: "active" | "ended" | "rest"; seasonResult: "success" | "failed" | "none" | "graduated"; statusLabel: string } {
   const gs = String(growthStatus || "").toLowerCase();
   const st = String(userStatus || "").toLowerCase();
   const isFailed = gs === "suspended" || gs === "withdrawn" || gs === "expelled" || gs === "deferred" || st === "suspended";
   const isRest = gs === "resting" || gs === "official_rest" || gs === "season_rest" || gs === "seasonal_rest" || gs === "weekly_rest";
+
+  // 시즌 중 졸업 — 최우선 판정. status 는 시즌 자체의 진행/종료를 그대로 반영하되
+  // (구버전 프론트 fold 호환), 라벨 판정은 seasonResult="graduated" 가 전담한다.
+  if (
+    resumeProgressStatus === "정상 졸업" ||
+    (!resumeGraftLoaded && isCurrent && gs === "graduated")
+  ) {
+    return {
+      status: isCurrent ? "active" : "ended",
+      seasonResult: "graduated",
+      statusLabel: "시즌 중 졸업",
+    };
+  }
 
   let status: "active" | "ended" | "rest";
   let seasonResult: "success" | "failed" | "none";
@@ -394,6 +428,7 @@ async function buildSeasonSummaries(
       growthStatus,
       userStatus,
       resumeStatusByKey.get(seasonKey) ?? null,
+      resumeStatusByKey.size > 0,
     );
 
     out.push({
@@ -562,6 +597,9 @@ export async function GET(request: NextRequest) {
       userDefaultRole: userProfile?.role || null,
     });
 
+    // 시즌 판정 SoT graft — 시즌 중 졸업/성공/중단/휴식 판정에 단일 요약·시즌별 요약 공용.
+    // (이력서 카드 시즌 행과 동일 SoT(admin seasonRecords) 재사용 — 단일 요약보다 먼저 조회.)
+    const resumeStatusByKey = await fetchResumeSeasonStatusByKey(request, userId);
     // 진입 화면 시즌 정보/시즌 누적 포인트 (area-1-title / area-4-stats) — 서버 산출.
     const { seasonSummary, seasonPointSummary } = await buildSeasonSummaryAndPoints(
       supabase,
@@ -570,9 +608,8 @@ export async function GET(request: NextRequest) {
       today,
       userProfile?.growth_status || null,
       userProfile?.status || null,
+      resumeStatusByKey,
     );
-    // 종료 시즌 성공/중단/휴식 판정 — 이력서 카드 시즌 행과 동일 SoT(admin seasonRecords) 재사용.
-    const resumeStatusByKey = await fetchResumeSeasonStatusByKey(request, userId);
     // 시즌별 요약 배열(페이지네이션용) — 각 시즌 자기 범위만 누적.
     const seasonSummaries = await buildSeasonSummaries(
       supabase,
