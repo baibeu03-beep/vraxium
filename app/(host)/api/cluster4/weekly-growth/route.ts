@@ -282,8 +282,10 @@ async function fetchResumeSeasonStatusByKey(
       const json: any = await upstream.json();
       const records: any[] = json?.success ? (json?.data?.seasonRecords ?? []) : [];
       for (const r of records) {
-        // seasonRecords.year 는 2자리("26"), seasonName 은 한국어("봄") — season_key 로 역매핑.
-        const type = SEASON_NAME_TO_TYPE[String(r?.seasonName ?? "")];
+        // seasonRecords.year 는 2자리("26"), seasonName 은 "봄 시즌" 형식(SEASON_LABEL_MAP)
+        // — "시즌" 접미사를 떼고 season_key 로 역매핑한다.
+        const token = String(r?.seasonName ?? "").replace(/\s*시즌\s*$/, "").trim();
+        const type = SEASON_NAME_TO_TYPE[token];
         const yy = String(r?.year ?? "");
         if (!type || !/^\d{2}$/.test(yy) || !r?.progressStatus) continue;
         map.set(`20${yy}-${type}`, String(r.progressStatus));
