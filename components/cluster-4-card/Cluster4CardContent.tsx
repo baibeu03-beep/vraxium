@@ -1242,12 +1242,21 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
       return;
     }
+    // ── stale 응답 가드 (2026-06-05) ──
+    // weekId/urlUserId/demoUserId 가 바뀌면 이전 fetch 의 응답이 늦게 도착해도 상태를
+    // 덮어쓰지 않는다(위클리 평판이 주차/유저 전환 시 "됐다/안됐다" 랜덤으로 보이던 원인:
+    // ① 미취소 병렬 fetch 의 응답 순서 역전 ② 실패 시 이전 주차 데이터 잔존).
+    let cancelled = false;
     const fetchWeekData = async () => {
       if (!weekId) return;
 
       // 상태 리셋
       setPrevWeekId(null);
       setNextWeekId(null);
+      // 주차/유저 전환 시 이전 컨텍스트의 평판/동료 데이터가 남아 보이지 않게 즉시 비운다.
+      // (fetch 실패·지연 시 이전 주차 데이터가 그대로 노출되던 문제 방지)
+      setWeeklyReputations([]);
+      setSelectedColleagues([]);
 
       try {
         setIsLoadingWeek(true);
@@ -1374,8 +1383,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         //    /api/profile(adaptedCurrentWeek/adaptedWeeklyGrowth)·데모 경로는 이미 is_official_rest 로 내려준다.
         // 공식 휴식 SoT = 주차 단위 weeks.is_official_rest(=currentWeek.is_official_rest) 최우선 (정책 개정 2026-06-03).
         //   per-user user_week_statuses(weeklyGrowth.status='success' 등)와 충돌해도 주차 휴식 플래그가 우선한다
-        //   — 즉 weeks.is_official_rest=true 면 그 주차는 전원 휴식으로 본다. (weeklyGrowth.is_official_rest 는 보조)
-        const baseOfficialRestForWeek = !isCurrentWeekOnboarding && (isBreakSeason || !!currentWeek.is_official_rest || !!weeklyGrowth?.is_official_rest);
+        //   — 즉 weeks.is_official_rest=true 면 그 주차는 전원 휴식으로 본다.
+        // ⚠️ per-user uws 파생 weeklyGrowth.is_official_rest 는 휴식 판정에 쓰지 않는다 (2026-06-05 수정).
+        //   비휴식 주차(예: 봄 12주차)에 stale uws(status='official_rest')가 남아 있으면 휴식(공식)으로
+        //   오표시되던 버그. admin 판정(growthCore.resolveWeekResultStatus)도 "uws=official_rest 인데
+        //   주차가 공식 휴식이 아니면 활동 주차로 재판정"하므로, 주차 단위 플래그만 따라야 admin DTO
+        //   (statusLabel/isRestWeek)와 일치한다. demo/일반 모두 동일 경로.
+        const baseOfficialRestForWeek = !isCurrentWeekOnboarding && (isBreakSeason || !!currentWeek.is_official_rest);
         // 전환 주차(봄·가을 17주차 / 여름·겨울 9주차)는 휴식(공식)으로 계산·표시하지 않는다.
         const isTransitionForWeek = isTransitionWeek(rawSeasonName, currentWeek.week_number);
         const userIsOnOfficialRestForWeek = isOfficialRestWeek(rawSeasonName, currentWeek.week_number, baseOfficialRestForWeek);
@@ -1687,7 +1701,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           // careerStats는 career_records useEffect에서 설정됨
         }
 
-        // Stage 1에서 선행 로드된 데이터 적용
+        // Stage 1에서 선행 로드된 데이터 적용 — effect 가 이미 교체(cancelled)됐으면 적용하지 않는다.
+        if (cancelled) return;
         if (earlyCareerResult?.success && earlyCareerResult.data) {
           setCareerRecords(earlyCareerResult.data);
         }
@@ -1721,7 +1736,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     };
 
     fetchWeekData();
-  }, [weekId, urlUserId, isDemoMode, isMounted]);
+    return () => {
+      cancelled = true;
+    };
+    // demoUserId: demoQS(평판/동료/경력 fetch 의 인증 컨텍스트)가 바뀌면 재조회 필요.
+  }, [weekId, urlUserId, isDemoMode, isMounted, demoUserId]);
 
   // DB에서 실무 경력 데이터 가져오기
   // career-records는 urlUserId가 있으면 Stage 1에서 이미 로드됨 (earlyCareerResult)
@@ -5283,7 +5302,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const ownerId = urlUserId || session?.user?.id;
       const params = new URLSearchParams({ weekCardId: weekId });
       if (ownerId) params.set("userId", ownerId);
-      const res = await fetch(`/api/weekly-reviews?${params.toString()}`);
+      // apiUrl: demoUserId 테스트 모드에서 세션 없이 demo bypass 인증을 태운다 (2026-06-05).
+      //   종전엔 demoQS 없이 호출해 401 → 데모에서 기존 리뷰가 안 보이고, 저장 시
+      //   POST(신규)로 흘러 이미 리뷰가 있으면 409 가 나는 일반/데모 분기가 있었다.
+      const res = await fetch(apiUrl(`/api/weekly-reviews?${params.toString()}`));
       if (!res.ok) {
         setWeeklyReviewFromDB(null);
         return;

@@ -86,8 +86,16 @@ export async function PUT(request: Request) {
     }
     const isDemo = demoUserId !== null;
 
-    if (rating < 0 || rating > 5 || (rating * 2) % 1 !== 0) {
-      return NextResponse.json({ error: "평점은 0.0~5.0 사이의 0.5 단위여야 합니다." }, { status: 400 });
+    // 평점 스케일 = 0~10 정수 (2026-06-05 수정: 종전 0~5 검증이 UI 와 불일치).
+    //   - 활성 UI(시즌 리뷰 드롭다운)는 1~10 정수, 표기도 "{n}/10".
+    //   - 기존 user_season_histories.rating 실데이터에도 9 등 5 초과 값 존재.
+    //   - DB check constraint(user_season_histories_rating_check)가 정수만 허용
+    //     (4.5 등 소수는 23514 위반 → 500) → API 검증을 DB 와 동일하게 정수로 강제해
+    //     잘못된 값은 500 이 아닌 명확한 400 으로 거부한다.
+    //   문자열 "4" 등 비숫자 타입도 명시적으로 거부해 검증 불일치를 차단한다.
+    const ratingNum = typeof rating === "number" ? rating : NaN;
+    if (!Number.isInteger(ratingNum) || ratingNum < 0 || ratingNum > 10) {
+      return NextResponse.json({ error: "평점은 0~10 사이의 정수여야 합니다." }, { status: 400 });
     }
 
     if (!review || review.trim().length === 0) {

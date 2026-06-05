@@ -2364,13 +2364,110 @@ export async function GET(request: NextRequest) {
         synthesizedPastSeasonHistories.map((s: any) => s.season_id));
     }
 
-    const adminSeasonHistories = mapAdminSeasonRecordsToSeasonHistories(adminResume);
+    // ── 실 UUID 그래프트: admin 매핑 seasonHistories 항목에 실제 user_season_histories 값 부착 ──
+    // 시즌 리뷰(PUT /api/season-review)와 시즌 평판(POST /api/season-reputations) 저장은
+    // user_season_histories.id (실 uuid — FK/lookup 대상) 를 요구한다. admin seasonRecords 매핑
+    // 항목의 id 는 "{seasonKey}-history" placeholder 라서 그대로 내려가면 시즌 리뷰 저장 404
+    // ("시즌 기록을 찾을 수 없습니다") · 시즌 평판 저장 중단(uuid 필터 탈락)이 발생한다.
+    // → 실 row 가 존재하는 시즌은 id 를 실 uuid 로 교정하고, rating/review 도 실 row 값으로
+    //   채운다(시즌 리뷰 저장 후 새로고침 시 값 유지). 실 row 없는 과거 시즌은 placeholder 유지
+    //   (표시 전용 — 프론트 uuid 필터가 쓰기 대상에서 자동 제외). 일반/demoUserId 모드 동일 경로.
+    const SEASON_HISTORY_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    // seasons(uuid) → 실 user_season_histories row
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const realHistoryRowBySeasonUuid = new Map<string, any>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    seasonHistoryRows.forEach((r: any) => {
+      if (r?.id && r?.season_id && SEASON_HISTORY_UUID_RE.test(String(r.id))) {
+        realHistoryRowBySeasonUuid.set(String(r.season_id), r);
+      }
+    });
+    // season_key(텍스트) → 실 row : 주차 매핑(weekStartToSeasonUuid)으로 두 시즌 시스템 브릿지.
+    // (admin record 의 season_id 는 season_definitions.season_key 텍스트 공간일 수 있다.)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const realHistoryRowBySeasonKey = new Map<string, any>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    allWeeks.forEach((w: any) => {
+      if (!w?.season_key || !w?.start_date || realHistoryRowBySeasonKey.has(w.season_key)) return;
+      const seasonUuid = weekStartToSeasonUuid.get(w.start_date);
+      const row = seasonUuid ? realHistoryRowBySeasonUuid.get(seasonUuid) : undefined;
+      if (row) realHistoryRowBySeasonKey.set(w.season_key, row);
+    });
+    // (연도 2자리 % 100) + 시즌 키워드(봄/여름/가을/겨울) 정체성 키 — admin seasonRecords 가
+    // uuid/날짜 없이 {year:"26", seasonName:"봄 시즌"} 만 줄 때의 최종 매칭 수단.
+    const seasonIdentityKey = (year: unknown, ...labels: Array<unknown>): string | null => {
+      const yearNum = Number(year);
+      if (!Number.isFinite(yearNum)) return null;
+      const text = labels.map((l) => String(l ?? "")).join(" ");
+      const keyword = ["봄", "여름", "가을", "겨울"].find((k) => text.includes(k))
+        ?? [["spring", "봄"], ["summer", "여름"], ["fall", "가을"], ["autumn", "가을"], ["winter", "겨울"]]
+          .find(([en]) => text.toLowerCase().includes(en))?.[1];
+      if (!keyword) return null;
+      return `${yearNum % 100}-${keyword}`;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const realHistoryRowByIdentity = new Map<string, any>();
+    for (const [seasonUuid, row] of Array.from(realHistoryRowBySeasonUuid.entries())) {
+      const s = seasonsMap.get(seasonUuid);
+      const key = s ? seasonIdentityKey(s.year, s.name, s.season_label) : null;
+      if (key && !realHistoryRowByIdentity.has(key)) realHistoryRowByIdentity.set(key, row);
+    }
+    // 항목 → 실 row 해소: ① season_id 가 seasons uuid ② season_id 가 season_key
+    // ③ 날짜범위 폴백(항목 시작일이 실 시즌 기간 안) ④ 연도+시즌 키워드 정체성.
+    // 이미 실 uuid 인 항목은 그대로.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const resolveRealHistoryRow = (item: any): any | null => {
+      if (item?.id && SEASON_HISTORY_UUID_RE.test(String(item.id))) return null;
+      const sid = item?.season_id != null ? String(item.season_id) : "";
+      if (sid) {
+        const hit = realHistoryRowBySeasonUuid.get(sid) ?? realHistoryRowBySeasonKey.get(sid);
+        if (hit) return hit;
+      }
+      const start = String(item?.seasons?.start_date ?? "").slice(0, 10);
+      if (start) {
+        for (const [seasonUuid, row] of Array.from(realHistoryRowBySeasonUuid.entries())) {
+          const s = seasonsMap.get(seasonUuid);
+          if (!s?.start_date || !s?.end_date) continue;
+          if (String(s.start_date).slice(0, 10) <= start && start <= String(s.end_date).slice(0, 10)) return row;
+        }
+      }
+      const identity = seasonIdentityKey(
+        item?.seasons?.year ?? item?.year,
+        item?.seasons?.name, item?.seasons?.season_label, item?.seasons?.season_type, item?.seasonName,
+      );
+      if (identity) {
+        const hit = realHistoryRowByIdentity.get(identity);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const graftRealHistoryIds = (items: any[] | null): any[] | null =>
+      items
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ? items.map((item: any) => {
+            const row = resolveRealHistoryRow(item);
+            if (!row) return item;
+            return {
+              ...item,
+              id: row.id,
+              // rating/review SoT = user_season_histories (이 라우트의 PUT /api/season-review 가
+              // 쓰는 테이블) — admin DTO 가 같은 필드를 들고 있어도 실 row 값이 항상 최신.
+              rating: row.rating ?? item.rating ?? null,
+              review: row.review ?? item.review ?? null,
+            };
+          })
+        : null;
+
+    const adminSeasonHistories = graftRealHistoryIds(mapAdminSeasonRecordsToSeasonHistories(adminResume));
     const responseSeasonHistories = adminSeasonHistories ?? mergedSeasonHistories;
 
     console.log('[Profile API] response seasonHistories source', adminSeasonHistories ? 'adminResume.seasonRecords' : 'local');
     console.log('[Profile API] response seasonHistories length', responseSeasonHistories.length);
     if (responseSeasonHistories.length > 0) {
-      console.log('[Profile API] response seasonHistories[0].id', responseSeasonHistories[0]?.id);
+      console.log('[Profile API] response seasonHistories ids',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        responseSeasonHistories.map((s: any) => s?.id));
     }
 
     return NextResponse.json({

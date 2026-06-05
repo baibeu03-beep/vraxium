@@ -171,10 +171,16 @@ export async function POST(request: Request) {
 
     // 작성 기간 게이트 — admin 우회. owner 본인은 user_edit_windows row 가 열려 있어야 함.
     // 데모(테스트 유저) 모드에서는 actor.isAdmin=false 이므로 일반 고객과 동일하게 강제된다.
+    // ⚠ weekId 필수 (2026-06-05 수정): cluster4.weekly_reviews 는 주간 자원이라
+    //   (user_id, resource_key, week_id) 단위로 행이 분리된다. weekId 없이 조회하면
+    //   열린 주차 행이 2개 이상일 때 .maybeSingle() 이 multiple-rows 로 실패해
+    //   권한이 열려 있어도 403 이 났다. GET /api/edit-windows/permission(week_id 전달)과
+    //   판정 기준을 동일하게 맞춘다 — PUT/DELETE([id] 라우트)는 이미 week_card_id 를 전달 중.
     if (!actor.isAdmin) {
       const open = await hasOpenEditWindow({
         userId: writerUserId,
         resourceKey: CLUSTER4_EDIT_RESOURCE_KEYS.weeklyReviews,
+        weekId: weekCardId,
       });
       if (!open) {
         return NextResponse.json(
