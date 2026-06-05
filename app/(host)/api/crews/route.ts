@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-server";
 import { resolveMembershipDisplay } from "@/lib/membership";
+import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confirmed-success-weeks";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -66,8 +67,11 @@ interface UserEducationRow {
   sort_order: number | null;
 }
 
-// user_growth_stats: 누적 활동 통계.
-// 코드베이스 컨벤션상 approved_weeks 가 "누적 인정 주차" 역할:
+// user_growth_stats: 누적 활동 통계 (admin 배치 스냅샷 — 폴백 전용).
+// approved_weeks 는 미공표(진행/집계 중) 주차까지 포함한 raw 카운트인 데다 갱신이 주 단위로
+// stale 해 cluster 내부(공표 완료 주차만)와 1주씩 어긋난다 — 누적 인정 주차 표시의 SoT 는
+// 공용 countConfirmedSuccessWeeks(아래 2.9 enrichment)이고, 본 테이블은 그 조회 실패 시 폴백.
+// 참고(legacy 사용처):
 //   - cluster-4-ranking/route.ts:181-184 (코멘트: "누적 인정 주차")
 //   - profile/summary/route.ts:155 (select 컬럼 목록)
 // cumulative_weeks 는 crew_list_view(legacy) 에는 있고 user_growth_stats 측 사용처는
@@ -112,6 +116,7 @@ function mergeRow(
   growth: UserGrowthStatsRow | null,
   memberships: UserMembershipRow[],
   starsTotal: number | null,
+  confirmedWeeks: number | null,
 ) {
   // 팀/파트/등급 — 공용 resolver(resolveMembershipDisplay)로 통일.
   //   team_name 보유 row 우선(is_current 단독 신뢰 금지) + user_profiles.current_*_name 폴백.
@@ -163,8 +168,11 @@ function mergeRow(
     // 떨어지던 버그를 starsTotal 로 교정. (admin point_type 은 star/shield/lightning 만 존재 —
     // 'check' 필드는 백엔드에 없음. shield/lightning/인절미 등은 미터치.)
     totalStars: starsTotal ?? view?.total_stars ?? 0,
-    // 우선순위: user_growth_stats > crew_list_view(legacy) > 0.
-    approvedWeeks: growth?.approved_weeks ?? view?.approved_weeks ?? 0,
+    // 누적 인정 주차 SoT = 공용 countConfirmedSuccessWeeks(live, 공표 완료 ∧ 비전환) —
+    // /api/profile growthPeriodStats.approvedWeeks 폴백과 동일 함수 공유(cluster 내부와 일치).
+    // user_growth_stats.approved_weeks(admin 배치 스냅샷)는 미공표 주차 포함 + stale 이라
+    // "/crews 14주 vs cluster 13주차" 불일치의 원인이었다(2026-06-05) — 조회 실패 시에만 폴백.
+    approvedWeeks: confirmedWeeks ?? growth?.approved_weeks ?? view?.approved_weeks ?? 0,
     cumulativeWeeks: growth?.cumulative_weeks ?? view?.cumulative_weeks ?? 0,
     organizationSlug: profile.organization_slug,
   };
@@ -214,7 +222,7 @@ export async function GET(request: Request) {
     // 줄일 뿐, 최종 merge + sort 결과(응답 JSON)는 순차 실행 때와 100% 동일하다.
     const userIds = profiles.map((p) => p.user_id);
     const STAR_PAGE = 1000;
-    const [viewRes, eduRes, growthRes, membershipRes, starsByUser] = await Promise.all([
+    const [viewRes, eduRes, growthRes, membershipRes, starsByUser, confirmedWeeksByUser] = await Promise.all([
       // 2) crew_list_view (rich fields: school, major, club, points, weeks)
       supabase
         .from("crew_list_view")
@@ -268,6 +276,63 @@ export async function GET(request: Request) {
         }
         return acc;
       })(),
+      // 2.9) 누적 인정 주차 — 공용 countConfirmedSuccessWeeks(lib/confirmed-success-weeks).
+      // user_week_statuses(success) live 카운트(공표 완료 ∧ 비-break ∧ 비-전환 주차) —
+      // /api/profile 폴백·admin stats-cards successWeeks 와 동일 규칙. best-effort:
+      // 실패 시 null 반환 → mergeRow 에서 user_growth_stats 스냅샷 폴백.
+      (async (): Promise<Map<string, number> | null> => {
+        // weeks 메타(start_date → 공표/시즌타입/주차번호). weeks 는 소규모 테이블(시즌당 9~17행).
+        const { data: weekRows, error: weekErr } = await supabase
+          .from("weeks")
+          .select("start_date, week_number, result_published_at, season_definitions(season_type)")
+          .returns<Array<{
+            start_date: string | null;
+            week_number: number | null;
+            result_published_at: string | null;
+            season_definitions: { season_type: string | null } | null;
+          }>>();
+        if (weekErr || !weekRows) {
+          console.error("weeks meta fetch failed (approvedWeeks falls back to snapshot):", JSON.stringify(weekErr));
+          return null;
+        }
+        const metaByStart = new Map<string, ConfirmedWeekMeta>();
+        for (const w of weekRows) {
+          if (!w.start_date) continue;
+          metaByStart.set(w.start_date, {
+            resultPublishedAt: w.result_published_at ?? null,
+            seasonType: w.season_definitions?.season_type ?? null,
+            weekNumber: w.week_number ?? null,
+          });
+        }
+        // user_week_statuses success 행 — PostgREST max-rows=1000 → range 페이지네이션.
+        const rowsByUser = new Map<string, Array<{ week_start_date: string | null; status: string }>>();
+        for (let from = 0; ; from += STAR_PAGE) {
+          const { data: wsRows, error: wsErr } = await supabase
+            .from("user_week_statuses")
+            .select("user_id, week_start_date, status")
+            .eq("status", "success")
+            .in("user_id", userIds)
+            .range(from, from + STAR_PAGE - 1)
+            .returns<Array<{ user_id: string; week_start_date: string | null; status: string }>>();
+          if (wsErr) {
+            console.error("user_week_statuses fetch failed (approvedWeeks falls back to snapshot):", JSON.stringify(wsErr));
+            return null;
+          }
+          if (!wsRows || wsRows.length === 0) break;
+          for (const row of wsRows) {
+            const list = rowsByUser.get(row.user_id) ?? [];
+            list.push(row);
+            rowsByUser.set(row.user_id, list);
+          }
+          if (wsRows.length < STAR_PAGE) break;
+        }
+        // 전원 seed(성공 0건 사용자도 0 으로 확정 — 스냅샷 폴백으로 새지 않게).
+        const counts = new Map<string, number>();
+        for (const id of userIds) {
+          counts.set(id, countConfirmedSuccessWeeks(rowsByUser.get(id) ?? [], metaByStart));
+        }
+        return counts;
+      })(),
     ]);
 
     // --- view ---
@@ -312,7 +377,7 @@ export async function GET(request: Request) {
       membershipMap.set(m.user_id, list);
     }
 
-    console.log("[/api/crews] star point users=", starsByUser.size);
+    console.log("[/api/crews] star point users=", starsByUser.size, "confirmedWeeks users=", confirmedWeeksByUser?.size ?? "(fallback)");
 
     // 3) Merge
     const rows = profiles.map((p) =>
@@ -323,6 +388,7 @@ export async function GET(request: Request) {
         growthMap.get(p.user_id) ?? null,
         membershipMap.get(p.user_id) ?? [],
         starsByUser.get(p.user_id) ?? null,
+        confirmedWeeksByUser?.get(p.user_id) ?? null,
       ),
     );
 

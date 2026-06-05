@@ -9,6 +9,7 @@ import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import { DemoModeError, resolveDemoProfileUserId } from "@/lib/demoMode";
 import { requireOwnerOrAdmin } from "@/lib/api-auth";
 import { resolveMembershipDisplay } from "@/lib/membership";
+import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confirmed-success-weeks";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -1461,29 +1462,28 @@ export async function GET(request: NextRequest) {
     //   = success ∧ 주차 결과 공표 완료(weeks.result_published_at) ∧ 비전환(break 시즌 제외).
     // 캐노니컬은 admin stats-cards period.successWeeks(adminSuccessWeeks) — 이 값은 admin 미가용 시 근사 폴백
     // (published 주차의 experience verdict fail 전환까지는 반영하지 못함).
+    // 카운트 규칙은 공용 countConfirmedSuccessWeeks(lib/confirmed-success-weeks) —
+    // /api/crews approvedWeeks 와 같은 함수를 공유한다(화면 간 누적 주차 불일치 방지).
     const confirmedApprovedWeeksCount = (() => {
       const wsRowsFull = ((userWeeklyGrowthResult as {
         data: Array<{ week_start_date: string | null; status: string }> | null;
       })?.data) ?? [];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const breakSeasonKeys = new Set(
+      // season_key → season_type (break/전환 판정용)
+      const seasonTypeByKey = new Map<string, string | null>(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        allSeasonsRaw.filter((s: any) => String(s?.season_type || "").includes("break")).map((s: any) => s.season_key),
+        allSeasonsRaw.map((s: any) => [s.season_key, s.season_type ?? null]),
       );
-      const weekMetaByStart = new Map<string, { result_published_at: string | null; season_key: string | null }>();
+      const weekMetaByStart = new Map<string, ConfirmedWeekMeta>();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (allWeeks as any[]).forEach((w) => {
-        if (w?.start_date) weekMetaByStart.set(w.start_date, { result_published_at: w.result_published_at ?? null, season_key: w.season_key ?? null });
+        if (!w?.start_date) return;
+        weekMetaByStart.set(w.start_date, {
+          resultPublishedAt: w.result_published_at ?? null,
+          seasonType: w.season_key ? seasonTypeByKey.get(w.season_key) ?? null : null,
+          weekNumber: typeof w.week_number === "number" ? w.week_number : null,
+        });
       });
-      let count = 0;
-      for (const r of wsRowsFull) {
-        if (r.status !== "success" || !r.week_start_date) continue;
-        const wk = weekMetaByStart.get(r.week_start_date);
-        if (!wk?.result_published_at) continue; // 미공표(진행/집계 중) 주차 제외
-        if (wk.season_key && breakSeasonKeys.has(wk.season_key)) continue; // 전환 주차 제외
-        count++;
-      }
-      return count;
+      return countConfirmedSuccessWeeks(wsRowsFull, weekMetaByStart);
     })();
 
     // 일정 신뢰도: i = (a+c)/(h-d) * 100, 올림
