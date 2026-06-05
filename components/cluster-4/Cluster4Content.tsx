@@ -18,6 +18,7 @@ import { dedupedJson } from "@/lib/fetch-dedupe";
 import LoadingPanel from "@/components/ui/loading/LoadingPanel";
 import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getOrgConfigFromPathname } from "@/lib/cluster-route";
 import { formatSeasonLabel, formatSeasonWeekTitle } from "@/lib/cluster4-types";
+import { getGrowthBadgeText, progressStatusToSeasonKey, seasonSummaryToSeasonKey, SEASON_STATUS_TEXT, type SeasonStatusKey } from "@/lib/cluster4-status-label";
 import { isOfficialRestWeek } from "@/lib/cluster4-transition-week";
 import { REPUTATION_KEYWORDS } from "@/lib/reputation-keywords";
 import { isAdminEmail } from "@/lib/admin";
@@ -301,10 +302,12 @@ const formatSeasonReputationTime = (timestamp: string | null | undefined): strin
 // 로컬 더미(localStorage demoMode) 데모 사용자 하드코딩 성장 상태.
 // /api/profile growthInfo 가 status 를 주지 못할 때만 fallback 으로 사용한다 —
 // 백엔드 DTO 가 항상 우선(데모/일반 모두 같은 growthInfo 기준으로 졸업/진행 표시).
+// gs 도 raw enum 으로 공급한다 — 매핑 함수(lib/cluster4-status-label)가 raw enum 만
+// 비교하므로 한국어 라벨("졸업 완료" 등)을 넣으면 영원히 불일치한다.
 const DEMO_GROWTH_STATUS_FALLBACK: Record<string, { us: string | null; gs: string | null }> = {
-  전민경: { us: "graduated", gs: "졸업 완료" },
-  곽예원: { us: "weekly_rest", gs: "주차 휴식 중" },
-  김의환: { us: "suspended", gs: "활동 중단" },
+  전민경: { us: "graduated", gs: "graduated" },
+  곽예원: { us: "weekly_rest", gs: "resting" },
+  김의환: { us: "suspended", gs: "suspended" },
 };
 
 const Cluster4Content = () => {
@@ -1737,30 +1740,22 @@ const Cluster4Content = () => {
   }
   const [seasonActivityStatuses, setSeasonActivityStatuses] = useState<SeasonActivityStatusDto[]>([]);
 
-  // status-badge 텍스트 — 아래 4종만 노출. active→진행 중, ended+success→성공,
-  // ended+failed→중단, rest(전환/휴식/오프시즌)→휴식. ("진행중/종료/예정" 표기 금지)
-  const seasonStatusText = (s: SeasonSummaryDto | null): string => {
-    if (!s) return "-";
-    if (s.status === "rest") return "시즌 휴식";
-    if (s.status === "ended") {
-      if (s.seasonResult === "success") return "시즌 성공";
-      if (s.seasonResult === "failed") return "시즌 중단";
-      return "시즌 휴식";
-    }
-    return "시즌 진행 중"; // active 및 기타
-  };
+  // status-badge 텍스트 — 판정은 공용 seasonSummaryToSeasonKey(lib/cluster4-status-label),
+  // 문구는 SEASON_STATUS_TEXT 4종(시즌 진행 중/시즌 성공/시즌 중단/시즌 휴식)만 노출.
+  // ("진행중/종료/예정" 표기 금지 — 이력서 카드/cluster4-1 과 같은 판정 함수 공유)
+  const seasonStatusText = (s: SeasonSummaryDto | null): string =>
+    s ? SEASON_STATUS_TEXT[seasonSummaryToSeasonKey(s)] : "-";
 
-  // 위 4종 → 기존 status-badge className 매핑(스타일 유지).
-  const seasonStatusClass = (s: SeasonSummaryDto | null): string => {
-    if (!s) return "in-progress";
-    if (s.status === "rest") return "resting";
-    if (s.status === "ended") {
-      if (s.seasonResult === "success") return "completed";
-      if (s.seasonResult === "failed") return "suspended";
-      return "resting";
-    }
-    return "in-progress";
+  // 판정 key → 기존 status-badge className 매핑(스타일 유지).
+  const SEASON_BADGE_CLASS: Record<SeasonStatusKey, string> = {
+    in_progress: "in-progress",
+    success: "completed",
+    stopped: "suspended",
+    rest: "resting",
+    graduated: "completed",
   };
+  const seasonStatusClass = (s: SeasonSummaryDto | null): string =>
+    s ? SEASON_BADGE_CLASS[seasonSummaryToSeasonKey(s)] : "in-progress";
 
   // seasonSummary.startDate/endDate("YYYY-MM-DD") → "YYYY / MM / DD (요일)".
   // 요일은 TZ 영향 없도록 UTC 기준으로 계산(서버/클라 시간대 무관 동일 결과).
@@ -2471,20 +2466,13 @@ const Cluster4Content = () => {
       겨울: "/images/0/cluster4/cluster4-1/image3.png",
     };
 
+    // 판정 = 공용 progressStatusToSeasonKey(영문 enum + admin 한글 라벨 "정상 완료"/"정상 졸업" 등
+    // 모두 흡수) — 종전 영문 enum 단독 switch 는 admin 한글 라벨이 전부 default("시즌 진행 중")로
+    // 떨어져 이력서 카드와 시즌 상태가 충돌했다. 미인식 값은 받은 라벨 passthrough(추측 금지).
     const getStatusInfo = (progressStatus: string): { status: string; statusClass: string } => {
-      switch (progressStatus) {
-        case "in_progress":
-          return { status: "시즌 진행 중", statusClass: "in-progress" };
-        case "completed":
-          return { status: "시즌 성공", statusClass: "completed" };
-        case "full_rest":
-        case "resting":
-          return { status: "시즌 휴식", statusClass: "resting" };
-        case "suspended":
-          return { status: "시즌 중단", statusClass: "suspended" };
-        default:
-          return { status: "시즌 진행 중", statusClass: "in-progress" };
-      }
+      const key = progressStatusToSeasonKey(progressStatus);
+      if (!key) return { status: progressStatus || "-", statusClass: "in-progress" };
+      return { status: SEASON_STATUS_TEXT[key], statusClass: SEASON_BADGE_CLASS[key] };
     };
 
     const formatDate = (dateStr: string): string => {
@@ -2788,49 +2776,8 @@ const Cluster4Content = () => {
     );
   };
 
-  // 성장 상태를 badge 텍스트로 변환 (status와 growth_status 두 개 사용)
-  // growthInfo.growthStatus 는 raw enum(user_profiles.growth_status: "graduated" 등)으로
-  // 내려온다 — 종전에는 한국어 라벨("졸업 완료")과만 비교해 영원히 불일치, 졸업자도
-  // "성장 진행 중"으로 떨어졌다 (2026-06-05 수정: raw enum 비교 추가, 데모 더미의
-  // 한국어 값도 병행 허용). graduating(졸업 절차 중)은 admin deriveEndStatus 와 동일하게
-  // "성장 진행 중"으로 분류한다 (성장 완료 아님).
-  const getGrowthBadgeText = (status: string | null, growthStatus: string | null): string => {
-    // 1. 성장 완료 체크 (최우선) — 실졸업(graduated)만
-    if (status === "graduated" || growthStatus === "graduated" || growthStatus === "졸업 완료") {
-      return "성장 완료";
-    }
-
-    // 2. 성장 중단 체크
-    if (
-      status === "suspended" ||
-      growthStatus === "suspended" ||
-      growthStatus === "paused" ||
-      growthStatus === "deferred" ||
-      growthStatus === "활동 중단" ||
-      growthStatus === "활동 유보"
-    ) {
-      return "성장 중단";
-    }
-
-    // 3. 성장 휴식 체크
-    if (
-      status === "weekly_rest" ||
-      status === "seasonal_rest" ||
-      growthStatus === "weekly_rest" ||
-      growthStatus === "seasonal_rest" ||
-      growthStatus === "official_rest" ||
-      growthStatus === "resting" ||
-      growthStatus === "season_rest" ||
-      growthStatus === "주차 휴식 중" ||
-      growthStatus === "시즌 휴식 중" ||
-      growthStatus === "공식 휴식 중"
-    ) {
-      return "성장 휴식";
-    }
-
-    // 4. 기본값 (active / graduating / onboarding 등)
-    return "성장 진행 중";
-  };
+  // 성장 상태 badge 텍스트 — 공용 getGrowthBadgeText(lib/cluster4-status-label) 사용.
+  // raw enum 만 비교(한국어 라벨 비교 금지) · cluster4-1 과 동일 매핑 함수 공유.
 
   // 페이지 전환 핸들러
   const handlePageChange = (newPage: number) => {

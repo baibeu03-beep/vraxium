@@ -18,6 +18,7 @@ import { logEvent } from "@/utils/blackScreenDiagnostics";
 import koreaRegionsData from "@/data/korea-regions.json";
 import { isPxRoute, isEcRoute, getThemeClass, withPxRoute, ORGANIZATION_CONFIG, type Organization } from "@/lib/cluster-route";
 import { LoadingPanel } from "@/components/ui/loading/LoadingPanel";
+import { progressStatusToSeasonKey, RESUME_SEASON_BADGE_TEXT, type SeasonStatusKey } from "@/lib/cluster4-status-label";
 
 const koreaRegions: { [key: string]: string[] } = koreaRegionsData;
 const DEFAULT_PHONE_COMMENT = "평일 오전 10시 ~ 오후 20시 사이에 언제든지 연락가능합니다. 주말은 문자나 텍스트로만 부탁드려요! 😊";
@@ -32,13 +33,19 @@ const CREW_STATUS_MAP: Record<string, CrewStatus> = {
   suspended: "Next Challenge",
 };
 // 메달 상태 판정 — API DTO 값 그대로 매핑 (프론트 임의 계산 금지).
+// 종단 상태(graduated/suspended)는 user_profiles.status 가 active 로 남아 있어도
+// growthInfo.growthStatus(raw enum)로 판정한다 — 이력서 카드 '정상 졸업'/'활동 중단'
+// 뱃지·cluster4 성장 배지와 동일 판정(공용 라벨 SoT 와 같은 raw enum 기준).
 // growthInfo.currentSeasonStatus === 'rest'(시즌 휴식, user_season_statuses SoT)면
 // user_profiles.status 가 active 여도 Recharging(시즌 휴식 뱃지)으로 표시한다.
 // demoUserId 테스트 모드도 동일 DTO(/api/profile)를 쓰므로 두 모드 매핑이 갈리지 않는다.
 const resolveCrewStatus = (
   profileStatus: string | null | undefined,
   currentSeasonStatus: string | null | undefined,
+  growthStatus?: string | null,
 ): CrewStatus => {
+  if (profileStatus === "graduated" || growthStatus === "graduated") return "Complete";
+  if (profileStatus === "suspended" || growthStatus === "suspended") return "Next Challenge";
   if (currentSeasonStatus === "rest") return "Recharging";
   return (profileStatus && CREW_STATUS_MAP[profileStatus]) || "Running";
 };
@@ -471,32 +478,24 @@ const Sidebar = () => {
     return { displaySeasonYear, displaySeasonName, displayTotalWeeks, displayRoleLabel };
   };
 
-  // 진행 상태 변환
-  // status 는 두 소스에서 올 수 있다: 고객 로컬(영문 key: in_progress/completed…)과
-  // admin /api/cluster1/resume DTO(한글 라벨: "진행 중"/"정상 완료"…). 양쪽 모두,
-  // 그리고 공백 유무까지 흡수해 동일 className(active/complete…)으로 매핑한다.
+  // 진행 상태 변환 — 판정은 공용 progressStatusToSeasonKey(lib/cluster4-status-label):
+  // 영문 enum(in_progress/completed…)과 admin /api/cluster1/resume DTO 한글 라벨
+  // ("진행 중"/"정상 완료"/"정상 졸업"…)을 공백 무시로 흡수한다. cluster4/cluster4-1 과
+  // 같은 판정 함수를 공유하므로 같은 시즌이 표면별로 다른 상태로 보일 수 없다.
+  // 문구는 이력서 카드 확정 5종(RESUME_SEASON_BADGE_TEXT — 60px 뱃지 폭 제약):
+  // 진행 중 / 정상 완료 / 통합 휴식 / 활동 중단 / 정상 졸업(modifier 없는 base 클래스).
+  // 미인식 값은 받은 라벨 passthrough(프론트 임의 재판정 금지).
+  const RESUME_BADGE_CLASS: Record<SeasonStatusKey, string> = {
+    in_progress: "active",
+    success: "complete",
+    stopped: "suspended",
+    rest: "rest",
+    graduated: "",
+  };
   const getProgressStatus = (status: string) => {
-    const key = (status ?? "").replace(/\s/g, "");
-    switch (key) {
-      case "completed":
-      case "정상완료":
-      case "완료":
-        return { text: "정상 완료", className: "complete" };
-      case "in_progress":
-      case "inprogress":
-      case "진행중":
-        return { text: "진행중", className: "active" };
-      case "full_rest":
-      case "fullrest":
-      case "통합휴식":
-        return { text: "통합 휴식", className: "rest" };
-      case "suspended":
-      case "discontinued":
-      case "활동중단":
-        return { text: "활동 중단", className: "suspended" };
-      default:
-        return { text: status, className: "" };
-    }
+    const key = progressStatusToSeasonKey(status);
+    if (!key) return { text: status, className: "" };
+    return { text: RESUME_SEASON_BADGE_TEXT[key], className: RESUME_BADGE_CLASS[key] };
   };
 
   // 검수 상태 변환 (영문 key + admin 한글 라벨, 공백 무시)
@@ -758,8 +757,8 @@ const Sidebar = () => {
     // 동일한 full set(team/part/membershipLevel 포함) 을 produce 한다.
     setUserProfile(buildSidebarUserProfile(profile, initialQuote));
 
-    // 메달 상태 — DTO(profile.status + growthInfo.currentSeasonStatus) 기반 단일 매핑.
-    setCrewStatus(resolveCrewStatus(profile.status, cachedProfile.growthInfo?.currentSeasonStatus));
+    // 메달 상태 — DTO(profile.status + growthInfo.currentSeasonStatus + growthStatus) 기반 단일 매핑.
+    setCrewStatus(resolveCrewStatus(profile.status, cachedProfile.growthInfo?.currentSeasonStatus, cachedProfile.growthInfo?.growthStatus));
 
     if (cachedProfile.completionRate !== undefined && cachedProfile.completionRate !== null) {
       setHasCompletionData(true);
@@ -1334,9 +1333,9 @@ const Sidebar = () => {
         // 학력은 프로필 응답 후 로드 (슬로건은 별도 useEffect에서 이미 병렬 실행)
         fetchEducations();
 
-        // 메달 상태 — DTO(profile.status + growthInfo.currentSeasonStatus) 기반 단일 매핑.
+        // 메달 상태 — DTO(profile.status + growthInfo.currentSeasonStatus + growthStatus) 기반 단일 매핑.
         // 캐시 init(useLayoutEffect) 경로와 동일 함수 사용 — 두 경로 매핑이 갈리지 않게 한다.
-        setCrewStatus(resolveCrewStatus(profile.status, cachedResult.growthInfo?.currentSeasonStatus));
+        setCrewStatus(resolveCrewStatus(profile.status, cachedResult.growthInfo?.currentSeasonStatus, cachedResult.growthInfo?.growthStatus));
 
         // completionRate (활동 완료율) - API 응답에서 가져오기
         if (result.completionRate !== undefined && result.completionRate !== null) {

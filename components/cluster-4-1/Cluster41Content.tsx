@@ -13,6 +13,8 @@ import type { AdminCluster4WeeklyCardDto, Cluster4WeeklyCardsResponseDto, Cluste
 import type { Cluster3StatsCards } from "@/lib/cluster3StatsCardsTypes";
 import { Skeleton } from "@/components/ui/skeleton/Skeleton";
 import { isTransitionWeek } from "@/lib/cluster4-transition-week";
+import { resolveSeasonWeekText } from "@/lib/cluster4-types";
+import { getGrowthBadgeText } from "@/lib/cluster4-status-label";
 
 const truncate = (text: string | null | undefined, maxLen: number = 5): string => {
   const t = text || "-";
@@ -47,17 +49,19 @@ const parseWeekTitle = (card: AdminCluster4WeeklyCardDto): { year: number | null
     if (m) season = m[1];
   }
 
-  const isBreak = rec.isBreakSeason === true || rec.isRestSeason === true || /전환|break/i.test(label);
+  // 전환 주차 판정: DTO 플래그/라벨 + 시즌별 전환 주차 번호(봄·가을 17주차/여름·겨울 9주차).
+  const isBreak =
+    rec.isBreakSeason === true ||
+    rec.isRestSeason === true ||
+    /전환|break/i.test(label) ||
+    isTransitionWeek(season, typeof card.weekNumber === "number" ? card.weekNumber : null);
 
-  let weekText: string;
-  if (isBreak) {
-    weekText = "전환";
-  } else if (typeof card.weekNumber === "number" && card.weekNumber > 0) {
-    weekText = String(card.weekNumber);
-  } else {
-    const m = label.match(/(\d+)\s*(?:w|주차)/i);
-    weekText = m ? m[1] : "-";
-  }
+  // 시즌 내 주차만 표시 — 공용 resolveSeasonWeekText(lib/cluster4-types):
+  // seasonWeek/weekInSeason(API 제공 시 우선) → weekNumber → label 정규식 순으로,
+  // 각 출처에서 시즌 범위(봄/가을 1~16, 여름/겨울 1~8)를 벗어난 누적 주차 값은 버린다.
+  const weekText = isBreak
+    ? "전환"
+    : resolveSeasonWeekText({ card: rec, weekNumber: card.weekNumber, label, seasonName: season });
 
   return { year, season, weekText, isBreak };
 };
@@ -636,45 +640,8 @@ const Cluster41Content = () => {
     return () => { abortController.abort(); };
   }, [targetUserId]);
 
-  // growthInfo.growthStatus 는 raw enum(user_profiles.growth_status: "graduated" 등)으로
-  // 내려온다 — 종전에는 한국어 라벨("졸업 완료")과만 비교해 영원히 불일치, 졸업자도
-  // "성장 진행 중"으로 떨어졌다 (2026-06-05 수정: raw enum 비교 추가, 데모 더미의
-  // 한국어 값도 병행 허용). graduating(졸업 절차 중)은 admin deriveEndStatus 와 동일하게
-  // "성장 진행 중"으로 분류한다 (성장 완료 아님). Cluster4Content 와 동일 규칙.
-  const getGrowthBadgeText = (status: string | null, growthStatus: string | null): string => {
-    if (
-      status === 'graduated' ||
-      growthStatus === 'graduated' ||
-      growthStatus === '졸업 완료'
-    ) {
-      return '성장 완료';
-    }
-    if (
-      status === 'suspended' ||
-      growthStatus === 'suspended' ||
-      growthStatus === 'paused' ||
-      growthStatus === 'deferred' ||
-      growthStatus === '활동 중단' ||
-      growthStatus === '활동 유보'
-    ) {
-      return '성장 중단';
-    }
-    if (
-      status === 'weekly_rest' ||
-      status === 'seasonal_rest' ||
-      growthStatus === 'weekly_rest' ||
-      growthStatus === 'seasonal_rest' ||
-      growthStatus === 'official_rest' ||
-      growthStatus === 'resting' ||
-      growthStatus === 'season_rest' ||
-      growthStatus === '주차 휴식 중' ||
-      growthStatus === '시즌 휴식 중' ||
-      growthStatus === '공식 휴식 중'
-    ) {
-      return '성장 휴식';
-    }
-    return '성장 진행 중';
-  };
+  // 성장 상태 badge 텍스트 — 공용 getGrowthBadgeText(lib/cluster4-status-label) 사용.
+  // raw enum 만 비교(한국어 라벨 비교 금지) · Cluster4Content 와 동일 매핑 함수 공유.
 
   // 성장 주차 집계 표시값 — 실제 모드: admin stats-cards(period) 우선, 데모/로딩/실패: /api/profile fallback.
   // 프론트 계산 없이 API 응답값만 표시. 숫자 4종만 admin 으로 전환(시작/종료 주차·badge·괄호 시즌값은 기존 유지).
@@ -873,10 +840,12 @@ const Cluster41Content = () => {
                 {summaryReady ? (
                   <span className="badge-text">{getGrowthBadgeText(
                     userStatus,
-                    // 상태값 SoT: admin stats-cards(process) 우선 → growthStatusLabel → growthStatus,
-                    // 데모/로딩/실패 시 기존 /api/profile growthStatus fallback.
-                    statsCards?.process.growthStatusLabel
-                      ?? statsCards?.process.growthStatus
+                    // 상태값 SoT: admin stats-cards process.growthStatusKey(raw 안정 키) 우선,
+                    // 데모/로딩/실패 시 /api/profile growthStatus(raw enum) fallback.
+                    // 한글 라벨(growthStatusLabel/growthStatus="성장 완료(졸업)" 등)은 매핑에
+                    // 넣지 않는다 — raw enum 전용 공용 매퍼에서 전부 default 로 떨어져
+                    // 졸업자가 "성장 진행 중"으로 오표시되던 원인(2026-06-05 수정).
+                    statsCards?.process.growthStatusKey
                       ?? growthStatus
                   )}</span>
                 ) : (

@@ -112,3 +112,40 @@ export function formatSeasonWeekTitle(input: {
   if (input.weekNumber == null) return label;
   return label ? `${label}, ${input.weekNumber}주차` : `${input.weekNumber}주차`;
 }
+
+// ── 시즌 내 주차 검증 (2026-06-05) ───────────────────────────────────────────
+// 시즌 주차 제목에는 "시즌 내 주차"만 허용: 봄/가을 1~16, 여름/겨울 1~8
+// (17/9주차는 전환 주차로 isBreak 별도 표기). 누적 주차(cumulativeWeek/growthWeek/
+// accumulatedApprovedWeeks 등)는 시즌 주차 제목에 절대 쓰지 않는다 — 프론트 재계산도
+// 금지이므로, 범위를 벗어난 값은 다음 우선순위 출처로 폴백하고 끝내 없으면 "-" 표시.
+export function seasonWeekMax(seasonName: string | null | undefined): number {
+  const name = normalizeSeasonName(seasonName);
+  return name === "여름" || name === "겨울" ? 8 : 16; // 봄/가을/미상 → 16
+}
+
+// 시즌 주차 텍스트 단일 resolver — 카드 목록(Cluster41Content)·카드 상세 헤더
+// (Cluster4CardContent)가 공유한다.
+// 우선순위: ① card.seasonWeek / card.weekInSeason (API 제공 시 최우선)
+//          ② weekNumber  ③ label("…12w"/"…12주차") 정규식 — 각 단계에서
+// 시즌 범위(1~max)를 벗어나면(누적 주차 등) 버리고 다음 출처로 넘어간다.
+export function resolveSeasonWeekText(input: {
+  card?: Record<string, unknown> | null;
+  weekNumber?: number | null;
+  label?: string | null;
+  seasonName?: string | null;
+}): string {
+  const max = seasonWeekMax(input.seasonName);
+  const valid = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n > 0 && n <= max;
+
+  const card = input.card ?? {};
+  if (valid(card.seasonWeek)) return String(card.seasonWeek);
+  if (valid(card.weekInSeason)) return String(card.weekInSeason);
+  if (valid(input.weekNumber)) return String(input.weekNumber);
+
+  const m = (input.label ?? "").match(/(\d+)\s*(?:w|주차)/i);
+  if (m) {
+    const parsed = parseInt(m[1], 10);
+    if (valid(parsed)) return String(parsed);
+  }
+  return "-";
+}

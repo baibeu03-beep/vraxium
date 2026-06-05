@@ -15,7 +15,7 @@ import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
 import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getGraduationWeeksFromPathname, getRouteOrg } from "@/lib/cluster-route";
-import { formatSeasonLabel, formatSeasonWeekTitle } from "@/lib/cluster4-types";
+import { formatSeasonLabel, formatSeasonWeekTitle, resolveSeasonWeekText } from "@/lib/cluster4-types";
 import { isTransitionWeek, isOfficialRestWeek, TRANSITION_WEEK_LABEL } from "@/lib/cluster4-transition-week";
 import { isFadedCardStatus } from "@/lib/cluster4-faded-card";
 import { REPUTATION_KEYWORD_GROUPS } from "@/lib/reputation-keywords";
@@ -6150,11 +6150,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     let season = "";
     if (typeof card.seasonName === "string" && (card.seasonName as string).trim()) season = card.seasonName as string;
     else { const m = label.match(/(봄|여름|가을|겨울)/); if (m) season = m[1]; }
-    const isBreak = card.isBreakSeason === true || card.isRestSeason === true || /전환|break/i.test(label);
-    let weekText: string;
-    if (isBreak) weekText = "전환";
-    else if (typeof weeklyCardMeta.weekNumber === "number" && weeklyCardMeta.weekNumber > 0) weekText = String(weeklyCardMeta.weekNumber);
-    else { const m = label.match(/(\d+)\s*(?:w|주차)/i); weekText = m ? m[1] : "-"; }
+    // 전환 주차 판정: DTO 플래그/라벨 + 시즌별 전환 주차 번호(봄·가을 17주차/여름·겨울 9주차).
+    const isBreak =
+      card.isBreakSeason === true ||
+      card.isRestSeason === true ||
+      /전환|break/i.test(label) ||
+      isTransitionWeek(season, typeof weeklyCardMeta.weekNumber === "number" ? weeklyCardMeta.weekNumber : null);
+    // 시즌 내 주차만 표시 — 카드 목록(Cluster41Content.parseWeekTitle)과 동일한 공용
+    // resolveSeasonWeekText 사용: seasonWeek/weekInSeason 우선, 시즌 범위(봄/가을 1~16,
+    // 여름/겨울 1~8) 밖 누적 주차 값은 다음 출처로 폴백.
+    const weekText = isBreak
+      ? "전환"
+      : resolveSeasonWeekText({ card, weekNumber: weeklyCardMeta.weekNumber, label, seasonName: season });
     return `${year ?? "-"}년, ${season || "-"} 시즌, ${weekText}${isBreak ? " 주차" : "주차"}`;
   })();
 
