@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // 검증용 빌드 출력 분리 — NEXT_VERIFY_DIST_DIR 미설정 시 기본 .next (운영/개발 무영향).
+  // dev 서버(next dev)와 production 검증 빌드(next build/start)가 같은 .next 를
+  // 공유하면 서로 출력을 덮어써 MODULE_NOT_FOUND 로 깨지는 함정 회피용.
+  distDir: process.env.NEXT_VERIFY_DIST_DIR || ".next",
   images: {
     // unoptimized: true, // 성능 최적화를 위해 비활성화 (Next.js 이미지 최적화 사용)
     remotePatterns: [

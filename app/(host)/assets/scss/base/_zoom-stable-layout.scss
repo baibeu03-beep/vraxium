@@ -37,14 +37,24 @@
 }
 
 // ===== 초기 로딩 표시 안정화 =====
-// 기본값을 visible로 두어 클라이언트 초기화가 실패해도
-// 전체 앱이 검정 화면처럼 영구히 숨겨지지 않게 한다.
+// 초기 1프레임 FOUC(헤더-사이드바 flash) 방지를 위해 opacity:0으로 시작,
+// RouteThemeShell이 마운트 직후 app-ready를 붙여 reveal한다.
+// 안전망: JS(app-ready 부착)가 어떤 이유로든 실패해도 2.5s 후 CSS 애니메이션이
+// 강제로 opacity:1로 수렴 — 검은 화면이 영구화되지 않게 한다.
+// (정상 경로에서는 app-ready가 먼저 1로 만들기 때문에 동작 차이 없음)
 .nftg-app {
   opacity: 0;
+  // duration 0s는 일부 환경에서 fill이 적용되지 않아 16ms 사용
+  animation: nftg-reveal-failsafe 16ms linear 2.5s forwards;
 }
 .nftg-app.app-ready {
   opacity: 1;
   transition: opacity 0.12s ease-in;
+}
+@keyframes nftg-reveal-failsafe {
+  to {
+    opacity: 1;
+  }
 }
 
 // ===== 공통 레이아웃 스타일 =====

@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -18,10 +22,23 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"],
-      "@nftg/*": ["./vendor/nftg/*"]
+      "@/*": [
+        "./*"
+      ],
+      "@nftg/*": [
+        "./vendor/nftg/*"
+      ]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "Career-Resume"]
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next-verify/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "Career-Resume"
+  ]
 }
