@@ -21,6 +21,27 @@ import { isPxRoute, isEcRoute, getThemeClass, withPxRoute, ORGANIZATION_CONFIG, 
 const koreaRegions: { [key: string]: string[] } = koreaRegionsData;
 const DEFAULT_PHONE_COMMENT = "평일 오전 10시 ~ 오후 20시 사이에 언제든지 연락가능합니다. 주말은 문자나 텍스트로만 부탁드려요! 😊";
 
+// 메달 뱃지 crewStatus 타입/매핑 — 캐시 init·fetch 두 경로 공용 단일 정의.
+type CrewStatus = "Running" | "Complete" | "On Rest" | "Recharging" | "Next Challenge";
+const CREW_STATUS_MAP: Record<string, CrewStatus> = {
+  active: "Running",
+  weekly_rest: "On Rest",
+  seasonal_rest: "Recharging",
+  graduated: "Complete",
+  suspended: "Next Challenge",
+};
+// 메달 상태 판정 — API DTO 값 그대로 매핑 (프론트 임의 계산 금지).
+// growthInfo.currentSeasonStatus === 'rest'(시즌 휴식, user_season_statuses SoT)면
+// user_profiles.status 가 active 여도 Recharging(시즌 휴식 뱃지)으로 표시한다.
+// demoUserId 테스트 모드도 동일 DTO(/api/profile)를 쓰므로 두 모드 매핑이 갈리지 않는다.
+const resolveCrewStatus = (
+  profileStatus: string | null | undefined,
+  currentSeasonStatus: string | null | undefined,
+): CrewStatus => {
+  if (currentSeasonStatus === "rest") return "Recharging";
+  return (profileStatus && CREW_STATUS_MAP[profileStatus]) || "Running";
+};
+
 // resume-card .resume-badges point 값 정규화.
 //   number → 그대로(NaN 은 0) / 문자열 숫자 → Number() / null·undefined·기타 → 0.
 // API(/api/profile)의 point.{check,advantage,penalty} 표시 전용 — 어드민 값 방어적 정규화.
@@ -724,16 +745,8 @@ const Sidebar = () => {
     // 동일한 full set(team/part/membershipLevel 포함) 을 produce 한다.
     setUserProfile(buildSidebarUserProfile(profile, initialQuote));
 
-    const statusMap: Record<string, "Running" | "Complete" | "On Rest" | "Recharging" | "Next Challenge"> = {
-      active: "Running",
-      weekly_rest: "On Rest",
-      seasonal_rest: "Recharging",
-      graduated: "Complete",
-      suspended: "Next Challenge",
-    };
-    if (profile.status && statusMap[profile.status]) {
-      setCrewStatus(statusMap[profile.status]);
-    }
+    // 메달 상태 — DTO(profile.status + growthInfo.currentSeasonStatus) 기반 단일 매핑.
+    setCrewStatus(resolveCrewStatus(profile.status, cachedProfile.growthInfo?.currentSeasonStatus));
 
     if (cachedProfile.completionRate !== undefined && cachedProfile.completionRate !== null) {
       setHasCompletionData(true);
@@ -956,6 +969,13 @@ const Sidebar = () => {
   const [isCustomEmailDomain, setIsCustomEmailDomain] = useState(false);
   const [isPhoneCommentModalOpen, setIsPhoneCommentModalOpen] = useState(false);
   const [isPhoneEditing, setIsPhoneEditing] = useState(false);
+  // 연락 가능 시간대 모달 내부 loading — 캐시에 contactAvailable 이 없을 때만 백그라운드 fetch.
+  const [isPhoneCommentLoading, setIsPhoneCommentLoading] = useState(false);
+  // 백그라운드 fetch 완료 시 사용자가 이미 수정 중이면 입력값을 덮어쓰지 않기 위한 ref.
+  const isPhoneEditingRef = useRef(false);
+  useEffect(() => {
+    isPhoneEditingRef.current = isPhoneEditing;
+  }, [isPhoneEditing]);
   const phoneCommentSnapshot = useRef("");
   const profileFormSnapshotRef = useRef<typeof formData | null>(null);
   const [isPhoneHelpModalOpen, setIsPhoneHelpModalOpen] = useState(false);
@@ -1246,17 +1266,9 @@ const Sidebar = () => {
         // 학력은 프로필 응답 후 로드 (슬로건은 별도 useEffect에서 이미 병렬 실행)
         fetchEducations();
 
-        // DB status → crewStatus 매핑
-        const statusMap: Record<string, "Running" | "Complete" | "On Rest" | "Recharging" | "Next Challenge"> = {
-          active: "Running",
-          weekly_rest: "On Rest",
-          seasonal_rest: "Recharging",
-          graduated: "Complete",
-          suspended: "Next Challenge",
-        };
-        if (profile.status && statusMap[profile.status]) {
-          setCrewStatus(statusMap[profile.status]);
-        }
+        // 메달 상태 — DTO(profile.status + growthInfo.currentSeasonStatus) 기반 단일 매핑.
+        // 캐시 init(useLayoutEffect) 경로와 동일 함수 사용 — 두 경로 매핑이 갈리지 않게 한다.
+        setCrewStatus(resolveCrewStatus(profile.status, cachedResult.growthInfo?.currentSeasonStatus));
 
         // completionRate (활동 완료율) - API 응답에서 가져오기
         if (result.completionRate !== undefined && result.completionRate !== null) {
@@ -2496,27 +2508,36 @@ const Sidebar = () => {
                         {currentProfile.phone}
                         {isOwner && (
                           <span
-                            onClick={async () => {
-                              // 모달 열기 전에 ProfileContext 캐시를 무효화하고 최신값을 다시 받아온다.
-                              // (admin 이 user_profiles.contact_available 을 직접 수정한 경우에도 즉시 반영되도록.)
-                              let nextPhoneComment = formData.phoneComment;
-                              try {
-                                const refreshed = await fetchCachedProfile(targetUserId || undefined, true);
-                                const latest =
-                                  refreshed?.contactAvailable ??
-                                  (refreshed?.data as { contact_available?: string | null } | undefined)?.contact_available ??
-                                  null;
-                                nextPhoneComment = latest || DEFAULT_PHONE_COMMENT;
-                                setFormData((prev) => ({
-                                  ...prev,
-                                  phoneComment: nextPhoneComment,
-                                }));
-                              } catch (error) {
-                                console.error("연락처 코멘트 로드 오류:", error);
-                              }
+                            onClick={() => {
+                              // 모달은 클릭 즉시 연다 — fetch 를 기다리며 오픈을 막지 않는다(체감 ~5초 지연 원인).
+                              // contactAvailable 은 /api/profile 응답에 이미 포함돼 ProfileContext 에 캐시되므로
+                              // 값이 있으면 추가 fetch 없이 그대로 사용, 없을 때만 모달 내 loading 으로 백그라운드 로드.
+                              const cachedValue = cachedProfile?.contactAvailable ?? null;
+                              const nextPhoneComment = cachedValue || DEFAULT_PHONE_COMMENT;
+                              setFormData((prev) => ({ ...prev, phoneComment: nextPhoneComment }));
                               phoneCommentSnapshot.current = nextPhoneComment;
                               setIsPhoneCommentModalOpen(true);
                               setIsPhoneEditing(false);
+                              // 프로필 캐시 자체가 아직 없을 때만 로드 — contactAvailable:null 은
+                              // "코멘트 미등록"이라는 확정값(API 응답에 이미 포함)이므로 재요청하지 않는다.
+                              if (!cachedProfile) {
+                                setIsPhoneCommentLoading(true);
+                                fetchCachedProfile(targetUserId || undefined, true)
+                                  .then((refreshed) => {
+                                    const latest =
+                                      refreshed?.contactAvailable ??
+                                      (refreshed?.data as { contact_available?: string | null } | undefined)?.contact_available ??
+                                      null;
+                                    const next = latest || DEFAULT_PHONE_COMMENT;
+                                    // 사용자가 이미 수정 모드로 들어갔으면 입력값을 덮어쓰지 않는다.
+                                    if (!isPhoneEditingRef.current) {
+                                      setFormData((prev) => ({ ...prev, phoneComment: next }));
+                                      phoneCommentSnapshot.current = next;
+                                    }
+                                  })
+                                  .catch((error) => console.error("연락처 코멘트 로드 오류:", error))
+                                  .finally(() => setIsPhoneCommentLoading(false));
+                              }
                             }}
                             style={{
                               color: currentProfile.accentColor,
@@ -4297,7 +4318,9 @@ const Sidebar = () => {
               }}
             >
               <p style={{ color: "#ffffff", fontSize: "16px", margin: 0, lineHeight: 1.6, fontFamily: "Pretendard, sans-serif", wordBreak: "keep-all" }}>
-                {cachedProfile?.contactAvailable || "등록된 코멘트가 없습니다."}
+                {isPhoneCommentLoading
+                  ? "불러오는 중..."
+                  : cachedProfile?.contactAvailable || "등록된 코멘트가 없습니다."}
               </p>
             </div>
           </div>
@@ -4363,7 +4386,9 @@ const Sidebar = () => {
                 </>
               ) : (
                 <p className="modal-content-text">
-                  {cachedProfile?.contactAvailable || "등록된 내용이 없습니다."}
+                  {isPhoneCommentLoading
+                    ? "불러오는 중..."
+                    : cachedProfile?.contactAvailable || "등록된 내용이 없습니다."}
                 </p>
               )}
             </div>

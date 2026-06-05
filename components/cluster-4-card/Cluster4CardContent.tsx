@@ -14,7 +14,7 @@ import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
-import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getGraduationWeeksFromPathname } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getGraduationWeeksFromPathname, getRouteOrg } from "@/lib/cluster-route";
 import { formatSeasonLabel, formatSeasonWeekTitle } from "@/lib/cluster4-types";
 import { isTransitionWeek, isOfficialRestWeek, TRANSITION_WEEK_LABEL } from "@/lib/cluster4-transition-week";
 import { isFadedCardStatus } from "@/lib/cluster4-faded-card";
@@ -459,9 +459,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     encre: EC_HEADER_POINT,
   };
   const headerOrg = searchParams.get("org");
-  // 1순위 ?org= 쿼리(phalanx/encre) → 2순위 EC 라우트 폴백 → 기본(단감/인절미/어흥).
+  // pathname suffix 기반 org 폴백 — 일반 모드(쿼리 ?org= 없음)에서도
+  // /cluster-4-card-planning(-px) → phalanx, -entertainment(-ec) → encre 로 치환되도록.
+  // 테스트 모드(demoUserId)는 appendDemoQuery 가 ?org= 를 실어 1순위로 동작 — 양쪽 동일 결과.
+  const routeOrgSlug = getRouteOrg(pathname);
+  // 1순위 ?org= 쿼리(phalanx/encre) → 2순위 라우트 suffix 폴백 → 기본(단감/인절미/어흥).
   const resolveHeaderPoint = (key: HeaderPointKey): { label: string; icon: string } => {
-    const byOrg = headerOrg ? ORG_HEADER_POINT[headerOrg] : undefined;
+    const byOrg =
+      (headerOrg ? ORG_HEADER_POINT[headerOrg] : undefined) ??
+      (routeOrgSlug ? ORG_HEADER_POINT[routeOrgSlug] : undefined);
     if (byOrg) return byOrg[key];
     if (isEC) return EC_HEADER_POINT[key];
     return { label: key, icon: `/images/0/cluster4/icon/icon - ${key}.png` };

@@ -1104,7 +1104,8 @@ export async function GET(request: NextRequest) {
 
       // Period SoT — 위의 userWeeklyGrowthResult 와 동일 source 이므로 placeholder
       Promise.resolve({ data: null, error: null }),
-      supabaseAdmin.from("user_season_statuses").select("status").eq("user_id", profile.id),
+      // season_key 포함: 현재 시즌 상태(currentSeasonStatus DTO — 메달 뱃지 SoT) 판정에 필요.
+      supabaseAdmin.from("user_season_statuses").select("season_key, status").eq("user_id", profile.id),
     ]);
 
     // season_type → 한글 라벨 변환 (season_definitions 기준)
@@ -1392,7 +1393,17 @@ export async function GET(request: NextRequest) {
     // ─── Period 계산 (SoT: user_week_statuses + user_season_statuses) ───
     // userWeeklyGrowthResult 가 이제 user_week_statuses (week_start_date, status) 를 반환
     const wsRows = ((userWeeklyGrowthResult as { data: Array<{ status: string }> | null })?.data ?? []);
-    const ssRows = ((seasonStatusesResult as { data: Array<{ status: string }> | null })?.data ?? []);
+    const ssRows = ((seasonStatusesResult as { data: Array<{ season_key?: string | null; status: string }> | null })?.data ?? []);
+
+    // ── 현재 시즌 상태 (메달 뱃지 SoT) ──
+    // user_season_statuses 에서 현재 주차의 season_key 행을 찾는다.
+    // 'rest' = 시즌 휴식(통합 휴식) — user_profiles.status 가 active 여도 메달은 휴식으로 표시해야 함.
+    // 프론트는 growthInfo.currentSeasonStatus 값을 그대로 매핑한다(임의 계산 금지).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const currentSeasonKey = (currentWeekRow as any)?.season_key ?? null;
+    const currentSeasonStatus: string | null = currentSeasonKey
+      ? (ssRows.find((r) => r.season_key === currentSeasonKey)?.status ?? null)
+      : null;
 
     let approvedWeeksCount = 0;      // a: 성장(성공) 주차
     let unapprovedWeeksCount = 0;    // b: 성장(실패) 주차
@@ -2107,6 +2118,7 @@ export async function GET(request: NextRequest) {
       const correctedReviewStatus = isSeasonInProgress ? 'reviewing' : (item.review_status || 'approved');
 
       // progress_status 실시간 보정: 진행 중인 시즌은 항상 'in_progress'
+      // (admin seasonRecords 와 동일 규칙 — 시즌 휴식 표시는 growthInfo.currentSeasonStatus 가 담당).
       const correctedProgressStatus = isSeasonInProgress ? 'in_progress' : (item.progress_status || 'completed');
 
       // 휴식 주차 수 (해당 시즌 내) - rest_requests + user_week_statuses personal_rest 모두 포함
@@ -2230,8 +2242,130 @@ export async function GET(request: NextRequest) {
       return updatedItem;
     });
 
+    // ── 전체 시즌 이력 보강 (로컬 폴백 parity) ──
+    // user_season_histories 는 seasons(uuid) 테이블 FK 인데, seasons 테이블에는 현재 시즌
+    // 1건만 존재하는 환경이 있어 과거 시즌([25 가을]·[26 겨울] 등)이 통째로 빠진다.
+    // admin /api/cluster1/resume(computeSeasonRecords)은 season_definitions(text key) +
+    // user_week_statuses 로 전체 시즌을 만들므로, admin 미가용 시 로컬 폴백도 동일 정책으로
+    // 과거 시즌을 합성해 병합한다 (전환 주차 제외 · 총 주차 = 여름/겨울 8 · 그 외 16 ·
+    // 진행/검수 상태 규칙 동일). 현재 시즌의 실제 user_season_histories UUID 는 그대로 보존
+    // (cluster-4-1 peer_review.season_history_id FK 가 실 UUID 를 요구).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const existingUuidSeasonIds = new Set(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      finalSeasonHistoriesWithOnboarding.map((i: any) => i.seasons?.id).filter(Boolean)
+    );
+    // season_key 가 이미 uuid 시즌 항목으로 커버되는지 — 실제 주차 매핑(weekStartToSeasonUuid)으로 판정.
+    const seasonKeyCoveredByUuid = (key: string): boolean =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      allWeeks.some((w: any) =>
+        w.season_key === key && existingUuidSeasonIds.has(weekStartToSeasonUuid.get(w.start_date))
+      );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const seasonDefByKey = new Map<string, any>(allSeasonsRaw.map((d: any) => [d.season_key, d]));
+    // 유저 주차 상태를 season_key 로 그룹핑 (전환 주차 제외 — admin 과 동일)
+    const userWeekRowsBySeasonKey = new Map<string, Array<{ status: string }>>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    userWeeklyGrowthData.forEach((ws: any) => {
+      const weekMeta = weekByStartDate.get(ws.week_start_date);
+      if (!weekMeta?.season_key || isTransitionWeekMeta(weekMeta)) return;
+      const arr = userWeekRowsBySeasonKey.get(weekMeta.season_key) ?? [];
+      arr.push({ status: ws.status });
+      userWeekRowsBySeasonKey.set(weekMeta.season_key, arr);
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const synthesizedPastSeasonHistories: any[] = [];
+    for (const [seasonKey, rows] of Array.from(userWeekRowsBySeasonKey.entries())) {
+      if (seasonKeyCoveredByUuid(seasonKey)) continue;
+      const def = seasonDefByKey.get(seasonKey);
+      const seasonType = String(def?.season_type ?? "");
+      if (seasonType.includes("break")) continue; // 전환 시즌 제외 (기존 break 필터와 동일)
+
+      // 시즌 날짜 범위 — 해당 season_key 주차들의 min start / max end (allWeeks 는 start_date asc 정렬)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const seasonWeeksMeta = allWeeks.filter((w: any) => w.season_key === seasonKey && !isTransitionWeekMeta(w));
+      if (seasonWeeksMeta.length === 0) continue;
+      const seasonStartDate = seasonWeeksMeta[0].start_date;
+      const seasonEndDate = seasonWeeksMeta[seasonWeeksMeta.length - 1].end_date;
+
+      // 총 주차 = 시즌 타입별 고정값 (admin SEASON_TOTAL_WEEKS 와 동일: 여름/겨울 8 · 봄/가을 16)
+      const totalWeeks = seasonType === "summer" || seasonType === "winter" ? 8 : 16;
+      const approvedWeeks = rows.filter((r: { status: string }) => r.status === "success").length;
+      const hasRest = rows.some((r: { status: string }) => r.status === "personal_rest");
+      const hasFail = rows.some((r: { status: string }) => r.status === "fail");
+      const isOngoing = seasonEndDate >= today;
+
+      // 진행 상태 — admin computeSeasonRecords 규칙 그대로 (admin 가용/미가용 간 표시 흔들림 방지).
+      // 시즌 휴식 메달 표시는 growthInfo.currentSeasonStatus(user_season_statuses SoT)가 별도 담당.
+      let progressStatus: string;
+      if (isOngoing) {
+        progressStatus = "in_progress";
+      } else if (hasRest && !hasFail) {
+        progressStatus = "full_rest";
+      } else if (hasFail && approvedWeeks < totalWeeks / 2) {
+        progressStatus = "suspended";
+      } else {
+        progressStatus = "completed";
+      }
+
+      // 검수 상태 — admin 규칙: 종료 후 14일까지 'reviewing', 이후 'approved'
+      const reviewCutoffMs = new Date(seasonEndDate).getTime() + 14 * 86_400_000;
+      const reviewStatus = isOngoing || Date.now() <= reviewCutoffMs ? "reviewing" : "approved";
+
+      const seasonPoints = (() => {
+        // 시즌 포인트: user_weekly_points 를 season_key 날짜 범위로 직접 집계
+        let stars = 0, shields = 0, lightnings = 0;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (seasonPointsData as any[]).forEach((p: any) => {
+          const wkMeta = weekByStartDate.get(p.week_start_date);
+          if (wkMeta?.season_key !== seasonKey) return;
+          stars += p.points || 0;
+          shields += p.advantages || 0;
+          lightnings += p.penalty || 0;
+        });
+        return { stars, shields: shields - lightnings, lightnings: -lightnings };
+      })();
+
+      synthesizedPastSeasonHistories.push({
+        // 합성 항목 id — admin 매핑(mapAdminSeasonRecordsToSeasonHistories)과 동일 컨벤션.
+        // 실 user_season_histories row 가 아니므로 쓰기(FK) 대상 아님 (표시 전용).
+        id: `${seasonKey}-history`,
+        season_id: seasonKey,
+        user_id: profile.id,
+        role_in_season: null,
+        approved_weeks: approvedWeeks,
+        total_weeks: totalWeeks,
+        progress_status: progressStatus,
+        review_status: reviewStatus,
+        is_qualified: false,
+        seasons: {
+          id: seasonKey,
+          name: def?.season_label ?? seasonKey,
+          season_label: def?.season_label ?? seasonKey,
+          season_type: seasonType || null,
+          year: def?.year ?? (Number(seasonKey.slice(0, 4)) || null),
+          start_date: seasonStartDate,
+          end_date: seasonEndDate,
+        },
+        seasonPoints,
+      });
+    }
+
+    // 병합 + 정렬: 시즌 시작일 내림차순 (최신 시즌 먼저 — 기존 year/seasonOrder 정렬 의도와 동일)
+    const mergedSeasonHistories = [...finalSeasonHistoriesWithOnboarding, ...synthesizedPastSeasonHistories]
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .sort((a: any, b: any) =>
+        String(b.seasons?.start_date ?? "").localeCompare(String(a.seasons?.start_date ?? ""))
+      );
+    if (synthesizedPastSeasonHistories.length > 0) {
+      console.log('[Profile API] synthesized past season histories:',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        synthesizedPastSeasonHistories.map((s: any) => s.season_id));
+    }
+
     const adminSeasonHistories = mapAdminSeasonRecordsToSeasonHistories(adminResume);
-    const responseSeasonHistories = adminSeasonHistories ?? finalSeasonHistoriesWithOnboarding;
+    const responseSeasonHistories = adminSeasonHistories ?? mergedSeasonHistories;
 
     console.log('[Profile API] response seasonHistories source', adminSeasonHistories ? 'adminResume.seasonRecords' : 'local');
     console.log('[Profile API] response seasonHistories length', responseSeasonHistories.length);
@@ -2275,6 +2409,9 @@ export async function GET(request: NextRequest) {
       growthInfo: {
         status: profile.status,
         growthStatus: profile.growth_status,
+        // 현재 시즌 상태 (user_season_statuses.status, 현재 주차 season_key 기준).
+        // 'rest' = 시즌 휴식 — 메달 뱃지 SoT (프론트 임의 계산 금지, 이 값 그대로 매핑).
+        currentSeasonStatus,
         startDate: growthStartDate,
         endDate: growthEndDate,
         startWeekInfo: growthStartWeekInfo,
