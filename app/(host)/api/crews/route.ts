@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-server";
 import { resolveMembershipDisplay } from "@/lib/membership";
 import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confirmed-success-weeks";
+import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -99,6 +100,101 @@ interface UserMembershipRow {
 
 const KNOWN_ORGS = new Set(["phalanx", "encre", "oranke"]);
 
+// ─── displayGrowthStatus graft ────────────────────────────────────────
+// 상태 표시 SoT = admin growthCore.resolveGrowthStatusDetail (display = 수동
+// 오버라이드(graduated/suspended/paused) ?? 자동 계산). 고객앱은 자동 계산
+// 입력(현재주 상태·시즌휴식·승인주차 a·경과주차 h)을 재구현하지 않고 admin
+// GET /api/cluster3/growth-status-batch 를 graft 한다 (club-rank/stats-cards 와
+// 동일한 resolveAdminBaseUrl + x-internal-api-key 패턴).
+//
+// best-effort: 실패/미설정 시 null 반환 → mergeRow 에서 raw growth_status 기반
+// 폴백(아래 fallbackDisplayGrowthStatus). 타임아웃은 20s — 8s 는 admin cold
+// start 에서 abort 사고 전례(2026-06-05 resume graft)가 있어 동일 보정.
+const GROWTH_STATUS_KEYS = new Set([
+  "active",
+  "onboarding",
+  "weekly_rest",
+  "official_rest",
+  "seasonal_rest",
+  "graduating",
+  "extra_growth",
+  "graduated",
+  "suspended",
+  "paused",
+]);
+
+// graft 실패 시 raw growth_status 만으로 만드는 보수적 display 폴백.
+//   - 오버라이드 3종(graduated/suspended/paused)은 raw == display 가 보장된다
+//     (자동 계산이 이 3종을 반환하지 않으므로 — growthCore 구조 불변식).
+//   - 그 외 유효 키(legacy seasonal_rest/graduating 등)는 raw 를 그대로 표시
+//     (종전 화면 동작 보존), 무효/NULL 은 active.
+function fallbackDisplayGrowthStatus(rawGrowthStatus: string | null): string {
+  if (rawGrowthStatus && GROWTH_STATUS_KEYS.has(rawGrowthStatus)) {
+    return rawGrowthStatus;
+  }
+  return "active";
+}
+
+type GrowthStatusResolutionRow = {
+  userId: string;
+  displayGrowthStatus: string;
+  autoGrowthStatusKey: string;
+  manualOverrideStatus: string | null;
+};
+
+async function fetchDisplayGrowthStatusMap(
+  org: string | null,
+): Promise<Map<string, GrowthStatusResolutionRow> | null> {
+  const adminApiBaseUrl = await resolveAdminBaseUrl();
+  if (!adminApiBaseUrl) {
+    console.warn("[/api/crews] admin backend 미발견 — displayGrowthStatus raw 폴백");
+    return null;
+  }
+
+  const targetUrl = new URL(`${adminApiBaseUrl}/api/cluster3/growth-status-batch`);
+  if (org) targetUrl.searchParams.set("org", org);
+
+  const internalApiKey = process.env.INTERNAL_API_KEY;
+  if (!internalApiKey) {
+    console.warn("[/api/crews] INTERNAL_API_KEY missing — growth-status-batch 호출");
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  try {
+    const upstream = await fetch(targetUrl.toString(), {
+      method: "GET",
+      headers: { "x-internal-api-key": internalApiKey ?? "" },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!upstream.ok) {
+      console.warn("[/api/crews] growth-status-batch 응답 비정상 — raw 폴백", upstream.status);
+      return null;
+    }
+    const json = (await upstream.json()) as {
+      success?: boolean;
+      data?: GrowthStatusResolutionRow[];
+    };
+    if (!json?.success || !Array.isArray(json.data)) return null;
+    const map = new Map<string, GrowthStatusResolutionRow>();
+    for (const row of json.data) {
+      if (row?.userId && GROWTH_STATUS_KEYS.has(row.displayGrowthStatus)) {
+        map.set(row.userId, row);
+      }
+    }
+    return map;
+  } catch (e) {
+    console.warn(
+      "[/api/crews] growth-status-batch fetch 실패 — raw 폴백",
+      (e as Error)?.message || String(e),
+    );
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 const isValidUUID = (str: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
@@ -117,6 +213,7 @@ function mergeRow(
   memberships: UserMembershipRow[],
   starsTotal: number | null,
   confirmedWeeks: number | null,
+  growthResolution: GrowthStatusResolutionRow | null,
 ) {
   // 팀/파트/등급 — 공용 resolver(resolveMembershipDisplay)로 통일.
   //   team_name 보유 row 우선(is_current 단독 신뢰 금지) + user_profiles.current_*_name 폴백.
@@ -161,6 +258,13 @@ function mergeRow(
     universityMajor: [schoolName, majorName].filter((v) => v && v !== "-").join(" ") || "-",
     status: profile.status ?? view?.status ?? "-",
     growthStatus: profile.growth_status ?? view?.growth_status ?? "-",
+    // 상태 표시/필터 단일 기준(SoT) — admin resolveGrowthStatusDetail 의
+    // display(= 오버라이드 ?? 자동 계산). graft 실패 시 raw 기반 보수 폴백.
+    // /crews 필터·카드 배지·정렬은 이 필드 하나만 사용한다 (status/growthStatus
+    // raw 필드는 호환용으로 유지하되 신규 소비 금지).
+    displayGrowthStatus:
+      growthResolution?.displayGrowthStatus ??
+      fallbackDisplayGrowthStatus(profile.growth_status),
     // 별 개수 SoT = points(point_type='star') 누적 합 (starsTotal).
     // starsByUser 에 행이 있으면(=어드민 DB 에 star 포인트 존재) 그 합을 우선 사용,
     // 없으면 legacy crew_list_view.total_stars 폴백, 그것도 없으면 0.
@@ -222,7 +326,7 @@ export async function GET(request: Request) {
     // 줄일 뿐, 최종 merge + sort 결과(응답 JSON)는 순차 실행 때와 100% 동일하다.
     const userIds = profiles.map((p) => p.user_id);
     const STAR_PAGE = 1000;
-    const [viewRes, eduRes, growthRes, membershipRes, starsByUser, confirmedWeeksByUser] = await Promise.all([
+    const [viewRes, eduRes, growthRes, membershipRes, starsByUser, confirmedWeeksByUser, growthResolutionMap] = await Promise.all([
       // 2) crew_list_view (rich fields: school, major, club, points, weeks)
       supabase
         .from("crew_list_view")
@@ -333,6 +437,9 @@ export async function GET(request: Request) {
         }
         return counts;
       })(),
+      // 2.10) displayGrowthStatus — admin growth-status-batch graft (SoT).
+      // best-effort: 실패 시 null → mergeRow 에서 raw 폴백.
+      fetchDisplayGrowthStatusMap(orgFilter),
     ]);
 
     // --- view ---
@@ -377,7 +484,11 @@ export async function GET(request: Request) {
       membershipMap.set(m.user_id, list);
     }
 
-    console.log("[/api/crews] star point users=", starsByUser.size, "confirmedWeeks users=", confirmedWeeksByUser?.size ?? "(fallback)");
+    console.log(
+      "[/api/crews] star point users=", starsByUser.size,
+      "confirmedWeeks users=", confirmedWeeksByUser?.size ?? "(fallback)",
+      "growthStatus users=", growthResolutionMap?.size ?? "(raw fallback)",
+    );
 
     // 3) Merge
     const rows = profiles.map((p) =>
@@ -389,6 +500,7 @@ export async function GET(request: Request) {
         membershipMap.get(p.user_id) ?? [],
         starsByUser.get(p.user_id) ?? null,
         confirmedWeeksByUser?.get(p.user_id) ?? null,
+        growthResolutionMap?.get(p.user_id) ?? null,
       ),
     );
 
