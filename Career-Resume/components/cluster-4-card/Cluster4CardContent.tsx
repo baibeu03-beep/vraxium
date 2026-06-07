@@ -4769,7 +4769,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     calendar: { category: "캘린더", tagColor: "tag--dark", icon: "/images/0/cluster4/icon/실무 정보/실무 정보 - 캘린더.png", isFruit: true },
     forum: { category: "포럼", tagColor: "tag--green", icon: "/images/0/cluster4/icon/실무 정보/실무 정보 - 포럼.png", isFruit: true },
     session: { category: "세션", tagColor: "tag--cyan", icon: "/images/0/cluster4/icon/실무 정보/실무 정보 - 세션.png", isFruit: true },
-    practical_lecture: { category: "실무특강", tagColor: "tag--mint", icon: "/images/0/cluster4/icon/실무 정보/실무 정보 - 실무특강.png", isFruit: true },
+    practical_lecture: { category: "아카데미", tagColor: "tag--mint", icon: "/images/0/cluster4/icon/실무 정보/실무 정보 - 아카데미.png", isFruit: true },
     community: { category: "커뮤니티", tagColor: "tag--dark", icon: "/images/0/cluster4/icon/실무 정보/실무 정보 - 커뮤니티.png", isFruit: true },
     etc_a: { category: "기타a", tagColor: "tag--mint", icon: "/images/0/cluster4/icon/실무 정보/실무 정보 - 기타a.png", isFruit: true },
   };
