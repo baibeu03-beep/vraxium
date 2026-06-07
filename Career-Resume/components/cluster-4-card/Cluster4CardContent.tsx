@@ -4765,7 +4765,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const activityTypeConfig: { [key: string]: { category: string; tagColor: string; icon: string; isFruit: boolean } } = {
     wisdom: { category: "위즈덤", tagColor: "tag--red", icon: "/images/0/cluster4/icon/실무 정보/실무 정보 - 위즈덤.png", isFruit: true },
     essay: { category: "에세이", tagColor: "tag--yellow", icon: "/images/0/cluster4/icon/실무 정보/실무 정보 - 에세이.png", isFruit: true },
-    infodesk: { category: "인포데스크", tagColor: "tag--purple", icon: "/images/0/cluster4/icon/실무 정보/실무 정보 - 인포데스크.png", isFruit: true },
+    infodesk: { category: "씽크탱크", tagColor: "tag--purple", icon: "/images/0/cluster4/icon/실무 정보/실무 정보 - 씽크탱크.png", isFruit: true },
     calendar: { category: "캘린더", tagColor: "tag--dark", icon: "/images/0/cluster4/icon/실무 정보/실무 정보 - 캘린더.png", isFruit: true },
     forum: { category: "포럼", tagColor: "tag--green", icon: "/images/0/cluster4/icon/실무 정보/실무 정보 - 포럼.png", isFruit: true },
     session: { category: "세션", tagColor: "tag--cyan", icon: "/images/0/cluster4/icon/실무 정보/실무 정보 - 세션.png", isFruit: true },
@@ -8998,7 +8998,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         {/* 1행: 활동 카테고리 — 기존 매핑 activityTypeConfig[activityType].icon (selectedWorkInfoCard.icon) 사용 */}
                         <div className="line-info-row">
                           {selectedWorkInfoCard.icon ? <img className="line-activity-icon" src={selectedWorkInfoCard.icon} alt={selectedWorkInfoCard.category || "활동"} /> : <span className="line-status-icon">●</span>}
-                          <span className="line-name" style={{ lineHeight: "26px", height: "26px", overflow: "visible" }}>{"인포데스크 — 데모 확인용 매우 긴 텍스트 두 줄 줄바꿈 테스트입니다 테스트입니다"}</span>
+                          <span className="line-name" style={{ lineHeight: "26px", height: "26px", overflow: "visible" }}>{"씽크탱크 — 데모 확인용 매우 긴 텍스트 두 줄 줄바꿈 테스트입니다 테스트입니다"}</span>
                         </div>
                       </div>
                     </div>
