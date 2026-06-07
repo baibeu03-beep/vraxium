@@ -1,31 +1,28 @@
+// GET /api/cluster4/weekly-growth — /cluster-4 진입 화면 시즌 요약 전용 라우트 (2026-06-05 축소).
+//
+// SoT 감사(claudedocs/sot-audit-20260605.md, admin repo)에서 본 라우트의 독립 구현
+// (buildWeeklyCards 주차 카드 / raw uws 카운트 growthStats / weeks.is_official_rest
+// 직독 currentWeekInfo)이 admin 정본(getWeeklyGrowth)과 어긋남이 실증되었다:
+//   - 미공표(집계 중) 주차를 "성공"으로 반환 (publish 게이트 미적용)
+//   - 전환 주차 success/fail 을 카운트 (전환 제외 미적용)
+//   - 공식 휴식 판정이 legacy 컬럼 직독 (official_rest_periods resolver 미반영)
+// 라이브 소비처(components/cluster-4/Cluster4Content.tsx)는 data.seasonSummary /
+// data.seasonPointSummary / data.seasonSummaries 만 사용하므로, 어긋난 필드
+// (currentWeekInfo / growthStats / weeklyCards / userGrowthStatus / userStatus)는
+// 전부 폐기한다. (admin 정본 weekly-growth 는 LIVE 10s+ 계산이라 진입 경로 프록시
+// 부적합 — front 이력서 graft 8s 타임아웃 사고와 동일 클래스. 주차 카드가 필요하면
+// snapshot-only 인 /api/cluster4/weekly-cards 를 사용할 것.)
+//
+// 유지되는 시즌 요약 3필드의 SoT:
+//   - 시즌 성공/중단/졸업 판정 = admin /api/cluster1/resume seasonRecords graft (이력서와 동일)
+//   - 포인트 = user_weekly_points 직접 합산 (이력서 누적포인트와 동일 원장, 전환주차 자동 제외)
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-server";
 import { seasonLabel } from "@/lib/cluster4-types";
-import { buildWeeklyCards } from "@/lib/cluster4-weekly-cards";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-function toDisplaySeasonLabel(season: any): string | null {
-  if (!season) return null;
-  if (season.season_label) return season.season_label;
-  const year = season.year ? `${season.year}년도 ` : "";
-  const label = seasonLabel(season.season_type || "");
-  return label ? `${year}${label}시즌` : null;
-}
-
-function toLegacyWeekInfo(seasonLabel: string | null, weekNumber: number | null, isBreak: boolean) {
-  if (!seasonLabel) return null;
-  const match = seasonLabel.match(/^(\d{4})년도\s*(.+?)시즌$/);
-  const fallbackSeasonName = seasonLabel.replace(/^\d{4}년도\s*/, "").replace(/시즌$/, "") || null;
-  return {
-    year: match ? Number(match[1]) : null,
-    seasonName: match ? match[2] : fallbackSeasonName,
-    weekNumber: isBreak ? null : weekNumber,
-    isBreak,
-  };
-}
 
 // ── 현재 활성 시즌 요약 + 시즌 누적 포인트 (진입 화면 area-1-title / area-4-stats 용) ──
 // 프론트 계산 없이 서버에서 산출한다.
@@ -465,137 +462,23 @@ export async function GET(request: NextRequest) {
     const today = new Date().toISOString().split("T")[0];
 
     const [currentWeekRes, profileRes] = await Promise.all([
+      // 활성 시즌 해석용 현재 주차 — buildSeasonSummaryAndPoints 입력 전용.
+      // (is_official_rest/holiday_name 직독 currentWeekInfo 판정은 2026-06-05 폐기 — 헤더 주석 참고.)
       supabase
         .from("weeks")
-        .select("id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, season_definitions!inner(season_key, season_label, season_type, year)")
+        .select("season_key, season_definitions!inner(season_type, year)")
         .lte("start_date", today)
         .gte("end_date", today)
         .maybeSingle(),
       supabase
         .from("user_profiles")
-        .select("activity_started_at, growth_status, status, role")
+        .select("growth_status, status")
         .eq("user_id", userId)
         .maybeSingle(),
     ]);
 
     const currentWeek = currentWeekRes.data as any;
     const userProfile = profileRes.data as any;
-
-    // currentWeekInfo
-    let currentWeekInfo = null;
-    if (currentWeek) {
-      const sd = currentWeek.season_definitions;
-      const seasonType: string = sd?.season_type || "";
-      const isBreakSeason = seasonType.includes("break");
-
-      let status: "running" | "official_rest" | "transition";
-      let restReason: string | null = null;
-      let nextSeasonName: string | null = null;
-
-      if (isBreakSeason) {
-        status = "transition";
-        const parts = seasonType.replace("_break", "").split("_");
-        nextSeasonName = parts.length >= 2 ? seasonLabel(parts[1]) : null;
-      } else if (currentWeek.is_official_rest) {
-        status = "official_rest";
-        restReason = currentWeek.holiday_name || "공식 휴식";
-      } else {
-        status = "running";
-      }
-
-      currentWeekInfo = {
-        year: sd?.year || new Date().getFullYear(),
-        seasonName: seasonLabel(isBreakSeason ? seasonType.replace("_break", "").split("_")[0] : seasonType),
-        seasonLabel: sd?.season_label || null,
-        weekNumber: currentWeek.week_number,
-        startDate: currentWeek.start_date,
-        endDate: currentWeek.end_date,
-        status,
-        restReason,
-        nextSeasonName,
-      };
-    }
-
-    // growthStats summary
-    const { data: weekStatusRecords } = await supabase
-      .from("user_week_statuses")
-      .select("week_start_date, status")
-      .eq("user_id", userId);
-
-    const successWeeks = weekStatusRecords?.filter((r: any) => r.status === "success")?.length ?? 0;
-    const restWeeks = weekStatusRecords?.filter((r: any) => r.status === "personal_rest")?.length ?? 0;
-    const officialRestWeeks = weekStatusRecords?.filter((r: any) => r.status === "official_rest")?.length ?? 0;
-    const failWeeks = weekStatusRecords?.filter((r: any) => r.status === "fail")?.length ?? 0;
-    const totalWeeks = successWeeks + failWeeks + restWeeks + officialRestWeeks;
-
-    const statusStartDates = (weekStatusRecords || []).map((r: any) => r.week_start_date).filter(Boolean);
-    let seasonKeys = new Set<string>();
-    if (statusStartDates.length > 0) {
-      const { data: seasonWeeks } = await supabase
-        .from("weeks")
-        .select("start_date, season_key")
-        .in("start_date", statusStartDates);
-      seasonKeys = new Set((seasonWeeks || []).map((w: any) => w.season_key).filter(Boolean));
-    }
-
-    // growth start/end
-    let startWeekInfo = null;
-    if (userProfile?.activity_started_at) {
-      const startDate = String(userProfile.activity_started_at).split("T")[0];
-      const { data: sw } = await supabase
-        .from("weeks")
-        .select("week_number, start_date, season_key, season_definitions!inner(season_key, season_label, season_type, year)")
-        .lte("start_date", startDate)
-        .gte("end_date", startDate)
-        .maybeSingle();
-      if (sw) {
-        const ssd = (sw as any).season_definitions;
-        const sType: string = ssd?.season_type || "";
-        const sIsBreak = sType.includes("break");
-        startWeekInfo = toLegacyWeekInfo(toDisplaySeasonLabel(ssd), sIsBreak ? null : (sw as any).week_number, sIsBreak);
-      }
-    }
-
-    let endWeekInfo = null;
-    const gs = userProfile?.growth_status;
-    if (gs === "graduated" || gs === "withdrawn" || gs === "expelled") {
-      const { data: lastStatus } = await supabase
-        .from("user_week_statuses")
-        .select("week_start_date")
-        .eq("user_id", userId)
-        .order("week_start_date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (lastStatus) {
-        const { data: lastWeek } = await supabase
-          .from("weeks")
-          .select("week_number, season_definitions!inner(season_label, season_type, year)")
-          .eq("start_date", (lastStatus as any).week_start_date)
-          .maybeSingle();
-        if (lastWeek) {
-          const es = (lastWeek as any).season_definitions;
-          const eType: string = es?.season_type || "";
-          const eIsBreak = eType.includes("break");
-          endWeekInfo = toLegacyWeekInfo(
-            toDisplaySeasonLabel(es),
-            eIsBreak ? null : (lastWeek as any).week_number,
-            eIsBreak,
-          );
-        }
-      }
-    }
-
-    // Build weekly cards
-    let joinedWeekStartDate: string | null = null;
-    if (userProfile?.activity_started_at) {
-      joinedWeekStartDate = String(userProfile.activity_started_at).split("T")[0];
-    }
-
-    const weeklyCards = await buildWeeklyCards(supabase, userId, {
-      onboardingWeekId: userProfile?.onboarding_week_id || null,
-      joinedWeekStartDate,
-      userDefaultRole: userProfile?.role || null,
-    });
 
     // 시즌 판정 SoT graft — 시즌 중 졸업/성공/중단/휴식 판정에 단일 요약·시즌별 요약 공용.
     // (이력서 카드 시즌 행과 동일 SoT(admin seasonRecords) 재사용 — 단일 요약보다 먼저 조회.)
@@ -620,22 +503,11 @@ export async function GET(request: NextRequest) {
       resumeStatusByKey,
     );
 
+    // 사용 DTO: data.seasonSummary(현재 시즌), data.seasonPointSummary(현재 시즌),
+    //          data.seasonSummaries[](시즌별 — 페이지네이션용, 각 pointSummary 포함)
+    // currentWeekInfo / growthStats / weeklyCards / userGrowthStatus / userStatus 는
+    // 2026-06-05 폐기 (사용처 0 + 정본 불일치 — 헤더 주석 참고).
     return NextResponse.json({
-      currentWeekInfo,
-      growthStats: {
-        startWeekInfo,
-        endWeekInfo,
-        availableWeeks: totalWeeks,
-        availableSeasons: seasonKeys.size,
-        successWeeks,
-        failWeeks,
-        restWeeks,
-      },
-      userGrowthStatus: gs || null,
-      userStatus: userProfile?.status || null,
-      weeklyCards,
-      // 사용 DTO: data.seasonSummary(현재 시즌), data.seasonPointSummary(현재 시즌),
-      //          data.seasonSummaries[](시즌별 — 페이지네이션용, 각 pointSummary 포함)
       data: { seasonSummary, seasonPointSummary, seasonSummaries },
     });
   } catch (err: any) {

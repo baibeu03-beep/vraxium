@@ -2059,29 +2059,28 @@ const Cluster4Content = () => {
       // 온보딩 주차 여부 확인
       const isOnboardingWeek = weekId === onboardingWeekId;
 
-      // 5. 누적 성공 주차 수 계산 (user_week_statuses SoT 기반)
-      const { data: successStatusData } = await supabase.from("user_week_statuses").select("week_start_date").eq("user_id", targetUserId).eq("status", "success");
-      const successStartDates = (successStatusData || []).map((s: any) => s.week_start_date).filter(Boolean);
-      const { data: successWeeksJoined } = successStartDates.length > 0
-        ? await supabase.from("weeks").select("id, start_date, end_date").in("start_date", successStartDates)
-        : { data: [] };
-
-      const userStartDateForCum = profileResult.growthInfo?.startDate || '1900-01-01';
-      let currentCumulativeApproved = 0;
-      if (successWeeksJoined && successWeeksJoined.length > 0) {
-        currentCumulativeApproved = successWeeksJoined.filter((sw: any) => {
-          return sw.end_date && sw.end_date <= currentWeekData.end_date && sw.end_date >= userStartDateForCum;
-        }).length;
-      }
-      // 온보딩 주차도 누적에 포함 (user_week_statuses에 없는 경우)
-      if (onboardingWeekId) {
-        const onboardingAlreadyCounted = successWeeksJoined?.some((sw: any) => sw.id === onboardingWeekId);
-        if (!onboardingAlreadyCounted) {
-          const { data: onboardingWeekInfo } = await supabase.from("weeks").select("end_date").eq("id", onboardingWeekId).maybeSingle();
-          if (onboardingWeekInfo && onboardingWeekInfo.end_date <= currentWeekData.end_date) {
-            currentCumulativeApproved += 1;
-          }
-        }
+      // 5. 누적 인정 주차 — 정본 = weekly-cards 스냅샷 DTO 의 accumulatedApprovedWeeks 직독.
+      //    (SoT 감사 2026-06-05: 종전 raw uws 자체 계산은 미공표(집계 중)·전환 주차 success 를
+      //     +1 해 admin 정본과 어긋났다(27 vs 26 실증) — 자체 계산 제거, 재계산 금지.)
+      //    정본 의미: success ∧ 결과 공표 완료 ∧ 비-현재주 ∧ 비-전환 (admin accByStart).
+      //    area-6-circles 로드와 동일 URL → dedupedJson 캐시 공유(추가 네트워크 비용 없음).
+      const weeklyCardsQsForAcc = urlUserId
+        ? `?userId=${encodeURIComponent(urlUserId)}${demoQS}`
+        : "";
+      const weeklyCardsForAcc = await dedupedJson<{
+        data?: Array<{ weekId?: string; accumulatedApprovedWeeks?: number }>;
+      }>(`/api/cluster4/weekly-cards${weeklyCardsQsForAcc}`).catch(() => null);
+      const snapshotCardsForAcc = Array.isArray(weeklyCardsForAcc?.data) ? weeklyCardsForAcc.data : [];
+      const currentWeekCardForAcc = snapshotCardsForAcc.find((c) => c.weekId === weekId);
+      // 현재 주차 카드 미존재(스냅샷 경계/신규 유저) 시 최댓값 폴백 — acc 는 누적 단조증가라
+      // max = 최신 확정 누적과 동일. 조회 실패는 0(fail-closed, 종전 실패 동작과 동일).
+      let currentCumulativeApproved =
+        currentWeekCardForAcc?.accumulatedApprovedWeeks ??
+        snapshotCardsForAcc.reduce((m, c) => Math.max(m, c.accumulatedApprovedWeeks ?? 0), 0);
+      // 온보딩 주차는 인정 1주차 취급(기존 표시 규칙 유지) — 스냅샷 누적이 아직 0이어도
+      // eligible_min=1 주차범위 게이트가 첫 주에 닫히지 않게 한다.
+      if (isOnboardingWeek) {
+        currentCumulativeApproved = Math.max(currentCumulativeApproved, 1);
       }
 
       // 6. 유저의 모든 완료 활동 저장 (experience eligible - count_once_in_total 체크용)
