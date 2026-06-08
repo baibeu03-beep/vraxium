@@ -2337,12 +2337,15 @@ export async function GET(request: NextRequest) {
 
       // 진행 상태 — admin computeSeasonRecords 규칙 그대로 (admin 가용/미가용 간 표시 흔들림 방지).
       // 시즌 휴식 메달 표시는 growthInfo.currentSeasonStatus(user_season_statuses SoT)가 별도 담당.
+      // (2026-06-08 정정) suspended 조건 = 인정 주차 0 ∧ fail 만. admin cluster1ResumeData 와
+      // 동기 — 인정 주차 ≥1 이면 절반 미만이라도 '활동 중단' 금지(과거 시즌 완료 이력 보존).
+      // PMS 이관 사용자는 일부 주차만 인정이 정상이라 종전 totalWeeks/2 기준은 과잉 강등이었다.
       let progressStatus: string;
       if (isOngoing) {
         progressStatus = "in_progress";
       } else if (hasRest && !hasFail) {
         progressStatus = "full_rest";
-      } else if (hasFail && approvedWeeks < totalWeeks / 2) {
+      } else if (hasFail && approvedWeeks === 0) {
         progressStatus = "suspended";
       } else {
         progressStatus = "completed";
