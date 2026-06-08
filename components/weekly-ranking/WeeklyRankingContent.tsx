@@ -48,18 +48,48 @@ const getSeasonFilterValue = (seasonName: string) => {
   return `${ys.year}년, ${ys.season} 시즌`;
 };
 
-const WeeklyRankingContent = () => {
+interface WeeklyRankingContentProps {
+  // 조직 slug(phalanx · encre · oranke). page.tsx 에서 ?org= 검증 후 전달.
+  org: string;
+}
+
+const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
   const [sortValue, setSortValue] = useState<string>("latest");
   const [seasonValue, setSeasonValue] = useState<string>("");
   const [leagueValue, setLeagueValue] = useState<string>("");
   const [demo, setDemo] = useState(false);
+  const [fetchedCards, setFetchedCards] = useState<WeeklyCardData[]>([]);
 
   // localStorage는 SSR 접근 불가 — 마운트 후 한 번 체크
   useEffect(() => {
     setDemo(isDemoMode());
   }, []);
 
-  const allCards = useMemo<WeeklyCardData[]>(() => (demo ? WEEKLY_CARD_DUMMY : []), [demo]);
+  // 실데이터 — /api/weekly-league?org= 집계 카드. org 변경 시 재요청.
+  // 데모 모드는 더미를 쓰므로 fetch 생략. unmount/org 변경 race 는 cancelled 가드로 차단.
+  useEffect(() => {
+    if (demo || !org) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/weekly-league?org=${encodeURIComponent(org)}`, { cache: "no-store" });
+        const json = await res.json();
+        if (!cancelled && json?.success && Array.isArray(json.cards)) {
+          setFetchedCards(json.cards as WeeklyCardData[]);
+        }
+      } catch {
+        if (!cancelled) setFetchedCards([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [demo, org]);
+
+  const allCards = useMemo<WeeklyCardData[]>(
+    () => (demo ? WEEKLY_CARD_DUMMY : fetchedCards),
+    [demo, fetchedCards],
+  );
 
   // 카드 데이터에 실제 존재하는 시즌만 옵션으로. 최신(year + seasonOrder DESC) 정렬.
   const seasonOptions = useMemo(() => {

@@ -86,7 +86,7 @@ function WeeklyRankingPageInner() {
           className="container-fluid"
           style={{ paddingLeft: 15, paddingRight: 15, maxWidth: '100%' }}
         >
-          <WeeklyRankingContent />
+          <WeeklyRankingContent org={org} />
         </div>
       </section>
     </main>
