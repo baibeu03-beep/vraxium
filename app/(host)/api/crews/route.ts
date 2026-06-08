@@ -126,13 +126,24 @@ const GROWTH_STATUS_KEYS = new Set([
 // graft 실패 시 raw growth_status 만으로 만드는 보수적 display 폴백.
 //   - 오버라이드 3종(graduated/suspended/paused)은 raw == display 가 보장된다
 //     (자동 계산이 이 3종을 반환하지 않으므로 — growthCore 구조 불변식).
-//   - 그 외 유효 키(legacy seasonal_rest/graduating 등)는 raw 를 그대로 표시
-//     (종전 화면 동작 보존), 무효/NULL 은 active.
+//   - 휴식/온보딩 계열(seasonal_rest/weekly_rest/official_rest/onboarding)·active 는
+//     raw 가 실제 신청·진행 기록을 추종하므로 그대로 표시(종전 동작 보존).
+//   - ⚠️ graduating/extra_growth 는 "성공 주차 a ≥ 기준"으로만 자동 도출되는 값인데,
+//     graft 없이는 그 기준 도달을 확인할 수 없다. 게다가 2026-06-07 auto/override 분리
+//     정책 이전의 legacy raw 가 stale 하게 남아(예: a=18~22 인데 raw='graduating')
+//     graft 실패 시 "졸업 절차 중"으로 오표시되는 사례가 실측됐다(2026-06-08, 7명 전원
+//     admin canonical=active). 따라서 폴백에서는 두 값을 신뢰하지 않고 active 로 강등한다.
+//     (graft 가 살아 있으면 admin canonical(auto)이 active/extra_growth/graduating 을 정확히 판정 —
+//      이 폴백은 graft 가 죽었을 때만 타며, 그 경우 a 검증 불가하므로 보수적으로 활동 중.)
+const FALLBACK_TRUSTED_KEYS = new Set([
+  "graduated", "suspended", "paused",
+  "seasonal_rest", "weekly_rest", "official_rest", "onboarding", "active",
+]);
 function fallbackDisplayGrowthStatus(rawGrowthStatus: string | null): string {
-  if (rawGrowthStatus && GROWTH_STATUS_KEYS.has(rawGrowthStatus)) {
+  if (rawGrowthStatus && FALLBACK_TRUSTED_KEYS.has(rawGrowthStatus)) {
     return rawGrowthStatus;
   }
-  return "active";
+  return "active"; // graduating/extra_growth/무효/NULL → 활동 중
 }
 
 type GrowthStatusResolutionRow = {

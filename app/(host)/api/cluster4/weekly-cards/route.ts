@@ -7,7 +7,11 @@ import { resolveMembershipDisplay } from "@/lib/membership";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const UPSTREAM_TIMEOUT_MS = 8000;
+// admin(vraxium-admin) 콜드스타트 보정 — 8s 는 admin 이 cold 일 때(별도 Vercel 배포) 첫
+// 진입 fetch 가 abort→504 로 빠져 "첫 진입 시 주차 카드 빈 화면, 강력 새로고침하면 표시"
+// 증상을 유발했다(2026-06-08 실측). growth-status-batch graft(20s)·Vercel 함수 한도(300s)
+// 대비 여유가 충분하므로 25s 로 상향해 콜드스타트를 흡수한다. (admin 이 정상이면 영향 없음.)
+const UPSTREAM_TIMEOUT_MS = 25000;
 
 // experience partType 정규화 (업스트림이 "exp" 축약형으로 줄 수 있음)
 function isExperiencePart(p: unknown): boolean {
