@@ -5,6 +5,7 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import { buildPostLoginRedirectUrl } from "@/lib/auth-redirect";
+import MemberFindModal from "@/components/pages/MemberFindModal";
 
 const kakaoIconStyle = {
   display: "inline-flex",
@@ -45,6 +46,7 @@ const SignIn = () => {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isFindModalOpen, setIsFindModalOpen] = useState(false);
   // /sign-in?callbackUrl=... 로 보호된 페이지에서 튕겨진 경우만 명시 callback 으로 전달.
   // 명시 callback 이 없으면 post-login 에서 조직 분기 redirect 가 적용된다.
   const rawCallbackUrl = searchParams.get("callbackUrl");
@@ -93,6 +95,10 @@ const SignIn = () => {
                     </div>
                   )}
 
+                  <p className="text-md text-alter mb-24" style={{ wordBreak: "keep-all" }}>
+                    기존에 등록된 이메일의 구글 또는 카카오 계정으로 로그인해주세요.
+                  </p>
+
                   <div className="oauth-tab">
                     <div className="oauth-btns oauth-btns--stacked">
                       <button
@@ -126,7 +132,18 @@ const SignIn = () => {
                     </div>
                   </div>
 
-                  <div className="mt-60 h-a text-center">
+                  <div className="mt-32 text-center">
+                    <p className="text-sm text-alter">기존 등록 이메일이 기억나지 않으신가요?</p>
+                    <button
+                      type="button"
+                      onClick={() => setIsFindModalOpen(true)}
+                      className="member-find-link mt-8"
+                    >
+                      기존 회원 찾기
+                    </button>
+                  </div>
+
+                  <div className="mt-40 h-a text-center">
                     <p className="mt-8">
                       <Link href="/">홈으로 돌아가기</Link>
                     </p>
@@ -137,6 +154,8 @@ const SignIn = () => {
           </div>
         </div>
       </section>
+
+      {isFindModalOpen && <MemberFindModal onClose={() => setIsFindModalOpen(false)} />}
     </main>
   );
 };
