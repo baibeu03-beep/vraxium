@@ -17,7 +17,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase";
 import { seasonLabel } from "@/lib/cluster4-types";
-import { isOfficialRestWeek } from "@/lib/cluster4-transition-week";
+import { isOfficialRestWeek, normalizeSeason } from "@/lib/cluster4-transition-week";
 import { getWeekImageUrl } from "@/lib/cluster4-week-image";
 import { pickPrimaryMembership, type MembershipRow } from "@/lib/membership";
 import type {
@@ -56,14 +56,36 @@ const fmtDate = (d: string): string => {
   return `${y.slice(2)}.${m}.${day}(${dow})`;
 };
 
-// holiday_name / 시즌전환 → RestReason 매핑(best-effort). 미상은 '시즌 전환'.
-const resolveRestReason = (holidayName: string | null, isBreak: boolean): RestReason => {
+// 공식 휴식 사유(RestReason) 판정. 우선순위:
+//   1) weeks.holiday_name SoT — 명시된 사유(중간/기말/설/추석)를 그대로 따른다.
+//   2) break 시즌 / holiday_name 에 '전환' 명시 → '시즌 전환'.
+//   3) holiday_name 미상 → 시즌·주차 정책 SoT 로 시험기간 도출.
+//      봄·가을(16주 시즌)은 6~8주차=중간고사, 14~16주차=기말고사가 공식 휴식이다
+//      (seasonCalendar.getCalendarWeekStatus 와 동일 정책). 이 함수는 weekOfficialRest
+//      == true 인 카드에서만 호출되며, 전환 주차(17/9)는 isOfficialRestWeek 에서
+//      이미 제외되므로 여기로 들어오지 않는다.
+//   4) 그 외(여름·겨울 명절 등 holiday_name 누락) → '시즌 전환' 폴백.
+const resolveRestReason = (
+  holidayName: string | null,
+  isBreak: boolean,
+  seasonName: string,
+  weekNumber: number,
+): RestReason => {
   const h = holidayName ?? "";
+  // 1) holiday_name SoT 우선
   if (h.includes("중간")) return "중간고사";
   if (h.includes("기말")) return "기말고사";
   if (h.includes("설")) return "설 연휴";
   if (h.includes("추석") || h.includes("한가위")) return "한가위";
+  // 2) break/전환 명시 → 시즌 전환
   if (isBreak || h.includes("전환")) return "시즌 전환";
+  // 3) holiday_name 미상 → 봄·가을 시험기간 정책 SoT
+  const season = normalizeSeason(seasonName);
+  if (season === "spring" || season === "fall") {
+    if (weekNumber >= 6 && weekNumber <= 8) return "중간고사";
+    if (weekNumber >= 14 && weekNumber <= 16) return "기말고사";
+  }
+  // 4) 그 외 공식 휴식 → 시즌 전환 폴백
   return "시즌 전환";
 };
 
@@ -277,7 +299,7 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
           personalRest: 0,
           winningTeamImage: null,
           top3: [],
-          restReason: resolveRestReason(week.holidayName, week.isBreak),
+          restReason: resolveRestReason(week.holidayName, week.isBreak, week.seasonName, week.weekNumber),
         };
       }
 
