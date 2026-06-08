@@ -4,6 +4,7 @@ import {
   normalizeEmail,
   type ApplicantRow,
   type UserProfileAccessResult,
+  type UserProfileAccessRow,
 } from "./user-profile-access";
 
 /**
@@ -11,9 +12,13 @@ import {
  *
  * 정책:
  *  * 고유 식별자 = Google id_token 의 sub (NextAuth OIDC 검증 후 account.providerAccountId).
- *  * 유저 매칭 키 = auth_accounts(provider='google', provider_user_id=sub). email 은 표시용일 뿐
- *    매칭에 쓰지 않는다 — 같은 email 의 kakao 계정이 있어도 자동 병합하지 않는다.
- *  * 신규 sub → applicants(provider='google', provider_user_id=sub) pending 신청
+ *  * 1순위 유저 매칭 키 = auth_accounts(provider='google', provider_user_id=sub).
+ *  * 2순위(2026-06-08 추가) = sub 미링크 시 Google email 을 정규화(trim+lowercase)하여
+ *    user_profiles.contact_email 과 "정확히 1명" 일치하고 그 유저가 PMS 이관 사용자
+ *    (users.source_system 또는 legacy_user_id 보유)이면 그 기존 레코드에 자동 연결한다.
+ *    — 이름/전화 매칭 금지, email 정확 1명일 때만. 0명/2명+ → 자동 연결 금지(pending).
+ *    — 이미 다른 user_id 에 같은 sub 가 링크돼 있으면 절대 병합 금지(1순위에서 차단).
+ *  * 신규/미일치 sub → applicants(provider='google', provider_user_id=sub) pending 신청
  *    (kakao 신규가입과 동일한 pending DTO/세션 흐름).
  *  * admin approve-new 가 applicants.linked_user_id 기록 + auth_accounts.user_id 링크.
  *    링크 누락 시 다음 resolve 에서 linked_user_id 로 self-heal.
@@ -23,6 +28,8 @@ import {
  */
 
 const GOOGLE_PROVIDER = "google";
+const PROFILE_SELECT =
+  "user_id, display_name, contact_email, auth_email, growth_status, organization_slug";
 // applicants 에는 applied_date 컬럼이 없다(실컬럼은 created_at) — kakao 경로의
 // ApplicantRow.applied_date 계약과 맞추기 위해 PostgREST 별칭으로 매핑한다.
 const APPLICANT_SELECT = "id, name, email, status, applied_date:created_at, linked_user_id";
@@ -165,6 +172,173 @@ async function linkGoogleAuthAccountUserId(
   }
 }
 
+/**
+ * sub 가 아직 어떤 user 에도 링크되지 않은(user_id IS NULL) 경우에만 userId 로 귀속한다.
+ * 반환 = 귀속 후 최종 user_id (경쟁으로 그 사이 다른 user 가 선점했으면 그 값).
+ * 이미 user_id 가 채워져 있던 경우 update 0행 → 현재 값을 재조회해 반환(절대 덮어쓰지 않음).
+ */
+async function claimGoogleAuthAccountForUser(
+  supabase: SupabaseClient,
+  providerUserId: string,
+  userId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("auth_accounts")
+    .update({ user_id: userId, updated_at: new Date().toISOString() })
+    .eq("provider", GOOGLE_PROVIDER)
+    .eq("provider_user_id", providerUserId)
+    .is("user_id", null)
+    .select("user_id")
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+  if (data?.user_id) {
+    return data.user_id as string;
+  }
+
+  // update 0행 = 이미 user_id 점유됨(경쟁) → 현재 링크 값을 재조회
+  const { data: current, error: readError } = await supabase
+    .from("auth_accounts")
+    .select("user_id")
+    .eq("provider", GOOGLE_PROVIDER)
+    .eq("provider_user_id", providerUserId)
+    .maybeSingle();
+
+  if (readError) {
+    throw readError;
+  }
+  return (current?.user_id as string | null) ?? null;
+}
+
+/** 매칭 user 가 PMS 이관 사용자(source_system 또는 legacy_user_id 보유)인지 — 신규 일반 가입자 오연결 방지 게이트. */
+async function isMigratedUser(supabase: SupabaseClient, userId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, source_system, legacy_user_id")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+  if (!data) {
+    return false;
+  }
+  return data.source_system != null || data.legacy_user_id != null;
+}
+
+/** auth_email 이 비어 있고, 같은 email 을 가진 다른 프로필이 없으면 Google email 로 backfill (충돌 시 skip — 링크 자체는 유지). */
+async function backfillAuthEmailIfBlank(
+  supabase: SupabaseClient,
+  profile: UserProfileAccessRow,
+  normalizedEmail: string,
+) {
+  const blank = !profile.auth_email || profile.auth_email.trim() === "";
+  if (!blank || !profile.user_id) {
+    return;
+  }
+
+  const { data: dup, error: dupError } = await supabase
+    .from("user_profiles")
+    .select("user_id")
+    .eq("auth_email", normalizedEmail)
+    .neq("user_id", profile.user_id)
+    .limit(1);
+
+  if (dupError) {
+    throw dupError;
+  }
+  if ((dup ?? []).length > 0) {
+    return; // 다른 프로필이 점유 — auth_email 충돌 방지로 set 생략
+  }
+
+  const { error } = await supabase
+    .from("user_profiles")
+    .update({ auth_email: normalizedEmail })
+    .eq("user_id", profile.user_id);
+
+  if (error) {
+    throw error;
+  }
+}
+
+/**
+ * sub 미링크 상태에서 Google email 을 정규화하여 user_profiles.contact_email 과 비교, PMS 이관
+ * 사용자에 자동 연결한다. 성공 시 approved 결과를, 자동 연결 불가(0명/2명+/비이관/경쟁 등)면 null
+ * 을 반환해 호출부가 기존 pending 흐름으로 이어가게 한다.
+ *
+ * 비교 키: contact_email 정확 일치(.eq). 입력 email 은 normalizeEmail(trim+lowercase) — kakao
+ * 경로와 동일 규약이라 저장값도 정규화되어 있어야 일치한다. limit(2) 로 중복(2명+) 즉시 차단.
+ */
+async function tryAutoLinkGoogleByContactEmail(
+  supabase: SupabaseClient,
+  providerUserId: string,
+  rawEmail: string | null | undefined,
+): Promise<UserProfileAccessResult | null> {
+  const normalizedEmail = normalizeEmail(rawEmail);
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  const { data: matches, error } = await supabase
+    .from("user_profiles")
+    .select(PROFILE_SELECT)
+    .eq("contact_email", normalizedEmail)
+    .limit(2);
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = (matches ?? []) as UserProfileAccessRow[];
+  if (rows.length !== 1) {
+    return null; // 0명 또는 2명+ → 자동 연결 금지(정책 5·6)
+  }
+
+  const profile = rows[0];
+  if (!profile.user_id) {
+    return null;
+  }
+
+  // 신규 일반 가입자 오연결 방지 — PMS 이관 사용자만 자동 연결(정책)
+  if (!(await isMigratedUser(supabase, profile.user_id))) {
+    return null;
+  }
+
+  // sub 를 이 user 에 귀속 (user_id IS NULL 일 때만 — 경쟁/이중연결 방지)
+  const finalUserId = await claimGoogleAuthAccountForUser(supabase, providerUserId, profile.user_id);
+  if (!finalUserId) {
+    return null;
+  }
+  if (finalUserId !== profile.user_id) {
+    // 경쟁: 그 사이 다른 user 에 링크됨 → 절대 병합 금지, 현재 링크 기준으로 승인
+    const linkedProfile = await getProfileById(supabase, finalUserId);
+    return linkedProfile ? { status: "approved", profile: linkedProfile } : null;
+  }
+
+  await backfillAuthEmailIfBlank(supabase, profile, normalizedEmail);
+
+  const refreshed = await getProfileById(supabase, profile.user_id);
+  return { status: "approved", profile: refreshed ?? profile };
+}
+
+/** 자동 연결 성공 시, 같은 sub 로 남아있던 pending google 신청을 정리(approved+linked). best-effort. */
+async function settleGoogleApplicantOnAutoLink(
+  supabase: SupabaseClient,
+  applicant: GoogleApplicantRow | null,
+  linkedUserId: string | null | undefined,
+) {
+  if (!applicant || !linkedUserId || applicant.status === "approved") {
+    return;
+  }
+  await supabase
+    .from("applicants")
+    .update({ status: "approved", linked_user_id: linkedUserId })
+    .eq("id", applicant.id);
+}
+
 export async function resolveGoogleAccountAccess(
   supabase: SupabaseClient,
   options: GoogleResolveOptions,
@@ -195,6 +369,16 @@ export async function resolveGoogleAccountAccess(
       // approve-new 의 auth_accounts 링크가 누락된 경우 self-heal
       await linkGoogleAuthAccountUserId(supabase, providerUserId, applicant.linked_user_id);
       return { status: "approved", profile };
+    }
+  }
+
+  // 2.5) sub 미링크 + 신청 미승인 — Google email 이 기존 PMS 이관 사용자의 contact_email 과
+  //      정확히 1명 일치하면 자동 연결(정책 1~8). 불가하면 null → 아래 pending 흐름 유지.
+  if (!account.user_id) {
+    const autoLinked = await tryAutoLinkGoogleByContactEmail(supabase, providerUserId, options.email);
+    if (autoLinked && autoLinked.status === "approved") {
+      await settleGoogleApplicantOnAutoLink(supabase, applicant, autoLinked.profile.user_id);
+      return autoLinked;
     }
   }
 
