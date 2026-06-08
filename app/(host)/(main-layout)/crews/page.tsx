@@ -44,30 +44,19 @@ const ORG_LABEL: Record<OrgSlug, string> = {
   oranke: getOrgConfigForSlug("oranke").displayNameKo,
 };
 
-// 상태 표시 라벨 — displayGrowthStatus 10종 키 1:1 (admin GROWTH_STATUS_LABELS 의
-// /crews 전용 표기). 종전 statusLabel 은 user_profiles.status(전원 'active' 인
-// dead 컬럼)를 우선 참조해 필터(growth_status 기준)와 카드 배지가 어긋났다
-// — 2026-06-07 displayGrowthStatus 단일 기준으로 통일.
-const CREW_STATUS_LABELS: Record<string, string> = {
-  active: "활동 중",
-  onboarding: "클럽 온보딩 중",
-  weekly_rest: "휴식(개인) 중",
-  official_rest: "휴식(공식) 중",
-  seasonal_rest: "시즌 휴식 중",
-  graduating: "졸업 절차 중",
-  extra_growth: "추가 성장 중",
-  graduated: "활동 졸업",
-  suspended: "활동 중단",
-  paused: "활동 유보",
-};
-
+// 상태 표시 라벨 — /crews 는 2분류(Cluving / Elite)만 노출한다(2026-06-08 정책).
+//   graduated(졸업) → "활동 졸업"(Elite), 그 외 전부 → "활동 중"(Cluving).
+//   suspended(활동 중단)는 목록 자체에서 제외(아래 데이터 로드 단계 필터)되며,
+//   어떤 경우에도 "활동 중단" 라벨을 카드 배지/드롭다운에 노출하지 않는다.
+//   (종전엔 onboarding/휴식/유보 등 displayGrowthStatus 10종을 1:1 세분 표기했으나
+//    graduated 외 전부를 Cluving 단일 라벨로 통합했다.)
 const statusLabel = (crew: Crew) =>
-  CREW_STATUS_LABELS[crew.displayGrowthStatus] ?? "활동 중";
+  crew.displayGrowthStatus === "graduated" ? "활동 졸업" : "활동 중";
 
 // 필터 그룹 판정 — displayGrowthStatus 단일 기준.
-//   활동 중   = graduated/suspended 외 전부 (paused 포함 — 운영 정책 2026-06-07,
-//               카드 배지는 "활동 유보"로 구분 표시)
-//   활동 졸업 = graduated / 활동 중단 = suspended
+//   활동 중(Cluving) = graduated 외 전부. suspended 는 로드 단계에서 이미 제외되어
+//                      실제로는 graduated 만 빠지지만, 이중 안전망으로 조건을 유지한다.
+//   활동 졸업(Elite) = graduated.
 const isActiveGroup = (crew: Crew) =>
   crew.displayGrowthStatus !== "graduated" &&
   crew.displayGrowthStatus !== "suspended";
@@ -88,7 +77,8 @@ const toStarCount = (value: unknown): number => {
 };
 
 const clubOptions = ["엥크레", "오랑캐", "팔랑크스"];
-const statusOptions = ["활동 중", "활동 졸업", "활동 중단"];
+// 활동 중단(suspended)은 드롭다운에서 노출하지 않는다(2026-06-08 정책) — 2분류만.
+const statusOptions = ["활동 중", "활동 졸업"];
 const ITEMS_PER_PAGE = 50;
 
 const isOrgSlug = (value: string | null | undefined): value is OrgSlug =>
@@ -106,6 +96,15 @@ function CrewsContent() {
   // getOrgAlias(org, key) 사용. 매핑:
   //   phalanx → "투구", encre → "별", oranke/null → "단감"(fallback).
   const totalStarsLabel = getOrgAlias(org, "단감")?.label ?? "단감";
+
+  // 분기(?org=) 페이지에서는 클럽 필터를 해당 조직으로 고정·잠금한다.
+  //   - 전체 /crews 는 org 없이 안내 화면만 노출(아래 !org 분기) → 잠금 대상 아님.
+  //   - 데이터는 이미 서버(/api/crews?org=)에서 org 스코프 → clubFilter 상태는 건드리지
+  //     않고(=빈 문자열 유지) 표시·인터랙션만 잠근다. crew.club 은 oranke/encre 에서 "-"
+  //     (crew_list_view 미존재)라 실제 필터값으로 쓰면 목록이 비는 함정이 있다.
+  //   - org 만으로 판별하므로 demoUserId 테스트 모드/일반 모드 모두 동일하게 동작.
+  const isClubLocked = !!org;
+  const lockedClubLabel = org ? ORG_LABEL[org] : "";
 
   const filterAccentColor = "var(--crews-filter-accent, #FFA500)";
   const filterAccentBackground = "var(--crews-filter-accent-bg, rgba(255, 165, 0, 0.1))";
@@ -197,7 +196,11 @@ function CrewsContent() {
         if (cancelled) return;
         if (result.success) {
           // Defense-in-depth: API already filters server-side, but enforce client-side too.
-          const scoped: Crew[] = (result.data as Crew[]).filter((c) => c.organizationSlug === org);
+          // 활동 중단(suspended)은 /crews UI 목록에 노출하지 않는다(2026-06-08 정책).
+          // 기본/상태 전체/Reset 등 모든 뷰에서 빠지도록 로드 단계에서 제외한다.
+          const scoped: Crew[] = (result.data as Crew[]).filter(
+            (c) => c.organizationSlug === org && c.displayGrowthStatus !== "suspended",
+          );
           setCrews(scoped);
           const active = scoped.filter(isActiveGroup);
           active.sort((a, b) => b.approvedWeeks - a.approvedWeeks);
@@ -242,9 +245,6 @@ function CrewsContent() {
           break;
         case "활동 졸업":
           result = result.filter((c) => c.displayGrowthStatus === "graduated");
-          break;
-        case "활동 중단":
-          result = result.filter((c) => c.displayGrowthStatus === "suspended");
           break;
       }
     }
@@ -414,28 +414,34 @@ function CrewsContent() {
                 </div>
               </div>
 
-              {/* 클럽 드롭다운 카드 */}
+              {/* 클럽 드롭다운 카드 — 분기(?org=) 페이지에서는 해당 조직으로 고정·잠금 */}
               <div
                 ref={clubRef}
-                className="filter-card filter-dropdown"
+                className={`filter-card filter-dropdown${isClubLocked ? ' filter-dropdown-locked' : ''}`}
                 style={{
-                  borderColor: clubFilter ? filterAccentColor : 'rgba(255, 255, 255, 0.12)',
-                  background: clubFilter ? filterAccentBackground : 'transparent',
+                  borderColor: (isClubLocked || clubFilter) ? filterAccentColor : 'rgba(255, 255, 255, 0.12)',
+                  background: (isClubLocked || clubFilter) ? filterAccentBackground : 'transparent',
+                  cursor: isClubLocked ? 'default' : 'pointer',
                 }}
+                aria-disabled={isClubLocked}
+                title={isClubLocked ? `${lockedClubLabel} 분기 페이지 — 클럽 고정` : undefined}
                 onClick={() => {
+                  if (isClubLocked) return;
                   setClubDropdownOpen(!clubDropdownOpen);
                   setStatusDropdownOpen(false);
                 }}
               >
                 <div className="card-left">
                   <img src="/images/0/cluster4/icon/icon - cluv.png" alt="club" className="card-icon" />
-                  <span className="card-label" style={{ color: clubFilter ? filterAccentColor : '#fff' }}>
-                    {clubFilter || "클럽 전체"}
+                  <span className="card-label" style={{ color: (isClubLocked || clubFilter) ? filterAccentColor : '#fff' }}>
+                    {isClubLocked ? lockedClubLabel : (clubFilter || "클럽 전체")}
                   </span>
                 </div>
-                <span className={`card-arrow ${clubDropdownOpen ? 'open' : ''}`} style={{ color: clubFilter ? filterAccentColor : '#fff' }}>▼</span>
+                {!isClubLocked && (
+                  <span className={`card-arrow ${clubDropdownOpen ? 'open' : ''}`} style={{ color: clubFilter ? filterAccentColor : '#fff' }}>▼</span>
+                )}
 
-                {clubDropdownOpen && (
+                {!isClubLocked && clubDropdownOpen && (
                   <div className="dropdown-menu" style={{ display: 'block' }} onClick={(e) => e.stopPropagation()}>
                     <div
                       className={`dropdown-item ${clubFilter === '' ? 'selected' : ''}`}
@@ -593,13 +599,20 @@ function CrewsContent() {
                   <label className="filter-sheet-label">클럽</label>
                   <select
                     className="filter-sheet-select"
-                    value={draftClub}
+                    value={isClubLocked ? lockedClubLabel : draftClub}
                     onChange={(e) => setDraftClub(e.target.value)}
+                    disabled={isClubLocked}
                   >
-                    <option value="">클럽 전체</option>
-                    {clubOptions.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
+                    {isClubLocked ? (
+                      <option value={lockedClubLabel}>{lockedClubLabel}</option>
+                    ) : (
+                      <>
+                        <option value="">클럽 전체</option>
+                        {clubOptions.map((opt) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </>
+                    )}
                   </select>
 
                   <label className="filter-sheet-label">학교명</label>
