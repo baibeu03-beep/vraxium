@@ -848,13 +848,20 @@
   }
 
   /* ---------- 공식 휴식 안내 ---------- */
+  // [높이 통일] 일반 카드의 본문 스택(rates + skills + top3)은 모든 뷰포트에서 항상 450px 로 일정
+  // (고정 폰트/아이콘 + repeat(3,1fr) skills grid → 폭 변화에 불변). 휴식 카드는 이 스택을
+  // rest-notice 하나로 대체하므로, notice 를 같은 고정 450px 로 두면 header·thumb·gap 이 동일한
+  // 두 카드의 총 높이가 행 구성/상태/뷰포트와 무관하게 정확히 일치한다(일반 = 공식휴식 = 대전휴식).
+  // flex 스트레치에 의존하지 않으므로 "전체-휴식 행"이나 모바일 1열에서도 일반 카드와 같은 높이 유지.
+  // overflow:hidden — rest-copy 의 transform: translate(…, 1.5cm) 가 과거 232px notice 밖으로
+  // ≈49px 흘러 아래 카드의 헤더를 침범하던 오버플로를 차단(450px 안에서는 자연 수용되어 잘림 없음).
   .weekly-card__rest-notice {
     position: relative;
     display: block;
-    min-height: 232px;
+    height: 450px;
     padding: 42px 8px 8px;
-    flex: 1;
-    overflow: visible;
+    flex: 0 0 auto;
+    overflow: hidden;
   }
 
   .weekly-card__rest-image-wrap {
