@@ -6260,6 +6260,22 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     });
   }, [isDemoMode, reviewerProfile, teamName, partName, membershipLevel, session?.user, weeklyCardMeta]);
 
+  // 페이지 주인 역할 배지(tag-role) 단일 출처.
+  //   우선순위: 명시 role(roleLabel: user_role_history/profile.role) → 멤버십 등급
+  //   (ownerPersonalInfo.membershipLevel = user_memberships.membership_level) → 최종 "일반".
+  //   이관 실사용자는 role 이 NULL 이라 roleLabel 이 비어 "—" 로 떨어지던 문제를, 등급(전원 보유)으로
+  //   폴백해 메운다. badge 등급 SoT = membership_level 정책(연계동료/평판 카드와 동일)과 일치.
+  //   빈 문자열·"-"·"—" 는 무효로 보고 다음 후보로 넘어간다(placeholder 노출 방지).
+  const ownerRoleBadge = useMemo(() => {
+    if (isDemoMode) return "앰배서더";
+    const candidates = [roleLabel, formatMembershipRoleLabel(ownerPersonalInfo.membershipLevel)];
+    for (const c of candidates) {
+      const s = (c ?? "").trim();
+      if (s && s !== "-" && s !== "—") return s;
+    }
+    return "일반";
+  }, [isDemoMode, roleLabel, ownerPersonalInfo.membershipLevel]);
+
   // 팀/파트 특수 표기(운영진·온보딩·팀장(managedTeam)) 분기 입력값: 어드민 DTO 우선, null/undefined 면 로컬 상태 fallback.
   const headerIsOnboarding = weeklyCardMeta?.isOnboarding ?? isOnboardingWeek;
   const headerGeneration = weeklyCardMeta?.generation ?? generation;
@@ -11794,7 +11810,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           <span className="personal-age">{ownerPersonalInfo.age ?? "—"} 세</span>
                           <div className="personal-tags">
                             {/* TODO: [백엔드 작업 필요] role 필드 (운영진/앰배서더/일반 등) — profile API에 추가 필요 */}
-                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : roleLabel || "—", "—")}</span>
+                            <span className="tag-badge tag-role">{compactPersonalTag(ownerRoleBadge, "일반")}</span>
                             <span className="tag-badge tag-keyword">{compactPersonalTag(ownerPersonalInfo.tagline ?? "-", "-")}</span>
                           </div>
                         </div>
@@ -12336,7 +12352,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           <span className="personal-separator">|</span>
                           <span className="personal-age">{ownerPersonalInfo.age ?? "—"} 세</span>
                           <div className="personal-tags">
-                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : roleLabel || "—", "—")}</span>
+                            <span className="tag-badge tag-role">{compactPersonalTag(ownerRoleBadge, "일반")}</span>
                             <span className="tag-badge tag-keyword">{compactPersonalTag(ownerPersonalInfo.tagline ?? "-", "-")}</span>
                           </div>
                         </div>
@@ -12846,7 +12862,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           <span className="personal-separator">|</span>
                           <span className="personal-age">{ownerPersonalInfo.age ?? "—"} 세</span>
                           <div className="personal-tags">
-                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : roleLabel || "—", "—")}</span>
+                            <span className="tag-badge tag-role">{compactPersonalTag(ownerRoleBadge, "일반")}</span>
                             <span className="tag-badge tag-keyword">{compactPersonalTag(ownerPersonalInfo.tagline ?? "-", "-")}</span>
                           </div>
                         </div>
@@ -13314,7 +13330,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           <span className="personal-separator">|</span>
                           <span className="personal-age">{ownerPersonalInfo.age ?? "—"} 세</span>
                           <div className="personal-tags">
-                            <span className="tag-badge tag-role">{compactPersonalTag(isDemoMode ? "앰배서더" : roleLabel || "—", "—")}</span>
+                            <span className="tag-badge tag-role">{compactPersonalTag(ownerRoleBadge, "일반")}</span>
                             <span className="tag-badge tag-keyword">{compactPersonalTag(ownerPersonalInfo.tagline ?? "-", "-")}</span>
                           </div>
                         </div>
@@ -13998,7 +14014,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         </div>
                       </div>
                       <div className="personal-tags">
-                        <span className="tag-badge tag-role">{isDemoMode ? "앰배서더" : roleLabel || "일반"}</span>
+                        <span className="tag-badge tag-role">{ownerRoleBadge}</span>
                         <span className="tag-badge tag-keyword">{ownerPersonalInfo.tagline ?? "-"}</span>
                       </div>
                     </div>
