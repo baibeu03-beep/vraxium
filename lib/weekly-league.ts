@@ -18,6 +18,7 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { seasonLabel } from "@/lib/cluster4-types";
 import { isOfficialRestWeek } from "@/lib/cluster4-transition-week";
+import { getWeekImageUrl } from "@/lib/cluster4-week-image";
 import { pickPrimaryMembership, type MembershipRow } from "@/lib/membership";
 import type {
   WeeklyCardData,
@@ -92,6 +93,8 @@ type WeekMeta = {
   isBreak: boolean;
   isOfficialRest: boolean;
   holidayName: string | null;
+  // 시즌명(봄/여름/가을/겨울)+주차번호 기준 public 이미지 경로. 미상이면 null → placeholder.
+  imageUrl: string | null;
 };
 
 /**
@@ -163,6 +166,9 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
         isBreak,
         isOfficialRest: !!w.is_official_rest,
         holidayName: w.holiday_name ?? null,
+        // 휴식·활동 주차 공통 — 시즌 단어(displayName)+주차번호로 썸네일 경로 도출.
+        // 매칭 실패(전환/break/미상 주차)는 null → 클라이언트 placeholder 폴백.
+        imageUrl: getWeekImageUrl({ seasonName: displayName, weekNumber: w.week_number }),
       };
     });
 
@@ -261,7 +267,7 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
           status: "휴식",
           leagueResultStatus: "공식 휴식",
           leagueRecordStatus: "대전 휴식",
-          imageUrl: null,
+          imageUrl: week.imageUrl,
           growthSuccessRate: 0,
           growthChallengeRate: 0,
           totalCrews: 0,
@@ -318,7 +324,7 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
         status: decided ? "정상 진행" : "대전 집계",
         leagueResultStatus: "정상 진행",
         leagueRecordStatus,
-        imageUrl: null,
+        imageUrl: week.imageUrl,
         growthSuccessRate,
         growthChallengeRate,
         totalCrews,

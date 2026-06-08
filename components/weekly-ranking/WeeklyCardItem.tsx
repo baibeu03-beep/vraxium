@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import Tilt from "react-parallax-tilt";
 import type { WeeklyCardCrew, WeeklyCardData, RestReason } from "@/constants/dummyData/weekly-card-dummy";
@@ -128,6 +129,8 @@ interface Props {
 }
 
 export default function WeeklyCardItem({ data }: Props) {
+  // 썸네일 이미지 로드 실패(매칭된 경로가 디스크에 없음) → placeholder 폴백 유지.
+  const [thumbError, setThumbError] = useState(false);
   const isOfficialRest =
     data.leagueResultStatus === '공식 휴식' &&
     data.leagueRecordStatus === '대전 휴식';
@@ -200,13 +203,14 @@ export default function WeeklyCardItem({ data }: Props) {
         </div>
 
         <div className="weekly-card__thumb">
-          {data.imageUrl ? (
+          {data.imageUrl && !thumbError ? (
             <Image
               src={data.imageUrl}
               alt={data.seasonName}
               width={280}
               height={180}
               className="weekly-card__thumb-image"
+              onError={() => setThumbError(true)}
             />
           ) : (
             <div className="weekly-card__thumb-placeholder">
