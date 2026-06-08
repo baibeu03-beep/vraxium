@@ -56,9 +56,18 @@ export async function hasOpenEditWindow(params: {
 // 여러 resource_key 중 하나라도 열려 있으면 true.
 // cluster4 의 4개 모달 (work_info/ability/exp/career) + legacy activity_details 처럼
 // "신규 분할 키 OR 폴백 단일 키" 형태의 게이트가 필요할 때 사용한다.
+//
+// weekId (2026-06-08 주차별 추가 개방):
+//   - 4개 실무 허브(work_*)는 admin 이 (카드종류, 시즌, 주차) 단위로 추가 개방할 수 있다.
+//     이때 user_edit_windows 행은 week_id 를 가진다.
+//   - weekId 를 넘기면 "이 카드 주차 행 OR 전역(week_id IS NULL) 행" 을 additive OR 로 본다.
+//       · week_id = weekId : 신규 주차별 개방
+//       · week_id IS NULL  : legacy 전역 개방(해당 허브 전 주차) — 하위호환 보존
+//   - weekId 를 넘기지 않으면 기존 동작(week_id 무관, 전역+주차 모두 매칭)을 유지한다.
 export async function hasOpenEditWindowAny(params: {
   userId: string;
   resourceKeys: readonly string[];
+  weekId?: string | null;
 }): Promise<boolean> {
   if (!supabaseAdmin) {
     console.error("[edit-window] supabaseAdmin not configured");
@@ -67,14 +76,20 @@ export async function hasOpenEditWindowAny(params: {
   if (params.resourceKeys.length === 0) return false;
 
   const now = new Date().toISOString();
-  const { data, error } = await supabaseAdmin
+  let query = supabaseAdmin
     .from("user_edit_windows")
     .select("id")
     .eq("user_id", params.userId)
     .in("resource_key", params.resourceKeys as string[])
     .lte("opened_at", now)
-    .gt("expires_at", now)
-    .limit(1);
+    .gt("expires_at", now);
+
+  // 카드 주차가 주어지면 (해당 주차 행 OR 전역 행) 으로 좁힌다.
+  if (params.weekId != null) {
+    query = query.or(`week_id.eq.${params.weekId},week_id.is.null`);
+  }
+
+  const { data, error } = await query.limit(1);
 
   if (error) {
     console.error("[edit-window] multi-key query failed", error);

@@ -57,6 +57,18 @@ const WEEK_SCOPED_RESOURCE_KEYS = new Set<string>([
   "cluster4.weekly_reputation",
 ]);
 
+// 4개 실무 허브(work_*)는 2026-06-08 부터 주차별 추가 개방을 지원한다. 주간 자원과 달리
+// week_id 가 "필수"가 아니라 additive OR 이다: weekId 가 주어지면 (해당 주차 행 OR 전역
+// week_id IS NULL 행) 중 active 한 것을 본다. weekId 가 없으면 전역 행만 본다(기존 호환).
+// 한 사용자에 주차 행 + 전역 행이 동시에 있을 수 있어 maybeSingle() 을 쓰지 않고
+// 여러 행을 받아 active 우선으로 고른다.
+const WORK_HUB_RESOURCE_KEYS = new Set<string>([
+  "cluster4.work_info",
+  "cluster4.work_ability",
+  "cluster4.work_exp",
+  "cluster4.work_career",
+]);
+
 function buildPermission(row: EditWindowRow | null, nowMs: number) {
   const openedAt = row?.opened_at ?? null;
   const expiresAt = row?.expires_at ?? null;
@@ -207,7 +219,41 @@ export async function GET(request: Request) {
       );
     }
 
-    // 주간 자원은 해당 week_id 행만, 비주간 자원은 전역(week_id=NULL) 행만 고른다.
+    // 실무 허브(work_*): (해당 주차 행 OR 전역 행) 을 함께 받아 active 우선으로 고른다.
+    if (WORK_HUB_RESOURCE_KEYS.has(resourceKey)) {
+      let hubQuery = supabaseAdmin
+        .from("user_edit_windows")
+        .select("opened_at, expires_at, week_id")
+        .eq("user_id", userId)
+        .eq("resource_key", resourceKey);
+      hubQuery = weekId
+        ? hubQuery.or(`week_id.eq.${weekId},week_id.is.null`)
+        : hubQuery.is("week_id", null);
+
+      const { data: hubRows, error: hubError } = await hubQuery;
+      if (hubError) {
+        console.error("[edit-windows/permission] work-hub lookup failed", hubError);
+        return NextResponse.json(
+          { success: false, error: "Permission lookup failed" },
+          { status: 500 },
+        );
+      }
+
+      const nowMs = Date.now();
+      const rows = (hubRows as EditWindowRow[] | null) ?? [];
+      // active(현재 열림) 행을 우선, 없으면 가장 최근 만료(메시지용) 행을 고른다.
+      const chosen =
+        rows.find((r) => buildPermission(r, nowMs).canEdit) ??
+        rows[0] ??
+        null;
+
+      return NextResponse.json({
+        success: true,
+        data: buildPermission(chosen, nowMs),
+      });
+    }
+
+    // 주간 자원은 해당 week_id 행만, 그 외 비주간 자원은 전역(week_id=NULL) 행만 고른다.
     // 부분 unique index 가 두 경우 모두 최대 1행을 보장하므로 maybeSingle() 안전.
     let windowQuery = supabaseAdmin
       .from("user_edit_windows")

@@ -217,9 +217,11 @@ export async function POST(request: NextRequest) {
     let hasOpenWindow = false
     if (!canBypassAsAdmin) {
       const gateKeys = resolveCluster4GateKeys(resource_key)
+      // 주차별 추가 개방(2026-06-08): 이 카드 주차(week_id) 행 OR 전역 행을 본다.
       hasOpenWindow = await hasOpenEditWindowAny({
         userId: ownerUserId,
         resourceKeys: gateKeys,
+        weekId: week_id ?? null,
       })
     }
 
@@ -636,9 +638,11 @@ export async function DELETE(request: NextRequest) {
     let hasOpenWindow = false
     if (!canBypassAsAdmin) {
       const gateKeys = resolveCluster4GateKeys(resourceKeyHint)
+      // 주차별 추가 개방(2026-06-08): 이 카드 주차(weekId) 행 OR 전역 행을 본다.
       hasOpenWindow = await hasOpenEditWindowAny({
         userId: ownerUserId,
         resourceKeys: gateKeys,
+        weekId: weekId ?? null,
       })
     }
 
