@@ -26,6 +26,9 @@ import type {
   RestReason,
 } from "@/constants/dummyData/weekly-card-dummy";
 
+// (2026-06-09) weekly-ranking 노출 제한 — 당분간 2026 봄 시즌만. 과거 시즌은 숨김(보존).
+export const WEEKLY_LEAGUE_SEASON_KEY = "2026-spring";
+
 // 알려진 org slug — page.tsx KNOWN_ORGS 와 동일.
 export const WEEKLY_LEAGUE_ORGS = ["phalanx", "encre", "oranke"] as const;
 export type WeeklyLeagueOrg = (typeof WEEKLY_LEAGUE_ORGS)[number];
@@ -154,9 +157,12 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
     );
 
     // 2) 종료된 주차 메타 — cluster-4-ranking 과 동일 source(weeks + season_definitions).
+    //    (2026-06-09) 당분간 2026 봄 시즌만 노출 — 과거 시즌/주차는 숨김(데이터 보존, 렌더 제외).
+    //    API 1차 필터: season_key='2026-spring'. 프론트(WeeklyRankingContent)에서 2차 방어 필터.
     const { data: weekRows, error: weekErr } = await db
       .from("weeks")
       .select("id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, season_definitions!inner(season_label, season_type, year)")
+      .eq("season_key", WEEKLY_LEAGUE_SEASON_KEY)
       .lt("end_date", today)
       .order("start_date", { ascending: false });
 
