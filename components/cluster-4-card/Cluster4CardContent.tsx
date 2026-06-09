@@ -2657,7 +2657,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const competencyLinesForStats: Cluster4WeeklyLineDto[] = weekId
     ? cluster4Lines.filter((l) => (l.weekId ?? null) === weekId && normalizePartType(l.partType) === "competency")
     : [];
+  // 실제 개설된 역량 라인 = lineTargetId 보유 (competency 의 isContentLine 정의와 동일).
+  // lineTargetId 없는 빈 placeholder(미배정/folded pending)는 '실제 라인'이 아니므로
+  // 집계·표시 기준에서 제외한다. (2026-06-09 정책: snapshot DTO 실제 line 목록만 집계 기준 →
+  // 0개면 총 0개·강화 대기 아님·빈 상태. demo/일반 모드가 동일 DTO 규칙을 공유한다.)
+  const realCompetencyLines = competencyLinesForStats.filter((l) => !!l.lineTargetId);
   const competencyStatsAdmin = (() => {
+    // 실제 개설된 역량 라인이 0개면 집계도 0 — 빈 placeholder/legacy 하드코딩(competencyStats=1) 미포함.
+    if (realCompetencyLines.length === 0) {
+      return { total: 0, success: 0, rate: null };
+    }
     const competencyRate =
       (weeklyCardMeta as (AdminCluster4WeeklyCardDto & { competencyRate?: Cluster4RateDto | null }) | null)?.competencyRate ?? null;
     if (competencyRate && typeof competencyRate.total === "number" && typeof competencyRate.count === "number") {
@@ -7817,13 +7826,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 크루가 활동 중(휴식/온보딩 아님)이면 매칭 실패 시 '강화 실패'로 폴백.
   // 휴식 주차 — 모든 카드가 not_applicable 이라 status 기반 매칭이 안 되므로, 운영진이 실제
   // 개설한 라인(hasActivity) 을 우선 찾아 본문(Main Title 등) 을 보여주고 상태만 '해당 없음'.
-  const matchedAbilityCard = isRestMode ? effectiveWorkAbilityCards.find((c) => c.hasActivity) : effectiveWorkAbilityCards.find((c) => c.enhancementStatus !== "not_applicable");
-  // void 폴백 상태: 휴식/온보딩이면 '해당 없음'. 활동 주차에서 역량 카드가 매칭되지 않으면
-  // '강화 대기' — 역량은 선택 과제라 미수행=대기이며 '해당 없음'이 존재할 수 없다(2026-06-04 v14).
-  // (백엔드는 비휴식 주차에 항상 단일 역량 칸(success/pending/fail)을 fold 해 내리므로 이 폴백은
-  //  DTO 미수신 legacy 경로에서만 보인다.)
+  // 실제 개설된 역량 라인(realCompetencyLines)이 0개면 매칭 카드 없음 → 빈 상태(empty) 강제.
+  // legacy 하드코딩 카드 synthesis(workAbilityCardLineCodes)는 '실제 DTO 라인'이 아니므로
+  // 표시 기준에서 제외한다 (2026-06-09: snapshot DTO 실제 line 목록만 표시 기준).
+  const matchedAbilityCard = isRestMode
+    ? effectiveWorkAbilityCards.find((c) => c.hasActivity)
+    : realCompetencyLines.length === 0
+      ? undefined
+      : effectiveWorkAbilityCards.find((c) => c.enhancementStatus !== "not_applicable");
+  // void 폴백 상태: 휴식/온보딩이면 '해당 없음'. 활동 주차에서 실제 개설된 역량 라인이 없으면
+  // '강화 대기'가 아니라 빈 상태('empty') — empty 는 뱃지/아이콘 미렌더(강화 대기 표시 안 함),
+  // 카운트도 0 (competencyStatsAdmin 와 동일 realCompetencyLines 기준). (2026-06-09 정책:
+  //  구 v14 "미수행=강화 대기 placeholder" 폐기 — 실제 라인 0개 = 빈 상태 안내만 표시.)
   const abilityVoidFallbackStatus: EnhancementStatus =
-    isRestMode || isOnboardingWeek ? "not_applicable" : "waiting";
+    isRestMode || isOnboardingWeek ? "not_applicable" : "empty";
   const displayedAbilityCard: WorkAbilityCard = matchedAbilityCard ?? {
     id: 0,
     lineTargetId: null,
@@ -7843,14 +7859,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     status: abilityVoidFallbackStatus,
     statusIcon: enhancementStatusIcons[abilityVoidFallbackStatus],
     enhancementStatus: abilityVoidFallbackStatus,
-    // 폴백은 해당없음(휴식/온보딩) 또는 강화 대기뿐 — 실패 아님 (v14: 미수행=대기).
+    // 폴백은 해당없음(휴식/온보딩) 또는 빈 상태('empty') — 실패/강화 대기 아님 (2026-06-09).
     isFailed: false,
     isEmpty: true,
     hasActivity: false,
   };
-  // 실무 역량 = 1인·1주차 단일 카드 정규화 (2026-06-04 v14 정책).
-  // 라인이 0/1/N개여도 화면에는 항상 정확히 1장 — 백엔드가 success>pending>fail 우선으로 라인을
-  // 1개로 fold 해 내리고(미개설=강화 대기 placeholder, 해당 없음 금지), 프론트도 단일 카드만 렌더.
+  // 실무 역량 = 1인·1주차 단일 카드 정규화. 실제 개설된 라인이 1개 이상이면 그 카드를 렌더하고,
+  // 0개면(realCompetencyLines.length===0) 빈 상태 placeholder('empty', 강화 대기 아님)만 렌더한다.
+  // section-count·강화율도 동일 realCompetencyLines 기준 → 카드 표시와 카운트가 항상 일치(2026-06-09).
   // section-count(총 1) == 표시 카드 1 == 주차 성장률 분모 기여 1.
   const displayedAbilityCards: WorkAbilityCard[] = [displayedAbilityCard];
 
