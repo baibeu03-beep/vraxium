@@ -181,6 +181,14 @@ $mf-z-content: 9999999;
     color: $mf-accent;
   }
 
+  &__found-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: $mf-text;
+    word-break: keep-all;
+  }
+
   &__guide {
     margin: 0;
     font-size: 14px;
@@ -189,6 +197,11 @@ $mf-z-content: 9999999;
     word-break: keep-all;
 
     &--notfound {
+      color: $mf-muted;
+    }
+
+    &--sub {
+      font-size: 13px;
       color: $mf-muted;
     }
   }

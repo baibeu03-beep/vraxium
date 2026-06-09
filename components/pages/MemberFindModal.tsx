@@ -144,6 +144,7 @@ const MemberFindModal = ({ onClose }: MemberFindModalProps) => {
           </form>
         ) : result.found ? (
           <div className="member-find__body">
+            <p className="member-find__found-title">등록된 회원 정보를 찾았습니다.</p>
             <div className="member-find__result">
               <p className="member-find__result-row">
                 <span className="member-find__result-key">이름</span>
@@ -158,6 +159,9 @@ const MemberFindModal = ({ onClose }: MemberFindModalProps) => {
             </div>
             <p className="member-find__guide">
               위 이메일로 가입된 구글 또는 카카오 계정으로 로그인해주세요.
+            </p>
+            <p className="member-find__guide member-find__guide--sub">
+              이 이메일이 기억나지 않거나 접근할 수 없다면 운영진에게 문의해주세요.
             </p>
             <div className="member-find__footer">
               <button
