@@ -315,6 +315,26 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
     const confirmStarByWeekId = new Map<string, number>();
     for (const r of owtRows || []) confirmStarByWeekId.set(r.week_id, Number(r.check_threshold));
 
+    // 6-1) 봄 정합 예외 보정 — cluster4_weekly_ranking_exceptions (org + season_key 한정).
+    //   confirm_star_override: 주차 effectiveConfirmStar 대체(예: W1=51)
+    //   cohort_exclude       : (user, week) 코호트 제외(예: 유현준 W9~11 — 점수 소급입력으로 그 주차 미달)
+    //   season_key 게이트로 여름 자동 비활성. total/success 직접 override 아님(공식 입력값만).
+    //   uws/uwp/개인카드/snapshot 무관(READ only).
+    const { data: exRows } = await db
+      .from("cluster4_weekly_ranking_exceptions")
+      .select("week_id, user_id, exception_type, int_value")
+      .eq("organization_slug", org)
+      .eq("season_key", WEEKLY_LEAGUE_SEASON_KEY);
+    const confirmStarOverrideByWeekId = new Map<string, number>();
+    const cohortExcludeKey = new Set<string>(); // `${user_id}|${week_id}`
+    for (const e of exRows || []) {
+      if (e.exception_type === "confirm_star_override" && e.int_value != null) {
+        confirmStarOverrideByWeekId.set(e.week_id, Number(e.int_value));
+      } else if (e.exception_type === "cohort_exclude" && e.user_id) {
+        cohortExcludeKey.add(`${e.user_id}|${e.week_id}`);
+      }
+    }
+
     // PMS 공식 경로(로스터 전체 순회)용 per-(user,week) 룩업.
     const statusByUserWeek = new Map<string, string>();
     for (const r of statusRows) statusByUserWeek.set(`${r.user_id}|${r.week_start_date}`, r.status);
@@ -372,25 +392,25 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
       let growthSuccess = 0;
       let growthFail = 0;
       let personalRest = 0;
-      const confirmStar = confirmStarByWeekId.get(week.id);
-      const usePmsFormula = weeksWithPmsData.has(week.startDate) && confirmStar != null;
+      // effectiveConfirmStar = 예외 override 우선, 없으면 org_week_thresholds.check_threshold.
+      const effectiveConfirmStar = confirmStarOverrideByWeekId.get(week.id) ?? confirmStarByWeekId.get(week.id);
+      const usePmsFormula = weeksWithPmsData.has(week.startDate) && effectiveConfirmStar != null;
       if (usePmsFormula) {
-        // PMS 활동인정 공식 (데이터-게이트 org×week — 현재 oranke W13만).
-        //   success = uws.status='success'
-        //          OR (user_activity_submitted AND user_activity_star>=4
-        //              AND uwp.points>=confirmStar AND NOT isRest)
-        //   cohort  = uws행 존재 OR uwp.points>=confirmStar OR isRest
-        // 로스터 전체 순회 — uws 행이 없어도 점수만으로 코호트에 드는 인원 포함.
+        const ecs = effectiveConfirmStar as number;
+        // PMS 활동인정 공식 (데이터-게이트 org×week). 정정: uws.success 무조건절 제거.
+        //   success = user_activity_submitted AND user_activity_star>=4
+        //             AND uwp.points>=effectiveConfirmStar AND NOT isRest
+        //   cohort  = ¬예외제외 AND (uws행 존재 OR uwp.points>=effectiveConfirmStar OR isRest)
         for (const uid of orgUserIds) {
+          if (cohortExcludeKey.has(`${uid}|${week.id}`)) continue; // 코호트 예외(cohort_exclude)
           const st = statusByUserWeek.get(`${uid}|${week.startDate}`) ?? null;
           const pts = pointsByUserWeek.get(`${uid}|${week.startDate}`) ?? null;
           const isRest = st === "personal_rest" || st === "official_rest";
-          const inCohort = st !== null || (pts ?? 0) >= confirmStar || isRest;
+          const inCohort = st !== null || (pts ?? 0) >= ecs || isRest;
           if (!inCohort) continue;
           if (isRest) { personalRest++; continue; }
           const pa = pmsActByUserWeek.get(`${uid}|${week.startDate}`);
-          const isSuccess = st === "success"
-            || (!!pa?.submitted && (pa.star ?? -1) >= 4 && (pts ?? -1) >= confirmStar);
+          const isSuccess = !!pa?.submitted && (pa.star ?? -1) >= 4 && (pts ?? -1) >= ecs;
           if (isSuccess) growthSuccess++;
           else growthFail++;
         }
