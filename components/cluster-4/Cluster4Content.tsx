@@ -1576,6 +1576,26 @@ const Cluster4Content = () => {
     earned: number;
   }> | null>(null);
 
+  // area-6/area-7 시즌별 맵 — 동일 weekly-cards 응답(snapshot-only)의 *BySeason 필드.
+  //   백엔드가 카드에 등장하는 모든 시즌 key 별로 미리 집계해 내려준다(스냅샷 재계산 없음).
+  //   화면은 선택된 시즌(selectedSeasonSummary.seasonKey)으로 이 맵을 조회해 렌더링한다 —
+  //   현재 시즌 고정값(snapshotCircles/snapshotAreaProgress) 재사용 금지(시즌 전환 시 값이 바뀌어야 함).
+  type CircleDto = {
+    weekUsage: number;
+    approvedWeeks: number;
+    scheduleReliability: number;
+    reliableWeeks: number;
+    availableWeeks: number;
+    seasonGrowth: number;
+    completedLines: number;
+    availableLines: number;
+  };
+  type AreaProgressItem = { key: string; label: string; rate: number; total: number; earned: number };
+  const [snapshotCirclesBySeason, setSnapshotCirclesBySeason] =
+    useState<Record<string, CircleDto> | null>(null);
+  const [snapshotAreaProgressBySeason, setSnapshotAreaProgressBySeason] =
+    useState<Record<string, AreaProgressItem[]> | null>(null);
+
   // weekly-cards 스냅샷에서 area-6-circles(현재 시즌 집계) 로드. 일반/데모 동일 라우트.
   //   URL 규칙(기존 /api/profile 패턴과 동일):
   //     urlUserId 있으면 ?userId=...(+demoUserId 마커) / 없으면 본인 세션.
@@ -1607,6 +1627,8 @@ const Cluster4Content = () => {
             total: number;
             earned: number;
           }> | null;
+          areaSixCirclesBySeason?: Record<string, CircleDto> | null;
+          seasonAreaProgressBySeason?: Record<string, AreaProgressItem[]> | null;
         }>(`/api/cluster4/weekly-cards${qs}`).catch(() => null);
         if (cancelled) return;
         const c = json?.areaSixCircles ?? null;
@@ -1627,10 +1649,23 @@ const Cluster4Content = () => {
         // area-7-progress — 동일 응답의 seasonAreaProgress 그대로 저장(snapshot SoT).
         const ap = Array.isArray(json?.seasonAreaProgress) ? json!.seasonAreaProgress! : null;
         setSnapshotAreaProgress(ap);
+        // area-6/area-7 시즌별 맵 — 선택 시즌 렌더링 SoT (현재 시즌 고정값 재사용 금지).
+        setSnapshotCirclesBySeason(
+          json?.areaSixCirclesBySeason && typeof json.areaSixCirclesBySeason === "object"
+            ? json.areaSixCirclesBySeason
+            : null,
+        );
+        setSnapshotAreaProgressBySeason(
+          json?.seasonAreaProgressBySeason && typeof json.seasonAreaProgressBySeason === "object"
+            ? json.seasonAreaProgressBySeason
+            : null,
+        );
       } catch {
         if (!cancelled) {
           setSnapshotCircles(null);
           setSnapshotAreaProgress(null);
+          setSnapshotCirclesBySeason(null);
+          setSnapshotAreaProgressBySeason(null);
         }
       } finally {
         if (!cancelled) markSectionLoaded("snapshot");
@@ -1642,36 +1677,9 @@ const Cluster4Content = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlUserId, demoQS]);
 
-  // area-6-circles 표시값 — 스냅샷 로드 전/실패 시 0 세트(snapshot SoT, legacy 폴백 금지).
-  const circlesView = snapshotCircles ?? {
-    weekUsage: 0,
-    approvedWeeks: 0,
-    scheduleReliability: 0,
-    reliableWeeks: 0,
-    availableWeeks: 0,
-    seasonGrowth: 0,
-    completedLines: 0,
-    availableLines: 0,
-  };
-
-  // area-7-progress 표시값 — 백엔드 seasonAreaProgress(key 기준) 를 4허브로 매핑.
-  //   스냅샷 로드 전/항목 없음 → 0 fallback (rate/total/completed 전부 0, snapshot SoT 유지).
-  //   front 의 .completed 는 DTO 의 earned(이행 라인 수)에 대응.
-  const progressView = (() => {
-    const zero = { rate: 0, total: 0, completed: 0 };
-    const pick = (key: string) => {
-      const item = (snapshotAreaProgress ?? []).find((x) => x.key === key);
-      return item
-        ? { rate: item.rate ?? 0, total: item.total ?? 0, completed: item.earned ?? 0 }
-        : zero;
-    };
-    return {
-      info: pick("practical_info"),
-      experience: pick("practical_experience"),
-      competency: pick("practical_competency"),
-      career: pick("practical_career"),
-    };
-  })();
+  // area-6-circles / area-7-progress 표시값은 선택 시즌(selectedSeasonSummary.seasonKey) 기준으로
+  // 아래 selectedSeasonSummary 정의 이후에 파생한다(circlesView / progressView). 여기서는 정의 불가
+  // (selectedSeasonSummary/section3Page 가 아직 선언 전 — TDZ).
 
   // 역할 이력 데이터
   const [userRoleHistory, setUserRoleHistory] = useState<
@@ -1799,6 +1807,41 @@ const Cluster4Content = () => {
   const voidNum = (n: number | string): number | string => (isVoidSeason ? "-" : n);
   const voidPct = (n: number): string => (isVoidSeason ? "-" : `${n}%`);
   const voidFill = (n: number): number => (isVoidSeason ? 0 : n);
+
+  // ── area-6-circles / area-7-progress 표시값 — 선택 시즌 기준(snapshot-only) ──────────
+  //   SoT = weekly-cards 응답의 *BySeason 맵(전 시즌 미리 집계). 선택 시즌 key 로 조회한다.
+  //   평점/리뷰/포인트(selectedSeasonSummary)와 동일한 시즌 기준을 따른다.
+  //   - 맵 로드 완료 + 선택 시즌 key 존재 → 해당 시즌 값(없으면 0). 현재 시즌 고정값 재사용 금지.
+  //   - 맵 로드 전(transient)에만 현재 시즌 단건(snapshotCircles)으로 폴백, 그것도 없으면 0.
+  const ZERO_CIRCLES: CircleDto = {
+    weekUsage: 0, approvedWeeks: 0, scheduleReliability: 0, reliableWeeks: 0,
+    availableWeeks: 0, seasonGrowth: 0, completedLines: 0, availableLines: 0,
+  };
+  const selectedSeasonKey = selectedSeasonSummary?.seasonKey ?? null;
+  const circlesView: CircleDto = snapshotCirclesBySeason
+    ? (selectedSeasonKey ? (snapshotCirclesBySeason[selectedSeasonKey] ?? ZERO_CIRCLES) : (snapshotCircles ?? ZERO_CIRCLES))
+    : (snapshotCircles ?? ZERO_CIRCLES);
+
+  // area-7-progress 표시값 — 선택 시즌 seasonAreaProgress(key 기준)를 4허브로 매핑.
+  //   front 의 .completed 는 DTO 의 earned(이행 라인 수)에 대응. 항목/맵 없음 → 0.
+  const progressView = (() => {
+    const zero = { rate: 0, total: 0, completed: 0 };
+    const items: AreaProgressItem[] = snapshotAreaProgressBySeason
+      ? (selectedSeasonKey ? (snapshotAreaProgressBySeason[selectedSeasonKey] ?? []) : (snapshotAreaProgress ?? []))
+      : (snapshotAreaProgress ?? []);
+    const pick = (key: string) => {
+      const item = items.find((x) => x.key === key);
+      return item
+        ? { rate: item.rate ?? 0, total: item.total ?? 0, completed: item.earned ?? 0 }
+        : zero;
+    };
+    return {
+      info: pick("practical_info"),
+      experience: pick("practical_experience"),
+      competency: pick("practical_competency"),
+      career: pick("practical_career"),
+    };
+  })();
 
   // 현재 선택된 시즌 데이터 (데모 모드 → seasonHistories 페이지네이션 우선, 없으면 기본 데이터)
   const currentSeason: SeasonHistoryData = isDemoMode
