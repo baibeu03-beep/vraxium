@@ -138,8 +138,24 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
   try {
     const today = new Date().toISOString().split("T")[0];
 
-    // 1) org 로스터 — user_profiles.organization_slug 기준(/api/crews 동일 SoT).
-    const { data: orgProfiles, error: profileErr } = await db
+    // 0) 시드 테스트 유저 제외 집합 — test_user_markers(어드민이 시드한 더미 계정 SoT).
+    // 실제 성장 랭킹에 시드 계정이 섞이면 전체 크루/성공·실패 카운트가 부풀려진다
+    // (예: 2026 봄 13주차 oranke 98명 중 25명이 시드 테스트 유저). PMS Migration(실데이터)
+    // 기준과 맞추기 위해 집계 모집단에서 제외한다. best-effort: 조회 실패 시 미제외.
+    const testUserIds = new Set<string>();
+    {
+      const { data: markers, error: markerErr } = await fetchAllRows<{ user_id: string }>((from, to) =>
+        db.from("test_user_markers").select("user_id").range(from, to),
+      );
+      if (markerErr) {
+        console.warn("[weekly-league] test_user_markers 조회 실패 — 테스트 유저 미제외", (markerErr as Error)?.message ?? String(markerErr));
+      } else {
+        for (const m of markers) testUserIds.add(m.user_id);
+      }
+    }
+
+    // 1) org 로스터 — user_profiles.organization_slug 기준(/api/crews 동일 SoT). 테스트 유저 제외.
+    const { data: orgProfilesRaw, error: profileErr } = await db
       .from("user_profiles")
       .select("user_id, display_name, current_team_name, current_part_name")
       .eq("organization_slug", org)
@@ -148,12 +164,13 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
     if (profileErr) {
       return { success: false, org, cards: [], error: `org 로스터 조회 실패: ${profileErr.message}` };
     }
-    const orgUserIds = (orgProfiles || []).map((p) => p.user_id);
+    const orgProfiles = (orgProfilesRaw || []).filter((p) => !testUserIds.has(p.user_id));
+    const orgUserIds = orgProfiles.map((p) => p.user_id);
     if (orgUserIds.length === 0) {
       return { success: true, org, cards: [] };
     }
     const profileMap = new Map(
-      (orgProfiles || []).map((p) => [p.user_id, p] as const),
+      orgProfiles.map((p) => [p.user_id, p] as const),
     );
 
     // 2) 종료된 주차 메타 — cluster-4-ranking 과 동일 source(weeks + season_definitions).
