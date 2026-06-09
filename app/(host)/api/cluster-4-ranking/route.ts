@@ -664,8 +664,12 @@ export async function GET(request: NextRequest) {
       const infoTotal = (isOnboardingWeek || isRestWeek) ? 0 : activeActivities.filter(a => infoTypeIds.includes(a.activity_type_id)).length;
       const infoCount = (isOnboardingWeek || isRestWeek) ? 0 : infoTypeIds.filter(typeId => isEnhancementSuccess(typeId)).length;
 
-      // ===== 실무 역량 (competency) - cluster-4-card와 동일: 강화 성공 기준, total=1 =====
-      const competencyTotal = (isOnboardingWeek || isRestWeek) ? 0 : 1;
+      // ===== 실무 역량 (competency) — placeholder 미집계: 실제 개설된 competency 활동이 있을 때만 total=1 =====
+      // (2026-06-09 회귀방지) 구: 비휴식이면 무조건 total=1 → 미개설 주차도 1로 집계되어 placeholder 가
+      // 분모에 잡혔다. 이 라우트는 activity 기반(lineTargetId 미보유)이라, 개설 활동(activeActivities) 유무로
+      // 판정한다 — 역량은 1인·1주차 최대 1개 정책이므로 0/1 로 폴드. 미개설 주차 = total 0.
+      const competencyOpened = activeActivities.some(a => competencyTypeIds.includes(a.activity_type_id));
+      const competencyTotal = (isOnboardingWeek || isRestWeek) ? 0 : (competencyOpened ? 1 : 0);
       const competencyCount = (isOnboardingWeek || isRestWeek) ? 0 : (competencyTypeIds.some(typeId => isEnhancementSuccess(typeId)) ? 1 : 0);
 
       // ===== 실무 경험 (experience) - cluster-4-card 와 정합: per-user 레코드 기반 =====

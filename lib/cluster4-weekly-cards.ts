@@ -283,7 +283,10 @@ export async function buildWeeklyCards(supabase: any, userId: string, opts: {
     if (cluster === "competency") {
       const hasActive = (openActivities.get(weekId) || new Set<string>());
       const hasActiveComp = Array.from(hasActive).some(id => ids.has(id));
-      const total = isClubBreak ? (hasActiveComp ? 1 : 0) : 1;
+      // placeholder 미집계: 실제 개설된 competency 활동이 있을 때만 total=1 (2026-06-09 회귀방지).
+      // 구: 비휴식이면 무조건 1 → 미개설 주차도 1로 집계. deprecated 빌더(activity 기반, lineTargetId
+      // 미보유)이므로 개설 활동 유무로 판정 — 휴식/비휴식 공통 0/1 폴드.
+      const total = hasActiveComp ? 1 : 0;
       const count = Array.from(ids).some(id => isEnhanced(weekId, startDate, id)) ? 1 : 0;
       return { count, total, rate: total > 0 ? Math.ceil((count / total) * 100) : 0 };
     }
