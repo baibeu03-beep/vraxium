@@ -208,6 +208,10 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
         .from("user_week_statuses")
         .select("user_id, week_start_date, status")
         .in("user_id", orgUserIds)
+        // PostgREST range 페이지네이션은 안정적 ORDER BY 가 없으면 1000행 초과 시
+        // 페이지 경계에서 행 중복/누락이 발생한다(집계 과대/과소). 결정적 정렬 필수.
+        .order("user_id", { ascending: true })
+        .order("week_start_date", { ascending: true })
         .range(from, to),
     );
     if (statusErr) {
@@ -224,6 +228,9 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
         .from("user_weekly_points")
         .select("user_id, week_start_date, points")
         .in("user_id", orgUserIds)
+        // 동일 사유 — 안정적 ORDER BY 로 range 페이지네이션 중복/누락 방지.
+        .order("user_id", { ascending: true })
+        .order("week_start_date", { ascending: true })
         .range(from, to),
     );
     if (pointErr) {
