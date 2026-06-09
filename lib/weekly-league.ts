@@ -286,6 +286,41 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
       pointsByWeek.set(r.week_start_date, arr);
     }
 
+    // 6) PMS 활동인정 신호 — cluster4_weekly_pms_activity. **데이터-게이트**: 행이 존재하는
+    //    org×week 에만 PMS 공식 적용, 없는 주차/org 는 기존 uws 버킷팅 유지(현재 oranke W13만 적재).
+    //    confirmStar = org_week_thresholds.check_threshold (이미 weekssettings.confirmStar 백필값).
+    //    uws.status / uwp.points / 개인 카드 / snapshot 무변경 — READ only 소비.
+    const { data: pmsActRows } = await fetchAllRows<{
+      user_id: string; week_start_date: string; user_activity_submitted: boolean; user_activity_star: number | null;
+    }>((from, to) =>
+      db
+        .from("cluster4_weekly_pms_activity")
+        .select("user_id, week_start_date, user_activity_submitted, user_activity_star")
+        .in("user_id", orgUserIds)
+        .order("user_id", { ascending: true })
+        .order("week_start_date", { ascending: true })
+        .range(from, to),
+    );
+    const pmsActByUserWeek = new Map<string, { submitted: boolean; star: number | null }>();
+    const weeksWithPmsData = new Set<string>();
+    for (const r of pmsActRows || []) {
+      pmsActByUserWeek.set(`${r.user_id}|${r.week_start_date}`, { submitted: !!r.user_activity_submitted, star: r.user_activity_star });
+      weeksWithPmsData.add(r.week_start_date);
+    }
+    const { data: owtRows } = await db
+      .from("org_week_thresholds")
+      .select("week_id, check_threshold")
+      .eq("organization_slug", org)
+      .in("week_id", weeks.map((w) => w.id));
+    const confirmStarByWeekId = new Map<string, number>();
+    for (const r of owtRows || []) confirmStarByWeekId.set(r.week_id, Number(r.check_threshold));
+
+    // PMS 공식 경로(로스터 전체 순회)용 per-(user,week) 룩업.
+    const statusByUserWeek = new Map<string, string>();
+    for (const r of statusRows) statusByUserWeek.set(`${r.user_id}|${r.week_start_date}`, r.status);
+    const pointsByUserWeek = new Map<string, number>();
+    for (const r of pointRows) pointsByUserWeek.set(`${r.user_id}|${r.week_start_date}`, Number(r.points) || 0);
+
     const teamPartFor = (userId: string): { team: string; part: string } => {
       const primary = pickPrimaryMembership(membershipByUser.get(userId) || []);
       const profile = profileMap.get(userId);
@@ -333,15 +368,40 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
         };
       }
 
-      // ── 활동 주차 — user_week_statuses 스냅샷 버킷팅 ──
-      const rows = statusByWeek.get(week.startDate) || [];
+      // ── 활동 주차 ──
       let growthSuccess = 0;
       let growthFail = 0;
       let personalRest = 0;
-      for (const r of rows) {
-        if (r.status === "success") growthSuccess++;
-        else if (r.status === "personal_rest" || r.status === "official_rest") personalRest++;
-        else growthFail++; // 'fail' 및 기타 → 실패
+      const confirmStar = confirmStarByWeekId.get(week.id);
+      const usePmsFormula = weeksWithPmsData.has(week.startDate) && confirmStar != null;
+      if (usePmsFormula) {
+        // PMS 활동인정 공식 (데이터-게이트 org×week — 현재 oranke W13만).
+        //   success = uws.status='success'
+        //          OR (user_activity_submitted AND user_activity_star>=4
+        //              AND uwp.points>=confirmStar AND NOT isRest)
+        //   cohort  = uws행 존재 OR uwp.points>=confirmStar OR isRest
+        // 로스터 전체 순회 — uws 행이 없어도 점수만으로 코호트에 드는 인원 포함.
+        for (const uid of orgUserIds) {
+          const st = statusByUserWeek.get(`${uid}|${week.startDate}`) ?? null;
+          const pts = pointsByUserWeek.get(`${uid}|${week.startDate}`) ?? null;
+          const isRest = st === "personal_rest" || st === "official_rest";
+          const inCohort = st !== null || (pts ?? 0) >= confirmStar || isRest;
+          if (!inCohort) continue;
+          if (isRest) { personalRest++; continue; }
+          const pa = pmsActByUserWeek.get(`${uid}|${week.startDate}`);
+          const isSuccess = st === "success"
+            || (!!pa?.submitted && (pa.star ?? -1) >= 4 && (pts ?? -1) >= confirmStar);
+          if (isSuccess) growthSuccess++;
+          else growthFail++;
+        }
+      } else {
+        // ── 기존 동작 — user_week_statuses 스냅샷 버킷팅 (PMS 데이터 없는 주차/org) ──
+        const rows = statusByWeek.get(week.startDate) || [];
+        for (const r of rows) {
+          if (r.status === "success") growthSuccess++;
+          else if (r.status === "personal_rest" || r.status === "official_rest") personalRest++;
+          else growthFail++; // 'fail' 및 기타 → 실패
+        }
       }
       const growthChallenge = growthSuccess + growthFail; // 휴식 제외, 도전 인원
       const totalCrews = growthChallenge + personalRest;
