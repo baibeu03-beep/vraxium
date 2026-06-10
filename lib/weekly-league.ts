@@ -154,17 +154,46 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
       }
     }
 
+    // 0-1) 회원명부(printUsers) 모드 게이트 — weekly_league_roster_orgs 에 등록된 org 만.
+    //   ON  : 모집단=회원명부(운영진/시즌전체휴식/미시작 제외 + graduated 제외), 휴식=crew_personal_rest_periods.
+    //   OFF : 현행 활동행(user_week_statuses) 경로 그대로 — 숫자 불변(byte-identical).
+    let memberRosterMode = false;
+    {
+      const { data: gateRows } = await db
+        .from("weekly_league_roster_orgs")
+        .select("organization_slug")
+        .eq("organization_slug", org)
+        .eq("enabled", true);
+      memberRosterMode = !!(gateRows && gateRows.length > 0);
+    }
+    const operatorIds = new Set<string>();
+    if (memberRosterMode) {
+      const { data: ops } = await fetchAllRows<{ user_id: string }>((from, to) =>
+        db.from("operator_markers").select("user_id").eq("organization_slug", org).range(from, to),
+      );
+      for (const o of ops) operatorIds.add(o.user_id);
+    }
+
     // 1) org 로스터 — user_profiles.organization_slug 기준(/api/crews 동일 SoT). 테스트 유저 제외.
+    //    회원명부 모드: status·activity_started_at 추가 select 후 운영진/시즌전체휴식/graduated 제외.
     const { data: orgProfilesRaw, error: profileErr } = await db
       .from("user_profiles")
-      .select("user_id, display_name, current_team_name, current_part_name")
+      .select("user_id, display_name, current_team_name, current_part_name, status, activity_started_at")
       .eq("organization_slug", org)
       .in("status", ["active", "seasonal_rest", "weekly_rest", "graduated"]);
 
     if (profileErr) {
       return { success: false, org, cards: [], error: `org 로스터 조회 실패: ${profileErr.message}` };
     }
-    const orgProfiles = (orgProfilesRaw || []).filter((p) => !testUserIds.has(p.user_id));
+    const orgProfiles = (orgProfilesRaw || []).filter((p) => {
+      if (testUserIds.has(p.user_id)) return false;
+      if (memberRosterMode) {
+        if ((p as { status?: string }).status === "graduated") return false; // PMS 졸업 제외
+        if (operatorIds.has(p.user_id)) return false;                         // PMS 운영진 제외
+        if ((p as { current_team_name?: string }).current_team_name === "시즌전체휴식") return false; // PMS Team 제외
+      }
+      return true;
+    });
     const orgUserIds = orgProfiles.map((p) => p.user_id);
     if (orgUserIds.length === 0) {
       return { success: true, org, cards: [] };
@@ -172,6 +201,16 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
     const profileMap = new Map(
       orgProfiles.map((p) => [p.user_id, p] as const),
     );
+
+    // 1-1) 개인휴식 기간(회원명부 모드 전용) — crew_personal_rest_periods (restdates 격리본).
+    //   user_week_statuses 무관·무수정. 개인 카드/growth/resume/snapshot 무영향.
+    const restPeriods: Array<{ user_id: string; start_date: string; end_date: string }> = [];
+    if (memberRosterMode) {
+      const { data: rp } = await fetchAllRows<{ user_id: string; start_date: string; end_date: string }>((from, to) =>
+        db.from("crew_personal_rest_periods").select("user_id, start_date, end_date").eq("organization_slug", org).range(from, to),
+      );
+      restPeriods.push(...rp);
+    }
 
     // 2) 종료된 주차 메타 — cluster-4-ranking 과 동일 source(weeks + season_definitions).
     //    (2026-06-09) 당분간 2026 봄 시즌만 노출 — 과거 시즌/주차는 숨김(데이터 보존, 렌더 제외).
@@ -392,6 +431,23 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
       let growthSuccess = 0;
       let growthFail = 0;
       let personalRest = 0;
+      if (memberRosterMode) {
+        // ── 회원명부(printUsers) 모드 ──
+        //   모집단 = activity_started_at <= 주차종료 인 로스터(운영진/시즌전체휴식/graduated/test 이미 제외).
+        //   휴식  = crew_personal_rest_periods 가 주차[start,end] 와 overlap. (uws.status 미사용)
+        //   성공  = uws.status='success' (PMS union 의 uws 절 — 별점/잔차는 별도 명단 이슈).
+        const restUserIds = new Set(
+          restPeriods.filter((r) => r.start_date <= week.endDate && r.end_date >= week.startDate).map((r) => r.user_id),
+        );
+        for (const p of orgProfiles) {
+          const started = (p as { activity_started_at?: string | null }).activity_started_at ?? null;
+          if (!started || started.slice(0, 10) > week.endDate) continue; // 미시작(StartDate>주차종료) 제외
+          if (restUserIds.has(p.user_id)) { personalRest++; continue; }
+          const st = statusByUserWeek.get(`${p.user_id}|${week.startDate}`) ?? null;
+          if (st === "success") growthSuccess++;
+          else growthFail++; // uws fail/기타/행없음 → 실패
+        }
+      } else {
       // effectiveConfirmStar = 예외 override 우선, 없으면 org_week_thresholds.check_threshold.
       const effectiveConfirmStar = confirmStarOverrideByWeekId.get(week.id) ?? confirmStarByWeekId.get(week.id);
       const usePmsFormula = weeksWithPmsData.has(week.startDate) && effectiveConfirmStar != null;
@@ -423,6 +479,7 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
           else growthFail++; // 'fail' 및 기타 → 실패
         }
       }
+      } // end memberRosterMode 분기
       const growthChallenge = growthSuccess + growthFail; // 휴식 제외, 도전 인원
       const totalCrews = growthChallenge + personalRest;
 
