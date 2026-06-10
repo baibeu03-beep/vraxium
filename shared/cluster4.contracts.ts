@@ -133,8 +133,9 @@ export interface Cluster4WeeklyLineDto {
   infoGrowthPoint?: string | null;
   // 아웃풋 링크 — 운영진/크루 링크 통합 배열(향후 통합 가능). outputLink1 = [0], outputLink2 = [1].
   // ⚠️ outputLinks.length 를 관리자 슬롯 수로 쓰지 말 것 — 통합 배열이 될 수 있음. adminOutputLinkCount 사용.
+  // 정책(2026-06-10): 운영진(admin) output link 는 정확히 1개(최대 1) — lib/cluster4-admin-output-clamp 로 전달/렌더 단계 클램프.
   outputLinks?: Cluster4LineOutputLinkDto[] | null;
-  // 운영진 업로드 이미지 슬롯
+  // 운영진 업로드 이미지 슬롯 (정책: 최대 1)
   outputImages?: Cluster4LineOutputImageDto[] | null;
   // ⚠️ 운영진(top-level) 이미지 캡션 — admin DTO 는 outputImages 객체에 caption 을 넣지 않고
   // outputImages(URL string[]) 와 index 1:1 로 정렬된 별도 배열로 내려준다(submission.* 와 동일 형태).
@@ -143,6 +144,7 @@ export interface Cluster4WeeklyLineDto {
   // ── 관리자 점유 슬롯 수 (백엔드 SoT — 프론트 추론 금지) ──
   // index < adminOutputLinkCount  → 관리자 링크 슬롯 (read-only)
   // index < adminOutputImageCount → 관리자 이미지 슬롯 (read-only, preview only)
+  // 정책(2026-06-10): 운영진 output image/link 정확히 1개 → 전달/렌더 단계에서 Math.min(count, 1) 로 클램프.
   adminOutputLinkCount?: number | null;
   adminOutputImageCount?: number | null;
   // ── 크루원(사용자) 제출값 단일 출처 (백엔드 SoT) ──

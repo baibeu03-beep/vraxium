@@ -18,6 +18,7 @@ import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getGraduationWeeksFro
 import { formatSeasonLabel, formatSeasonWeekTitle, resolveSeasonWeekText } from "@/lib/cluster4-types";
 import { isTransitionWeek, isOfficialRestWeek, TRANSITION_WEEK_LABEL } from "@/lib/cluster4-transition-week";
 import { isFadedCardStatus } from "@/lib/cluster4-faded-card";
+import { clampAdminOutputs, ADMIN_OUTPUT_IMAGE_MAX, ADMIN_OUTPUT_LINK_MAX } from "@/lib/cluster4-admin-output-clamp";
 import { REPUTATION_KEYWORD_GROUPS } from "@/lib/reputation-keywords";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
@@ -722,7 +723,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     opened_at: string | null;
     deadline?: string | null; // 어드민 직접 지정 마감 (옵션 — 없으면 시스템 기본 N+1주(목) 12:00 KST)
     output_links: OutputLink[] | null; // 운영진이 입력한 output links
-    output_images?: Array<{ url: string; caption: string }> | null; // 운영진이 업로드한 이미지 (최대 2)
+    output_images?: Array<{ url: string; caption: string }> | null; // 운영진이 업로드한 이미지 (정책: 최대 1)
     team_id?: string | null; // 실무경험만 NOT NULL
   }
   const [weeklyActivities, setWeeklyActivities] = useState<WeeklyActivity[]>([]);
@@ -2196,10 +2197,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         cards.forEach((c) => {
           const cardLines = Array.isArray(c?.lines) ? c.lines! : [];
           cardLines.forEach((line) => {
+            // 운영진 output image/link 정책 클램프(≤1) — HTTP 프록시와 동일 함수로 렌더 단계에서도
+            // 안전하게 제한(direct == HTTP 패리티). 클램프 후 캡션 coalesce 순서 유지.
+            const clampedLine = clampAdminOutputs(line as unknown as Record<string, unknown>) as unknown as Cluster4WeeklyLineDto;
             allLines.push({
-              ...line,
-              outputImages: coalesceAdminOutputImages(line),
-              weekId: (line.weekId as string | null | undefined) ?? c.weekId ?? null,
+              ...clampedLine,
+              outputImages: coalesceAdminOutputImages(clampedLine),
+              weekId: (clampedLine.weekId as string | null | undefined) ?? c.weekId ?? null,
             });
           });
         });
@@ -2821,24 +2825,27 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 개수 → legacy(getAdminOutputLinksCount) 순. legacy 헬퍼는 weeklyActivities 만 보므로, 운영진이 DTO 라인
   // 으로만 개설한 링크(weeklyActivities 미존재)를 0 으로 세어 admin 링크가 누락된다 — 그 회귀를 막는다.
   const getAbilityAdminLinkCount = (matchedLine: Cluster4WeeklyLineDto | undefined, activityTypeId?: string | null): number => {
-    if (matchedLine?.adminOutputLinkCount != null) return matchedLine.adminOutputLinkCount;
-    if (Array.isArray(matchedLine?.outputLinks)) {
-      const n = matchedLine!.outputLinks!.filter((l) => (l?.url as string | null | undefined)?.trim()).length;
-      if (n > 0) return n;
-    }
-    return activityTypeId ? getAdminOutputLinksCount(activityTypeId, matchedLine) : 0;
+    const raw = (() => {
+      if (matchedLine?.adminOutputLinkCount != null) return matchedLine.adminOutputLinkCount;
+      if (Array.isArray(matchedLine?.outputLinks)) {
+        const n = matchedLine!.outputLinks!.filter((l) => (l?.url as string | null | undefined)?.trim()).length;
+        if (n > 0) return n;
+      }
+      return activityTypeId ? getAdminOutputLinksCount(activityTypeId, matchedLine) : 0;
+    })();
+    return Math.min(raw, ADMIN_OUTPUT_LINK_MAX); // 운영진 output link 정책: 최대 1
   };
-  // 실무 역량(competency) 어드민 Output Image (top-level outputImages → legacy) — { url, caption }[].
+  // 실무 역량(competency) 어드민 Output Image (top-level outputImages → legacy) — { url, caption }[]. (정책: 최대 1)
   const getAbilityAdminImages = (matchedLine: Cluster4WeeklyLineDto | undefined, activityTypeId?: string | null): Array<{ url: string; caption: string }> => {
     const lineImages = normalizeOutputImages(
       matchedLine?.outputImages as ReadonlyArray<string | { url?: string | null; caption?: string | null } | null> | null | undefined,
     );
-    if (lineImages.length > 0) return lineImages;
-    return activityTypeId ? getAdminOutputImages(activityTypeId, matchedLine) : [];
+    if (lineImages.length > 0) return lineImages.slice(0, ADMIN_OUTPUT_IMAGE_MAX);
+    return (activityTypeId ? getAdminOutputImages(activityTypeId, matchedLine) : []).slice(0, ADMIN_OUTPUT_IMAGE_MAX);
   };
   const getAbilityAdminImageCount = (matchedLine: Cluster4WeeklyLineDto | undefined, activityTypeId?: string | null): number => {
-    if (matchedLine?.adminOutputImageCount != null) return matchedLine.adminOutputImageCount;
-    return getAbilityAdminImages(matchedLine, activityTypeId).length;
+    const raw = matchedLine?.adminOutputImageCount != null ? matchedLine.adminOutputImageCount : getAbilityAdminImages(matchedLine, activityTypeId).length;
+    return Math.min(raw, ADMIN_OUTPUT_IMAGE_MAX); // 운영진 output image 정책: 최대 1
   };
 
   // ── 강화 상태 status-badge 이미지/라벨 (백엔드 DTO 단일 출처) ──
@@ -4422,8 +4429,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     if (!(await popup.confirm("내용을 모두 초기화하시겠어요?"))) return;
     const careerIdx = (selectedWorkCareerCard?.id || 1) - 1;
     const careerRecord = careerRecords[careerIdx];
-    const adminImgs = (careerRecord?.output_images || []).filter((i) => i?.url?.trim());
-    const adminLinks = (careerRecord?.output_links || []).filter((l) => l?.url?.trim());
+    // 운영진 output 정책: 최대 1 — 초기화 시 유지할 어드민 슬롯도 1개로 제한.
+    const adminImgs = (careerRecord?.output_images || []).filter((i) => i?.url?.trim()).slice(0, ADMIN_OUTPUT_IMAGE_MAX);
+    const adminLinks = (careerRecord?.output_links || []).filter((l) => l?.url?.trim()).slice(0, ADMIN_OUTPUT_LINK_MAX);
     setEditingCareerSubTitle("");
     setEditingCareerGrowthPoint("");
     const resetLinks: { desc: string; url: string }[] = [];
@@ -7233,28 +7241,31 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 단일 출처: weekly-cards DTO 의 matchedLine.adminOutputLinkCount (백엔드 SoT).
   // ⚠️ outputLinks.length 추론 금지 (통합 배열이 될 수 있음). 필드가 없을(undefined/null) 때만 legacy fallback.
   const getAdminOutputLinksCount = (activityType: string, matchedLine?: Cluster4WeeklyLineDto): number => {
-    if (matchedLine?.adminOutputLinkCount != null) return matchedLine.adminOutputLinkCount;
-    // 실무 경력: career_projects의 output_links에서 가져옴
-    const careerIndex = (careerTypeIds.length > 0 ? careerTypeIds : ["practical_project"]).indexOf(activityType);
-    if (careerIndex >= 0 && careerRecords[careerIndex]) {
-      return careerRecords[careerIndex].output_links?.filter((l: { url?: string }) => l.url?.trim())?.length || 0;
-    }
-    const activity = weeklyActivities.find((a) => a.activity_type_id === activityType);
-    return activity?.output_links?.filter((l) => l.url?.trim())?.length || 0;
+    const raw = (() => {
+      if (matchedLine?.adminOutputLinkCount != null) return matchedLine.adminOutputLinkCount;
+      // 실무 경력: career_projects의 output_links에서 가져옴
+      const careerIndex = (careerTypeIds.length > 0 ? careerTypeIds : ["practical_project"]).indexOf(activityType);
+      if (careerIndex >= 0 && careerRecords[careerIndex]) {
+        return careerRecords[careerIndex].output_links?.filter((l: { url?: string }) => l.url?.trim())?.length || 0;
+      }
+      const activity = weeklyActivities.find((a) => a.activity_type_id === activityType);
+      return activity?.output_links?.filter((l) => l.url?.trim())?.length || 0;
+    })();
+    return Math.min(raw, ADMIN_OUTPUT_LINK_MAX); // 운영진 output link 정책: 최대 1
   };
 
-  // 운영진이 입력한 output links 가져오기
+  // 운영진이 입력한 output links 가져오기 (정책: 최대 1)
   const getAdminOutputLinks = (activityType: string): OutputLink[] => {
     // 실무 경력: career_projects의 output_links에서 가져옴
     const careerIndex = (careerTypeIds.length > 0 ? careerTypeIds : ["practical_project"]).indexOf(activityType);
     if (careerIndex >= 0 && careerRecords[careerIndex]) {
-      return (careerRecords[careerIndex].output_links || []) as OutputLink[];
+      return ((careerRecords[careerIndex].output_links || []) as OutputLink[]).slice(0, ADMIN_OUTPUT_LINK_MAX);
     }
     const activity = weeklyActivities.find((a) => a.activity_type_id === activityType);
-    return activity?.output_links || [];
+    return (activity?.output_links || []).slice(0, ADMIN_OUTPUT_LINK_MAX);
   };
 
-  // 운영진이 업로드한 output images 가져오기 (최대 2)
+  // 운영진이 업로드한 output images 가져오기 (정책: 최대 1)
   // 단일 출처: weekly-cards DTO 의 matchedLine.outputImages 가 존재하면 무조건 우선 사용한다 (outputLinks 와 동일 정책).
   // matchedLine 이 없거나 이미지가 비어 있을 때만 legacy(careerRecords/weeklyActivities) fallback.
   const getAdminOutputImages = (
@@ -7267,20 +7278,23 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         | null
         | undefined,
     );
-    if (lineImages.length > 0) return lineImages;
+    if (lineImages.length > 0) return lineImages.slice(0, ADMIN_OUTPUT_IMAGE_MAX);
     // 실무 경력: career_projects.output_images (career_records API 가 project 정보 같이 반환)
     const careerIndex = (careerTypeIds.length > 0 ? careerTypeIds : ["practical_project"]).indexOf(activityType);
     if (careerIndex >= 0 && careerRecords[careerIndex]) {
-      return normalizeOutputImages(careerRecords[careerIndex].output_images);
+      return normalizeOutputImages(careerRecords[careerIndex].output_images).slice(0, ADMIN_OUTPUT_IMAGE_MAX);
     }
     const activity = weeklyActivities.find((a) => a.activity_type_id === activityType);
-    return normalizeOutputImages(activity?.output_images);
+    return normalizeOutputImages(activity?.output_images).slice(0, ADMIN_OUTPUT_IMAGE_MAX);
   };
-  // 관리자 점유 이미지 슬롯 수.
+  // 관리자 점유 이미지 슬롯 수. (정책: 최대 1)
   // 단일 출처: matchedLine.adminOutputImageCount (백엔드 SoT). ⚠️ outputImages.length 추론 금지.
   // 필드가 없을(undefined/null) 때만 legacy(getAdminOutputImages 길이) fallback.
   const getAdminOutputImagesCount = (activityType: string, matchedLine?: Cluster4WeeklyLineDto): number =>
-    matchedLine?.adminOutputImageCount != null ? matchedLine.adminOutputImageCount : getAdminOutputImages(activityType, matchedLine).length;
+    Math.min(
+      matchedLine?.adminOutputImageCount != null ? matchedLine.adminOutputImageCount : getAdminOutputImages(activityType, matchedLine).length,
+      ADMIN_OUTPUT_IMAGE_MAX,
+    );
 
   // 편집 모달 열 때 초기화
   const initializeEditingDetails = () => {
@@ -7988,7 +8002,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         | null
         | undefined,
     );
-    const adminImgs = expLineImages.length > 0 ? expLineImages : normalizeOutputImages(activity?.output_images);
+    // 운영진 output image 정책: 최대 1 (병합 card.images 에 반영되므로 여기서 클램프).
+    const adminImgs = (expLineImages.length > 0 ? expLineImages : normalizeOutputImages(activity?.output_images)).slice(0, ADMIN_OUTPUT_IMAGE_MAX);
     const adminUrlSet = new Set(adminImgs.map((i) => i.url));
     const rawCrewImgs: (string | null | undefined)[] = detail?.image_urls || [];
     const rawCrewCaps: string[] = detail?.image_captions || [];
@@ -8425,7 +8440,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             ? "/images/0/cluster4/icon/7 강화 실패.png"
             : "/images/0/cluster4/icon/8 해당 없음.png";
     // 이미지 3슬롯: 어드민(top-level outputImages) 우선 + 크루(submission.outputImages) 이어붙임.
-    const adminImgs = normalizeOutputImages(line.outputImages);
+    // 운영진 output image 정책: 최대 1 (병합 card.images 에 반영되므로 여기서 클램프).
+    const adminImgs = normalizeOutputImages(line.outputImages).slice(0, ADMIN_OUTPUT_IMAGE_MAX);
     const adminUrlSet = new Set(adminImgs.map((i) => i.url));
     const sub = line.submission ?? null;
     const subImgsRaw = (sub?.outputImages ?? []) as Array<string | null>;
@@ -8535,7 +8551,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           // 어드민 output_images 와 크루 user_activity_details.image_urls 를 합쳐 3슬롯 채움.
           // 레거시 데이터(과거 저장 로직이 어드민 URL 까지 image_urls 에 함께 저장한 케이스)
           // 중복 노출 방지를 위해, 크루 슬롯에서 어드민 URL 과 동일한 항목은 걸러냄.
-          const adminImgs = (record.output_images || []).filter((i) => i?.url?.trim());
+          // 운영진 output image 정책: 최대 1 (병합 card.images 에 반영되므로 여기서 클램프).
+          const adminImgs = (record.output_images || []).filter((i) => i?.url?.trim()).slice(0, ADMIN_OUTPUT_IMAGE_MAX);
           const adminUrlSet = new Set(adminImgs.map((i) => i.url));
           const careerActivityType = workCareerActivityTypes[index];
           const careerDetail = careerActivityType ? weekActivityDetails.find((d) => d.activity_type_id === careerActivityType) : null;

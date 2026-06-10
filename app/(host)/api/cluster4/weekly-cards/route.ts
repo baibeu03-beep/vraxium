@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase-server";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import type { Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
 import { resolveMembershipDisplay } from "@/lib/membership";
+import { clampAdminOutputs } from "@/lib/cluster4-admin-output-clamp";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -172,6 +173,43 @@ async function enrichCardHeaders(rawBody: string, userId: string | null): Promis
   }
 }
 
+// 운영진 output image/link 정책 클램프 — 각 line 의 admin outputImages/outputLinks 를 최대 1개로 제한한다.
+// (정책 2026-06-10: 운영진 output 정확히 1개.) 비파괴: clampAdminOutputs 가 새 객체를 반환하며,
+// snapshot 원본은 건드리지 않는다(전달 단계 클램프만). lineRating/헤더 보강과 동일하게 실패 시 원본 반환.
+function clampAdminOutputsBody(rawBody: string): string {
+  let json: unknown;
+  try {
+    json = JSON.parse(rawBody);
+  } catch {
+    return rawBody; // 비 JSON 응답(에러 등) → 그대로
+  }
+  const root = json as { success?: boolean; data?: Array<{ lines?: Cluster4WeeklyLineDto[] }> };
+  const cards = Array.isArray(root?.data) ? root.data : null;
+  if (!cards) return rawBody;
+  let clamped = 0;
+  for (const card of cards) {
+    const lines = Array.isArray(card?.lines) ? card.lines : [];
+    for (let i = 0; i < lines.length; i++) {
+      const before = lines[i];
+      const after = clampAdminOutputs(before as unknown as Record<string, unknown>) as unknown as Cluster4WeeklyLineDto;
+      if (after !== before) {
+        lines[i] = after;
+        if (
+          (Array.isArray(before?.outputImages) ? before.outputImages.length : 0) > (Array.isArray(after?.outputImages) ? after.outputImages.length : 0) ||
+          (typeof before?.adminOutputLinkCount === "number" && before.adminOutputLinkCount > (after?.adminOutputLinkCount ?? 0)) ||
+          (typeof before?.adminOutputImageCount === "number" && before.adminOutputImageCount > (after?.adminOutputImageCount ?? 0))
+        ) {
+          clamped++;
+        }
+      }
+    }
+  }
+  if (clamped > 0) {
+    console.log("[weekly-cards proxy] admin output 클램프(≤1) 적용", { linesClamped: clamped });
+  }
+  return JSON.stringify(root);
+}
+
 export async function GET(request: NextRequest) {
   const adminApiBaseUrl = await resolveAdminBaseUrl();
 
@@ -240,7 +278,7 @@ export async function GET(request: NextRequest) {
     const userId = sourceUrl.searchParams.get("userId");
     const enrichedBody =
       upstream.ok && contentType.includes("application/json")
-        ? await enrichCardHeaders(await enrichLineRatings(body, userId), userId)
+        ? clampAdminOutputsBody(await enrichCardHeaders(await enrichLineRatings(body, userId), userId))
         : body;
 
     return new NextResponse(enrichedBody, {
