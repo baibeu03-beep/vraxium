@@ -47,3 +47,4 @@ notepad .gitignore
 
 # playwright-mcp dev artifacts (auto-generated console/page snapshots)
 .playwright-mcp/
+vraxium-admin/
