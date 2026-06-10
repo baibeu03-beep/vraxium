@@ -228,6 +228,19 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
       }
     }
 
+    // 1-3) weekly-league 전용 StartDate(회원명부 모드) — weekly_league_member_start.
+    //   공유 user_profiles.activity_started_at 무수정. 모집단 StartDate 필터에서만 사용:
+    //   effectiveStart = member_start_date ?? activity_started_at. best-effort.
+    const memberStartByUser = new Map<string, string>();
+    if (memberRosterMode) {
+      const { data: msRows, error: msErr } = await db
+        .from("weekly_league_member_start")
+        .select("user_id, member_start_date")
+        .eq("organization_slug", org);
+      if (msErr) console.warn("[weekly-league] member_start 조회 실패 — activity_started_at 사용", msErr.message);
+      else for (const m of msRows || []) memberStartByUser.set(m.user_id, m.member_start_date);
+    }
+
     // 2) 종료된 주차 메타 — cluster-4-ranking 과 동일 source(weeks + season_definitions).
     //    (2026-06-09) 당분간 2026 봄 시즌만 노출 — 과거 시즌/주차는 숨김(데이터 보존, 렌더 제외).
     //    API 1차 필터: season_key='2026-spring'. 프론트(WeeklyRankingContent)에서 2차 방어 필터.
@@ -456,7 +469,7 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
           restPeriods.filter((r) => r.start_date <= week.endDate && r.end_date >= week.startDate).map((r) => r.user_id),
         );
         for (const p of orgProfiles) {
-          const started = (p as { activity_started_at?: string | null }).activity_started_at ?? null;
+          const started = memberStartByUser.get(p.user_id) ?? (p as { activity_started_at?: string | null }).activity_started_at ?? null;
           if (!started || started.slice(0, 10) > week.endDate) continue; // 미시작(StartDate>주차종료) 제외
           if (restUserIds.has(p.user_id)) { personalRest++; continue; }
           const st = statusByUserWeek.get(`${p.user_id}|${week.startDate}`) ?? null;
