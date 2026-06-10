@@ -7,6 +7,7 @@ import { authOptions } from '@/lib/auth'
 import {
   CLUSTER4_EDIT_RESOURCE_KEYS,
   CLUSTER4_ACTIVITY_DETAILS_KEY_GROUP,
+  CLUSTER4_PART_TYPE_TO_EDIT_KEY,
   type Cluster4EditResourceKey,
 } from '@/lib/cluster4EditWindow'
 import { EDIT_WINDOW_LOCKED_MESSAGE } from '@/lib/editWindowMessages'
@@ -16,25 +17,32 @@ import { triggerAdminSnapshotRecompute } from '@/lib/triggerAdminSnapshotRecompu
 // cluster4 라인 저장 분기에서 line_target_id 형식 검증용.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-// 프론트가 보낸 resource_key 가 4개 모달 신규 키 중 하나라면 그 키를 우선 검사하고,
-// 닫혀 있어도 legacy activity_details 가 열려 있으면 통과시킨다 (legacy fallback).
-// 미전달(undefined) 이면 legacy activity_details 만 검사 — 구 프론트 호환.
+// 작성기간(user_edit_windows) 게이트에서 OR 로 묶어 검사할 resource_key 집합을 만든다.
+//   1) linePartType: 저장 대상 라인(line_target_id)의 part_type 에서 파생한 허브 키
+//      (info→work_info 등). 프론트는 resource_key 를 보내지 않으므로(2026-06-09 시점),
+//      이 추론이 canEdit 스냅샷(evaluateCluster4HubEdit)이 인정하는 허브별 override 와
+//      save 게이트를 정합시키는 핵심이다. (없으면 work_info override 가 열려 있어도 403.)
+//   2) hint: 프론트가 보낸 resource_key (구 프론트 호환). 4개 모달 신규 키 중 하나면 포함.
+//   3) legacy activity_details: 항상 폴백으로 포함.
+// 세 출처를 합집합(OR)으로 본다 — 하나라도 열려 있으면 작성기간이 열린 것으로 처리.
 function resolveCluster4GateKeys(
   hint: unknown,
+  linePartType?: string | null,
 ): readonly Cluster4EditResourceKey[] {
+  const keys = new Set<Cluster4EditResourceKey>()
+  // 1) 라인 part_type → 허브 키
+  const hubKey = linePartType
+    ? CLUSTER4_PART_TYPE_TO_EDIT_KEY[linePartType]
+    : undefined
+  if (hubKey) keys.add(hubKey)
+  // 2) 프론트 hint (신규 모달 키일 때만)
   const allowed = new Set<string>(CLUSTER4_ACTIVITY_DETAILS_KEY_GROUP)
   if (typeof hint === 'string' && allowed.has(hint)) {
-    // 신규 키 우선, legacy 폴백 1개를 OR 로 묶어서 본다.
-    if (hint === CLUSTER4_EDIT_RESOURCE_KEYS.activityDetails) {
-      return [CLUSTER4_EDIT_RESOURCE_KEYS.activityDetails]
-    }
-    return [
-      hint as Cluster4EditResourceKey,
-      CLUSTER4_EDIT_RESOURCE_KEYS.activityDetails,
-    ]
+    keys.add(hint as Cluster4EditResourceKey)
   }
-  // hint 없음 → legacy 단독 검사
-  return [CLUSTER4_EDIT_RESOURCE_KEYS.activityDetails]
+  // 3) legacy 폴백 항상 포함
+  keys.add(CLUSTER4_EDIT_RESOURCE_KEYS.activityDetails)
+  return Array.from(keys)
 }
 
 // Output Link 타입
@@ -203,38 +211,22 @@ export async function POST(request: NextRequest) {
       canBypassAsAdmin = gate.context.isAdmin
     }
 
-    // 작성 기간 게이트 — admin 우회. owner 본인은 user_edit_windows row 가 열려 있어야 함.
-    // 프론트가 보낸 resource_key 가 신규 모달 키이면 (신규 키 OR legacy activity_details) 로,
-    // 없으면 legacy activity_details 단독 키로 검사한다.
-    // 통과 결과(hasOpenWindow)는 하단 weekly_activities/secondary_info_grants 게이트와
-    // OR 결합되어 "어드민이 작성기간을 명시적으로 열어줬다 = secondary_info_grants 와 동등 권한"
-    // 으로 처리된다.
-    // ⚠️ 여기서 곧장 403 으로 early-return 하지 않는다(과거 회귀 버그).
-    // 위 주석(작성기간 게이트) 설명대로 이 결과(hasOpenWindow)는 하단의
-    // (라인 submission window OR weekly_activities 마감 OR secondary_info_grants)
-    // 게이트와 OR 로 결합되어야 한다. early-return 은 그 OR 를 무력화시켜,
-    // canEdit=true(라인 submission window 오픈) 인데도 저장만 403 되는 미스매치를 만들었다.
-    let hasOpenWindow = false
-    if (!canBypassAsAdmin) {
-      const gateKeys = resolveCluster4GateKeys(resource_key)
-      // 주차별 추가 개방(2026-06-08): 이 카드 주차(week_id) 행 OR 전역 행을 본다.
-      hasOpenWindow = await hasOpenEditWindowAny({
-        userId: ownerUserId,
-        resourceKeys: gateKeys,
-        weekId: week_id ?? null,
-      })
-    }
-
-    // 라인 저장(line_target_id) 인가 — canEdit 단일 출처(라인 submission window)와 동일 기준.
-    // 활성 라인이 본인(owner)을 대상으로 하고 submission 기간이 열려 있으면 저장을 허용한다.
+    // 라인 저장(line_target_id) 인가 + part_type 파생 — canEdit 단일 출처(라인 submission window)와
+    // 동일 기준. 활성 라인이 본인(owner)을 대상으로 하고 submission 기간이 열려 있으면 저장 허용.
     // (admin 이 "라인을 개설" 하면 cluster4_lines.submission_opens_at/closes_at 가 채워지는데,
     //  이는 user_edit_windows 와 별개의 메커니즘이라 레거시 게이트만으로는 인가되지 않았다.)
+    // ⚠️ 이 lookup 을 작성기간(user_edit_windows) 게이트보다 "먼저" 수행한다 — 라인의 part_type
+    //    (info/competency/experience/career)에서 허브 키(work_info 등)를 파생해 게이트에 넘기기 위함.
+    //    프론트는 resource_key 를 보내지 않으므로, 이 추론이 없으면 어드민이 연 허브별 작성기간
+    //    override(예: cluster4.work_info)를 save 게이트가 놓치고 legacy activity_details 만 보아,
+    //    canEdit 스냅샷(ok_override)=true 인데 저장만 403 되는 미스매치가 발생한다(이번 버그).
     let lineSubmissionAuthorized = false
+    let linePartType: string | null = null
     if (typeof line_target_id === 'string' && UUID_RE.test(line_target_id)) {
       const { data: authRow } = await supabaseAdmin
         .from('cluster4_line_targets')
         .select(
-          'target_mode, target_user_id, cluster4_lines!inner(is_active, submission_opens_at, submission_closes_at)',
+          'target_mode, target_user_id, cluster4_lines!inner(part_type, is_active, submission_opens_at, submission_closes_at)',
         )
         .eq('id', line_target_id)
         .maybeSingle()
@@ -242,11 +234,13 @@ export async function POST(request: NextRequest) {
         target_mode: 'user' | 'rule'
         target_user_id: string | null
         cluster4_lines: {
+          part_type: string | null
           is_active: boolean
           submission_opens_at: string | null
           submission_closes_at: string | null
         } | null
       } | null
+      linePartType = aRow?.cluster4_lines?.part_type ?? null
       if (
         aRow &&
         aRow.cluster4_lines?.is_active === true &&
@@ -260,6 +254,27 @@ export async function POST(request: NextRequest) {
         const beforeClose = !closesAt || nowMs < new Date(closesAt).getTime()
         lineSubmissionAuthorized = afterOpen && beforeClose
       }
+    }
+
+    // 작성 기간 게이트 — admin 우회. owner 본인은 user_edit_windows row 가 열려 있어야 함.
+    // resolveCluster4GateKeys 가 (라인 part_type → 허브 키) + (프론트 hint) + (legacy) 를 OR 로 묶는다.
+    // 통과 결과(hasOpenWindow)는 하단 weekly_activities/secondary_info_grants 게이트와
+    // OR 결합되어 "어드민이 작성기간을 명시적으로 열어줬다 = secondary_info_grants 와 동등 권한"
+    // 으로 처리된다.
+    // ⚠️ 여기서 곧장 403 으로 early-return 하지 않는다(과거 회귀 버그).
+    // 위 주석(작성기간 게이트) 설명대로 이 결과(hasOpenWindow)는 하단의
+    // (라인 submission window OR weekly_activities 마감 OR secondary_info_grants)
+    // 게이트와 OR 로 결합되어야 한다. early-return 은 그 OR 를 무력화시켜,
+    // canEdit=true(라인 submission window 오픈) 인데도 저장만 403 되는 미스매치를 만들었다.
+    let hasOpenWindow = false
+    if (!canBypassAsAdmin) {
+      const gateKeys = resolveCluster4GateKeys(resource_key, linePartType)
+      // 주차별 추가 개방(2026-06-08): 이 카드 주차(week_id) 행 OR 전역 행을 본다.
+      hasOpenWindow = await hasOpenEditWindowAny({
+        userId: ownerUserId,
+        resourceKeys: gateKeys,
+        weekId: week_id ?? null,
+      })
     }
 
     // sub_title 길이 검증 (300자)
@@ -630,32 +645,18 @@ export async function DELETE(request: NextRequest) {
       canBypassAsAdmin = gate.context.isAdmin
     }
 
-    // 작성 기간 게이트 — POST 와 동일한 OR 정책으로 통일한다.
-    // 저장이 (user_edit_windows OR 라인 submission window OR weekly_activities 마감 OR
-    // secondary_info_grants) 중 하나로 인가되면, 같은 열린 기간 안에서는 삭제/초기화도
-    // 동일 기준으로 허용되어야 한다. (과거엔 user_edit_windows 만 보고 early-return 403 →
-    // 저장은 되는데 삭제만 막히는 불일치가 있었다.)
-    let hasOpenWindow = false
-    if (!canBypassAsAdmin) {
-      const gateKeys = resolveCluster4GateKeys(resourceKeyHint)
-      // 주차별 추가 개방(2026-06-08): 이 카드 주차(weekId) 행 OR 전역 행을 본다.
-      hasOpenWindow = await hasOpenEditWindowAny({
-        userId: ownerUserId,
-        resourceKeys: gateKeys,
-        weekId: weekId ?? null,
-      })
-    }
-
-    // 라인 인가 — canEdit 단일 출처(라인 submission window)와 동일 기준 (POST 와 동일).
+    // 라인 인가 + part_type 파생 — canEdit 단일 출처(라인 submission window)와 동일 기준 (POST 와 동일).
     // lineTargetsOwner: 활성 라인이 owner 를 대상(target_mode=user)으로 하는가 (window 무관, 소유 검증용).
     // lineSubmissionAuthorized: 위 + submission 기간 오픈 (작성기간 게이트용).
+    // ⚠️ POST 와 동일하게 이 lookup 을 작성기간 게이트보다 먼저 수행해 part_type → 허브 키를 파생한다.
     let lineTargetsOwner = false
     let lineSubmissionAuthorized = false
+    let linePartType: string | null = null
     if (typeof lineTargetId === 'string' && UUID_RE.test(lineTargetId)) {
       const { data: authRow } = await supabaseAdmin
         .from('cluster4_line_targets')
         .select(
-          'target_mode, target_user_id, cluster4_lines!inner(is_active, submission_opens_at, submission_closes_at)',
+          'target_mode, target_user_id, cluster4_lines!inner(part_type, is_active, submission_opens_at, submission_closes_at)',
         )
         .eq('id', lineTargetId)
         .maybeSingle()
@@ -663,11 +664,13 @@ export async function DELETE(request: NextRequest) {
         target_mode: 'user' | 'rule'
         target_user_id: string | null
         cluster4_lines: {
+          part_type: string | null
           is_active: boolean
           submission_opens_at: string | null
           submission_closes_at: string | null
         } | null
       } | null
+      linePartType = aRow?.cluster4_lines?.part_type ?? null
       if (
         aRow &&
         aRow.cluster4_lines?.is_active === true &&
@@ -682,6 +685,23 @@ export async function DELETE(request: NextRequest) {
         const beforeClose = !closesAt || nowMs < new Date(closesAt).getTime()
         lineSubmissionAuthorized = afterOpen && beforeClose
       }
+    }
+
+    // 작성 기간 게이트 — POST 와 동일한 OR 정책으로 통일한다.
+    // 저장이 (user_edit_windows OR 라인 submission window OR weekly_activities 마감 OR
+    // secondary_info_grants) 중 하나로 인가되면, 같은 열린 기간 안에서는 삭제/초기화도
+    // 동일 기준으로 허용되어야 한다. (과거엔 user_edit_windows 만 보고 early-return 403 →
+    // 저장은 되는데 삭제만 막히는 불일치가 있었다.)
+    // resolveCluster4GateKeys 가 (라인 part_type → 허브 키) + (프론트 hint) + (legacy) 를 OR 로 묶는다.
+    let hasOpenWindow = false
+    if (!canBypassAsAdmin) {
+      const gateKeys = resolveCluster4GateKeys(resourceKeyHint, linePartType)
+      // 주차별 추가 개방(2026-06-08): 이 카드 주차(weekId) 행 OR 전역 행을 본다.
+      hasOpenWindow = await hasOpenEditWindowAny({
+        userId: ownerUserId,
+        resourceKeys: gateKeys,
+        weekId: weekId ?? null,
+      })
     }
 
     // weekly_activities 마감 / secondary_info_grants — POST 와 동일하게 OR 에 포함.

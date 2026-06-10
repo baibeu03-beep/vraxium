@@ -54,3 +54,18 @@ export const CLUSTER4_ACTIVITY_DETAILS_KEY_GROUP: readonly Cluster4EditResourceK
   CLUSTER4_EDIT_RESOURCE_KEYS.workCareer,
   CLUSTER4_EDIT_RESOURCE_KEYS.activityDetails,
 ];
+
+// cluster4_lines.part_type → 그 허브의 작성기간(user_edit_windows) resource_key.
+// 라인 저장(line_target_id) 게이트가 "어드민이 연 허브별 작성기간 override(work_info 등)"를
+// canEdit 스냅샷(evaluateCluster4HubEdit / PART_TYPE_TO_EDIT_WINDOW_KEY)과 동일하게 인정하도록,
+// 저장 대상 라인의 part_type 에서 허브 키를 파생한다. (프론트는 resource_key 를 보내지 않으므로
+//  이 추론이 없으면 save 게이트가 legacy activity_details 만 보고 work_* override 를 놓쳐 403 이 났다.)
+// admin lib/cluster4LinePermission.ts 의 PART_TYPE_TO_EDIT_WINDOW_KEY 와 1:1 동일하게 유지한다.
+export const CLUSTER4_PART_TYPE_TO_EDIT_KEY: Readonly<
+  Record<string, Cluster4EditResourceKey>
+> = {
+  info: CLUSTER4_EDIT_RESOURCE_KEYS.workInfo,
+  competency: CLUSTER4_EDIT_RESOURCE_KEYS.workAbility,
+  experience: CLUSTER4_EDIT_RESOURCE_KEYS.workExp,
+  career: CLUSTER4_EDIT_RESOURCE_KEYS.workCareer,
+};
