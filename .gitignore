@@ -48,3 +48,16 @@ notepad .gitignore
 # playwright-mcp dev artifacts (auto-generated console/page snapshots)
 .playwright-mcp/
 vraxium-admin/
+
+# one-off diagnostic / verification / measurement scripts (throwaway)
+scripts/diag_*
+scripts/verify_*
+scripts/measure_*
+scripts/shot_*
+scripts/pw-*
+scripts/normalize_*
+scripts/check_prod_deploy.mjs
+
+# generated artifacts (screenshots, dev logs)
+scripts/*.png
+*.log
