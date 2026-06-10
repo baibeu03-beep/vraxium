@@ -212,6 +212,22 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
       restPeriods.push(...rp);
     }
 
+    // 1-2) 주차별 성공수 집계 보정(회원명부 모드 전용) — weekly_league_success_overrides.
+    //   PMS 행정공표 실측 성공수를 주차별로 override(사람별 verdict 아님). total/rest 무접촉,
+    //   success/fail split 만 보정(fail = nonRest − growth_success). best-effort(테이블/조회 실패 시 미적용).
+    const successOverrideByWeekStart = new Map<string, number>();
+    if (memberRosterMode) {
+      const { data: ov, error: ovErr } = await db
+        .from("weekly_league_success_overrides")
+        .select("week_start_date, growth_success")
+        .eq("organization_slug", org);
+      if (ovErr) {
+        console.warn("[weekly-league] success_overrides 조회 실패 — 미적용", ovErr.message);
+      } else {
+        for (const o of ov || []) successOverrideByWeekStart.set(o.week_start_date, Number(o.growth_success));
+      }
+    }
+
     // 2) 종료된 주차 메타 — cluster-4-ranking 과 동일 source(weeks + season_definitions).
     //    (2026-06-09) 당분간 2026 봄 시즌만 노출 — 과거 시즌/주차는 숨김(데이터 보존, 렌더 제외).
     //    API 1차 필터: season_key='2026-spring'. 프론트(WeeklyRankingContent)에서 2차 방어 필터.
@@ -446,6 +462,13 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
           const st = statusByUserWeek.get(`${p.user_id}|${week.startDate}`) ?? null;
           if (st === "success") growthSuccess++;
           else growthFail++; // uws fail/기타/행없음 → 실패
+        }
+        // 주차별 성공수 집계 보정 — PMS 실측 override (total/rest 불변, success/fail split 만).
+        const ovSuccess = successOverrideByWeekStart.get(week.startDate);
+        if (ovSuccess != null) {
+          const nonRest = growthSuccess + growthFail; // override 전 도전 인원(=total−rest)
+          growthSuccess = Math.min(ovSuccess, nonRest);
+          growthFail = nonRest - growthSuccess;
         }
       } else {
       // effectiveConfirmStar = 예외 override 우선, 없으면 org_week_thresholds.check_threshold.
