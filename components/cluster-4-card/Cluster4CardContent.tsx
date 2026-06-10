@@ -7544,18 +7544,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         crewImgs.push(u || null);
         crewCaps.push(rawCrewCaps[i] || "");
       }
-      const mergedImages: (string | null)[] = [];
-      const mergedCaptions: string[] = [];
-      for (let i = 0; i < WORKINFO_IMAGE_SLOT_COUNT; i++) {
-        if (i < adminImgs.length) {
-          mergedImages.push(adminImgs[i].url);
-          mergedCaptions.push(adminImgs[i].caption || "");
-        } else {
-          const c = i - adminImgs.length;
-          mergedImages.push(crewImgs[c] || null);
-          mergedCaptions.push(crewCaps[c] || "");
-        }
-      }
+      // card.images/imageCaptions = 크루(사용자) 제출 이미지 전용. 모달 그리드는 어드민 슬롯을
+      // getAdminOutputImages 로 별도 렌더하므로, 여기서 admin 을 prepend(merged)하면 첫 크루 슬롯이
+      // card.images[0](=admin URL)을 다시 읽어 동일 이미지가 large+small 두 번 렌더된다.
+      // (2026-06-09 정책: output image 1장 = 화면 1회 렌더.) → crew-only 로 유지.
 
       return {
         id: index + 1,
@@ -7576,8 +7568,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         isFailed: enhancementStatus === "failed",
         isEmpty: false,
         outputLinks: mergedOutputLinks,
-        images: normalizeWorkInfoImages(mergedImages),
-        imageCaptions: normalizeWorkInfoCaptions(mergedCaptions),
+        images: normalizeWorkInfoImages(crewImgs),
+        imageCaptions: normalizeWorkInfoCaptions(crewCaps),
         // preview·modal 단일 source — 모달이 동일 객체를 그대로 사용. lineTargetId=null 이면 canEdit 게이트가 차단.
         matchedLine: matchedLine ?? null,
         lineTargetId: (matchedLine?.lineTargetId as string | null | undefined) ?? null,
@@ -12070,7 +12062,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       let image: string | null = null;
                       let caption = "";
                       const effectiveIsAdmin = !isPureAdminPreview && isAdminSlot;
-                      if (isPureAdminPreview) {
+                      // card.images 가 crew-only 가 된 뒤(2026-06-09), 순수 어드민 '편집' 모드만 merged
+                      // editingImages(초기화 3171 에서 admin+crew 병합)를 직접 인덱싱한다. 그 외(일반 모드 +
+                      // 순수 어드민 '보기')는 어드민 슬롯=getAdminOutputImages, 크루 슬롯=card.images(crew-only)로
+                      // 분리 렌더 → 동일 이미지 중복 없음.
+                      if (isPureAdminPreview && workInfoViewIsEditing) {
                         image = crewImagesForState[imageIdx] || null;
                         caption = crewCaptionsForState[imageIdx] || "";
                       } else if (isAdminSlot) {
