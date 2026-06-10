@@ -88,6 +88,9 @@ interface SelectedColleague {
   part: string;
   nickname: string;
   role?: string;
+  // 멤버십 등급(일반/심화) — DTO colleagueProfile.membershipLevel 와 동일 source.
+  // PMS 이관 사용자는 role 이 NULL 이라, 상태칩은 membershipLevel 을 우선해야 "-" 로 비지 않는다.
+  membershipLevel?: string | null;
   rank: number;
   message: string;
   createdAt?: string;
@@ -1725,6 +1728,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             part: item.colleague?.part || "-",
             nickname: item.colleague?.nickname || "-",
             role: item.colleague?.role || "",
+            membershipLevel: item.colleague?.membershipLevel ?? null,
             rank: item.rank,
             message: item.message || "",
             createdAt: item.created_at || "",
@@ -1901,6 +1905,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             part: item.colleague?.part || "-",
             nickname: item.colleague?.nickname || "-",
             role: item.colleague?.role || "",
+            membershipLevel: item.colleague?.membershipLevel ?? null,
             rank: item.rank,
             message: item.message || "",
             createdAt: item.created_at || "",
@@ -4965,6 +4970,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       // profileTagline 을 내려주며, 구버전 응답 호환으로 nickname(vision) 폴백 유지.
       nickname: (picked as any).profileTagline || picked.nickname || "-",
       role: picked.role || "",
+      membershipLevel: (picked as any).membershipLevel ?? null,
       rank: nextRank,
       message: colleagueEditData.content.trim(),
       createdAt: new Date().toISOString(),
@@ -6657,7 +6663,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               team: pi.team ?? "-",
               part: pi.part ?? "-",
               nickname: pi.tagline ?? "-",
-              role: formatMembershipRoleLabel(c.role),
+              // 상태칩(일반/심화): DTO branch 와 동일하게 멤버십 등급을 우선(role 은 이관 사용자에서 NULL).
+              role: formatMembershipRoleLabel((c as any).membershipLevel || c.role),
               date: c.createdAt ? formatDate(c.createdAt) : "-",
               message: c.message || "",
               created_at: c.createdAt || null, // 작업 6에서 reputation-timestamp 표시용
