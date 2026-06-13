@@ -10,6 +10,7 @@ import { DEMO_CREW_MEMBERS } from "@/constants/dummyData";
 import { getOrgClusterRouteBase, getOrgConfigForSlug, getOrgMascotSrc } from "@/lib/cluster-route";
 import { getOrgAlias } from "@/utils/orgLabelAlias";
 import { appendDemoQuery } from "@/lib/appendDemoQuery";
+import { readScopeMode, appendModeQuery } from "@/lib/userScopeShared";
 
 interface Crew {
   id: string;
@@ -90,6 +91,8 @@ function CrewsContent() {
   const searchParams = useSearchParams();
   const orgParam = searchParams?.get("org") ?? null;
   const org: OrgSlug | null = isOrgSlug(orgParam) ? orgParam : null;
+  // 모집단 스코프 — mode 미지정/오타 → operating(실사용자), mode=test → 테스트 유저만.
+  const mode = readScopeMode(searchParams);
   // 조직별 alias mapping (단감 = helmet 슬롯) — single source of truth 는
   // utils/orgLabelAlias.ts 의 ORG_LABEL_ALIAS. /crews 는 segment-suffix
   // 라우트가 아니므로 path-based 감지가 안 통해 명시적 slug-based 헬퍼
@@ -129,7 +132,8 @@ function CrewsContent() {
     // 테스트 유저(데모) 모드 컨텍스트(demoUserId/admin=true/demoUserName/org)를 카드 링크에
     // 유지한다(공통 헬퍼). userId(=대상자/target)는 위에서 crew.id 로 고정, demoUserId(=작성자/
     // actor)는 헬퍼가 부착 → target/actor 분리 유지. demoUserId 없으면 완전 no-op(기존 동작).
-    return appendDemoQuery(target, searchParams);
+    // mode=test 면 cluster-4 링크에도 mode 를 유지(operating 이면 no-op → 링크 byte-identical).
+    return appendModeQuery(appendDemoQuery(target, searchParams), mode);
   };
   const [crews, setCrews] = useState<Crew[]>([]);
   const [loading, setLoading] = useState(true);
@@ -191,7 +195,10 @@ function CrewsContent() {
       try {
         // cache: "no-store" 로 brower HTTP cache 우회 — user_profiles 변경이 바로 반영되어야 함.
         // API route 자체는 dynamic="force-dynamic" + revalidate=0 이라 서버단에서도 매 요청 신선.
-        const res = await fetch(`/api/crews?org=${encodeURIComponent(org)}`, { cache: "no-store" });
+        const res = await fetch(
+          appendModeQuery(`/api/crews?org=${encodeURIComponent(org)}`, mode),
+          { cache: "no-store" },
+        );
         const result = await res.json();
         if (cancelled) return;
         if (result.success) {
@@ -224,7 +231,7 @@ function CrewsContent() {
     return () => {
       cancelled = true;
     };
-  }, [org]);
+  }, [org, mode]);
 
   const applyFilter = (name: string, club: string, school: string, status: string) => {
     let result = [...crews];

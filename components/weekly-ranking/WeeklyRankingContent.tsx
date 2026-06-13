@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import WeeklyFilterBar from "./WeeklyFilterBar";
 import WeeklyCardList from "./WeeklyCardList";
 import { WEEKLY_CARD_DUMMY, type WeeklyCardData } from "@/constants/dummyData/weekly-card-dummy";
 import { isDemoMode } from "@/utils/isDemoMode";
+import { readScopeMode, appendModeQuery } from "@/lib/userScopeShared";
 
 const SORT_OPTIONS = [
   { value: "latest", label: "최신 순" },
@@ -61,6 +63,9 @@ interface WeeklyRankingContentProps {
 }
 
 const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
+  const searchParams = useSearchParams();
+  // 모집단 스코프 — mode 미지정/오타 → operating(실사용자), mode=test → 테스트 유저만.
+  const mode = readScopeMode(searchParams);
   const [sortValue, setSortValue] = useState<string>("latest");
   const [seasonValue, setSeasonValue] = useState<string>("");
   const [leagueValue, setLeagueValue] = useState<string>("");
@@ -79,7 +84,10 @@ const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/weekly-league?org=${encodeURIComponent(org)}`, { cache: "no-store" });
+        const res = await fetch(
+          appendModeQuery(`/api/weekly-league?org=${encodeURIComponent(org)}`, mode),
+          { cache: "no-store" },
+        );
         const json = await res.json();
         if (!cancelled && json?.success && Array.isArray(json.cards)) {
           // 2차 방어 필터 — API가 이미 2026-spring만 주지만, 과거 시즌 카드 유입을 프론트에서도 차단.
@@ -93,7 +101,7 @@ const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
     return () => {
       cancelled = true;
     };
-  }, [demo, org]);
+  }, [demo, org, mode]);
 
   const allCards = useMemo<WeeklyCardData[]>(
     () => (demo ? WEEKLY_CARD_DUMMY : fetchedCards),

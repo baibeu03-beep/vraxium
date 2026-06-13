@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase-server";
 import { resolveMembershipDisplay } from "@/lib/membership";
 import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confirmed-success-weeks";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
+import { resolveUserScopeFromParams } from "@/lib/userScope";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -314,10 +315,7 @@ export async function GET(request: Request) {
       profileQuery = profileQuery.neq("user_id", excludeUserId);
     }
 
-    const { data: profiles, error: profileError } = await profileQuery.returns<UserProfileRow[]>();
-
-    // [debug] 임시 — 라우트별 결과 확인용. 안정 확인 후 제거 예정.
-    console.log("[/api/crews] org=", orgParam, "filter=", orgFilter, "profiles=", profiles?.length ?? 0, "err=", profileError?.message);
+    const { data: profilesRaw, error: profileError } = await profileQuery.returns<UserProfileRow[]>();
 
     if (profileError) {
       console.error("Failed to fetch user_profiles:", JSON.stringify(profileError));
@@ -327,7 +325,21 @@ export async function GET(request: Request) {
       );
     }
 
-    if (!profiles || profiles.length === 0) {
+    // 모집단 스코프(운영/테스트) — ?mode 미지정/오타 → operating(실사용자만, test_user_markers 제외),
+    // mode=test → test_user_markers 만. 읽기 전용 필터: roster 만 좁히고 enrichment/merge/sort 불변.
+    // (DTO shape 동일 — operating/test 응답 키 집합 불변.) best-effort: markers 조회 실패 시
+    // operating=전체포함(보수적)·test=빈결과(실유저 절대 유입 안 됨).
+    const scope = await resolveUserScopeFromParams(supabase, searchParams, orgFilter);
+    const profiles = scope.filter(profilesRaw ?? [], (p) => p.user_id);
+
+    // [debug] 임시 — 라우트별 결과 확인용. 안정 확인 후 제거 예정.
+    console.log(
+      "[/api/crews] org=", orgParam, "filter=", orgFilter, "mode=", scope.mode,
+      "profilesRaw=", profilesRaw?.length ?? 0, "scoped=", profiles.length,
+      "testUsers=", scope.testUserIds.size, "err=", profileError,
+    );
+
+    if (profiles.length === 0) {
       return NextResponse.json({ success: true, data: [] });
     }
 

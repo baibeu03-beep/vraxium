@@ -2,7 +2,7 @@ import Footer from "@/components/home/Footer";
 import RouteThemeShell from "@/components/shared/RouteThemeShell";
 import Header from "@/components/shared/Header";
 import Sidebar from "@/components/shared/Sidebar";
-import DemoToggle from "@/components/common/DemoToggle";
+import TestModeToggle from "@/components/common/TestModeToggle";
 
 export default function RootLayout({
   children,
@@ -17,7 +17,7 @@ export default function RootLayout({
         {children}
         <Footer />
       </div>
-      <DemoToggle />
+      <TestModeToggle />
     </RouteThemeShell>
   );
 }

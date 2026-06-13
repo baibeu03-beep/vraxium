@@ -20,6 +20,7 @@ import { seasonLabel } from "@/lib/cluster4-types";
 import { isOfficialRestWeek, normalizeSeason } from "@/lib/cluster4-transition-week";
 import { getWeekImageUrl } from "@/lib/cluster4-week-image";
 import { pickPrimaryMembership, type MembershipRow } from "@/lib/membership";
+import type { ScopeMode } from "@/lib/userScopeShared";
 import type {
   WeeklyCardData,
   WeeklyCardCrew,
@@ -126,7 +127,13 @@ type WeekMeta = {
  * org 조직 전체의 주차별 Weekly League 카드 집계.
  * 종료된 주차(end_date < today) 1개당 카드 1장, 최신(시작일 DESC) 순.
  */
-export async function aggregateWeeklyLeague(org: string | null | undefined): Promise<WeeklyLeagueResult> {
+export async function aggregateWeeklyLeague(
+  org: string | null | undefined,
+  // 모집단 스코프 — operating(기본): 실사용자만(test_user_markers 제외),
+  // test: test_user_markers 만(실사용자 제외). 읽기 전용 필터일 뿐 집계 로직/SoT 불변.
+  // mode 미지정은 operating(기존 동작 == byte-identical).
+  mode: ScopeMode = "operating",
+): Promise<WeeklyLeagueResult> {
   if (!isWeeklyLeagueOrg(org)) {
     return { success: false, org: org ?? null, cards: [], error: "org 파라미터가 필요합니다 (phalanx · encre · oranke)." };
   }
@@ -138,10 +145,13 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
   try {
     const today = new Date().toISOString().split("T")[0];
 
-    // 0) 시드 테스트 유저 제외 집합 — test_user_markers(어드민이 시드한 더미 계정 SoT).
-    // 실제 성장 랭킹에 시드 계정이 섞이면 전체 크루/성공·실패 카운트가 부풀려진다
-    // (예: 2026 봄 13주차 oranke 98명 중 25명이 시드 테스트 유저). PMS Migration(실데이터)
-    // 기준과 맞추기 위해 집계 모집단에서 제외한다. best-effort: 조회 실패 시 미제외.
+    // 0) 시드 테스트 유저 집합 — test_user_markers(어드민이 시드한 더미 계정 SoT).
+    //    모집단 스코프(mode)로 포함/제외를 결정한다:
+    //      · operating(기본): 시드 계정 제외(실사용자만). 실데이터 랭킹이 부풀지 않게(예: 2026 봄
+    //        13주차 oranke 98명 중 25명이 시드 테스트 유저) PMS Migration 기준과 맞춘다.
+    //      · test          : 시드 계정만 포함(실사용자 제외) — 테스트 모드 랭킹.
+    //    best-effort: 조회 실패 시 빈 집합 → operating 은 미제외(보수), test 는 빈 결과(실유저 미유입).
+    const isTestMode = mode === "test";
     const testUserIds = new Set<string>();
     {
       const { data: markers, error: markerErr } = await fetchAllRows<{ user_id: string }>((from, to) =>
@@ -186,7 +196,8 @@ export async function aggregateWeeklyLeague(org: string | null | undefined): Pro
       return { success: false, org, cards: [], error: `org 로스터 조회 실패: ${profileErr.message}` };
     }
     const orgProfiles = (orgProfilesRaw || []).filter((p) => {
-      if (testUserIds.has(p.user_id)) return false;
+      // 스코프 게이트 — operating: 테스트 유저 제외 / test: 테스트 유저만.
+      if (isTestMode ? !testUserIds.has(p.user_id) : testUserIds.has(p.user_id)) return false;
       if (memberRosterMode) {
         if ((p as { status?: string }).status === "graduated") return false; // PMS 졸업 제외
         if (operatorIds.has(p.user_id)) return false;                         // PMS 운영진 제외
