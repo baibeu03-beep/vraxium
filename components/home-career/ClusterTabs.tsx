@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { withThemeRoute, getRouteOrgSuffix } from "@/lib/cluster-route";
 import { useDemoUserMode } from "@/hooks/useDemoUserMode";
+import { appendModeQuery, parseScopeMode } from "@/lib/userScopeShared";
 
 const ClusterTabs = () => {
   const pathname = usePathname();
@@ -72,13 +73,17 @@ const ClusterTabs = () => {
 
   const renderTab = (tab: typeof tabs[0], index: number) => {
     // 테스트 유저 모드면 demoUserId+demoUserName+admin 유지(userLinkQuery), 그 외엔 기존 userId/demoName 유지.
-    const tabHref = tab.path
+    // 모집단 스코프(mode=test)는 모든 분기에서 최종 보존 — operating(미지정)이면 no-op(byte-identical).
+    const rawTabHref = tab.path
       ? demo.isDemo
         ? `${tab.path}${demo.userLinkQuery}`
         : userId
           ? `${tab.path}?userId=${userId}${demoName ? `&demoName=${encodeURIComponent(demoName)}` : ''}`
           : tab.path
       : tab.path;
+    const tabHref = tab.path
+      ? appendModeQuery(rawTabHref, parseScopeMode(searchParams.get("mode")))
+      : rawTabHref;
     const active = tab.path ? isActive(tab.path) : false;
 
     if (tab.path) {

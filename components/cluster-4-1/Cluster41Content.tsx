@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton/Skeleton";
 import { isTransitionWeek } from "@/lib/cluster4-transition-week";
 import { resolveSeasonWeekText } from "@/lib/cluster4-types";
 import { getGrowthBadgeText } from "@/lib/cluster4-status-label";
+import { parseScopeMode } from "@/lib/userScopeShared";
 
 const truncate = (text: string | null | undefined, maxLen: number = 5): string => {
   const t = text || "-";
@@ -308,6 +309,9 @@ const Cluster41Content = () => {
     }
     const org = searchParams.get('org');
     if (org) params.set('org', org);
+    // 모집단 스코프(mode=test) 보존 — 주차카드/탭 이동 시 테스트 모드 유지.
+    // operating(미지정)이면 미부착 → 링크 byte-identical.
+    if (parseScopeMode(searchParams.get('mode')) === 'test') params.set('mode', 'test');
     const qs = params.toString();
     return qs ? `?${qs}` : '';
   })();
