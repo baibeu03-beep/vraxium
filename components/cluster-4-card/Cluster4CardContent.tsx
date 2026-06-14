@@ -424,6 +424,25 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // weekly-cards 모집단 스코프 suffix — mode=test 면 admin 이 테스트 모드(여름 시뮬레이션) 정책으로
   // 카드/라인을 내려준다. operating(미지정)이면 빈 문자열 → 요청 byte-identical.
   const modeQS = parseScopeMode(searchParams.get("mode")) === "test" ? "&mode=test" : "";
+  // ── /admin/test-users 무세션 진입 시 "저장"을 테스트 유저(demoUserId) 경로로 연결 ──
+  // 증상: admin test-users → 고객앱(?userId=<testUser>&mode=test, demoUserId 없음, 세션 없음) 진입 시
+  //   weekly-cards 조회는 공개 프록시(userId)라 성공하지만, /api/activity-details POST 는 세션/owner 게이트
+  //   (requireOwnerOrAdmin)에 걸려 401("로그인이 필요합니다") 이 떴다.
+  // 해결: 테스트 스코프 + 명시적 대상 userId + 세션 없음(=test-users 진입 시그니처)일 때만, 저장 body 에
+  //   demoUserId 를 그 대상 유저로 실어 백엔드의 기존 demo 경로(resolveDemoProfileUserId)로 인가한다.
+  // 안전장치(백엔드 단일 출처): demoUserId 는 test_user_markers 등재 + ENABLE_DEMO_MODE 게이트를 통과해야만
+  //   인정되므로(미등재 실사용자 id → 403), 실사용자 데이터로의 우회 저장은 불가능하다.
+  // 세션이 있으면(일반/운영·로그인 어드민) 건드리지 않는다 → 기존 owner/admin 저장 게이트 그대로.
+  const testScopeTargetUserId = searchParams.get("userId") || searchParams.get("userID");
+  const testScopeWriteUserId =
+    parseScopeMode(searchParams.get("mode")) === "test" &&
+    !demoUserId &&
+    !session?.user?.id &&
+    testScopeTargetUserId
+      ? testScopeTargetUserId
+      : null;
+  // 쓰기(POST/DELETE) 시 백엔드 demo 경로로 넘길 유효 demoUserId — 명시 demoUserId 우선, 없으면 위 테스트 스코프 값.
+  const effectiveDemoUserId = demoUserId || testScopeWriteUserId;
   // 네비게이션 쿼리: target(userId)·actor(demoUserId)·org 를 모두 보존한다.
   // ⚠️ 과거엔 테스트 모드에서 demoUserId 만 싣고 userId(대상자)를 떨궈, 타 크루 카드에서
   //    주차 이동/탭 전환 시 urlUserId 가 demoUserId 로 폴백되어 "내 카드로 복귀"하는 버그가 있었다.
@@ -3364,7 +3383,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     console.log("[cluster4-save-diag] POST 발사", {
       url: postUrl,
       user_id: currentUserId,
-      demoUserId: demoUserId ?? null,
+      demoUserId: effectiveDemoUserId ?? null,
+      demoUserIdSource: demoUserId ? "explicit" : testScopeWriteUserId ? "test-scope" : null,
       week_id: weekId,
       activity_type_id: params.activityTypeId,
       line_target_id: params.lineTargetId ?? null,
@@ -3375,7 +3395,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       body: JSON.stringify({
         user_id: currentUserId,
         // 테스트 유저 모드: demoUserId 가 있으면 백엔드가 이 id 로 저장 대상/작성기간을 고정한다.
-        ...(demoUserId ? { demoUserId } : {}),
+        // (admin /test-users 무세션 진입은 effectiveDemoUserId 가 mode=test 대상 userId 로 채워진다.)
+        ...(effectiveDemoUserId ? { demoUserId: effectiveDemoUserId } : {}),
         week_id: weekId,
         // activity_type_id 는 null 가능 — competency/experience/career 라인은 line_target_id 가 canonical.
         // 백엔드는 line_target_id 가 유효하면 activity_type_id 없이 cluster4_line_submissions 에만 저장한다.
@@ -7398,7 +7419,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         body: JSON.stringify({
           user_id: currentUserId,
           // 테스트 유저 모드: demoUserId 가 있으면 백엔드가 이 id 로 저장 대상/작성기간을 고정한다.
-          ...(demoUserId ? { demoUserId } : {}),
+          // (admin /test-users 무세션 진입은 effectiveDemoUserId 가 mode=test 대상 userId 로 채워진다.)
+          ...(effectiveDemoUserId ? { demoUserId: effectiveDemoUserId } : {}),
           week_id: weekId,
           activity_type_id: activityType,
           sub_title: newSubTitle,
