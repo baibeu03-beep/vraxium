@@ -541,6 +541,22 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const pageOwnerUserId = urlUserId || null;
   const isForeignViewer = !!demoUserId && !!pageOwnerUserId && viewerUserId !== pageOwnerUserId;
 
+  // ── 4허브 편집/저장/초기화 권한 단일 게이트 (weekly-cards DTO 라인 기준) ──
+  // 편집 진입·수정 버튼은 이미 matchedLine.canEdit + lineTargetId(DTO)로 판정하는데,
+  // 저장/초기화만 legacy canEditWork*(checkApprovalStatus && isOwner) state 를 봐서 비대칭이 있었다.
+  // 그 결과 mode=test 처럼 demoUserId 가 없는 경로에서 DTO 가 canEdit:true + lineTargetId 를 내려도
+  // "편집은 열리는데 저장만 막히는"(승인 팝업) 회귀가 발생했다.
+  // 원칙(mode 무관, 하드코딩 우회 금지): DTO 가 canEdit:true + lineTargetId 를 주면 저장 가능.
+  //  · forceEditUnlock(localStorage 더미 / 순수 어드민 프리뷰)은 백엔드 게이팅 우회 — 기존 동작 유지.
+  //  · isForeignViewer(demoUserId 로 타 크루 카드 열람)는 정책상 전면 차단 — 기존 동작 유지.
+  // 최종 권한 검증은 저장 API(백엔드)가 그대로 수행한다(프론트는 단일 출처 정렬만).
+  const isLineEditableByDto = (matchedLine: Cluster4WeeklyLineDto | null | undefined): boolean => {
+    if (forceEditUnlock) return true;
+    if (isForeignViewer) return false;
+    const lineTargetId = (matchedLine?.lineTargetId as string | null | undefined) ?? null;
+    return matchedLine?.canEdit === true && !!lineTargetId;
+  };
+
   // [진단] 테스트 유저 모드 위클리 리뷰 버튼 활성화 추적 — 콘솔에서 런타임 값 확인용.
   // 버튼 disabled 는 `!isOwner` 단일 조건이므로 isOwner=true 면 활성이어야 한다.
   useEffect(() => {
@@ -3226,8 +3242,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleResetWorkInfo = async () => {
-    if (!forceEditUnlock && !canEditWorkInfo) {
-      await popup.alert("관리자 승인 후 수정할 수 있습니다.");
+    if (!isLineEditableByDto(workInfoMatchedLine)) {
+      await popup.alert(!workInfoMatchedLine ? "개설된 라인이 없습니다." : ((workInfoMatchedLine.editReason as string | null | undefined) || "작성할 수 있는 기간이 아닙니다. 😊"));
       return;
     }
     // 초기화 = 모든 필드를 빈 값으로 (Weekly Review 와 동일 패턴 — "초기화" 라벨대로 비우기)
@@ -3393,9 +3409,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleSaveWorkInfo = async () => {
-    if (!forceEditUnlock && !canEditWorkInfo) {
-      console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkInfo" });
-      await popup.alert("관리자 승인 후 수정할 수 있습니다.");
+    if (!isLineEditableByDto(workInfoMatchedLine)) {
+      console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkInfo", canEdit: workInfoMatchedLine?.canEdit ?? null, lineTargetId: (workInfoMatchedLine?.lineTargetId as string | null | undefined) ?? null });
+      await popup.alert(!workInfoMatchedLine ? "개설된 라인이 없습니다." : ((workInfoMatchedLine.editReason as string | null | undefined) || "작성할 수 있는 기간이 아닙니다. 😊"));
       return;
     }
     // 백엔드 lineTarget 단위 저장 — weekId + information + activityTypeKey 로 라인을 찾고
@@ -3782,8 +3798,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleResetWorkAbility = async () => {
-    if (!forceEditUnlock && !canEditWorkAbility) {
-      await popup.alert("관리자 승인 후 수정할 수 있습니다.");
+    if (!isLineEditableByDto(workAbilityMatchedLine)) {
+      await popup.alert(!workAbilityMatchedLine ? "개설된 라인이 없습니다." : ((workAbilityMatchedLine.editReason as string | null | undefined) || "작성할 수 있는 기간이 아닙니다. 😊"));
       return;
     }
     // 초기화 = 모든 필드를 빈 값으로
@@ -3805,9 +3821,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       activityTypeId: (selectedWorkAbilityCard?.activityTypeId as string | null | undefined) ?? null,
       lineTargetId: (workAbilityMatchedLine?.lineTargetId as string | null | undefined) ?? null,
     });
-    if (!forceEditUnlock && !canEditWorkAbility) {
-      console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkAbility" });
-      await popup.alert("관리자 승인 후 수정할 수 있습니다.");
+    if (!isLineEditableByDto(workAbilityMatchedLine)) {
+      console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkAbility", canEdit: workAbilityMatchedLine?.canEdit ?? null, lineTargetId: (workAbilityMatchedLine?.lineTargetId as string | null | undefined) ?? null });
+      await popup.alert(!workAbilityMatchedLine ? "개설된 라인이 없습니다." : ((workAbilityMatchedLine.editReason as string | null | undefined) || "작성할 수 있는 기간이 아닙니다. 😊"));
       return;
     }
     // 백엔드 lineTarget 단위 저장 — matchedLine.lineTargetId 없으면 저장 차단 (legacy fallback 금지).
@@ -4125,8 +4141,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleResetWorkExp = async () => {
-    if (!forceEditUnlock && !canEditWorkExp) {
-      await popup.alert("관리자 승인 후 수정할 수 있습니다.");
+    if (!isLineEditableByDto(workExpMatchedLine)) {
+      await popup.alert(!workExpMatchedLine ? "개설된 라인이 없습니다." : ((workExpMatchedLine.editReason as string | null | undefined) || "작성할 수 있는 기간이 아닙니다. 😊"));
       return;
     }
     // 초기화 = 크루 입력 필드만 빈 값으로 (라인 평점은 어드민 전용 → 손 대지 않음)
@@ -4139,9 +4155,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleSaveWorkExp = async () => {
-    if (!forceEditUnlock && !canEditWorkExp) {
-      console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkExp" });
-      await popup.alert("관리자 승인 후 수정할 수 있습니다.");
+    if (!isLineEditableByDto(workExpMatchedLine)) {
+      console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkExp", canEdit: workExpMatchedLine?.canEdit ?? null, lineTargetId: (workExpMatchedLine?.lineTargetId as string | null | undefined) ?? null });
+      await popup.alert(!workExpMatchedLine ? "개설된 라인이 없습니다." : ((workExpMatchedLine.editReason as string | null | undefined) || "작성할 수 있는 기간이 아닙니다. 😊"));
       return;
     }
     // 백엔드 lineTarget 단위 저장 — matchedLine.lineTargetId 없으면 저장 차단 (legacy fallback 금지).
@@ -4430,8 +4446,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleResetWorkCareer = async () => {
-    if (!forceEditUnlock && !canEditWorkCareer) {
-      await popup.alert("관리자 승인 후 수정할 수 있습니다.");
+    if (!isLineEditableByDto(workCareerMatchedLine)) {
+      await popup.alert(!workCareerMatchedLine ? "개설된 라인이 없습니다." : ((workCareerMatchedLine.editReason as string | null | undefined) || "작성할 수 있는 기간이 아닙니다. 😊"));
       return;
     }
     // 초기화 = 크루가 입력한 값만 비움. 어드민이 등록한 슬롯(output_images, output_links 앞쪽)은 유지.
@@ -4468,9 +4484,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
 
   const handleSaveWorkCareer = async () => {
-    if (!forceEditUnlock && !canEditWorkCareer) {
-      console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkCareer" });
-      await popup.alert("관리자 승인 후 수정할 수 있습니다.");
+    if (!isLineEditableByDto(workCareerMatchedLine)) {
+      console.log("[AdminApprovalPopupCalled]", { isAdminPreview, caller: "handleSaveWorkCareer", canEdit: workCareerMatchedLine?.canEdit ?? null, lineTargetId: (workCareerMatchedLine?.lineTargetId as string | null | undefined) ?? null });
+      await popup.alert(!workCareerMatchedLine ? "개설된 라인이 없습니다." : ((workCareerMatchedLine.editReason as string | null | undefined) || "작성할 수 있는 기간이 아닙니다. 😊"));
       return;
     }
     // 백엔드 lineTarget 단위 저장 — matchedLine.lineTargetId 없으면 저장 차단 (legacy fallback 금지).
