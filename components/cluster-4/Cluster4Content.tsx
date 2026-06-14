@@ -25,6 +25,7 @@ import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
 import { appendDemoQuery } from "@/lib/appendDemoQuery";
+import { parseScopeMode } from "@/lib/userScopeShared";
 import HelpModalBody from "@/components/shared/HelpModalBody";
 
 // 글자수 초과 시 '..' 표시 (CSS ellipsis '…' 대신 JS 처리)
@@ -328,6 +329,9 @@ const Cluster4Content = () => {
   // (season-reputations 등)에서 세션 없이도 테스트 유저 데이터를 읽도록 한다.
   // 테스트 유저 모드가 아니면 빈 문자열(일반/admin 동작 불변).
   const demoQS = demoUserId ? `&demoUserId=${encodeURIComponent(demoUserId)}` : "";
+  // weekly-cards 모집단 스코프 suffix — mode=test 면 admin 테스트 모드(여름 시뮬레이션) 정책.
+  // operating(미지정)이면 빈 문자열 → 요청 byte-identical.
+  const modeQS = parseScopeMode(searchParams.get("mode")) === "test" ? "&mode=test" : "";
   // 로컬 더미(localStorage demoMode)는 테스트 유저(?demoUserId=) 모드에서는 끈다 —
   // 테스트 모드는 실제 DB 를 source of truth 로 읽어야 하므로 더미가 응답을 덮으면 안 된다.
   const isDemoMode = checkDemoMode() && !demoUserId;
@@ -1585,7 +1589,7 @@ const Cluster4Content = () => {
   useEffect(() => {
     let cancelled = false;
     const qs = urlUserId
-      ? `?userId=${encodeURIComponent(urlUserId)}${demoQS}`
+      ? `?userId=${encodeURIComponent(urlUserId)}${demoQS}${modeQS}`
       : "";
     (async () => {
       try {

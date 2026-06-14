@@ -10,6 +10,7 @@ import { useModalScroll } from "@/utils/useModalScroll";
 import { useDebugLayout } from "@/utils/debugLayout";
 import { usePopup } from "@/components/ui/popup";
 import { supabase } from "@/lib/supabase";
+import { parseScopeMode } from "@/lib/userScopeShared";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
@@ -420,6 +421,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const urlUserId = searchParams.get("userId") || searchParams.get("userID") || demoUserId;
   // 조회 API 에 붙일 demoUserId 쿼리 suffix (백엔드 테스트 유저 판정용).
   const demoQS = demoUserId ? `&demoUserId=${encodeURIComponent(demoUserId)}` : "";
+  // weekly-cards 모집단 스코프 suffix — mode=test 면 admin 이 테스트 모드(여름 시뮬레이션) 정책으로
+  // 카드/라인을 내려준다. operating(미지정)이면 빈 문자열 → 요청 byte-identical.
+  const modeQS = parseScopeMode(searchParams.get("mode")) === "test" ? "&mode=test" : "";
   // 네비게이션 쿼리: target(userId)·actor(demoUserId)·org 를 모두 보존한다.
   // ⚠️ 과거엔 테스트 모드에서 demoUserId 만 싣고 userId(대상자)를 떨궈, 타 크루 카드에서
   //    주차 이동/탭 전환 시 urlUserId 가 demoUserId 로 폴백되어 "내 카드로 복귀"하는 버그가 있었다.
@@ -2150,7 +2154,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       return;
     }
 
-    const fetchUrl = `/api/cluster4/weekly-cards?userId=${targetUserId}${demoQS}`;
+    const fetchUrl = `/api/cluster4/weekly-cards?userId=${targetUserId}${demoQS}${modeQS}`;
     const controller = new AbortController();
     (async () => {
       try {

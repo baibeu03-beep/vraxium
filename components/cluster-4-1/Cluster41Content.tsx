@@ -294,6 +294,9 @@ const Cluster41Content = () => {
   const targetUserId = searchParams.get('userId') || searchParams.get('userID') || demoUserId;
   // 조회 API 에 붙일 demoUserId 쿼리 suffix (백엔드 테스트 유저 판정용). 없으면 빈 문자열.
   const demoQS = demoUserId ? `&demoUserId=${encodeURIComponent(demoUserId)}` : '';
+  // weekly-cards 모집단 스코프 suffix — mode=test 면 admin 이 테스트 모드(여름 시뮬레이션) 정책으로
+  // 카드/라인을 내려준다. operating(미지정)이면 빈 문자열 → 요청 byte-identical.
+  const modeQS = parseScopeMode(searchParams.get('mode')) === 'test' ? '&mode=test' : '';
   // 페이지 내 네비게이션에 붙일 쿼리: target(userId)·actor(demoUserId)·org 를 모두 보존한다.
   // ⚠️ 과거엔 테스트 모드에서 demoUserId 만 싣고 userId(대상자)를 떨궈, 타 크루 주차 카드로
   //    진입할 때 urlUserId 가 demoUserId 로 폴백되어 "내 카드로 복귀"하는 버그가 있었다.
@@ -472,7 +475,7 @@ const Cluster41Content = () => {
         // 프로필 ?userId=X 응답의 data.id === X 이므로 동일한 요청이며, 응답 검사·반영
         // 순서는 기존과 동일(프로필 처리 후). 세션 모드는 userId 를 모르므로 기존 직렬 유지.
         const earlyWeeklyPromise = targetUserId
-          ? fetch(`/api/cluster4/weekly-cards?userId=${targetUserId}${demoQS}`, { signal: abortController.signal })
+          ? fetch(`/api/cluster4/weekly-cards?userId=${targetUserId}${demoQS}${modeQS}`, { signal: abortController.signal })
           : null;
         // 프로필 실패로 조기 return 할 때 unhandled rejection 이 되지 않도록 미리 흡수.
         if (earlyWeeklyPromise) earlyWeeklyPromise.catch(() => {});
@@ -547,7 +550,7 @@ const Cluster41Content = () => {
 
         const weeklyRes = earlyWeeklyPromise
           ? await earlyWeeklyPromise
-          : await fetch(`/api/cluster4/weekly-cards?userId=${userId}${demoQS}`, { signal: abortController.signal });
+          : await fetch(`/api/cluster4/weekly-cards?userId=${userId}${demoQS}${modeQS}`, { signal: abortController.signal });
         if (isStale()) return;
 
         // ★ 504(Gateway Timeout)/HTML 에러 페이지 등 비정상 응답은 json() 이 throw 하거나
