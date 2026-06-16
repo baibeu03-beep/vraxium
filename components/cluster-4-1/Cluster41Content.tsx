@@ -654,13 +654,15 @@ const Cluster41Content = () => {
 
   // 성장 상태 badge 텍스트 — 공용 getGrowthBadgeText(lib/cluster4-status-label) 사용.
   // raw enum 만 비교(한국어 라벨 비교 금지) · Cluster4Content 와 동일 매핑 함수 공유.
-
-  // ── 성장 중단 여부 (이력서 카드 배지와 동일 기준) ──────────────────────────────
-  // 위 이력서 배지(getGrowthBadgeText(userStatus, statsCards?.process.growthStatusKey ?? growthStatus))와
-  // *완전히 동일한 입력*으로 판정한다 → 이력서 카드 ↔ 주차 카드 목록 상태 기준이 구조적으로 일치.
-  // 중단(suspended/paused/deferred)이면 주차 성장 카드(성공/실패/대기)를 "성장 중단"으로 덮어쓴다(휴식 주차 제외).
-  const isGrowthSuspended =
-    getGrowthBadgeText(userStatus, statsCards?.process.growthStatusKey ?? growthStatus) === "성장 중단";
+  // 성장 중단(suspended/paused/deferred)은 상단 허브/프로필 배지(아래 getGrowthBadgeText 호출)에 표시한다.
+  // 주차 카드 목록의 상태 배지는 weekly-cards DTO 의 실제 주차 상태(userWeekStatus)를 그대로 사용하며,
+  // 과거 성공/실패/휴식을 "성장 중단"으로 덮어쓰지 않는다(블랭킷 override 금지).
+  //   단, "성장 중단" 배지는 성장 중단(suspended)이 적용된 주차 카드 1장에만 표시한다 — 아래 isStopWeekCard.
+  // isStoppedUser: 상단/프로필 배지와 *동일 입력*으로 사용자가 성장 중단 상태인지 판정(graduated 와 구분).
+  //   suspended/paused 모두 "성장 중단" 이지만, paused 는 endWeekInfo(=suspended_week_id)가 비어 있어
+  //   카드별 표시 대상에서 자연히 제외된다(상단/프로필 배지만 유지). graduated 는 여기서 false.
+  const isStoppedUser =
+    getGrowthBadgeText(userStatus, statsCards?.process.growthStatusKey ?? growthStatus) === '성장 중단';
 
   // 성장 주차 집계 표시값 — 실제 모드: admin stats-cards(period) 우선, 데모/로딩/실패: /api/profile fallback.
   // 프론트 계산 없이 API 응답값만 표시. 숫자 4종만 admin 으로 전환(시작/종료 주차·badge·괄호 시즌값은 기존 유지).
@@ -1399,16 +1401,31 @@ const Cluster41Content = () => {
               const toneClass = statusToneClass(week.statusTone);
               // 기존 프론트 className 체계: statusLabel 우선, 없으면 statusTone fallback.
               // (전환 주차는 filteredDbData 단계에서 이미 목록에서 제외됨 — 여기 도달하지 않음.)
+              // 주차 카드 상태 배지 = weekly-cards DTO 의 실제 주차 상태(statusLabel/statusTone)를 그대로 사용.
+              //   과거 확정 주차(성공/실패/휴식)는 절대 덮어쓰지 않는다 — success→성공, fail→실패,
+              //   official_rest/personal_rest→휴식.
+              // 예외 — "성장 중단" 배지는 성장 중단(suspended)이 적용된 주차 카드 1장에만 표시한다:
+              //   growthInfo.endWeekInfo(= user_profiles.suspended_week_id 파생, 백엔드가 status==='suspended'
+              //   일 때만 채움)와 (연도·시즌·주차)가 일치하는 카드에만 적용. endWeekInfo·card 모두 같은
+              //   weeks 행에서 파생되므로 연도/시즌(한글)/season-relative weekNumber 가 그대로 일치한다.
+              //   paused 는 endWeekInfo 가 비어 자연히 제외(상단/프로필 배지만 유지), graduated 는
+              //   isStoppedUser=false 로 제외. 휴식(개인/공식) 주차는 별개 상태이므로 덮어쓰지 않는다.
               const baseBadgeToneClass = badgeClassFromLabel(rawStatusLabel, toneClass);
-              // ── 성장 중단 우선 표시 ──
-              // 사용자가 성장 중단(suspended/paused/deferred) 상태면, 성장 주차의 성공/실패/대기 라벨을
-              // "성장 중단"으로 덮어쓴다. 휴식(개인/공식) 주차는 별개 상태이므로 그대로 둔다.
-              // (이력서 카드와 동일 기준 — isGrowthSuspended.)
-              const isRestBadge =
-                baseBadgeToneClass === 'rest-personal' || baseBadgeToneClass === 'rest-official' || toneClass === 'rest';
-              const overrideSuspended = isGrowthSuspended && !isRestBadge;
-              const statusLabel = overrideSuspended ? '성장 중단' : rawStatusLabel;
-              const badgeToneClass = overrideSuspended ? 'stopped' : baseBadgeToneClass;
+              const isStopWeekRestBadge =
+                baseBadgeToneClass === 'rest-personal' ||
+                baseBadgeToneClass === 'rest-official' ||
+                toneClass === 'rest';
+              const isStopWeekCard =
+                isStoppedUser &&
+                !isStopWeekRestBadge &&
+                !!endWeekInfo &&
+                parsedTitle.year === endWeekInfo.year &&
+                parsedTitle.season === endWeekInfo.seasonName &&
+                (endWeekInfo.isBreak
+                  ? parsedTitle.isBreak
+                  : week.weekNumber === endWeekInfo.weekNumber);
+              const statusLabel = isStopWeekCard ? '성장 중단' : rawStatusLabel;
+              const badgeToneClass = isStopWeekCard ? 'stopped' : baseBadgeToneClass;
               const isFail = badgeToneClass === 'fail';
               const isPersonalRest = badgeToneClass === 'rest-personal';
               const isOfficialRest = badgeToneClass === 'rest-official';
