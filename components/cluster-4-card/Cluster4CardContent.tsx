@@ -8406,9 +8406,25 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         : 0;
 
   // ── 상단 주차 성장률(성장 허브) 단일 출처 ──
-  // 1순위: weekly-cards 카드 DTO 의 growthDenominator/growthNumerator/weeklyGrowthRate.
+  // 0순위(신규 SoT): weekly-cards 카드 DTO 의 growthRate{rate,count,total} 객체.
+  //   infoStatsAdmin(infoRate)·주차 목록(Cluster41Content readRateObject(week.growthRate))과 *동일 출처*.
+  //   total/count/rate 가 한 객체에서 나오므로 헤더 3값(총 n개 중 m개 / 퍼센트 / progress bar)이
+  //   구조적으로 일치하고, 목록·모달과도 같은 값을 쓴다.
+  // 1순위: flat growthDenominator/growthNumerator/weeklyGrowthRate.
   // 2순위: DTO 미수신 시 lines[] denominator/numerator 합산. 3순위: 0/0/0.
   const growthStatsAdmin = (() => {
+    const growthRate = (weeklyCardMeta as (AdminCluster4WeeklyCardDto & { growthRate?: Cluster4RateDto | null }) | null)?.growthRate ?? null;
+    if (growthRate && typeof growthRate.total === "number" && typeof growthRate.count === "number") {
+      const total = Number(growthRate.total) || 0;
+      const success = Number(growthRate.count) || 0;
+      const rate =
+        typeof growthRate.rate === "number"
+          ? growthRate.rate
+          : total > 0
+            ? Math.round((success / total) * 100)
+            : 0;
+      return { total, success, rate };
+    }
     const metaTotal = weeklyCardMeta?.growthDenominator;
     const metaSuccess = weeklyCardMeta?.growthNumerator;
     const metaRate = weeklyCardMeta?.weeklyGrowthRate;
@@ -8429,7 +8445,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         total += Number(ls.map((l) => l.denominator).find((d) => typeof d === "number") ?? 0) || 0;
         success += Number(ls.map((l) => l.numerator).find((n) => typeof n === "number") ?? 0) || 0;
       }
-      return { total, success, rate: total > 0 ? Math.ceil((success / total) * 100) : 0 };
+      // 라운딩은 admin roundGrowthRate(Math.round)와 일치시킨다(Math.ceil 금지 — DTO 값과 1% 어긋남 방지).
+      // 단, 1순위 DTO(weeklyGrowthRate)가 항상 우선이라 이 폴백은 DTO 전체 미수신 시에만 동작한다.
+      return { total, success, rate: total > 0 ? Math.round((success / total) * 100) : 0 };
     }
     return { total: 0, success: 0, rate: 0 };
   })();
@@ -12118,6 +12136,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       // 관리자가 점유한 이미지 슬롯 수 — matchedLine.adminOutputImageCount(백엔드 SoT) 우선, 없으면 legacy 길이.
                       const adminCount = Math.min(getAdminOutputImagesCount(selectedWorkInfoCard?.activityType ?? "", workInfoMatchedLine), WORKINFO_IMAGE_SLOT_COUNT);
                       const isAdminSlot = imageIdx < adminCount;
+                      // 첫 번째 슬롯(imageIdx===0)은 고객 모드에서 이미지/관리자 점유 여부와 무관하게 항상 수정 불가(관리자 전용).
+                      //   adminCount===0(관리자 미입력) 이어도 슬롯0 은 read-only — exp/ability/career 허브와 동일 정책.
+                      const isFirstSlotLocked = !isPureAdminPreview && imageIdx === 0;
                       // 슬롯 idx → 데이터 출처
                       // 0..adminCount-1: adminImages[idx] (관리자 전용 read-only)
                       // adminCount..: 크루 이미지 (image_urls[idx - adminCount])
@@ -12144,11 +12165,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         image = crewImagesForState[crewSlotIdx] || null;
                         caption = crewCaptionsForState[crewSlotIdx] || "";
                       }
-                      const slotIsEditable = workInfoViewIsEditing && (isPureAdminPreview || !isAdminSlot);
+                      const slotIsEditable = workInfoViewIsEditing && (isPureAdminPreview || !isAdminSlot) && !isFirstSlotLocked;
                       const crewSlotIdx = imageIdx - adminCount;
                       const effectiveIdx = isPureAdminPreview ? imageIdx : crewSlotIdx;
                       return (
-                        <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${effectiveIsAdmin && !image ? " disabled" : ""}${effectiveIsAdmin ? " admin-slot" : ""}`} style={{ position: "relative" }}>
+                        <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${(effectiveIsAdmin || isFirstSlotLocked) && !image ? " disabled" : ""}${effectiveIsAdmin || isFirstSlotLocked ? " admin-slot" : ""}`} style={{ position: "relative" }}>
                           {image ? (
                             <div className="image-preview" onClick={() => { if (image) setPreviewImageUrl(image); }}>
                               <img src={image} alt={`이미지 ${imageIdx + 1}`} />
@@ -12187,6 +12208,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                               onClick={async () => {
                                 if (isPureAdminPreview && workInfoViewIsEditing) {
                                   triggerImageUpload(effectiveIdx);
+                                } else if (isFirstSlotLocked && workInfoViewIsEditing) {
+                                  await popup.alert("이 영역은 관리자가 입력한 자료입니다. 사용자는 수정할 수 없습니다.");
                                 } else if (isAdminSlot && workInfoViewIsEditing) {
                                   await popup.alert("이 영역은 관리자가 입력한 자료입니다. 사용자는 수정할 수 없습니다.");
                                 } else if (!isAdminSlot && workInfoViewIsEditing) {
@@ -12266,7 +12289,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       );
                     })}
                   </div>
-                  <span className="line-code image-line-code">{workInfoMatchedLine?.lineCode ?? (lineCodeMap[selectedWorkInfoCard.activityType] || selectedWorkInfoCard.activityType || "")}</span>
+                  {/* 라인코드: 실제 개설 라인(백엔드 DTO) lineCode 만 표시. 미배정/placeholder(lineCode 없음)는
+                      하드코딩 legacy catalog 코드(IF99A-NR####)를 노출하지 않고 "-" 처리. */}
+                  <span className="line-code image-line-code">{workInfoMatchedLine?.lineCode || "-"}</span>
                 </div>
               </div>
             </div>
@@ -12648,14 +12673,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const captionsForState = workExpViewIsEditing ? editingExpImageCaptions : viewCaptions;
                       const image = imagesForState[imageIdx] || null;
                       const caption = captionsForState[imageIdx] || "";
-                      const isEnabled = isPureAdminPreview || imageIdx === 0 || !!imagesForState[imageIdx - 1];
+                      // 첫 번째 슬롯(imageIdx===0)은 고객 모드에서 이미지 유무와 관계없이 항상 수정 불가(관리자 전용).
+                      //   슬롯1은 고객 첫 편집 슬롯으로 항상 활성(슬롯0 이미지에 의존하지 않음), 슬롯2+는 직전 이미지 순차 활성.
+                      //   isPureAdminPreview(관리자 미리보기)는 종전대로 전 슬롯 편집 가능.
+                      const isEnabled = isPureAdminPreview || (imageIdx !== 0 && (imageIdx === 1 || !!imagesForState[imageIdx - 1]));
+                      const isFirstSlotLocked = !isPureAdminPreview && imageIdx === 0;
                       const isRequired = imageIdx < 2;
                       return (
                         <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${!isEnabled ? " disabled" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
                           {image ? (
                             <div className="image-preview" onClick={() => { if (image) setPreviewExpImageUrl(image); }}>
                               <img src={image} alt={`이미지 ${imageIdx + 1}`} />
-                              {workExpViewIsEditing && (
+                              {workExpViewIsEditing && !isFirstSlotLocked && (
                                 <div className="image-actions-overlay">
                                   <button
                                     type="button"
@@ -12778,7 +12807,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       );
                     })}
                   </div>
-                  <span className="line-code image-line-code">{workExpMatchedLine?.lineCode ?? (lookupWorkExpMapping(selectedWorkExpCard.code)?.lineCode || selectedWorkExpCard.code || "")}</span>
+                  {/* 라인코드: 실제 개설 라인 lineCode 만 표시(하드코딩 legacy catalog 코드 미노출 — 미배정은 "-"). */}
+                  <span className="line-code image-line-code">{workExpMatchedLine?.lineCode || "-"}</span>
 
                   {/* 라인 평점 — weekly-cards DTO 의 experienceRating(SoT=cluster4_experience_line_evaluations.rating) 단일 출처.
                       프론트 임의 계산 금지. number → "n / 10"(0 포함), null/undefined → "- / 10". */}
@@ -13155,14 +13185,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const captionsForState = workAbilityViewIsEditing ? editingAbilityImageCaptions : viewCaptions;
                       const image = imagesForState[imageIdx] || null;
                       const caption = captionsForState[imageIdx] || "";
-                      const isEnabled = isPureAdminPreview || imageIdx === 0 || !!imagesForState[imageIdx - 1];
+                      // 첫 번째 슬롯(imageIdx===0)은 고객 모드에서 이미지 유무와 관계없이 항상 수정 불가(관리자 전용).
+                      //   슬롯1은 고객 첫 편집 슬롯으로 항상 활성(슬롯0 이미지에 의존하지 않음), 슬롯2+는 직전 이미지 순차 활성.
+                      //   isPureAdminPreview(관리자 미리보기)는 종전대로 전 슬롯 편집 가능.
+                      const isEnabled = isPureAdminPreview || (imageIdx !== 0 && (imageIdx === 1 || !!imagesForState[imageIdx - 1]));
+                      const isFirstSlotLocked = !isPureAdminPreview && imageIdx === 0;
                       const isRequired = imageIdx < 2;
                       return (
                         <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${!isEnabled ? " disabled" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
                           {image ? (
                             <div className="image-preview" onClick={() => { if (image) setPreviewAbilityImageUrl(image); }}>
                               <img src={image} alt={`이미지 ${imageIdx + 1}`} />
-                              {workAbilityViewIsEditing && (
+                              {workAbilityViewIsEditing && !isFirstSlotLocked && (
                                 <div className="image-actions-overlay">
                                   <button
                                     type="button"
@@ -13275,7 +13309,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       );
                     })}
                   </div>
-                  <span className="line-code image-line-code">{workAbilityMatchedLine?.lineCode ?? (selectedWorkAbilityCard.lineCode || selectedWorkAbilityCard.code || "")}</span>
+                  {/* 라인코드: 실제 개설 라인 lineCode 만 표시(하드코딩 legacy catalog 코드 미노출 — 미배정은 "-"). */}
+                  <span className="line-code image-line-code">{workAbilityMatchedLine?.lineCode || "-"}</span>
                 </div>
               </div>
             </div>
@@ -13634,10 +13669,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         const captionsForState = workCareerViewIsEditing ? editingCareerImageCaptions : viewCaptions;
                         const image = imagesForState[imageIdx] || null;
                         const caption = captionsForState[imageIdx] || "";
-                        const isEnabled = isPureAdminPreview || imageIdx === 0 || !!imagesForState[imageIdx - 1];
+                        // 첫 번째 슬롯(imageIdx===0)은 고객 모드에서 이미지 유무와 관계없이 항상 수정 불가(관리자 전용).
+                      //   슬롯1은 고객 첫 편집 슬롯으로 항상 활성(슬롯0 이미지에 의존하지 않음), 슬롯2+는 직전 이미지 순차 활성.
+                      //   isPureAdminPreview(관리자 미리보기)는 종전대로 전 슬롯 편집 가능.
+                      const isEnabled = isPureAdminPreview || (imageIdx !== 0 && (imageIdx === 1 || !!imagesForState[imageIdx - 1]));
+                      const isFirstSlotLocked = !isPureAdminPreview && imageIdx === 0;
                         const isRequired = imageIdx < 2;
                         const isAdminLocked = !isPureAdminPreview && imageIdx < adminImgCountForLock;
-                        const showEditingActions = workCareerViewIsEditing && !isAdminLocked;
+                        const showEditingActions = workCareerViewIsEditing && !isAdminLocked && !isFirstSlotLocked;
                         return (
                           <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${!isEnabled ? " disabled" : ""}${isAdminLocked ? " admin-locked" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
                             {image ? (
@@ -13850,7 +13889,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   {/* 하단 정렬 행: 좌측 라인코드(.image-line-code) + 우측 라인 평점(.workcareer-grade-section).
                       flex(align-items:flex-end)로 두 요소의 하단 기준선을 일치시킨다 — absolute/margin 임시 보정 제거. */}
                   <div className="workcareer-bottom-row">
-                    <span className="line-code image-line-code">{workCareerMatchedLine?.projectCode ?? (selectedWorkCareerCard.lineCode || selectedWorkCareerCard.code || "")}</span>
+                    {/* 라인코드: 실제 개설 라인 projectCode 만 표시(하드코딩 legacy catalog 코드 미노출 — 미배정은 "-"). */}
+                    <span className="line-code image-line-code">{workCareerMatchedLine?.projectCode || "-"}</span>
 
                     {/* 5단계: 라인 평점 — "라인 평점" 라벨 + S/A/B/C/D 등급(active 강조)만 표시.
                         점수(grade-points)/평가 상태(grade-rating-status)/강화 사유(grade-reason-note)는

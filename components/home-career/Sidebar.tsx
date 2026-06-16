@@ -51,7 +51,18 @@ const resolveCrewStatus = (
   growthStatus?: string | null,
 ): CrewStatus => {
   if (profileStatus === "graduated" || growthStatus === "graduated") return "Complete";
-  if (profileStatus === "suspended" || growthStatus === "suspended") return "Next Challenge";
+  // 성장 중단 계열(suspended/paused/deferred) → Next Challenge.
+  //   종전에는 suspended 만 매핑해, growth_status=paused(성장 유보·중단) 사용자가
+  //   user_profiles.status='active' 인 채로 "Running"으로 잘못 표시됐다(2026-06-16 수정).
+  //   admin RESUME_BADGE_BY_GROWTH_STATUS(paused/suspended→next_challenge) ·
+  //   고객 getGrowthBadgeText(성장 중단 집합)과 동일한 raw enum 기준으로 통일.
+  if (
+    profileStatus === "suspended" ||
+    growthStatus === "suspended" ||
+    growthStatus === "paused" ||
+    growthStatus === "deferred"
+  )
+    return "Next Challenge";
   if (currentSeasonStatus === "rest") return "Recharging";
   return (profileStatus && CREW_STATUS_MAP[profileStatus]) || "Running";
 };

@@ -108,6 +108,7 @@ const statusToneClass = (tone: unknown): string => {
 };
 
 const statusDividerColor = (className: string): string => {
+  if (className.includes("stopped")) return "#b0b6bf";
   if (className.includes("fail")) return "#ff6b6b";
   if (className.includes("rest")) return "#65e3ff";
   if (className.includes("in-progress")) return "#9b59b6";
@@ -126,6 +127,8 @@ const STATUS_ICON_FILE: Record<string, string> = {
   fail: "icon - 성장(실패).png",
   "rest-personal": "icon - 휴식(개인).png",
   "rest-official": "icon - 휴식(공식).png",
+  // 성장 중단(종단 상태) — 전용 트로피 아이콘이 없어 잠금(lock) 아이콘으로 표기.
+  stopped: "lock.png",
 };
 
 const statusIconPath = (statusLabel: string, className: string): string => {
@@ -205,6 +208,8 @@ const lineTriple = (line: Cluster4WeeklyLineDto | undefined): RateTriple => ({
 // 백엔드 statusTone 만으로는 personal/official rest 가 분리되지 않으므로
 // label 텍스트를 우선 검사하고, 그래도 분류 안 되면 statusTone fallback.
 const badgeClassFromLabel = (label: string, fallback: string): string => {
+  // 성장 중단(suspended/paused/deferred) — 성공/실패/대기보다 우선(이력서 카드 배지와 동일 기준).
+  if (label.includes("중단")) return "stopped";
   if (label.includes("실패")) return "fail";
   if (label.includes("성공")) return "success";
   if (label.includes("진행")) return "in-progress";
@@ -649,6 +654,13 @@ const Cluster41Content = () => {
 
   // 성장 상태 badge 텍스트 — 공용 getGrowthBadgeText(lib/cluster4-status-label) 사용.
   // raw enum 만 비교(한국어 라벨 비교 금지) · Cluster4Content 와 동일 매핑 함수 공유.
+
+  // ── 성장 중단 여부 (이력서 카드 배지와 동일 기준) ──────────────────────────────
+  // 위 이력서 배지(getGrowthBadgeText(userStatus, statsCards?.process.growthStatusKey ?? growthStatus))와
+  // *완전히 동일한 입력*으로 판정한다 → 이력서 카드 ↔ 주차 카드 목록 상태 기준이 구조적으로 일치.
+  // 중단(suspended/paused/deferred)이면 주차 성장 카드(성공/실패/대기)를 "성장 중단"으로 덮어쓴다(휴식 주차 제외).
+  const isGrowthSuspended =
+    getGrowthBadgeText(userStatus, statsCards?.process.growthStatusKey ?? growthStatus) === "성장 중단";
 
   // 성장 주차 집계 표시값 — 실제 모드: admin stats-cards(period) 우선, 데모/로딩/실패: /api/profile fallback.
   // 프론트 계산 없이 API 응답값만 표시. 숫자 4종만 admin 으로 전환(시작/종료 주차·badge·괄호 시즌값은 기존 유지).
@@ -1383,11 +1395,20 @@ const Cluster41Content = () => {
               // ── 백엔드 DTO → 기존 프론트 카드 위치 값 매핑 (재계산 금지, 단순 주입) ──
               const parsedTitle = parseWeekTitle(week);
               const altTitle = cardTitle(week); // 이미지 alt 용 raw 제목
-              const statusLabel = week.statusLabel ?? '-';
+              const rawStatusLabel = week.statusLabel ?? '-';
               const toneClass = statusToneClass(week.statusTone);
               // 기존 프론트 className 체계: statusLabel 우선, 없으면 statusTone fallback.
               // (전환 주차는 filteredDbData 단계에서 이미 목록에서 제외됨 — 여기 도달하지 않음.)
-              const badgeToneClass = badgeClassFromLabel(statusLabel, toneClass);
+              const baseBadgeToneClass = badgeClassFromLabel(rawStatusLabel, toneClass);
+              // ── 성장 중단 우선 표시 ──
+              // 사용자가 성장 중단(suspended/paused/deferred) 상태면, 성장 주차의 성공/실패/대기 라벨을
+              // "성장 중단"으로 덮어쓴다. 휴식(개인/공식) 주차는 별개 상태이므로 그대로 둔다.
+              // (이력서 카드와 동일 기준 — isGrowthSuspended.)
+              const isRestBadge =
+                baseBadgeToneClass === 'rest-personal' || baseBadgeToneClass === 'rest-official' || toneClass === 'rest';
+              const overrideSuspended = isGrowthSuspended && !isRestBadge;
+              const statusLabel = overrideSuspended ? '성장 중단' : rawStatusLabel;
+              const badgeToneClass = overrideSuspended ? 'stopped' : baseBadgeToneClass;
               const isFail = badgeToneClass === 'fail';
               const isPersonalRest = badgeToneClass === 'rest-personal';
               const isOfficialRest = badgeToneClass === 'rest-official';

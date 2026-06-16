@@ -5113,6 +5113,11 @@
         color: #ff6b6b;
       }
 
+      // 성장 중단(종단 상태) — 성공/실패/대기보다 우선 표시. 무채색 회색으로 종단 의미를 드러낸다.
+      &.stopped .status-text {
+        color: #b0b6bf;
+      }
+
       &.rest-personal .status-text {
         color: #65e3ff;
       }
