@@ -12209,7 +12209,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                 if (isPureAdminPreview && workInfoViewIsEditing) {
                                   triggerImageUpload(effectiveIdx);
                                 } else if (isFirstSlotLocked && workInfoViewIsEditing) {
-                                  await popup.alert("이 영역은 관리자가 입력한 자료입니다. 사용자는 수정할 수 없습니다.");
+                                  await popup.alert("이 공간은 운영진이 업로드하는 공간입니다.");
                                 } else if (isAdminSlot && workInfoViewIsEditing) {
                                   await popup.alert("이 영역은 관리자가 입력한 자료입니다. 사용자는 수정할 수 없습니다.");
                                 } else if (!isAdminSlot && workInfoViewIsEditing) {
@@ -12718,7 +12718,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                               className="image-preview"
                               onClick={async () => {
                                 if (workExpViewIsEditing) {
-                                  if (!isEnabled) {
+                                  if (isFirstSlotLocked) {
+                                    await popup.alert("이 공간은 운영진이 업로드하는 공간입니다.");
+                                  } else if (!isEnabled) {
                                     await popup.alert("먼저 앞 순서의 이미지를 업로드해주세요.");
                                   } else {
                                     triggerExpImageUpload(imageIdx);
@@ -13230,7 +13232,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                               className="image-preview"
                               onClick={async () => {
                                 if (workAbilityViewIsEditing) {
-                                  if (!isEnabled) {
+                                  if (isFirstSlotLocked) {
+                                    await popup.alert("이 공간은 운영진이 업로드하는 공간입니다.");
+                                  } else if (!isEnabled) {
                                     await popup.alert("먼저 앞 순서의 이미지를 업로드해주세요.");
                                   } else {
                                     triggerAbilityImageUpload(imageIdx);
@@ -13715,7 +13719,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                               <div
                                 className="image-preview"
                                 onClick={async () => {
-                                  if (isAdminLocked && workCareerViewIsEditing) {
+                                  if (isFirstSlotLocked && workCareerViewIsEditing) {
+                                    await popup.alert("이 공간은 운영진이 업로드하는 공간입니다.");
+                                  } else if (isAdminLocked && workCareerViewIsEditing) {
                                     await popup.alert("이 영역은 관리자가 입력한 자료입니다. 사용자는 수정할 수 없습니다.");
                                   } else if (workCareerViewIsEditing && !isAdminLocked) {
                                     if (!isEnabled) {
