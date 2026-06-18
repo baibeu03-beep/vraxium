@@ -888,7 +888,10 @@
     align-items: center;
     justify-content: center;
     position: relative;
-    top: 7px;
+    // 뱃지(메달)를 약 0.5cm 위로 이동. 카드가 데스크톱에서 scale(~1.17)로
+    // 렌더되므로 화면상 0.5cm(≈19px) = CSS 약 16px → top 7px 에서 -9px 로.
+    // org(oranke/encre/phalanx) 공통 base 규칙이라 전 조직 동일 적용.
+    top: -9px;
     font-size: 0.875rem;
     overflow: visible;
     margin-left: 10px;
