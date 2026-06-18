@@ -154,6 +154,9 @@ export const authOptions: AuthOptions = {
           if (access.status === "approved") {
             token.id = access.profile.user_id ?? token.id;
             token.isApproved = true;
+            // UI 표시 이름 SoT = 매칭된 user_profiles.display_name (OAuth 이름이 아님).
+            // OAuth provider 이름은 token.name 에 그대로 남겨 providerName 폴백으로만 노출한다.
+            token.profileName = access.profile.display_name ?? undefined;
           } else {
             token.isApproved = false;
           }
@@ -173,6 +176,8 @@ export const authOptions: AuthOptions = {
           if (access.status === "approved") {
             token.id = access.profile.user_id ?? token.id;
             token.isApproved = true;
+            // UI 표시 이름 SoT = 매칭된 user_profiles.display_name (OAuth 이름이 아님).
+            token.profileName = access.profile.display_name ?? undefined;
           } else {
             token.isApproved = false;
           }
@@ -182,12 +187,37 @@ export const authOptions: AuthOptions = {
         }
       }
 
+      // 기존 세션 backfill — 이 변경 이전 발급된 토큰에는 profileName 이 없다.
+      // 승인된(user_id 확정) 토큰에 한해 user_profiles.display_name 을 1회 직접 조회해 채운다
+      // (재로그인 불필요). user_id PK 직독이라 이메일/매칭 로직과 무관하며, 채워진 뒤에는
+      // 가드(!token.profileName)로 재조회하지 않는다.
+      if (!token.profileName && token.isApproved === true && typeof token.id === "string" && supabaseAdmin) {
+        try {
+          const { data } = await supabaseAdmin
+            .from("user_profiles")
+            .select("display_name")
+            .eq("user_id", token.id)
+            .maybeSingle();
+          if (data?.display_name) {
+            token.profileName = data.display_name as string;
+          }
+        } catch (error) {
+          console.error("jwt profileName backfill error:", error);
+        }
+      }
+
       return token;
     },
     async session({ session, token }) {
       if (token && session.user) {
         session.user.id = token.id as string;
         session.user.email = token.email as string;
+        // 프로필 드롭다운 등 UI 표시 이름 = 매칭된 user_profiles.display_name 우선.
+        //   매칭 실패(미승인) 시 token.profileName 부재 → 기존 OAuth 이름(token.name) 폴백 유지.
+        //   OAuth provider 이름은 providerName 으로 분리 노출(폴백/표시용). 매칭/이메일 로직 무변경.
+        const providerName = (token.name as string | undefined) ?? session.user.name ?? undefined;
+        (session.user as { providerName?: string | null }).providerName = providerName ?? null;
+        session.user.name = (token.profileName as string | undefined) ?? providerName ?? null;
         (session as { accessToken?: string }).accessToken = token.accessToken as string;
         (session as { isApproved?: boolean }).isApproved = token.isApproved as boolean;
         // provider 분기용 — 기존(kakao) 세션 토큰에는 없을 수 있는 additive 필드
