@@ -415,6 +415,8 @@ export interface OrganizationConfig {
   accentSoft: string;
   /** 조직 메달 이미지 파일명(디렉터리는 호출부가 결합). */
   medalFile: string;
+  /** 조직 도장(이력서 카드 상단 notice) 이미지 파일명(디렉터리는 호출부가 결합). */
+  stampFile: string;
 }
 
 export const ORGANIZATION_CONFIG: Record<Organization, OrganizationConfig> = {
@@ -430,6 +432,7 @@ export const ORGANIZATION_CONFIG: Record<Organization, OrganizationConfig> = {
     themeColor: "#FAAB07",
     accentSoft: "#FFC300",
     medalFile: "금장_OK.png",
+    stampFile: "오랑캐 도장.png",
   },
   entertainment: {
     organization: "entertainment",
@@ -443,6 +446,7 @@ export const ORGANIZATION_CONFIG: Record<Organization, OrganizationConfig> = {
     themeColor: "#FF4B70",
     accentSoft: "#FF98A6",
     medalFile: "금장_EC.png",
+    stampFile: "엥크레 도장.png",
   },
   planning: {
     organization: "planning",
@@ -456,6 +460,7 @@ export const ORGANIZATION_CONFIG: Record<Organization, OrganizationConfig> = {
     themeColor: "#1E9503",
     accentSoft: "#B2FF8F",
     medalFile: "금장_PX.png",
+    stampFile: "팔랑크스 도장.png",
   },
 };
 
@@ -528,4 +533,18 @@ export function getOrgMascotSrc(
 ): string {
   const dir = base === "root" ? "/images/0/" : "/images/0/cluster 1/";
   return `${dir}${ORGANIZATION_CONFIG[org].medalFile}`;
+}
+
+/**
+ * 조직 도장(이력서 카드 상단 notice) 이미지 src — 마스코트와 동일 규칙의 공용 SoT.
+ *
+ * org→파일 매핑은 ORGANIZATION_CONFIG.stampFile 단일 정의만 사용한다
+ * (marketing=오랑캐 / entertainment=엥크레 / planning=팔랑크스 도장).
+ * 도장 아트워크는 /images/0/cluster 1/ 한 디렉터리에만 존재한다.
+ *
+ * 규칙: 인자로 받은 org 식별자만으로 결정한다. 매칭 실패 시 getOrgConfigFromPathname
+ * 이 marketing(오랑캐)으로 폴백하므로 호출부는 org 부재를 별도 처리할 필요가 없다.
+ */
+export function getOrgStampSrc(org: Organization): string {
+  return `/images/0/cluster 1/${ORGANIZATION_CONFIG[org].stampFile}`;
 }

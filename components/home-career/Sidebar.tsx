@@ -16,7 +16,7 @@ import { useModalScroll } from "@/utils/useModalScroll";
 import { usePopup } from "@/components/ui/popup";
 import { logEvent } from "@/utils/blackScreenDiagnostics";
 import koreaRegionsData from "@/data/korea-regions.json";
-import { isPxRoute, isEcRoute, getThemeClass, withPxRoute, getOrgConfigFromPathname, getOrgMascotSrc } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, getThemeClass, withPxRoute, getOrgConfigFromPathname, getOrgMascotSrc, getOrgStampSrc } from "@/lib/cluster-route";
 import { LoadingPanel } from "@/components/ui/loading/LoadingPanel";
 import { progressStatusToSeasonKey, RESUME_SEASON_BADGE_TEXT, type SeasonStatusKey } from "@/lib/cluster4-status-label";
 
@@ -3046,7 +3046,7 @@ const Sidebar = () => {
               <div className="notice-box yellow">
                 <Image src="/images/0/cluster 1/Star Badge.png" alt="" width={25} height={25} className="notice-icon-img" />
                 <span className="notice-text notice-text-top">{resumeCardSettings?.noticeTopText || (debugPanelType === "EC" ? "전국청춘연합 엔터테인먼트/미디어 클럽, 엥크레" : debugPanelType === "PX" ? "전국청춘연합 기획/컨설팅 클럽, 팔랑크스" : "전국청춘연합 마케팅/퍼포먼스 클럽, 오랑캐")}</span>
-                <div className={`notice-stamp-wrapper${crewStatus === "Complete" ? " stamped" : ""}`}>{crewStatus === "Complete" && <Image src={resumeCardSettings?.noticeTopStampImageUrl || "/images/0/cluster 1/오랑캐 도장.png"} alt="" width={46} height={46} />}</div>
+                <div className={`notice-stamp-wrapper${crewStatus === "Complete" ? " stamped" : ""}`}>{crewStatus === "Complete" && <Image src={resumeCardSettings?.noticeTopStampImageUrl || getOrgStampSrc(getOrgConfigFromPathname(pathname).organization)} alt="" width={46} height={46} />}</div>
               </div>
               <div className="notice-box green">
                 <Image src="/images/0/cluster 1/Star Badge2.png" alt="" width={25} height={25} className="notice-icon-img" />
