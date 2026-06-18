@@ -1040,7 +1040,10 @@ export async function GET(request: NextRequest) {
       // 성장 종료일 - 시즌 정보 포함
       // 졸업 판정 SoT 는 user_profiles.growth_status — profile.status 는 전원 'active' 라
       // status 만 보면 졸업 분기가 영원히 죽는다 (2026-06-05: growth_status 병행 수정).
-      profile.status === 'suspended' && profile.suspended_week_id
+      // 성장 중단 적용 주차: SoT 는 growth_status==='suspended' (profile.status 는 전원 'active' 라 사용 불가).
+      //   suspended_week_id(user_profiles, 운영진이 /admin/members 에서 지정)로 종료 주차를 해소한다.
+      //   paused 는 대상 아님(컬럼 NULL 유지) — 카드 미표시·상단 배지만.
+      profile.growth_status === 'suspended' && profile.suspended_week_id
         ? supabaseAdmin.from("weeks").select("end_date, week_number, season_definitions!inner(season_label, season_type, year)").eq("id", profile.suspended_week_id).maybeSingle()
         : (profile.status === 'graduated' || profile.growth_status === 'graduated')
           ? supabaseAdmin.from("user_season_histories")
@@ -1159,7 +1162,7 @@ export async function GET(request: NextRequest) {
 
     let growthEndDate = null;
     let growthEndWeekInfo = null;
-    if (profile.status === 'suspended') {
+    if (profile.growth_status === 'suspended') {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const endWeekData = growthEndDateResult.data as any;
       growthEndDate = endWeekData?.end_date || null;
