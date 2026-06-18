@@ -888,10 +888,12 @@
     align-items: center;
     justify-content: center;
     position: relative;
-    // 뱃지(메달)를 약 0.5cm 위로 이동. 카드가 데스크톱에서 scale(~1.17)로
-    // 렌더되므로 화면상 0.5cm(≈19px) = CSS 약 16px → top 7px 에서 -9px 로.
-    // org(oranke/encre/phalanx) 공통 base 규칙이라 전 조직 동일 적용.
-    top: -9px;
+    // 메달 이미지의 세로 시작점/끝점을 왼쪽 .resume-badges 와 정렬한다.
+    //   img 높이를 badges 높이(112px CSS ≈ 렌더 133.7px)에 맞추고(.medal-image-wrapper
+    //   height + img height:100%/width:auto), 메달 박스(height 108) 안에서 중앙정렬되므로
+    //   top:0 이면 img_top = medal_top + box/2 - img/2 ≈ badges_top 으로 맞는다.
+    //   (이전 -9px 의 과한 상향 이동은 되돌림.) org 공통 base 규칙 → 전 조직 동일.
+    top: 0;
     font-size: 0.875rem;
     overflow: visible;
     margin-left: 10px;
@@ -931,8 +933,13 @@
 
     .medal-image-wrapper {
       position: relative;
-      width: 121px;
-      height: 121px;
+      // 메달 이미지 height 를 좌측 .resume-badges 렌더 height(≈133.7px)에 맞춤.
+      //   121 → 112(CSS) ⇒ 렌더 112×1.02(complete)×1.173(card) ≈ 134px.
+      //   flex-shrink:0 — .resume-medal(height 108) flex 컬럼이 wrapper 를
+      //   108 로 줄이지 못하게 고정(없으면 img 가 badges 보다 작아짐).
+      flex-shrink: 0;
+      width: 112px;
+      height: 112px;
       border-radius: 512px;
       overflow: visible !important;
 
@@ -942,8 +949,9 @@
       }
 
       img {
-        width: 121px;
-        height: 121px;
+        // 비율 유지하며 wrapper height(=badges height) 기준으로 스케일.
+        width: auto;
+        height: 100%;
         display: block;
         object-fit: contain;
         box-shadow: 0px 10px 5px rgba(0, 0, 0, 0.03);
