@@ -1411,9 +1411,15 @@
         background: rgba(0, 0, 0, 0.6);
         overflow: visible;
 
+        // 도장 표시 크기는 원본 PNG 해상도/여백과 무관하게 고정한다.
+        //   원형(오랑캐)·사각(엥크레/팔랑크스) 어느 아트워크든 동일한 박스에
+        //   object-fit: contain 으로 맞춰 시각 크기를 통일한다.
+        //   (구: 69px overflow 해킹 — 오랑캐의 투명 여백에만 맞춰져 있어
+        //    여백 없는 새 사각 도장이 과대 표시되던 원인.)
         img {
-          width: 69px !important;
-          height: 69px !important;
+          width: 52px !important;
+          height: 52px !important;
+          object-fit: contain;
         }
 
         // 도장이 찍혀도 배경 사각형 유지
