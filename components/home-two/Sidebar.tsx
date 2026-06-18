@@ -601,7 +601,7 @@ const Sidebar = () => {
             <div className="notice-box green">
               <Image src="/images/0/cluster 1/Star Badge2.png" alt="" width={25} height={25} className="notice-icon-img" />
               <span className="notice-text">전국청춘성장 클럽, 실무/기업 관리 후원회</span>
-              <Image src="/images/0/cluster 1/실무기업 도장.png" alt="" width={46} height={46} className="notice-stamp" />
+              <Image src="/images/0/cluster 1/실무기업 도장.webp" alt="" width={46} height={46} className="notice-stamp" />
             </div>
           </div>
         </div>

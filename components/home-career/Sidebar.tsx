@@ -3051,7 +3051,7 @@ const Sidebar = () => {
               <div className="notice-box green">
                 <Image src="/images/0/cluster 1/Star Badge2.png" alt="" width={25} height={25} className="notice-icon-img" />
                 <span className="notice-text">{resumeCardSettings?.noticeBottomText || "전국청춘성장 클럽- 기업/실무자 후원 관리 위원회"}</span>
-                <div className={`notice-stamp-wrapper${crewStatus === "Complete" ? " stamped" : ""}`}>{crewStatus === "Complete" && <Image src={resumeCardSettings?.noticeBottomStampImageUrl || "/images/0/cluster 1/실무기업 도장.png"} alt="" width={46} height={46} />}</div>
+                <div className={`notice-stamp-wrapper${crewStatus === "Complete" ? " stamped" : ""}`}>{crewStatus === "Complete" && <Image src={resumeCardSettings?.noticeBottomStampImageUrl || "/images/0/cluster 1/실무기업 도장.webp"} alt="" width={46} height={46} />}</div>
               </div>
             </div>
           </div>
