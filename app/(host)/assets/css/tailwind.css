@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 전역 표 기본 정렬 = 가운데(헤더/셀 통일). @layer base 라 text-left/text-right 유틸 클래스로
+   개별 override 가능(긴 텍스트/로그/JSON/코드/메모/마크다운 예외). 정렬만 — 데이터/로직 무관. */
+@layer base {
+  th,
+  td {
+    text-align: center;
+    vertical-align: middle;
+  }
+}
+
 :root {
   --BUTTON-font-family: "DM Sans", Helvetica;
   --BUTTON-font-size: 14px;
