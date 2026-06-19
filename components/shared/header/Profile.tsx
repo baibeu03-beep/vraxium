@@ -3,8 +3,9 @@ import avatar from "@/public/images/0/profile.png";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import OutsideClickHandler from "react-outside-click-handler";
+import { appSignOut } from "@/lib/auth-logout";
 
 const Profile = () => {
   const { data: session, status } = useSession();
@@ -79,7 +80,7 @@ const Profile = () => {
           </div>
           <hr />
           <div className="profile-dropdown__widget">
-            <button onClick={() => signOut({ callbackUrl: "/" })} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: "8px", color: "inherit", fontSize: "inherit" }}>
+            <button onClick={() => appSignOut((session as { provider?: string } | null)?.provider, "/")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: "8px", color: "inherit", fontSize: "inherit" }}>
               <i className="ti ti-logout"></i>Log Out
             </button>
           </div>

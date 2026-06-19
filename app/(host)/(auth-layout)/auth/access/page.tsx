@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
+import { appSignOut } from "@/lib/auth-logout";
 
 const ACCESS_COPY = {
   pending: {
@@ -26,6 +27,7 @@ const ACCESS_COPY = {
 
 const AccessPage = () => {
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
   const rawStatus = searchParams.get("status");
   const status =
     rawStatus === "pending" || rawStatus === "no-organization" ? rawStatus : "not_registered";
@@ -51,7 +53,12 @@ const AccessPage = () => {
                     <button
                       type="button"
                       className="btn--tertiary"
-                      onClick={() => signOut({ callbackUrl: "/sign-in" })}
+                      onClick={() =>
+                        appSignOut(
+                          (session as { provider?: string } | null)?.provider,
+                          "/sign-in",
+                        )
+                      }
                     >
                       로그아웃
                     </button>

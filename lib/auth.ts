@@ -29,6 +29,9 @@ export const authOptions: AuthOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+      // 로그아웃 시 구글 세션은 유지하되, 재로그인 때 항상 계정 선택 화면을 띄운다.
+      // (구글 전체 로그인 상태는 보존 — Gmail/Drive 등 영향 없음.)
+      authorization: { params: { prompt: "select_account" } },
     }),
     DiscordProvider({
       clientId: process.env.DISCORD_CLIENT_ID || "",

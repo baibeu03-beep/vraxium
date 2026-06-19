@@ -1,7 +1,8 @@
 "use client";
 
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
+import { appSignOut } from "@/lib/auth-logout";
 
 export default function UserMenu() {
   const { data: session, status } = useSession();
@@ -27,7 +28,12 @@ export default function UserMenu() {
     <div className="user-menu">
       <span>환영합니다, {session.user?.name || session.user?.email}님!</span>
       <button
-        onClick={() => signOut({ callbackUrl: "/sign-in" })}
+        onClick={() =>
+          appSignOut(
+            (session as { provider?: string } | null)?.provider,
+            "/sign-in",
+          )
+        }
         className="btn--secondary"
       >
         로그아웃

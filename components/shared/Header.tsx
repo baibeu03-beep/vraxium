@@ -4,7 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Fragment, useEffect, useState } from "react";
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
+import { appSignOut } from "@/lib/auth-logout";
 import Cart from "./Cart";
 import Message from "./header/Message";
 import Notification from "./header/Notification";
@@ -287,7 +288,7 @@ const Header = () => {
                       <i className="ti ti-search"></i>
                     </button>
                     {!isLoading && (session ? (
-                      <button onClick={() => signOut({ callbackUrl: "/" })} className="btn--primary">
+                      <button onClick={() => appSignOut((session as { provider?: string } | null)?.provider, "/")} className="btn--primary">
                         Log Out
                       </button>
                     ) : (
@@ -392,7 +393,7 @@ const Header = () => {
             </div>
             <div className="mobile-menu__options nav-fade">
               {!isLoading && (session ? (
-                <button onClick={() => signOut({ callbackUrl: "/" })} className="btn--primary">
+                <button onClick={() => appSignOut((session as { provider?: string } | null)?.provider, "/")} className="btn--primary">
                   Log Out
                 </button>
               ) : (
