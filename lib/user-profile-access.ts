@@ -88,7 +88,7 @@ async function getApplicantByEmail(supabase: SupabaseClient, email: string) {
   // maybeSingle 이 깨지지 않도록 제외(기존 데이터는 provider null/kakao 뿐이라 결과 불변).
   const { data, error } = await supabase
     .from("applicants")
-    .select("id, name, email, status, applied_date")
+    .select("id, name, email, status, applied_date:created_at")
     .eq("email", email)
     .or("provider.is.null,provider.neq.google")
     .maybeSingle();
@@ -117,7 +117,7 @@ export async function ensurePendingApplicant(
           name: normalizedName,
         })
         .eq("id", existingApplicant.id)
-        .select("id, name, email, status, applied_date")
+        .select("id, name, email, status, applied_date:created_at")
         .single();
 
       if (error) {
@@ -135,10 +135,12 @@ export async function ensurePendingApplicant(
     .insert({
       name: normalizedName,
       email: normalizedEmail,
-      applied_date: new Date().toISOString(),
+      // applicants.provider 는 NOT NULL — kakao(email 매칭) 경로의 신청 row.
+      provider: "kakao",
+      // applied_date 컬럼은 없다(실컬럼 created_at, DEFAULT now()) — 굽지 않는다.
       status: "pending",
     })
-    .select("id, name, email, status, applied_date")
+    .select("id, name, email, status, applied_date:created_at")
     .single();
 
   if (error) {
