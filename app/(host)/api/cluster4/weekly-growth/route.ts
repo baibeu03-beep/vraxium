@@ -20,6 +20,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-server";
 import { seasonLabel } from "@/lib/cluster4-types";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
+import { pageSlugFromReferer, applyPageSlug } from "@/lib/pageSlugForward";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -291,6 +292,7 @@ async function fetchResumeSeasonStatusByKey(
     }
     const targetUrl = new URL(`${adminApiBaseUrl}/api/cluster1/resume`);
     targetUrl.searchParams.set("userId", userId);
+    applyPageSlug(targetUrl, pageSlugFromReferer(request));
     const headers = new Headers();
     headers.set("Content-Type", "application/json");
     headers.set("x-internal-api-key", process.env.INTERNAL_API_KEY ?? "");

@@ -6,6 +6,7 @@ import { getCachedTeams, getCachedParts, getCachedActivityTypes } from "@/lib/ca
 import { getProfileLookupKey, resolveUserProfileAccess } from "@/lib/user-profile-access";
 import { seasonLabel } from "@/lib/cluster4-types";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
+import { pageSlugFromReferer, applyPageSlug } from "@/lib/pageSlugForward";
 import { DemoModeError, resolveDemoProfileUserId } from "@/lib/demoMode";
 import { requireOwnerOrAdmin } from "@/lib/api-auth";
 import { resolveMembershipDisplay } from "@/lib/membership";
@@ -189,6 +190,7 @@ async function fetchClubRankAvgPercentile(request: NextRequest, userId: string |
 
   const targetUrl = new URL(`${adminApiBaseUrl}/api/cluster3/club-rank`);
   targetUrl.searchParams.set("userId", userId);
+  applyPageSlug(targetUrl, pageSlugFromReferer(request));
 
   const internalApiKey = process.env.INTERNAL_API_KEY;
   if (!internalApiKey) console.warn("[profile] INTERNAL_API_KEY missing — club-rank 호출");
@@ -243,6 +245,7 @@ async function fetchAdminSuccessWeeks(request: NextRequest, userId: string | nul
 
   const targetUrl = new URL(`${adminApiBaseUrl}/api/cluster3/stats-cards`);
   targetUrl.searchParams.set("userId", userId);
+  applyPageSlug(targetUrl, pageSlugFromReferer(request));
 
   const internalApiKey = process.env.INTERNAL_API_KEY;
   if (!internalApiKey) console.warn("[profile] INTERNAL_API_KEY missing — stats-cards 호출");
@@ -298,6 +301,7 @@ async function fetchAdminCluster1Resume(request: NextRequest, userId: string | n
 
   const targetUrl = new URL(`${adminApiBaseUrl}/api/cluster1/resume`);
   targetUrl.searchParams.set("userId", userId);
+  applyPageSlug(targetUrl, pageSlugFromReferer(request));
 
   const internalApiKey = process.env.INTERNAL_API_KEY;
   if (!internalApiKey) console.warn("[profile] INTERNAL_API_KEY missing — cluster1 resume 호출");

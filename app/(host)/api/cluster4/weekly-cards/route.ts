@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-server";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
+import { pageSlugFromReferer, applyPageSlug } from "@/lib/pageSlugForward";
 import type { Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
 import { resolveMembershipDisplay } from "@/lib/membership";
 import { clampAdminOutputs } from "@/lib/cluster4-admin-output-clamp";
@@ -226,6 +227,9 @@ export async function GET(request: NextRequest) {
   const sourceUrl = new URL(request.url);
   const targetUrl = new URL(`${adminApiBaseUrl}/api/cluster4/weekly-cards`);
   targetUrl.search = sourceUrl.search;
+  // 페이지 slug ↔ 실제 org 접근 게이트(admin)용 — Referer(현재 페이지 URL)의 org suffix 를
+  // canonical pageSlug 로 환원해 upstream 에 주입한다(없으면 무변경 → fail-open).
+  applyPageSlug(targetUrl, pageSlugFromReferer(request));
   const targetUrlString = targetUrl.toString();
 
   console.log("[cluster4/weekly-cards] upstream target =", targetUrlString);

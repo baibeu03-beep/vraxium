@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
+import { pageSlugFromReferer, applyPageSlug } from "@/lib/pageSlugForward";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -90,6 +91,7 @@ export async function GET(request: NextRequest) {
 
   const targetUrl = new URL(`${adminApiBaseUrl}/api/cluster3/stats-cards`);
   targetUrl.searchParams.set("userId", userId);
+  applyPageSlug(targetUrl, pageSlugFromReferer(request));
   const targetUrlString = targetUrl.toString();
 
   const internalApiKey = process.env.INTERNAL_API_KEY;
