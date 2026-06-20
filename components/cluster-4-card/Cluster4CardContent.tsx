@@ -12289,9 +12289,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       );
                     })}
                   </div>
-                  {/* 라인코드: 실제 개설 라인(백엔드 DTO) lineCode 만 표시. 미배정/placeholder(lineCode 없음)는
-                      하드코딩 legacy catalog 코드(IF99A-NR####)를 노출하지 않고 "-" 처리. */}
-                  <span className="line-code image-line-code">{workInfoMatchedLine?.lineCode || "-"}</span>
+                  {/* 라인코드: 고객 표시용 공식 코드(DTO displayLineCode = /admin/lines/info 운영자 코드
+                      IFBS-NN000X) 만 표시. 내부 lineCode(info-OK-wisdom-2026w10)는 노출 금지(매칭 전용).
+                      미배정/미상(displayLineCode 없음)은 하드코딩 legacy(IF99A-NR####) 미노출 — "-" 처리. */}
+                  <span className="line-code image-line-code">{(workInfoMatchedLine?.displayLineCode as string | null | undefined) || "-"}</span>
                 </div>
               </div>
             </div>
