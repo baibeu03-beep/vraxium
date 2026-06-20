@@ -747,6 +747,18 @@ export async function GET(request: NextRequest) {
       profile.membership_level = resolvedMembership.membershipLevel;
       profile.membership_state = resolvedMembership.membershipState;
 
+      // 운영진(팀장/앰배서더)은 등급(membership_level) 체계 밖이라 level="일반"이 정상이다
+      //   (운영진 정체성 SoT = user_profiles.role). level 만 보던 소비처(이력서 클래스 배지·
+      //   cluster-4-card 실무 경험 관리(5) 슬롯 잠금 판정)가 팀장을 "일반"으로 떨어뜨려 관리 슬롯이
+      //   부당하게 잠겼다. → admin classLabel(role, level) 과 동일 규칙으로 role 을 병합해
+      //   membership_level 응답값을 "운영진(팀장/앰배서더)"로 보정한다(프론트 렌더 로직 무변경).
+      //   (part_leader/agent 인데 level="일반" 인 경우는 운영진 아님 → 보정 없음, 기존 정책 유지.)
+      if (profile.role === "team_leader") {
+        profile.membership_level = "운영진(팀장)";
+      } else if (profile.role === "ambassador") {
+        profile.membership_level = "운영진(앰배서더)";
+      }
+
       // weeks counters
       profile.approved_weeks = growthResult.data?.approved_weeks ?? 0;
       profile.cumulative_weeks = growthResult.data?.cumulative_weeks ?? 0;
