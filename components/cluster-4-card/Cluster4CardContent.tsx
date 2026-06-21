@@ -539,6 +539,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   //  오인해 "주차 평판은 타 크루만이 작성할 수 있습니다" 로 잘못 막혔다.)
   const isOwner = session?.user?.isAdmin
     || (demoUserId ? urlUserId === demoUserId : (!urlUserId || session?.user?.id === urlUserId));
+  // session(로그인 viewer)이 "이 페이지의 주인"인가 — 인적사항 폴백에 viewer 데이터를 쓸지 결정.
+  //   본인 카드(urlUserId 없음 또는 viewer.id 와 동일)면 true. 타 크루 카드 열람이면 false →
+  //   페이지 주인 프로필 로딩 전 viewer 이름이 모달에 잠깐 노출되는 것을 막는다(테스트/더미 방지).
+  const sessionIsPageOwner = !urlUserId || session?.user?.id === urlUserId;
   const isAdmin = !!session?.user?.isAdmin;
   // 순수 어드민 프리뷰(admin=true 이면서 demoUserId 없음)에만 적용되는 단일 기준 플래그.
   // 테스트 유저 모드(demoUserId)는 "특정 테스트 유저로 로그인한 일반 고객 모드"와 100% 동일 경로를 타야 하므로,
@@ -617,6 +621,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     // (서버에서 비로그인이면 자동 마스킹되므로 안전.)
     const targetId = urlUserId || session?.user?.id;
     if (!targetId) return;
+    // 페이지 주인(targetId)이 바뀌면 직전 크루의 프로필을 즉시 비운다 — 새 프로필 도착 전까지
+    // 모달/인적사항 카드가 "이전에 보던 크루(예: 테스트 계정) 이름"을 잠깐 노출하지 않도록 한다.
+    // (빈 값이면 화면은 "—" placeholder 로 떨어지고, 실제 데이터 도착 시에만 채워진다.)
+    setReviewerProfile({ displayName: "", profilePhotoUrl: "", gender: "", age: null, school: "", major: "", vision: "", tagline: "" });
     let cancelled = false;
     (async () => {
       try {
@@ -6319,10 +6327,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         profileTagline: reviewerProfile.tagline,
         vision: reviewerProfile.vision,
       },
-      user: session?.user ?? null,
+      // 타 크루 카드 열람(urlUserId 가 viewer 본인이 아님) 시에는 session(=viewer) 을 인적사항
+      // 폴백으로 쓰지 않는다. 쓰면 페이지 주인 프로필(reviewerProfile)이 도착하기 전에 viewer
+      // 이름(예: 어드민/테스트 계정)이 모달에 잠깐 노출된다. 본인 카드(urlUserId 없음 또는
+      // == viewer)일 때만 session 폴백을 사용한다(본인=정확한 데이터, 즉시 표시 OK). 타 크루
+      // 카드는 reviewerProfile 도착 전까지 빈 값("—")으로 둔다.
+      user: sessionIsPageOwner ? (session?.user ?? null) : null,
       weeklyCardMeta,
     });
-  }, [isDemoMode, reviewerProfile, teamName, partName, membershipLevel, session?.user, weeklyCardMeta]);
+  }, [isDemoMode, reviewerProfile, teamName, partName, membershipLevel, sessionIsPageOwner, session?.user, weeklyCardMeta]);
 
   // 페이지 주인 역할 배지(tag-role) 단일 출처.
   //   우선순위: 명시 role(roleLabel: user_role_history/profile.role) → 멤버십 등급
