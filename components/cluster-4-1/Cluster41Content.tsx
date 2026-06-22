@@ -397,7 +397,8 @@ const Cluster41Content = () => {
     name: string;
     currentWeek: number;
     isClubBreak: boolean;
-    holidayName: string | null;
+    // 전환 주차 여부 — 서버(/api/profile) canonical 값. 고객 문구를 고정 텍스트로 분기한다.
+    isTransition: boolean;
     isBreakSeason: boolean;
     fromSeason: string | null;
     toSeason: string | null;
@@ -903,7 +904,7 @@ const Cluster41Content = () => {
                   ) : currentSeasonInfo?.isBreakSeason ? (
                     <>현재 클럽은, <strong>{currentSeasonInfo.year}년 {currentSeasonInfo.fromSeason} 시즌</strong>에서 <strong>{currentSeasonInfo.year}년 {currentSeasonInfo.toSeason} 시즌</strong>으로 가는 휴식(시즌 전환) 중에 있습니다.</>
                   ) : (
-                    <>현재 클럽은, <strong>{currentSeasonInfo ? `${currentSeasonInfo.year}년 ${currentSeasonInfo.name} 시즌, ${currentSeasonInfo.currentWeek}주차` : '로딩 중...'}</strong>를 {currentSeasonInfo?.isClubBreak ? `휴식 (${currentSeasonInfo.holidayName || '공식'})` : '진행'} 중에 있습니다.</>
+                    <>현재 클럽은, <strong>{currentSeasonInfo ? `${currentSeasonInfo.year}년 ${currentSeasonInfo.name} 시즌, ${currentSeasonInfo.currentWeek}주차` : '로딩 중...'}</strong>를 {currentSeasonInfo?.isTransition ? '전환 준비' : currentSeasonInfo?.isClubBreak ? '휴식 (공식)' : '진행'} 중에 있습니다.</>
                   )}
                 </p>
               </div>

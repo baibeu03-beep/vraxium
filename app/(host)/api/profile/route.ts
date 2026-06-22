@@ -11,6 +11,7 @@ import { DemoModeError, resolveDemoProfileUserId } from "@/lib/demoMode";
 import { requireOwnerOrAdmin } from "@/lib/api-auth";
 import { resolveMembershipDisplay } from "@/lib/membership";
 import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confirmed-success-weeks";
+import { isTransitionWeek } from "@/lib/cluster4-transition-week";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -1220,7 +1221,8 @@ export async function GET(request: NextRequest) {
       name: string;
       currentWeek: number;
       isClubBreak: boolean;
-      holidayName: string | null;
+      // 전환 주차(봄·가을 17주 / 여름·겨울 9주) 여부 — 고객 문구를 고정/정제 텍스트로 분기하기 위함.
+      isTransition: boolean;
       isBreakSeason: boolean;
       fromSeason: string | null;
       toSeason: string | null;
@@ -1241,15 +1243,20 @@ export async function GET(request: NextRequest) {
         }
         displayName = "시즌 전환";
       }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawWeekNumber = (currentWeekRow as any).week_number;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawOfficialRest = (currentWeekRow as any).is_official_rest || false;
+      // 전환 주차는 휴식(공식)으로 계산·표시하지 않는다(카드/배지와 동일 기준).
+      const transition = isTransitionWeek(rawSeasonType, rawWeekNumber);
       currentSeasonInfo = {
         year: sd?.year || 0,
         name: displayName,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        currentWeek: (currentWeekRow as any).week_number,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        isClubBreak: (currentWeekRow as any).is_official_rest || false,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        holidayName: (currentWeekRow as any).holiday_name || null,
+        currentWeek: rawWeekNumber,
+        isClubBreak: transition ? false : rawOfficialRest,
+        isTransition: transition,
+        // 운영 비고(weeks.holiday_name)는 고객 노출 문구에 사용하지 않는다 —
+        //   고객용 고정/정제 텍스트만 사용하므로 DTO 에서 아예 내려보내지 않는다.
         isBreakSeason,
         fromSeason,
         toSeason,
