@@ -11,7 +11,7 @@ import { DemoModeError, resolveDemoProfileUserId } from "@/lib/demoMode";
 import { requireOwnerOrAdmin } from "@/lib/api-auth";
 import { resolveMembershipDisplay } from "@/lib/membership";
 import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confirmed-success-weeks";
-import { isTransitionWeek } from "@/lib/cluster4-transition-week";
+import { isTransitionWeek, getTransitionSeasonSpan } from "@/lib/cluster4-transition-week";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -422,7 +422,11 @@ function mapAdminSeasonRecordsToSeasonHistories(adminResume: any | null | undefi
       ...record,
       id: historyId,
       season_id: seasonId,
-      role_in_season: stringField(record, ["roleInSeason", "role_in_season", "role", "roleLabel", "membershipLevel"]),
+      // 시즌별 직책(포지션) = admin getCluster1Resume DTO 의 position(시즌별 실제 이력 산정값).
+      //   2026-06-22: position 을 최우선으로 매핑(종전엔 키 목록에 position 이 없어 admin 의
+      //   시즌별 직책이 프론트로 전달되지 않았다). 프론트는 이 값을 그대로 렌더 — 현재 role/
+      //   membership 으로 과거 시즌을 재계산/덮어쓰지 않는다.
+      role_in_season: stringField(record, ["position", "positionLabel", "roleInSeason", "role_in_season", "role", "roleLabel", "membershipLevel"]),
       approved_weeks: approvedWeeks,
       total_weeks: totalWeeks,
       progress_status: progressStatus,
@@ -1226,14 +1230,26 @@ export async function GET(request: NextRequest) {
       isBreakSeason: boolean;
       fromSeason: string | null;
       toSeason: string | null;
+      // 전환 문구의 연도(겨울→다음 연도 봄 처럼 연도가 달라질 수 있어 별도 제공).
+      fromYear: number | null;
+      toYear: number | null;
     } | null = null;
     if (currentWeekRow) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sd = (currentWeekRow as any).season_definitions;
       const rawSeasonType = String(sd?.season_type || "");
       const isBreakSeason = rawSeasonType.includes("break");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawWeekNumber = (currentWeekRow as any).week_number;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rawOfficialRest = (currentWeekRow as any).is_official_rest || false;
+      // 전환 주차는 휴식(공식)으로 계산·표시하지 않는다(카드/배지와 동일 기준).
+      const transition = isTransitionWeek(rawSeasonType, rawWeekNumber);
+      const seasonYear = sd?.year || 0;
       let fromSeason: string | null = null;
       let toSeason: string | null = null;
+      let fromYear: number | null = null;
+      let toYear: number | null = null;
       let displayName = slFn(rawSeasonType);
       if (isBreakSeason) {
         const segs = rawSeasonType.replace("_break", "").split("_");
@@ -1241,16 +1257,25 @@ export async function GET(request: NextRequest) {
           fromSeason = slFn(segs[0]);
           toSeason = slFn(segs[1]);
         }
+        fromYear = seasonYear;
+        toYear = seasonYear;
         displayName = "시즌 전환";
+      } else if (transition) {
+        // 전환 주차(봄·가을 17주 / 여름·겨울 9주): season_type 은 break 가 아닌 단일 시즌
+        //   (spring 등)이라 fromSeason/toSeason 이 비어 있다. 고객 문구
+        //   "{현재시즌}에서, {다음시즌}으로 전환하는, 휴식(전환 준비)…" 을 구성하기 위해
+        //   현재 시즌 → 다음 시즌(연도 포함)을 공용 유틸(getTransitionSeasonSpan)로 계산한다.
+        //   시즌명은 절대 하드코딩하지 않으며, 겨울→다음 연도 봄 처럼 연도가 달라질 수 있다.
+        const span = getTransitionSeasonSpan(rawSeasonType, seasonYear);
+        if (span) {
+          fromSeason = span.fromSeason;
+          toSeason = span.toSeason;
+          fromYear = span.fromYear;
+          toYear = span.toYear;
+        }
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawWeekNumber = (currentWeekRow as any).week_number;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawOfficialRest = (currentWeekRow as any).is_official_rest || false;
-      // 전환 주차는 휴식(공식)으로 계산·표시하지 않는다(카드/배지와 동일 기준).
-      const transition = isTransitionWeek(rawSeasonType, rawWeekNumber);
       currentSeasonInfo = {
-        year: sd?.year || 0,
+        year: seasonYear,
         name: displayName,
         currentWeek: rawWeekNumber,
         isClubBreak: transition ? false : rawOfficialRest,
@@ -1260,6 +1285,8 @@ export async function GET(request: NextRequest) {
         isBreakSeason,
         fromSeason,
         toSeason,
+        fromYear,
+        toYear,
       };
     }
 
