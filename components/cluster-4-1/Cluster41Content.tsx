@@ -402,6 +402,9 @@ const Cluster41Content = () => {
     isBreakSeason: boolean;
     fromSeason: string | null;
     toSeason: string | null;
+    // 전환 문구 연도(겨울→다음 연도 봄 처럼 from/to 연도가 다를 수 있음).
+    fromYear: number | null;
+    toYear: number | null;
   } | null>(null);
 
   interface GrowthPeriodStats {
@@ -896,6 +899,7 @@ const Cluster41Content = () => {
                   <span className="collection-label">Add new passion, hardship and growth</span>
                 </div>
                 <p className="collection-text">
+                  <span className="collection-text-inner">
                   {!summaryReady ? (
                     <>
                       <Skeleton width="100%" height={14} radius={4} style={{ display: 'block', marginBottom: 6 }} />
@@ -903,9 +907,16 @@ const Cluster41Content = () => {
                     </>
                   ) : currentSeasonInfo?.isBreakSeason ? (
                     <>현재 클럽은, <strong>{currentSeasonInfo.year}년 {currentSeasonInfo.fromSeason} 시즌</strong>에서 <strong>{currentSeasonInfo.year}년 {currentSeasonInfo.toSeason} 시즌</strong>으로 가는 휴식(시즌 전환) 중에 있습니다.</>
+                  ) : currentSeasonInfo?.isTransition && currentSeasonInfo.fromSeason && currentSeasonInfo.toSeason ? (
+                    // 전환 주차: 현재 시즌 → 다음 시즌(연도 포함) 동적 계산 문구(1줄). 시즌명 하드코딩·비고 미사용.
+                    // 연도는 화면 표시만 2자리(26년)로 변환 — DTO 값(fromYear/toYear)은 그대로 사용하고
+                    // % 100 으로 끝 2자리만 노출(겨울→다음 해: 27년 봄 처럼 연도 차이 유지).
+                    // 문구는 카드 폭(739px) 1줄에 18px 폰트로 들어가도록 "…전환 준비 중입니다"로 축약.
+                    <>현재 클럽은, <strong>{String((currentSeasonInfo.fromYear ?? currentSeasonInfo.year) % 100).padStart(2, "0")}년 {currentSeasonInfo.fromSeason} 시즌</strong>에서, <strong>{String((currentSeasonInfo.toYear ?? currentSeasonInfo.year) % 100).padStart(2, "0")}년 {currentSeasonInfo.toSeason} 시즌</strong>으로 전환 준비 중입니다.</>
                   ) : (
-                    <>현재 클럽은, <strong>{currentSeasonInfo ? `${currentSeasonInfo.year}년 ${currentSeasonInfo.name} 시즌, ${currentSeasonInfo.currentWeek}주차` : '로딩 중...'}</strong>를 {currentSeasonInfo?.isTransition ? '전환 준비' : currentSeasonInfo?.isClubBreak ? '휴식 (공식)' : '진행'} 중에 있습니다.</>
+                    <>현재 클럽은, <strong>{currentSeasonInfo ? `${currentSeasonInfo.year}년 ${currentSeasonInfo.name} 시즌, ${currentSeasonInfo.currentWeek}주차` : '로딩 중...'}</strong>를 {currentSeasonInfo?.isClubBreak ? '휴식 (공식)' : '진행'} 중에 있습니다.</>
                   )}
+                  </span>
                 </p>
               </div>
             </div>

@@ -669,6 +669,10 @@
             line-height: 30px;
             white-space: nowrap;
 
+            .collection-text-inner {
+              display: block;
+            }
+
             strong {
               font-size: 1.25rem;
               color: #ff9c9c;
