@@ -6,10 +6,62 @@
 //       내려오는 경우가 있으나, 이 주차들은 휴식(공식)으로 계산·표시하면 안 된다.
 //       → isOfficialRestWeek() 에서 전환 주차를 먼저 제외한 뒤 기존 판정을 따른다.
 
+import { seasonLabel } from "@/lib/cluster4-types";
+
 export type Cluster4BaseSeason = "spring" | "summer" | "fall" | "winter";
 
 // 전환 주차 배지/상태 표기에 쓰는 라벨 (휴식(공식) 대신 노출).
 export const TRANSITION_WEEK_LABEL = "전환 주차";
+
+// 시즌 순환(다음 시즌) 매핑 — 시즌명 하드코딩 금지를 위한 단일 출처.
+//   spring → summer → fall → winter → spring(다음 연도).
+export const NEXT_BASE_SEASON: Record<Cluster4BaseSeason, Cluster4BaseSeason> = {
+  spring: "summer",
+  summer: "fall",
+  fall: "winter",
+  winter: "spring",
+};
+
+// season_type/season_code(spring/summer/fall/autumn/winter) 또는 한글 라벨을
+//   받아 다음 base 시즌을 반환한다. 정규화 실패 시 null.
+export function nextBaseSeason(season: string | null | undefined): Cluster4BaseSeason | null {
+  const s = normalizeSeason(season);
+  return s ? NEXT_BASE_SEASON[s] : null;
+}
+
+export interface TransitionSeasonSpan {
+  fromSeasonCode: Cluster4BaseSeason;
+  toSeasonCode: Cluster4BaseSeason;
+  fromSeason: string; // 한글 라벨 (봄/여름/가을/겨울)
+  toSeason: string;
+  fromYear: number;
+  toYear: number;
+}
+
+/**
+ * 전환 주차의 "현재 시즌 → 다음 시즌"(연도 포함)을 동적으로 계산하는 공용 함수.
+ * - 시즌명 하드코딩 금지: season_type/season_code 또는 한글 라벨을 입력받아
+ *   normalizeSeason 으로 정규화한 뒤 NEXT_BASE_SEASON 순환으로 다음 시즌을 구한다.
+ * - winter → 다음 연도 spring (연도 +1). 그 외 시즌은 동일 연도.
+ * - 반환 라벨은 seasonLabel(공용) 로 변환 → "봄/여름/가을/겨울". 정규화 실패 시 null.
+ */
+export function getTransitionSeasonSpan(
+  season: string | null | undefined,
+  year: number,
+): TransitionSeasonSpan | null {
+  const from = normalizeSeason(season);
+  if (from == null || !Number.isFinite(year)) return null;
+  const to = NEXT_BASE_SEASON[from];
+  const toYear = from === "winter" ? year + 1 : year;
+  return {
+    fromSeasonCode: from,
+    toSeasonCode: to,
+    fromSeason: seasonLabel(from),
+    toSeason: seasonLabel(to),
+    fromYear: year,
+    toYear,
+  };
+}
 
 // 영문 키(spring/summer/fall/winter), 한글 라벨(봄/여름/가을/겨울),
 // break 라벨(spring_summer_break 등)·접두 라벨을 모두 흡수해 base 시즌으로 정규화한다.
