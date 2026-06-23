@@ -1614,6 +1614,7 @@ const Cluster4Content = () => {
           }> | null;
           areaSixCirclesBySeason?: Record<string, CircleDto> | null;
           seasonAreaProgressBySeason?: Record<string, AreaProgressItem[]> | null;
+          seasonActivityStatusesBySeason?: Record<string, SeasonActivityStatusDto[]> | null;
         }>(`/api/cluster4/weekly-cards${qs}`).catch(() => null);
         if (cancelled) return;
         const c = json?.areaSixCircles ?? null;
@@ -1645,12 +1646,19 @@ const Cluster4Content = () => {
             ? json.seasonAreaProgressBySeason
             : null,
         );
+        // area-8 시즌 상태 시즌별 맵 — 카드 roleLabel SoT(= cluster-4-card 배지 동일). 선택 시즌 렌더.
+        setSeasonActivityStatusesBySeason(
+          json?.seasonActivityStatusesBySeason && typeof json.seasonActivityStatusesBySeason === "object"
+            ? json.seasonActivityStatusesBySeason
+            : {},
+        );
       } catch {
         if (!cancelled) {
           setSnapshotCircles(null);
           setSnapshotAreaProgress(null);
           setSnapshotCirclesBySeason(null);
           setSnapshotAreaProgressBySeason(null);
+          setSeasonActivityStatusesBySeason({});
         }
       } finally {
         if (!cancelled) markSectionLoaded("snapshot");
@@ -1732,6 +1740,12 @@ const Cluster4Content = () => {
     statusLabel: string;
   }
   const [seasonActivityStatuses, setSeasonActivityStatuses] = useState<SeasonActivityStatusDto[]>([]);
+  // area-8 시즌별 맵(seasonKey → 상태 구간) — cluster-4-1 선택 시즌과 연동(선택 시즌 기준 표시).
+  //   SoT = user_position_histories(주차단위). 한 시즌 내 상태 변화는 구간(다건)으로 보존된다.
+  //   area-6/area-7 의 *BySeason 맵과 동일 패턴. 선택 시즌 키로 조회해 렌더(현재 시즌 고정값 재사용 금지).
+  const [seasonActivityStatusesBySeason, setSeasonActivityStatusesBySeason] = useState<
+    Record<string, SeasonActivityStatusDto[]>
+  >({});
 
   // status-badge 텍스트 — 판정은 공용 seasonSummaryToSeasonKey(lib/cluster4-status-label),
   // 문구는 SEASON_STATUS_TEXT 5종(시즌 진행 중/시즌 성공/시즌 중단/시즌 휴식/시즌 중 졸업)만 노출.
@@ -1858,7 +1872,14 @@ const Cluster4Content = () => {
   const seasonActivityStatusItems: SeasonActivityStatusDto[] = (() => {
     // 0) 휴식 시즌 void 모드 — 활동 이력 자체가 없는 시즌이므로 빈 배열 → placeholder 3줄.
     if (isVoidSeason) return [];
-    // 1) 백엔드 DTO
+    // 0-b) 선택 시즌 기준 — cluster-4-1 선택 시즌(selectedSeasonKey)의 상태 구간을 우선한다.
+    //   백엔드 seasonActivityStatusesBySeason(user_position_histories SoT). 시즌 내 상태 변화가
+    //   여러 개면 그대로 다건(구간) 표시 — 최신 상태 하나로 덮어쓰지 않는다.
+    if (selectedSeasonKey) {
+      const seg = seasonActivityStatusesBySeason[selectedSeasonKey];
+      if (Array.isArray(seg) && seg.length > 0) return seg;
+    }
+    // 1) 백엔드 단건(현재 시즌) DTO
     if (seasonActivityStatuses.length > 0) return seasonActivityStatuses;
     // 2) seasonRoles 패스스루(이미 계산된 값 → DTO 모양 rename)
     const fromRoles = (currentSeason.seasonRoles || []).map((r) => ({
@@ -1917,6 +1938,7 @@ const Cluster4Content = () => {
         setSeasonPointSummary(json?.data?.seasonPointSummary ?? null);
         setSeasonSummaries(Array.isArray(json?.data?.seasonSummaries) ? json.data.seasonSummaries : []);
         // area-8-season-status — 백엔드 DTO 그대로(teamLabel/partLabel/statusLabel). 없으면 [].
+        //   (시즌별 맵 seasonActivityStatusesBySeason 은 weekly-cards 응답에서 받는다 — 카드 SoT 동일.)
         setSeasonActivityStatuses(Array.isArray(json?.data?.seasonActivityStatuses) ? json.data.seasonActivityStatuses : []);
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;

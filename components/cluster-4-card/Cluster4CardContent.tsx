@@ -6345,13 +6345,21 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   //   빈 문자열·"-"·"—" 는 무효로 보고 다음 후보로 넘어간다(placeholder 노출 방지).
   const ownerRoleBadge = useMemo(() => {
     if (isDemoMode) return "앰배서더";
-    const candidates = [roleLabel, formatMembershipRoleLabel(ownerPersonalInfo.membershipLevel)];
+    // 카드(시즌) 기준 단계 우선 — weeklyCardMeta.roleLabel 은 백엔드 snapshot SoT
+    //   (user_position_histories, 이력서 resume-activities 와 동일 SoT). 그 카드 시즌 "당시 단계"를
+    //   담으므로 현재 role/membership(roleLabel·membershipLevel)보다 우선해야 과거 주차 카드가
+    //   현재 단계로 덮이지 않는다. 헤더 배지(headerRoleLabel)와 동일 source.
+    const candidates = [
+      weeklyCardMeta?.roleLabel,
+      roleLabel,
+      formatMembershipRoleLabel(ownerPersonalInfo.membershipLevel),
+    ];
     for (const c of candidates) {
       const s = (c ?? "").trim();
       if (s && s !== "-" && s !== "—") return s;
     }
     return "일반";
-  }, [isDemoMode, roleLabel, ownerPersonalInfo.membershipLevel]);
+  }, [isDemoMode, weeklyCardMeta, roleLabel, ownerPersonalInfo.membershipLevel]);
 
   // 팀/파트 특수 표기(운영진·온보딩·팀장(managedTeam)) 분기 입력값: 어드민 DTO 우선, null/undefined 면 로컬 상태 fallback.
   const headerIsOnboarding = weeklyCardMeta?.isOnboarding ?? isOnboardingWeek;
@@ -7720,6 +7728,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     activityTypeId: string;
     code: string;
     lineCode: string;
+    // 고객 표시용 공식 코드(DTO displayLineCode). 없으면 null → code-tag 숨김(내부 code fallback 금지).
+    displayCode: string | null;
     lineName: string;
     badge: string;
     title: string;
@@ -7786,6 +7796,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       activityTypeId,
       code: lineCode ?? mapping?.lineCode ?? "",
       lineCode: lineCode ?? mapping?.lineCode ?? "",
+      // 고객 표시용 공식 코드 — DTO displayLineCode 단일 출처. 없으면 null(숨김).
+      displayCode: (line.displayLineCode as string | null | undefined) ?? null,
       lineName,
       badge: lineName,
       // admin 개설값 — top-level mainTitle 우선.
@@ -7842,6 +7854,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       activityTypeId,
       code: mapping.lineCode,
       lineCode: mapping.lineCode,
+      // legacy 하드코딩 fallback(DTO competency 라인이 0개일 때만 — 데모/회귀). mapping.lineCode 는
+      // 큐레이션된 표시용 친화 코드(내부 생성 코드 아님)이므로 그대로 표시한다.
+      displayCode: mapping.lineCode,
       lineName: mapping.lineName,
       badge: mapping.lineName,
       title: activity?.title || mapping.mainTitle,
@@ -7915,6 +7930,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     activityTypeId: "",
     code: "-",
     lineCode: "-",
+    displayCode: null,
     lineName: "-",
     badge: "-",
     title: "",
@@ -8118,6 +8134,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       experienceSlotOrder: typeof expMatchedLine?.experienceSlotOrder === "number" ? expMatchedLine.experienceSlotOrder : null,
       canEdit: typeof expMatchedLine?.canEdit === "boolean" ? expMatchedLine.canEdit : null,
       code: expMatchedLine?.lineCode || activityType?.line_code || fallbackMapping?.lineCode || "-",
+      // 고객 표시용 공식 코드 — DTO displayLineCode 단일 출처(내부 code fallback 금지). 없으면 null(숨김).
+      displayCode: (expMatchedLine?.displayLineCode as string | null | undefined) ?? null,
       // 라인명(badge): matchedLine.lineName(master.line_name) → activityTypeName → legacy → "-". (mainTitle 금지)
       badge:
         (expMatchedLine?.lineName as string | null | undefined) ||
@@ -8558,6 +8576,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       id: index + 1,
       // code-tag: projectCode ?? lineCode
       code: line.projectCode ?? line.lineCode ?? "-",
+      // 고객 표시용 공식 코드 — DTO displayLineCode 단일 출처(내부 code fallback 금지). 없으면 null(숨김).
+      displayCode: (line.displayLineCode as string | null | undefined) ?? null,
       // ── sponsor-card 기업/감독자: DTO line 필드 1순위, 부재 시 legacy careerRecord 보강 (2026-06-01 v2) ──
       // badge(=기업명)/icon(=로고)/supervisor* 의 "기업명"/"-"/placeholder 최종 fallback 은 UI 단에서 적용.
       badge: (line.companyName as string | null | undefined) || record?.company_name || "",
@@ -9886,7 +9906,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     </div>
                     <div className="card-header-area">
                       <div className="card-header-row">
-                        <span className="code-tag">{isEmpty ? "-" : card.code}</span>
+                        <span className="code-tag">{isEmpty ? "-" : ((card as { displayCode?: string | null }).displayCode ?? "")}</span>
                         <span className="badge-tag">{isEmpty ? "-" : card.badge}</span>
                       </div>
                       <div className="card-rating-row">
@@ -10072,7 +10092,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           <span className="verified-text">Verified</span>
                         </>
                       )}
-                      <span className="code-tag">{card.lineCode}</span>
+                      <span className="code-tag">{(card as { displayCode?: string | null }).displayCode ?? ""}</span>
                       <span className="info-tag">{card.lineName}</span>
                     </div>
                     <p className="main-desc">{usePlaceholder ? "-" : card.title || "-"}</p>
@@ -10206,7 +10226,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         <div className="card-header-row">
                           <img src="/images/0/cluster4/icon/icon - 10 - clock.png" alt="verified" className="verified-icon" />
                           <span className="verified-text">Verified</span>
-                          <span className="code-tag">{isEmpty ? "-" : card.code}</span>
+                          <span className="code-tag">{isEmpty ? "-" : ((card as { displayCode?: string | null }).displayCode ?? "")}</span>
                         </div>
                         <div className="grade-row">
                           {["S", "A", "B", "C", "D"].map((g) => (
@@ -10760,7 +10780,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           <span className="modal-card-tag tag--purple">{card.badge}</span>
                         </div>
                         <div className="modal-code-badge">
-                          <span>{card.code}</span>
+                          <span>{(card as { displayCode?: string | null }).displayCode ?? ""}</span>
                         </div>
                       </div>
                       <div className="modal-header-right">
@@ -10989,7 +11009,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                             <span className={`modal-card-tag ${card.grade === "S" ? "tag--yellow" : card.grade === "A" ? "tag--green" : card.grade === "B" ? "tag--cyan" : "tag--purple"}`}>{card.badge.replace("|", " - ")}</span>
                           </div>
                           <div className="modal-code-badge">
-                            <span>{card.code}</span>
+                            <span>{(card as { displayCode?: string | null }).displayCode ?? ""}</span>
                           </div>
                         </div>
                         <div className="modal-header-right">
