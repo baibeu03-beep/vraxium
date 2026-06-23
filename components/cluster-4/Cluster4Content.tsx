@@ -1872,23 +1872,33 @@ const Cluster4Content = () => {
   const seasonActivityStatusItems: SeasonActivityStatusDto[] = (() => {
     // 0) 휴식 시즌 void 모드 — 활동 이력 자체가 없는 시즌이므로 빈 배열 → placeholder 3줄.
     if (isVoidSeason) return [];
-    // 0-b) 선택 시즌 기준 — cluster-4-1 선택 시즌(selectedSeasonKey)의 상태 구간을 우선한다.
-    //   백엔드 seasonActivityStatusesBySeason(user_position_histories SoT). 시즌 내 상태 변화가
-    //   여러 개면 그대로 다건(구간) 표시 — 최신 상태 하나로 덮어쓰지 않는다.
-    if (selectedSeasonKey) {
-      const seg = seasonActivityStatusesBySeason[selectedSeasonKey];
-      if (Array.isArray(seg) && seg.length > 0) return seg;
-    }
-    // 1) 백엔드 단건(현재 시즌) DTO
-    if (seasonActivityStatuses.length > 0) return seasonActivityStatuses;
-    // 2) seasonRoles 패스스루(이미 계산된 값 → DTO 모양 rename)
-    const fromRoles = (currentSeason.seasonRoles || []).map((r) => ({
+
+    // 선택 시즌(currentSeason)에 핀된 역할이력(seasonRoles) → DTO 모양. 선택 시즌 값이므로
+    //   현재/최신값이 아니다(과거 시즌이면 그 과거 시즌 역할).
+    const fromSelectedRoles = (currentSeason.seasonRoles || []).map((r) => ({
       teamLabel: r.isAdmin ? `운영진(${r.adminGeneration ?? ""}기)` : (r.teamName || "-"),
       partLabel: r.isAdmin ? "클럽 단위" : (r.partName || "-"),
       statusLabel: r.roleLabel || "-",
     }));
-    if (fromRoles.length > 0) return fromRoles;
-    // 3) /api/profile data 기반 최소 1행 fallback (팀/파트/멤버십 중 하나라도 의미값이 있을 때)
+
+    // 선택 시즌 기준(snapshot-only) — area-6/7 과 동일 정책: 선택 시즌의 상태 구간만 쓰고,
+    //   현재 시즌 단건 DTO/최신 프로필로 과거(선택) 시즌을 덮지 않는다. 맵 미로드 transient 는
+    //   area-6/7 처럼 빈 값(placeholder)으로 둔다("현재 시즌 고정값 재사용 금지").
+    //   세그먼트가 여러 개(시즌 내 상태 변화)면 그대로 다건 표시 — 최신 하나로 덮지 않는다.
+    if (selectedSeasonKey) {
+      const seg = seasonActivityStatusesBySeason[selectedSeasonKey];
+      if (Array.isArray(seg) && seg.length > 0) return seg;
+      if (fromSelectedRoles.length > 0) return fromSelectedRoles;
+      return []; // 선택(과거 포함) 시즌 보호 — placeholder(최신값 폴백 금지)
+    }
+
+    // 선택 시즌 key 부재(초기/transient, 현재 시즌 컨텍스트)에서만 현재 시즌 폴백을 허용한다.
+    // 1) 백엔드 단건(현재 시즌) DTO
+    if (seasonActivityStatuses.length > 0) return seasonActivityStatuses;
+    // 2) seasonRoles 패스스루(이미 계산된 값 → DTO 모양 rename)
+    if (fromSelectedRoles.length > 0) return fromSelectedRoles;
+    // 3) /api/profile data 기반 최소 1행 fallback — 현재 시즌 컨텍스트 전용(선택 시즌 없음).
+    //    이미 존재하는 team/part/membership 값을 "표시만" 한다(프론트 재계산 아님).
     const fp = ownerProfileData;
     if (fp) {
       const teamLabel = fp.team || fp.teamName || fp.team_name || null;
@@ -4507,11 +4517,13 @@ const Cluster4Content = () => {
                       // 팀/파트/멤버십/태그라인 — seasonRoles 가 비면 /api/profile data 로 채운다.
                       fallbackProfile: ownerProfileData,
                     });
-                    // 역할 라벨: 시즌 최신 roleLabel(이미 한글) 우선. 없으면(seasonRoles 빈 경우) 멤버십 등급
-                    //   (일반/심화 — /api/profile membership_level) 을 우선 표시하고, 그래도 없으면 role 코드로 폴백.
+                    // 역할 라벨: 그 시즌 핀 값을 최우선으로 쓴다 — ① 시즌 역할이력 마지막(latest.roleLabel,
+                    //   이미 한글) → ② 시즌 대표 역할(currentSeason.roleInSeason = season_histories.role_in_season,
+                    //   해당 시즌 값) → ③ 최신값(pi.membershipLevel/userDefaultRole)은 시즌 핀이 전무할 때만 폴백.
+                    //   ⚠ 과거 시즌을 "현재 멤버십 등급"으로 덮지 않기 위해 최신값을 시즌 핀보다 뒤에 둔다.
                     const roleLabel = latest?.roleLabel
                       ? latest.roleLabel
-                      : formatMembershipRoleLabel(pi.membershipLevel || currentSeason.roleInSeason || userDefaultRole || "");
+                      : formatMembershipRoleLabel(currentSeason.roleInSeason || pi.membershipLevel || userDefaultRole || "");
                     return (
                       <>
                         <div className="personal-photo">

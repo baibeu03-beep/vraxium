@@ -108,14 +108,20 @@ async function enrichLineRatings(rawBody: string, userId: string | null): Promis
   return JSON.stringify(root);
 }
 
-// 카드 헤더(teamName/partName/membershipStatusLabel) 보강.
+// 카드 헤더(teamName/partName) 보강 — team/part 식별값 전용.
 // ─────────────────────────────────────────────────────────────────────
 // admin weekly-cards 스냅샷 빌더는 team/part 를 user_memberships(is_current=true) 기준으로
 // 채운다. 그런데 일부 실 사용자(카카오 로그인)는 모든 멤버십 row 가 is_current=false 라
 // 스냅샷 teamName/partName 이 null → 주차 카드 목록이 "-" 로 표시된다.
 // (데모/테스트 유저는 is_current=true 라 정상 → "데모는 되는데 카카오는 안 됨" 증상.)
 // 여기서 user_memberships(team_name 우선 픽) + user_profiles.current_*_name 폴백으로
-// 비어 있는 헤더 필드만 비파괴 보강한다. lineRating 주입과 동일 패턴 — 실패 시 원본 반환.
+// 비어 있는 team/part 필드만 비파괴 보강한다. lineRating 주입과 동일 패턴 — 실패 시 원본 반환.
+//
+// ⚠ snapshot-only 원칙: 역할/등급 칩(roleLabel·membershipStatusLabel)은 여기서 LIVE 값으로
+//   보강하지 않는다. 그 필드는 주차 핀(snapshot SoT = user_position_histories 주차단위)이라
+//   현재 user_memberships(LIVE)로 빈칸을 메우면 과거 주차 카드가 "현재 등급/상태"로 덮인다.
+//   비어 있으면 비운 채로 둔다(원인은 상류 snapshot 생성 로직에서 해결). 종전의 LIVE
+//   membershipStatusLabel 주입 로직은 2026-06-23 제거됨. team/part(식별값)만 보강 유지.
 async function enrichCardHeaders(rawBody: string, userId: string | null): Promise<string> {
   if (!userId) return rawBody;
   let json: unknown;
@@ -130,8 +136,7 @@ async function enrichCardHeaders(rawBody: string, userId: string | null): Promis
 
   const blank = (v: unknown) => !(typeof v === "string" && v.trim() !== "");
   const needsTeamPart = cards.some((c) => blank(c.teamName) || blank(c.partName));
-  const needsMembership = cards.some((c) => blank(c.membershipStatusLabel) && blank(c.roleLabel));
-  if (!needsTeamPart && !needsMembership) return rawBody; // 대부분의 사용자는 추가 쿼리 없이 통과
+  if (!needsTeamPart) return rawBody; // 대부분의 사용자는 추가 쿼리 없이 통과
 
   try {
     const supabase = createAdminClient();
@@ -147,23 +152,18 @@ async function enrichCardHeaders(rawBody: string, userId: string | null): Promis
         .maybeSingle(),
     ]);
     const resolved = resolveMembershipDisplay(membershipRes.data ?? [], profileRes.data ?? null);
-    // 역할 칩 표기(roleLabel || membershipStatusLabel) 폴백값 — state 우선, 없으면 level.
-    const membershipLabel = resolved.membershipState ?? resolved.membershipLevel ?? null;
 
+    // team/part(식별값)만 비파괴 보강한다. 역할/등급 칩은 보강하지 않는다(snapshot-only — 위 주석 참조).
     let patched = 0;
     for (const card of cards) {
       if (blank(card.teamName) && resolved.teamName) { card.teamName = resolved.teamName; patched++; }
       if (blank(card.partName) && resolved.partName) { card.partName = resolved.partName; }
-      if (blank(card.membershipStatusLabel) && blank(card.roleLabel) && membershipLabel) {
-        card.membershipStatusLabel = membershipLabel;
-      }
     }
     if (patched > 0) {
       console.log("[weekly-cards proxy] 카드 헤더 team/part 보강", {
         userId,
         team: resolved.teamName,
         part: resolved.partName,
-        membershipLabel,
         cardsPatched: patched,
       });
     }

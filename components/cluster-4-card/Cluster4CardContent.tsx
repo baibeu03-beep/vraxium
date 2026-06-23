@@ -195,7 +195,12 @@ const resolvePersonalInfo = (sources: PersonalInfoSourceBag): ResolvedPersonalIn
       p.currentPartName, p.current_part_name, u.currentPartName, u.current_part_name,
       meta.partName, extras.partName,
     ),
-    membershipLevel: pickPersonalValue(p.membershipLevel, p.membership_level, u.membershipLevel, u.membership_level, p.role, u.role),
+    // 멤버십 등급(badge-status) = 그 카드 "주차 당시 단계"(meta.roleLabel = 백엔드 snapshot SoT,
+    //   user_position_histories 주차단위). 과거 주차 카드가 최신 profile 등급으로 덮이면 안 되므로
+    //   weeklyCardMeta(주차 핀)를 최우선으로 둔다. 카드 메타가 없을 때만(레거시/미수신·타 크루 모달은
+    //   meta 미전달) 기존 profile/role 폴백. (연계동료/평판 모달은 weeklyCardMeta 를 넘기지 않으므로
+    //   meta={} → 이 우선분기 무영향.)
+    membershipLevel: pickPersonalValue(meta.roleLabel, p.membershipLevel, p.membership_level, u.membershipLevel, u.membership_level, p.role, u.role),
     profileImageUrl: pickPersonalValue(
       p.profileImageUrl, p.profile_photo_url, p.profileImg, p.avatarUrl, p.profilePhotoUrl,
       u.profileImageUrl, u.profile_photo_url, u.profileImg, u.avatarUrl, u.image,
@@ -1515,7 +1520,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           setRoleLabel(formatMembershipRoleLabel(profileResult.data.role));
           setUserWeekRole(profileResult.data.role || null);
         }
-        // 멤버십 등급(membership_level) — 이력서 카드 "심화" 표시와 동일 source. 관리 슬롯 잠금 판단용.
+        // 멤버십 등급(membership_level) — ⚠ 현재(최신) 등급이다. 주차 카드의 단계 표시(역할 배지·관리
+        //   슬롯 잠금·인적사항 등급)는 weeklyCardMeta.roleLabel(주차 핀 snapshot SoT)을 최우선으로 쓰며,
+        //   이 state 는 카드 메타 미수신 시의 폴백으로만 소비된다(과거 주차를 최신값으로 덮지 않음).
         setMembershipLevel((profileResult.data?.membership_level as string | null | undefined) ?? null);
 
         // 포인트 정보 처리
@@ -8255,7 +8262,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     crew_ambassador: "운영진(앰배서더)",
     operations_ambassador: "운영진(앰배서더)",
   };
-  const expMembershipRaw = membershipLevel ?? "";
+  // 관리(5) 슬롯 단계 판정 = 그 카드 "주차 당시 단계". SoT = weeklyCardMeta.roleLabel(백엔드 snapshot,
+  //   user_position_histories 주차단위 — 이력서 resume-activities 와 동일). 과거 주차 카드가 최신 profile
+  //   membershipLevel 로 덮이면 안 되므로 주차 핀 값을 최우선으로 쓴다. 카드 메타 미수신(레거시/오류) 시에만
+  //   로컬 membershipLevel state(현재값) 폴백 — 무회귀.
+  const weekStageLabel = (weeklyCardMeta?.roleLabel && weeklyCardMeta.roleLabel.trim()) || "";
+  const expMembershipRaw = weekStageLabel || (membershipLevel ?? "");
   const expStageFull = EXP_MEMBERSHIP_ROLE_KOREAN[expMembershipRaw] || expMembershipRaw || "";
   const expStagePrefix = expStageFull.split("(")[0] || ""; // "일반" | "심화" | "운영진" | ""
   const isExpAdvancedStage = expStagePrefix === "심화" || expStagePrefix === "운영진";
