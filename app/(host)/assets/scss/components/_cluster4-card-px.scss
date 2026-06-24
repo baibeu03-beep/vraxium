@@ -493,12 +493,17 @@
       filter: hue-rotate(80deg);
     }
 
-    // 카드 우측 action icon (더보기 화살표) — PX Green 재착색.
+    // 카드 우측 action icon (더보기 화살표) — green BG + WHITE glyph 보존.
+    //   /icon - 더보기.png 구조: yellow/orange BG + WHITE arrow glyph.
+    //   `brightness(0) ... ` 체인은 white glyph 까지 검정→녹색 재착색 → 화살표가
+    //   배경 녹색과 동색이 되어 소실됨(green-on-green). 사용자 정책: white glyph 보존.
+    //   `hue-rotate` 단독은 saturation 0 인 white 에 영향 0 → 화살표 흰색 유지,
+    //   BG(orange)만 PX Green 으로 회전. _cluster4-px.scss / encre 정책과 동일.
     .work-info-card .card-arrow,
     .work-ability-card .card-arrow,
     .work-exp-card .card-arrow,
     .work-career-card .card-arrow {
-      filter: brightness(0) saturate(100%) invert(36%) sepia(94%) saturate(2069%) hue-rotate(96deg) brightness(95%) contrast(102%);
+      filter: hue-rotate(80deg) saturate(1.4);
     }
 
     // 주차 성장률 헤더 좌측 3-star decorative 아이콘 (rating star 가 아님 → recolor 가능)
