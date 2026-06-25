@@ -71,17 +71,30 @@ const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
   const [leagueValue, setLeagueValue] = useState<string>("");
   const [demo, setDemo] = useState(false);
   const [fetchedCards, setFetchedCards] = useState<WeeklyCardData[]>([]);
+  // 로딩/빈 상태 분리 — 초기 진입(API 응답 전)에는 true. 데모/일반 모드 공통.
+  // loading=true → 로딩 UI, loading=false && cards=0 → 빈 상태, loading=false && cards>0 → 카드.
+  const [loading, setLoading] = useState(true);
 
   // localStorage는 SSR 접근 불가 — 마운트 후 한 번 체크
   useEffect(() => {
     setDemo(isDemoMode());
   }, []);
 
-  // 실데이터 — /api/weekly-league?org= 집계 카드. org 변경 시 재요청.
-  // 데모 모드는 더미를 쓰므로 fetch 생략. unmount/org 변경 race 는 cancelled 가드로 차단.
+  // 실데이터 — /api/weekly-league?org= 집계 카드(snapshot-only). org/mode 변경 시 재요청.
+  // 데모 모드는 더미를 동기 사용하므로 fetch 생략. unmount/org 변경 race 는 cancelled 가드로 차단.
   useEffect(() => {
-    if (demo || !org) return;
+    // 데모(더미) 모드: 동기 데이터 → 즉시 로딩 종료.
+    if (demo) {
+      setLoading(false);
+      return;
+    }
+    // org 미지정: fetch 대상 없음 → 로딩 종료(상위에서 안내 화면 처리).
+    if (!org) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
+    setLoading(true);
     (async () => {
       try {
         const res = await fetch(
@@ -96,6 +109,9 @@ const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
         }
       } catch {
         if (!cancelled) setFetchedCards([]);
+      } finally {
+        // 응답 완료(성공/실패 무관) 후에만 로딩 종료 → 빈 상태 문구는 응답 이후에만 노출.
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => {
@@ -261,7 +277,7 @@ const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
         </div>
       */}
 
-      <WeeklyCardList cards={filteredAndSortedCards} />
+      <WeeklyCardList cards={filteredAndSortedCards} loading={loading} />
     </section>
   );
 };
