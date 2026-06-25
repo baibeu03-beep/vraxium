@@ -2595,7 +2595,7 @@ const Sidebar = () => {
                     >
                       <Image src="/images/0/cluster 1/small icon/Chevron_Right_MD.png" alt="" width={18} height={18} />
                     </span>
-                    {currentProfile.name} <span className="name-eng">{currentProfile.nameEng}</span>
+                    {mask.displayName(currentProfile.name)} <span className="name-eng">{mask.displayName(currentProfile.nameEng)}</span>
                   </h1>
 
                   <div className="resume-details">
@@ -2692,7 +2692,7 @@ const Sidebar = () => {
                           cursor: "default",
                         }}
                       >
-                        <span style={{ color: currentProfile.lightColor }}>·</span> {currentProfile.email || '-'}
+                        <span style={{ color: currentProfile.lightColor }}>·</span> {mask.email(currentProfile.email)}
                       </span>
                     </div>
                     <div className="detail-row">
@@ -4666,7 +4666,7 @@ const Sidebar = () => {
             }),
           }}
         >
-          {tooltipVisible === "email" && currentProfile.email}
+          {tooltipVisible === "email" && mask.email(currentProfile.email)}
           {tooltipVisible === "school" && currentProfile.school}
           {tooltipVisible === "major" && (
             <div

@@ -51,6 +51,7 @@ export function useDataMasking() {
     period: (v: string | null | undefined) => v || '-',
     age: (v: string | number | null | undefined) => String(v ?? '-'),
     displayName: (v: string | null | undefined) => v || '-',
+    gender: (v: string | null | undefined) => v || '-',
   };
 
   // 비어드민 사용자:
@@ -59,7 +60,9 @@ export function useDataMasking() {
   const masked = {
     birthDate: (v: string | null | undefined) => skipMask ? (v || '-') : maskBirthDate(v),
     address: (v: string | null | undefined) => skipMask ? (v || '-') : maskAddress(v),
-    email: (v: string | null | undefined) => maskEmail(v),
+    // 이메일도 다른 필드와 동일하게 skipMask 게이트 — 로그인/데모 시 원문, 비로그인만 마스킹.
+    // (기존엔 email 만 skipMask 무시하고 항상 마스킹 → 카드/모달이 우회해 raw 노출하던 불일치 정리)
+    email: (v: string | null | undefined) => skipMask ? (v || '-') : maskEmail(v),
     school: (v: string | null | undefined) => skipMask ? (v || '-') : maskSchool(v),
     major: (v: string | null | undefined) => skipMask ? (v || '-') : maskMajor(v),
     gpa: (v: string | number | null | undefined) => skipMask ? String(v ?? '-') : maskGPA(v),
@@ -67,6 +70,8 @@ export function useDataMasking() {
     period: (v: string | null | undefined) => skipMask ? (v || '-') : maskPeriod(v),
     age: (v: string | number | null | undefined) => skipMask ? String(v ?? '-') : maskAge(v),
     displayName: (v: string | null | undefined) => skipMask ? (v || '-') : maskDisplayName(v),
+    // 성별 — 비로그인은 비공개('-'). 로그인/데모는 원문. (부분 마스킹이 의미없는 1글자 필드라 전체 가림)
+    gender: (v: string | null | undefined) => skipMask ? (v || '-') : '-',
   };
 
   return { isLoggedIn, isAdmin, mask: isAdmin ? raw : masked };

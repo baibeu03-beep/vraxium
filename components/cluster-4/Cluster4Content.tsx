@@ -4179,20 +4179,22 @@ const Cluster4Content = () => {
                         </div>
                         <div className="personal-info">
                           <div className="personal-row-1">
-                            <span className="personal-name">{pi.name || "-"}</span>
+                            {/* 비로그인 마스킹 — 카드(reviewer)와 동일한 useDataMasking 규칙 사용.
+                                로그인/데모 시 mask.* 가 raw 반환 → 기존 표시 유지. */}
+                            <span className="personal-name">{mask.displayName(pi.name)}</span>
                             <span className="personal-separator">|</span>
                             <span className="personal-gender">{pi.gender || "-"}</span>
                             <span className="personal-separator">|</span>
-                            <span className="personal-age">{pi.age != null ? `${pi.age} 세` : "-"}</span>
+                            <span className="personal-age">{pi.age != null ? `${mask.age(pi.age)} 세` : "-"}</span>
                           </div>
                           <div className="personal-row-2">
                             <span className="personal-field">
-                              <span className="field-value">{pi.school || "-"}</span>
+                              <span className="field-value">{mask.school(pi.school)}</span>
                               <span className="field-label">학교</span>
                             </span>
                             <span className="personal-separator">|</span>
                             <span className="personal-field">
-                              <span className="field-value">{formatMajor(pi.department)}</span>
+                              <span className="field-value">{formatMajor(mask.major(pi.department))}</span>
                               <span className="field-label">학과</span>
                             </span>
                           </div>
@@ -4539,24 +4541,26 @@ const Cluster4Content = () => {
                         </div>
                         <div className="personal-info">
                           <div className="personal-row-1">
+                            {/* 비로그인 마스킹 — 이력서 카드와 동일한 useDataMasking 규칙 사용.
+                                로그인 시 mask.* 가 raw 반환 → 기존 표시 유지(데모 분기는 불변). */}
                             <span className="personal-name">
                               {isDemoMode
                                 ? (session?.user?.name || demoUserName || "-")
-                                : (pi.name || "-")}
+                                : mask.displayName(pi.name)}
                             </span>
                             <span className="personal-separator">|</span>
                             <span className="personal-gender">{isDemoMode ? "-" : (pi.gender || "-")}</span>
                             <span className="personal-separator">|</span>
-                            <span className="personal-age">{isDemoMode ? "-" : (pi.age ?? "-")}</span>
+                            <span className="personal-age">{isDemoMode ? "-" : mask.age(pi.age)}</span>
                           </div>
                           <div className="personal-row-2">
                             <span className="personal-field">
-                              <span className="field-value">{isDemoMode ? "-" : (pi.school || "-")}</span>
+                              <span className="field-value">{isDemoMode ? "-" : mask.school(pi.school)}</span>
                               <span className="field-label">학교</span>
                             </span>
                             <span className="personal-separator">|</span>
                             <span className="personal-field">
-                              <span className="field-value">{isDemoMode ? "-" : formatMajor(pi.department)}</span>
+                              <span className="field-value">{isDemoMode ? "-" : formatMajor(mask.major(pi.department))}</span>
                               <span className="field-label">학과</span>
                             </span>
                           </div>

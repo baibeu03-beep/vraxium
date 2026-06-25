@@ -6344,6 +6344,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     });
   }, [isDemoMode, reviewerProfile, teamName, partName, membershipLevel, sessionIsPageOwner, session?.user, weeklyCardMeta]);
 
+  // 인적사항(이름/성별/나이/학교/학과) 준비 여부 — 비로그인/타크루 카드는 reviewerProfile(/api/profile)
+  // 도착 전까지 ownerPersonalInfo.name 이 null 이라 모달이 '-'/'—' 를 오래 노출한다. 준비 전에는
+  // 값 대신 Skeleton 을 보여주고(아래 모달들), 도착 후 마스킹값/원문을 렌더한다. 데모는 즉시 ready.
+  const ownerInfoReady = isDemoMode || ownerPersonalInfo.name != null;
+
   // 페이지 주인 역할 배지(tag-role) 단일 출처.
   //   우선순위: 명시 role(roleLabel: user_role_history/profile.role) → 멤버십 등급
   //   (ownerPersonalInfo.membershipLevel = user_memberships.membership_level) → 최종 "일반".
@@ -11654,9 +11659,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
                   <div className="personal-info">
                     <div className="personal-row-1">
-                      <span className="personal-name">{selectedReputationCard.name || "—"}</span>
+                      <span className="personal-name">{mask.displayName(selectedReputationCard.name)}</span>
                       <span className="personal-separator">|</span>
-                      <span className="personal-gender">{selectedReputationCard.gender || "—"}</span>
+                      <span className="personal-gender">{mask.gender(selectedReputationCard.gender)}</span>
                       <span className="personal-separator">|</span>
                       <span className="personal-age">{mask.age(selectedReputationCard.age) || "—"} 세</span>
                     </div>
@@ -11820,9 +11825,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
                   <div className="personal-info">
                     <div className="personal-row-1">
-                      <span className="personal-name">{selectedColleagueCard.name || "—"}</span>
+                      <span className="personal-name">{mask.displayName(selectedColleagueCard.name)}</span>
                       <span className="personal-separator">|</span>
-                      <span className="personal-gender">{selectedColleagueCard.gender || "—"}</span>
+                      <span className="personal-gender">{mask.gender(selectedColleagueCard.gender)}</span>
                       <span className="personal-separator">|</span>
                       <span className="personal-age">{mask.age(selectedColleagueCard.age) || "—"} 세</span>
                     </div>
@@ -11940,11 +11945,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       <div className="personal-info">
                         {/* 1행 — 이름·성별·나이 + 역할/키워드 태그 (태그는 우측 정렬) */}
                         <div className="personal-row-1">
-                          <span className="personal-name">{ownerPersonalInfo.name ?? "—"}</span>
+                          <span className="personal-name">{ownerInfoReady ? mask.displayName(ownerPersonalInfo.name) : <Skeleton width={60} height={15} />}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{ownerPersonalInfo.gender ?? "—"}</span>
+                          <span className="personal-gender">{ownerInfoReady ? mask.gender(ownerPersonalInfo.gender) : <Skeleton width={16} height={15} />}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-age">{ownerPersonalInfo.age ?? "—"} 세</span>
+                          <span className="personal-age">{ownerInfoReady ? <>{ownerPersonalInfo.age != null ? mask.age(ownerPersonalInfo.age) : "—"} 세</> : <Skeleton width={30} height={15} />}</span>
                           <div className="personal-tags">
                             {/* TODO: [백엔드 작업 필요] role 필드 (운영진/앰배서더/일반 등) — profile API에 추가 필요 */}
                             <span className="tag-badge tag-role">{compactPersonalTag(ownerRoleBadge, "일반")}</span>
@@ -11955,12 +11960,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         {/* 2행 — 학교·학과 (필드명/값 분리, 고정폭, 말줄임 없음) */}
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{ownerPersonalInfo.school ?? "—"}</span>
+                            <span className="field-value">{ownerInfoReady ? mask.school(ownerPersonalInfo.school) : <Skeleton width={64} height={14} />}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{ownerPersonalInfo.department ? formatMajor(ownerPersonalInfo.department) : "—"}</span>
+                            <span className="field-value">{ownerInfoReady ? (ownerPersonalInfo.department ? formatMajor(mask.major(ownerPersonalInfo.department)) : "—") : <Skeleton width={64} height={14} />}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
@@ -12495,11 +12500,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{ownerPersonalInfo.name ?? "—"}</span>
+                          <span className="personal-name">{ownerInfoReady ? mask.displayName(ownerPersonalInfo.name) : <Skeleton width={60} height={15} />}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{ownerPersonalInfo.gender ?? "—"}</span>
+                          <span className="personal-gender">{ownerInfoReady ? mask.gender(ownerPersonalInfo.gender) : <Skeleton width={16} height={15} />}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-age">{ownerPersonalInfo.age ?? "—"} 세</span>
+                          <span className="personal-age">{ownerInfoReady ? <>{ownerPersonalInfo.age != null ? mask.age(ownerPersonalInfo.age) : "—"} 세</> : <Skeleton width={30} height={15} />}</span>
                           <div className="personal-tags">
                             <span className="tag-badge tag-role">{compactPersonalTag(ownerRoleBadge, "일반")}</span>
                             <span className="tag-badge tag-keyword">{compactPersonalTag(ownerPersonalInfo.tagline ?? "-", "-")}</span>
@@ -12508,12 +12513,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{ownerPersonalInfo.school ?? "—"}</span>
+                            <span className="field-value">{ownerInfoReady ? mask.school(ownerPersonalInfo.school) : <Skeleton width={64} height={14} />}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{ownerPersonalInfo.department ? formatMajor(ownerPersonalInfo.department) : "—"}</span>
+                            <span className="field-value">{ownerInfoReady ? (ownerPersonalInfo.department ? formatMajor(mask.major(ownerPersonalInfo.department)) : "—") : <Skeleton width={64} height={14} />}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
@@ -13012,11 +13017,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       </div>
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{ownerPersonalInfo.name ?? "—"}</span>
+                          <span className="personal-name">{ownerInfoReady ? mask.displayName(ownerPersonalInfo.name) : <Skeleton width={60} height={15} />}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{ownerPersonalInfo.gender ?? "—"}</span>
+                          <span className="personal-gender">{ownerInfoReady ? mask.gender(ownerPersonalInfo.gender) : <Skeleton width={16} height={15} />}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-age">{ownerPersonalInfo.age ?? "—"} 세</span>
+                          <span className="personal-age">{ownerInfoReady ? <>{ownerPersonalInfo.age != null ? mask.age(ownerPersonalInfo.age) : "—"} 세</> : <Skeleton width={30} height={15} />}</span>
                           <div className="personal-tags">
                             <span className="tag-badge tag-role">{compactPersonalTag(ownerRoleBadge, "일반")}</span>
                             <span className="tag-badge tag-keyword">{compactPersonalTag(ownerPersonalInfo.tagline ?? "-", "-")}</span>
@@ -13024,12 +13029,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         </div>
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{ownerPersonalInfo.school ?? "—"}</span>
+                            <span className="field-value">{ownerInfoReady ? mask.school(ownerPersonalInfo.school) : <Skeleton width={64} height={14} />}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{ownerPersonalInfo.department ? formatMajor(ownerPersonalInfo.department) : "—"}</span>
+                            <span className="field-value">{ownerInfoReady ? (ownerPersonalInfo.department ? formatMajor(mask.major(ownerPersonalInfo.department)) : "—") : <Skeleton width={64} height={14} />}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
@@ -13487,11 +13492,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{ownerPersonalInfo.name ?? "—"}</span>
+                          <span className="personal-name">{ownerInfoReady ? mask.displayName(ownerPersonalInfo.name) : <Skeleton width={60} height={15} />}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{ownerPersonalInfo.gender ?? "—"}</span>
+                          <span className="personal-gender">{ownerInfoReady ? mask.gender(ownerPersonalInfo.gender) : <Skeleton width={16} height={15} />}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-age">{ownerPersonalInfo.age ?? "—"} 세</span>
+                          <span className="personal-age">{ownerInfoReady ? <>{ownerPersonalInfo.age != null ? mask.age(ownerPersonalInfo.age) : "—"} 세</> : <Skeleton width={30} height={15} />}</span>
                           <div className="personal-tags">
                             <span className="tag-badge tag-role">{compactPersonalTag(ownerRoleBadge, "일반")}</span>
                             <span className="tag-badge tag-keyword">{compactPersonalTag(ownerPersonalInfo.tagline ?? "-", "-")}</span>
@@ -13500,12 +13505,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{ownerPersonalInfo.school ?? "—"}</span>
+                            <span className="field-value">{ownerInfoReady ? mask.school(ownerPersonalInfo.school) : <Skeleton width={64} height={14} />}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{ownerPersonalInfo.department ? formatMajor(ownerPersonalInfo.department) : "—"}</span>
+                            <span className="field-value">{ownerInfoReady ? (ownerPersonalInfo.department ? formatMajor(mask.major(ownerPersonalInfo.department)) : "—") : <Skeleton width={64} height={14} />}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
@@ -14154,20 +14159,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       </div>
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{ownerPersonalInfo.name ?? "—"}</span>
+                          <span className="personal-name">{ownerInfoReady ? mask.displayName(ownerPersonalInfo.name) : <Skeleton width={60} height={15} />}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-gender">{ownerPersonalInfo.gender ?? "—"}</span>
+                          <span className="personal-gender">{ownerInfoReady ? mask.gender(ownerPersonalInfo.gender) : <Skeleton width={16} height={15} />}</span>
                           <span className="personal-separator">|</span>
-                          <span className="personal-age">{ownerPersonalInfo.age ?? "—"} 세</span>
+                          <span className="personal-age">{ownerInfoReady ? <>{ownerPersonalInfo.age != null ? mask.age(ownerPersonalInfo.age) : "—"} 세</> : <Skeleton width={30} height={15} />}</span>
                         </div>
                         <div className="personal-row-2">
                           <span className="personal-field">
-                            <span className="field-value">{ownerPersonalInfo.school ?? "—"}</span>
+                            <span className="field-value">{ownerInfoReady ? mask.school(ownerPersonalInfo.school) : <Skeleton width={64} height={14} />}</span>
                             <span className="field-label">학교</span>
                           </span>
                           <span className="personal-separator">|</span>
                           <span className="personal-field">
-                            <span className="field-value">{ownerPersonalInfo.department ? formatMajor(ownerPersonalInfo.department) : "—"}</span>
+                            <span className="field-value">{ownerInfoReady ? (ownerPersonalInfo.department ? formatMajor(mask.major(ownerPersonalInfo.department)) : "—") : <Skeleton width={64} height={14} />}</span>
                             <span className="field-label">학과</span>
                           </span>
                         </div>
