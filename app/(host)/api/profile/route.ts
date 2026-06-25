@@ -2836,14 +2836,18 @@ export async function PUT(request: Request) {
     };
 
     // 필드 매핑
+    // 클라이언트(Sidebar 편집 모달)는 레거시 키(eng_name/phone/email)로 전송하지만,
+    // user_profiles 실제 컬럼은 english_name / contact_phone / contact_email 이다.
+    // 과거 코드가 존재하지 않는 컬럼(eng_name/phone/email/bio)에 그대로 update 를 걸어
+    // PostgREST 가 전체 update 를 거부 → 모든 프로필 저장이 500 으로 실패하고 있었다.
+    // (영문명을 입력해도 저장되지 않던 근본 원인.) 정규 컬럼으로 매핑해 해소한다.
     if (body.display_name !== undefined) updateData.display_name = body.display_name;
-    if (body.eng_name !== undefined) updateData.eng_name = body.eng_name;
+    if (body.eng_name !== undefined) updateData.english_name = body.eng_name;
     if (body.gender !== undefined) updateData.gender = body.gender;
     if (body.birth_date !== undefined) updateData.birth_date = body.birth_date || null;
     if (body.address !== undefined) updateData.address = body.address;
-    if (body.phone !== undefined) updateData.phone = body.phone;
-    if (body.email !== undefined) updateData.email = body.email;
-    if (body.bio !== undefined) updateData.bio = body.bio;
+    if (body.phone !== undefined) updateData.contact_phone = body.phone;
+    if (body.email !== undefined) updateData.contact_email = body.email;
     if (body.vision !== undefined) updateData.vision = body.vision;
     if (body.profile_photo_url !== undefined) updateData.profile_photo_url = body.profile_photo_url;
     if (body.portfolio_files !== undefined) updateData.portfolio_files = body.portfolio_files;

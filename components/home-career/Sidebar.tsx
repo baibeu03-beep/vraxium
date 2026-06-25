@@ -1773,7 +1773,13 @@ const Sidebar = () => {
           }
         }
 
-        const engNameParts = (profile.eng_name || "").split(" ");
+        // 정규 컬럼명으로 읽는다(레거시 키 fallback 유지). GET /api/profile 는 user_profiles
+        // raw row 를 그대로 반환하므로 english_name / contact_email / contact_phone 가 정본.
+        // (과거엔 존재하지 않는 eng_name/email/phone 을 읽어 편집 모달이 항상 빈칸으로 떠,
+        //  저장 시 기존 값을 빈 값으로 덮어쓸 위험이 있었다.)
+        const engNameParts = (
+          profile.english_name || profile.englishName || profile.eng_name || ""
+        ).split(" ");
         const lastNameEng = engNameParts[0] || "";
         const firstNameEng = engNameParts.slice(1).join(" ") || "";
 
@@ -1781,11 +1787,13 @@ const Sidebar = () => {
         const addressCity = addressParts[0] || "";
         const addressDistrict = addressParts.slice(1).join(" ") || "";
 
-        const emailParts = (profile.email || "").split("@");
+        const emailParts = (profile.contact_email || profile.email || "").split("@");
         const emailId = emailParts[0] || "";
         const emailDomain = emailParts[1] || "";
 
-        const phoneParts = (profile.phone || "").replace(/^010-?/, "").split("-");
+        const phoneParts = (profile.contact_phone || profile.phone || "")
+          .replace(/^010-?/, "")
+          .split("-");
 
         setFormData((prev) => ({
           ...prev,
@@ -1797,7 +1805,7 @@ const Sidebar = () => {
           birthDate: profile.birth_date || "",
           addressCity,
           addressDistrict,
-          phone: phoneParts.length >= 2 ? `${phoneParts[0]}-${phoneParts[1]}` : profile.phone?.replace(/^010-?/, "") || "",
+          phone: phoneParts.length >= 2 ? `${phoneParts[0]}-${phoneParts[1]}` : (profile.contact_phone || profile.phone)?.replace(/^010-?/, "") || "",
           emailId,
           emailDomain,
           vision: profile.vision || "",
