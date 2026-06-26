@@ -9245,8 +9245,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       return (
                         <div key={user.id} className="reputation-card reputation-waiting-card">
                           <div className="reputation-waiting-content">
-                            <img src="/images/0/waiting.png" alt="waiting" />
-                            <p>주차 평판 대기 중... 😊</p>
+                            <div className="rep-wait__orb">
+                              <span className="rep-wait__glyph">⏳</span>
+                            </div>
+                            <p className="rep-wait__title">주차 평판 대기 중</p>
+                            <p className="rep-wait__desc">동료 크루의 평가를 기다리고 있어요</p>
+                            <div className="rep-wait__dots">
+                              <span></span>
+                              <span></span>
+                              <span></span>
+                            </div>
                           </div>
                         </div>
                       );

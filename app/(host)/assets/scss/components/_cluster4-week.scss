@@ -11,6 +11,20 @@
     outline: 2px solid #ff4444;
   }
 }
+// 주차 평판 대기 카드 — 펄스/플로트/점 애니메이션
+@keyframes repWaitPulse {
+  0% { box-shadow: 0 0 0 0 rgba(130, 170, 255, 0.4); }
+  70% { box-shadow: 0 0 0 16px rgba(130, 170, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(130, 170, 255, 0); }
+}
+@keyframes repWaitFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@keyframes repWaitDot {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-3px); }
+}
 @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Azeret+Mono:wght@400&family=Poppins:wght@400;700&display=block");
 
 @font-face {
@@ -2179,29 +2193,81 @@
         align-items: center;
         justify-content: center;
         cursor: default;
+        position: relative;
+        overflow: hidden;
+        background: linear-gradient(160deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012));
+        border: 1px dashed rgba(150, 180, 255, 0.22);
+
+        // 은은한 상단 글로우
+        &::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background: radial-gradient(140px 90px at 50% 30%, rgba(120, 160, 255, 0.12), transparent 72%);
+          pointer-events: none;
+        }
 
         .reputation-waiting-content {
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          gap: 10px;
+          gap: 11px;
           width: 100%;
           height: 100%;
+          position: relative;
+          z-index: 1;
 
-          img {
-            width: 82px;
-            height: auto;
-            opacity: 0.8;
+          // 펄스 오브
+          .rep-wait__orb {
+            width: 62px;
+            height: 62px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at 50% 36%, rgba(130, 170, 255, 0.24), rgba(130, 170, 255, 0.05));
+            border: 1px solid rgba(150, 180, 255, 0.4);
+            animation: repWaitPulse 2.2s ease-out infinite;
+          }
+          .rep-wait__glyph {
+            font-size: 27px;
+            line-height: 1;
+            animation: repWaitFloat 3s ease-in-out infinite;
+            filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.4));
           }
 
-          p {
+          .rep-wait__title {
             margin: 0;
             font-family: "Pretendard", sans-serif;
             font-size: 16px;
-            font-weight: 500;
-            color: rgba(255, 255, 255, 0.6);
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            color: rgba(255, 255, 255, 0.88);
+          }
+          .rep-wait__desc {
+            margin: 0;
+            font-family: "Pretendard", sans-serif;
+            font-size: 12.5px;
+            font-weight: 400;
+            color: rgba(255, 255, 255, 0.42);
             text-align: center;
+          }
+          .rep-wait__dots {
+            display: flex;
+            gap: 6px;
+            margin-top: 3px;
+
+            span {
+              width: 6px;
+              height: 6px;
+              border-radius: 50%;
+              background: rgba(150, 180, 255, 0.55);
+              animation: repWaitDot 1.4s ease-in-out infinite;
+
+              &:nth-child(2) { animation-delay: 0.2s; }
+              &:nth-child(3) { animation-delay: 0.4s; }
+            }
           }
         }
       }
