@@ -7,6 +7,18 @@
 @import url('https://fonts.googleapis.com/css2?family=Khula:wght@400;600;800&display=swap');
 
 /* ============================================================
+   [조직×분기 테마] breadcrumb 활성 텍스트
+   breadcrumb 는 .weekly-ranking-page 바깥(형제)이라 page.tsx 가 main
+   (.weekly-ranking-layout)에 --wr-* 를 주입한다. 전역 `.breadcrumb .active`
+   는 var(--quaternary-color)(네온 그린) + !important 이므로, 더 높은
+   특이도 + !important 로 조직 강조색(채도·명도 낮춘 --wr-accent-muted)을
+   적용한다. 변수 부재 시 기존 전역 토큰으로 폴백(회귀 0).
+   ============================================================ */
+.weekly-ranking-layout .breadcrumb .active {
+  color: var(--wr-accent-muted, var(--quaternary-color)) !important;
+}
+
+/* ============================================================
    Weekly Hero — Animation Keyframes
    진입 4종 + 무한 4종. transform/opacity만 사용 (GPU 가속).
    ============================================================ */
@@ -46,9 +58,10 @@
   50%      { transform: translateY(-5px); }
 }
 
+// [조직×분기 테마] 보더 펄스 색상도 테마를 따른다(기본값은 기존 노랑).
 @keyframes weekly-hero-border-pulse {
-  0%, 100% { border-left-color: rgba(240, 196, 25, 0.7); }
-  50%      { border-left-color: rgba(240, 196, 25, 1); }
+  0%, 100% { border-left-color: var(--wr-accent-dim, rgba(240, 196, 25, 0.7)); }
+  50%      { border-left-color: var(--wr-accent, rgba(240, 196, 25, 1)); }
 }
 
 @keyframes weekly-hero-image-sway {
@@ -130,6 +143,9 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
+  // [조직×분기 테마] 섹션 배경 틴트 — lib/rankingTheme 가 주입한 --wr-page-bg.
+  // 변수 부재 시 transparent → 기존 룩 유지(회귀 0).
+  background: var(--wr-page-bg, transparent);
 
   .weekly-filter-wrap,
   .weekly-team-stats-placeholder,
@@ -260,8 +276,9 @@
       position: relative;         // [스파클 회차] 4모서리 스파클 absolute 배치 기준
       max-width: 1200px;          // [v8] 800 → 1200 (48px 폰트 줄바꿈 방지)
       padding: 17px 22px;
-      background: rgba(110, 192, 107, 0.18);
-      border: 1.5px solid rgba(110, 192, 107, 0.55);
+      // [조직×분기 테마] 소개 박스 면/테두리 — 기본값은 기존 초록 유지(회귀 0).
+      background: var(--wr-soft-bg, rgba(110, 192, 107, 0.18));
+      border: 1.5px solid var(--wr-soft-border, rgba(110, 192, 107, 0.55));
       border-radius: 8px;
       font-family: 'HakgyoansimTuho', sans-serif;
       font-size: 24px;            // 유지
@@ -281,7 +298,8 @@
       }
       &-strong {
         margin-top: 4px !important;
-        color: #d8f5d6;
+        // [조직×분기 테마] 강조 텍스트 — 기본값은 기존 연초록 유지.
+        color: var(--wr-accent-soft, #d8f5d6);
         font-size: 28px !important;   // 유지
         line-height: 40px !important; // [v13] 32 → 40
         font-weight: 500 !important;  // 유지
@@ -320,7 +338,8 @@
       transform: translateY(-37px);   // [v11] -113 → -37 (이전보다 2cm 약 76px 아래로)
       max-width: 1500px;          // [v8] 1100 → 1500 (48px 폰트 줄바꿈 방지)
       padding-left: 20px;
-      border-left: 5px solid #f0c419;
+      // [조직×분기 테마] 강조 보더 — 기본값(#f0c419)은 기존 노랑 유지.
+      border-left: 5px solid var(--wr-accent, #f0c419);
       font-family: 'HakgyoansimTuho', sans-serif;
       font-size: 24px;            // 유지
       font-weight: 400;
@@ -340,7 +359,8 @@
         line-height: 36px;        // [v13] 28 → 36
       }
       &-strong {
-        color: #ffe16a;
+        // [조직×분기 테마] 강조 텍스트 — 기본값(#ffe16a)은 기존 노랑 유지.
+        color: var(--wr-accent-soft, #ffe16a);
         font-size: 28px !important;   // 유지
         line-height: 40px !important; // [v13] 32 → 40
         font-weight: 500 !important;  // 유지
@@ -506,6 +526,9 @@
       transform: translateY(calc(-50% - 4px)) rotate(45deg) !important;
       transform-origin: center center !important;
       margin: 0 !important;
+      // [화살표 색상만] caret border-color 만 조직 강조색으로(기본값 흰색 유지).
+      // 크기/위치/여백/border-width/transform/배경/hover·focus 는 일절 미변경.
+      border-color: var(--wr-accent, var(--white)) !important;
     }
   }
 
@@ -527,12 +550,22 @@
       word-break: keep-all !important;
       overflow: visible;
     }
+
+    // [조직×분기 테마] 드롭다운 선택/hover 옵션 — 전역 네온 그린(--quaternary-color)
+    // 대신 조직 강조색을 따른다(기본값은 기존 전역 토큰 유지).
+    .nice-select-dropdown .option.selected,
+    .nice-select-dropdown .option.focus,
+    .nice-select-dropdown .option:hover {
+      color: var(--wr-accent, var(--quaternary-color)) !important;
+      &::before { color: var(--wr-accent, var(--quaternary-color)); }
+    }
   }
 
   .weekly-filter-reset-btn {
     flex: 0 0 auto !important;
     padding: 8px 18px;
-    background: var(--quaternary-color);
+    // [조직×분기 테마] — 기본값은 기존 전역 토큰(--quaternary-color) 유지.
+    background: var(--wr-accent, var(--quaternary-color));
     border: none;
     border-radius: 6px;
     font-weight: 800;
@@ -565,7 +598,7 @@
     white-space: nowrap;
 
     .weekly-filter-dot {
-      color: var(--quaternary-color);
+      color: var(--wr-accent, var(--quaternary-color));
       font-size: 10px;
       line-height: 1;
     }
@@ -588,7 +621,7 @@
     white-space: nowrap !important;
 
     .weekly-filter-dot {
-      color: var(--quaternary-color);
+      color: var(--wr-accent, var(--quaternary-color));
       font-size: 10px;
       line-height: 1;
     }
@@ -598,7 +631,7 @@
       margin-right: 8px;       // [미세조정] 라벨↔숫자 사이 한 칸 정도 더 띄움 (4 → 8)
     }
     .weekly-filter-value {
-      color: var(--quaternary-color);
+      color: var(--wr-accent, var(--quaternary-color));
       font-weight: 700;
       font-variant-numeric: tabular-nums;
       font-size: 18px;          // [미세조정] +2 (16 → 18) — 숫자 강조

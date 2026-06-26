@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import Animations from "@/components/shared/Animations";
 import Breadcrumb from "@/components/shared/Breadcrumb";
 import { getOrgConfigForSlug } from "@/lib/cluster-route";
+import { getRankingTheme, getRankingThemeVars } from "@/lib/rankingTheme";
 
 const WeeklyRankingContent = dynamic(
   () => import("@/components/weekly-ranking/WeeklyRankingContent"),
@@ -74,8 +75,15 @@ function WeeklyRankingPageInner() {
   }
 
   // 2) 유효 org → 랭킹 콘텐츠 (데이터 연동은 신규 백엔드 확정 후 별도 작업).
+  // 조직 기준 테마 변수를 main 에 주입 — breadcrumb 처럼 .weekly-ranking-page
+  // 바깥(형제) 요소도 동일 테마(--wr-*)를 상속받게 한다. 분기별 세부 색은
+  // WeeklyRankingContent 가 .weekly-ranking-page 에 더 구체적으로 덮어쓴다.
+  const baseThemeVars = getRankingThemeVars(getRankingTheme(org));
   return (
-    <main className={`nftg-content nftg-content-home${org === "phalanx" ? " phalanx-theme" : ""}`} style={{ padding: 0 }}>
+    <main
+      className={`nftg-content nftg-content-home weekly-ranking-layout${org === "phalanx" ? " phalanx-theme" : ""}`}
+      style={{ padding: 0, ...baseThemeVars }}
+    >
       <Animations />
       <Breadcrumb title={`Weekly League · ${ORG_LABEL[org]}`} />
       <section

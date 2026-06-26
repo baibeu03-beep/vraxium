@@ -35,7 +35,8 @@
     height: 100%;
 
     &:hover {
-      border-color: var(--primary-color);
+      // [조직×분기 테마] hover 보더 — 기본값은 기존 전역 토큰 유지.
+      border-color: var(--wr-accent, var(--primary-color));
 
       .weekly-card__thumb-image,
       .weekly-card__thumb-placeholder {
@@ -72,7 +73,8 @@
 
     border: 0;
     background: transparent;
-    color: var(--primary-color);
+    // [조직×분기 테마] 카드 헤더 강조 링크 — 기본값은 기존 전역 토큰 유지.
+    color: var(--wr-accent, var(--primary-color));
     font-family: "Pretendard", sans-serif;
     font-size: 12px;
     font-weight: 700;
@@ -159,9 +161,10 @@
     line-height: 1;
     white-space: nowrap;
     text-align: left;
+    // [조직×분기 테마] 기본 뱃지 — 기본값은 기존 골드 톤 유지(semantic 상태색은 아래 modifier 에서 별도).
     background: rgba(0, 0, 0, 0.45);
-    border: 1px solid rgba(255, 200, 80, 0.4);
-    color: #ffd87a;
+    border: 1px solid var(--wr-badge-border, rgba(255, 200, 80, 0.4));
+    color: var(--wr-badge-color, #ffd87a);
 
     i {
       display: inline-flex;
@@ -193,9 +196,10 @@
     }
 
     &.status-yellow {
-      background: rgba(255, 200, 80, 0.15);
-      border-color: rgba(255, 200, 80, 0.48);
-      color: #ffd87a;
+      // [조직×분기 테마] 브랜드 골드 계열 상태(심화 진행/대전 집계) — org 색을 따른다.
+      background: var(--wr-badge-bg, rgba(255, 200, 80, 0.15));
+      border-color: var(--wr-badge-border, rgba(255, 200, 80, 0.48));
+      color: var(--wr-badge-color, #ffd87a);
     }
 
     &.status-muted {
@@ -282,7 +286,7 @@
           display: inline-block;
           width: 2px;
           height: 2px;
-          background: #ffec8f;
+          background: var(--wr-accent-soft, #ffec8f);
           border-radius: 9999px;
           vertical-align: middle;
           font-size: 0;
@@ -296,7 +300,7 @@
         font-family: var(--black-ops-one), cursive;
         font-size: 23px;
         font-weight: 400;
-        color: #ffec8f;
+        color: var(--wr-accent-soft, #ffec8f);
         white-space: nowrap;
         line-height: 22px;
         margin-left: auto;
@@ -305,7 +309,7 @@
           font-family: "Pretendard", sans-serif;
           font-size: 11px;
           font-weight: 400;
-          color: #ffec8f;
+          color: var(--wr-accent-soft, #ffec8f);
           line-height: 12px;
         }
       }
@@ -445,7 +449,7 @@
         height: 100%;
         min-height: 4px;
         max-height: 4px;
-        background: #ffec8f;
+        background: var(--wr-accent-soft, #ffec8f);
         border-radius: 0;
         transition: width 0.3s ease;
       }
@@ -493,7 +497,7 @@
         font-family: var(--black-ops-one), cursive;
         font-size: 32px;
         font-weight: 400;
-        color: #ffec8f;
+        color: var(--wr-accent-soft, #ffec8f);
         line-height: 25px;
         letter-spacing: 0;
       }

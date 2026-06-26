@@ -7,6 +7,11 @@ import WeeklyCardList from "./WeeklyCardList";
 import { WEEKLY_CARD_DUMMY, type WeeklyCardData } from "@/constants/dummyData/weekly-card-dummy";
 import { isDemoMode } from "@/utils/isDemoMode";
 import { readScopeMode, appendModeQuery } from "@/lib/userScopeShared";
+import {
+  resolveRankingQuarter,
+  getRankingTheme,
+  getRankingThemeVars,
+} from "@/lib/rankingTheme";
 
 const SORT_OPTIONS = [
   { value: "latest", label: "최신 순" },
@@ -192,8 +197,38 @@ const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
     setLeagueValue("");
   };
 
+  // 페이지 활성 분기(반기) — 색상 테마 결정용. 선택된 시즌 필터 우선,
+  // 없으면 현재 카드 집합의 최신 시즌. 둘 다 없으면 org 브랜드색으로 폴백.
+  // ranking 데이터/DTO 는 읽기만 하며(seasonName 파싱) 일절 변형하지 않는다.
+  const activeQuarter = useMemo(() => {
+    if (seasonValue) {
+      const q = resolveRankingQuarter(seasonValue);
+      if (q) return q;
+    }
+    let newest: { key: ReturnType<typeof parseWeekSortKey>; name: string } | null = null;
+    for (const c of allCards) {
+      const key = parseWeekSortKey(c.seasonName);
+      const better =
+        !newest ||
+        key.year > newest.key.year ||
+        (key.year === newest.key.year && key.seasonOrder > newest.key.seasonOrder) ||
+        (key.year === newest.key.year &&
+          key.seasonOrder === newest.key.seasonOrder &&
+          key.week > newest.key.week);
+      if (better) newest = { key, name: c.seasonName };
+    }
+    return newest ? resolveRankingQuarter(newest.name) : null;
+  }, [seasonValue, allCards]);
+
+  // 조직 + 분기 → CSS 변수. `.weekly-ranking-page` 루트에 주입하면 커스텀
+  // 프로퍼티 상속으로 히어로·필터바·카드(자손) 전 영역이 동일 테마를 읽는다.
+  const themeVars = useMemo(
+    () => getRankingThemeVars(getRankingTheme(org, activeQuarter)),
+    [org, activeQuarter],
+  );
+
   return (
-    <section className="weekly-ranking-page">
+    <section className="weekly-ranking-page" style={themeVars}>
       <div className="weekly-hero">
         <div className="weekly-hero__bg" aria-hidden="true" />
         <div className="weekly-hero__overlay" aria-hidden="true" />
