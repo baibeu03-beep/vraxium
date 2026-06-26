@@ -15,7 +15,7 @@ import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
-import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getGraduationWeeksFromPathname, getRouteOrg } from "@/lib/cluster-route";
+import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getGraduationWeeksFromPathname, getRouteOrg, getCurrentOrganizationFromPathname, getOrganizationConfig } from "@/lib/cluster-route";
 import { formatSeasonLabel, formatSeasonWeekTitle, resolveSeasonWeekText } from "@/lib/cluster4-types";
 import { isTransitionWeek, isOfficialRestWeek, TRANSITION_WEEK_LABEL } from "@/lib/cluster4-transition-week";
 import { isFadedCardStatus } from "@/lib/cluster4-faded-card";
@@ -24,7 +24,7 @@ import { REPUTATION_KEYWORD_GROUPS } from "@/lib/reputation-keywords";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
-import DetailLogModal from "./DetailLogModal";
+import DetailLogModal, { type DetailLogData, type DetailLogCondition } from "./DetailLogModal";
 import confetti from "canvas-confetti";
 import HelpModalBody from "@/components/shared/HelpModalBody";
 import { Skeleton } from "@/components/ui/skeleton/Skeleton";
@@ -6430,6 +6430,136 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     ? (typeof headerCardPoints.lightning === "number" && Number.isFinite(headerCardPoints.lightning) ? headerCardPoints.lightning : 0)
     : -Math.abs(weekPoints.lightning || 0);
 
+  // ── Detail Log 모달 데이터 (단일 출처 — header* 계산값 재사용, 순수 표시) ──
+  // 누적 성공 주차: DTO accumulatedApprovedWeeks 우선, 없으면 로컬 state.
+  const detailLogCumulativeWeeks =
+    (weeklyCardMeta as { accumulatedApprovedWeeks?: number | null } | null)?.accumulatedApprovedWeeks ??
+    cumulativeApprovedWeeks ??
+    0;
+  // status-badge 토큰과 동일 클래스. 중립 placeholder(is-pending 등)는 in-progress 톤으로 폴백.
+  const detailLogStatusClass = (() => {
+    const c = headerStatusClass || "";
+    if (c.includes("success") || c.includes("fail") || c.startsWith("rest")) return c;
+    return "in-progress";
+  })();
+  const detailLogResultMessage = detailLogStatusClass.includes("success")
+    ? "이번 주 성장 목표를 멋지게 달성하셨어요! 꾸준함이 곧 실력입니다. 다음 주에도 이 페이스 그대로 함께 달려봐요! 🎉"
+    : detailLogStatusClass.includes("fail")
+      ? "앗, 이번 주 성장 목표에는 조금 못 미쳤어요. 혹시 클럽의 규정이나 프로세스가 아직 익숙하지 않으셨다면, 한번 천천히 살펴보면 다음 주엔 분명 더 수월할 거예요! 지피지기면 백전백승! 💪"
+      : "이번 주 성장 결과를 집계하고 있어요. 잠시 후 다시 확인해 주세요!";
+  // ── Detail Log: 조직별 포인트 명칭(Po.A/B/C → 별/단감/투구 …) ──
+  // 우선순위: ?org= 쿼리(slug 또는 organization 표기) → pathname org. 항상 oranke/encre/phalanx 로 해석.
+  const detailLogOrgSlug: "oranke" | "encre" | "phalanx" =
+    (headerOrg === "encre" || headerOrg === "phalanx" || headerOrg === "oranke"
+      ? headerOrg
+      : headerOrg === "entertainment"
+        ? "encre"
+        : headerOrg === "planning"
+          ? "phalanx"
+          : headerOrg === "marketing"
+            ? "oranke"
+            : null) ?? getOrganizationConfig(getCurrentOrganizationFromPathname(pathname)).orgSlug;
+  const DL_ORG_POINT_NAMES: Record<string, [string, string, string]> = {
+    encre: ["별", "방패", "번개"],
+    oranke: ["단감", "인절미", "어흥"],
+    phalanx: ["투구", "방패", "화살"],
+  };
+  // 조직값을 알 수 없을 때만 Po.A/B/C fallback.
+  const detailLogPointNames: [string, string, string] =
+    DL_ORG_POINT_NAMES[detailLogOrgSlug] ?? ["Po.A", "Po.B", "Po.C"];
+  const detailLogPoaName = detailLogPointNames[0];
+
+  // 실무 경험 오픈 라인 수: 카드 표시(experienceStatsAdmin)와 동일한 단일 출처
+  // (어드민 weekly-cards DTO experienceRate{count,total})를 사용한다. '봄 시즌까지 통합 임시 라인을
+  // 오픈 라인으로 인정'하는 정책은 백엔드 스냅샷(experienceRate.total)에서 보정되며, 프론트는 그 값을
+  // 그대로 소비한다 → 프론트 experienceStats state(activeActivities 기반)는 DTO 미수신 시 폴백으로만 사용.
+  const detailLogExpRate =
+    (weeklyCardMeta as (AdminCluster4WeeklyCardDto & { experienceRate?: Cluster4RateDto | null }) | null)
+      ?.experienceRate ?? null;
+  const detailLogExpHasDto =
+    !!detailLogExpRate && typeof detailLogExpRate.total === "number" && typeof detailLogExpRate.count === "number";
+  const detailLogExpTotal = detailLogExpHasDto ? Number(detailLogExpRate!.total) || 0 : experienceStats.total;
+  const detailLogExpSuccess = detailLogExpHasDto ? Number(detailLogExpRate!.count) || 0 : experienceStats.success;
+  // 두 성장 조건 충족 여부 — [성장 성공 조건 체크]·[이번 주 도움말 4분기] 공통 단일 출처.
+  //   ① 포인트 기준 달성 = 주차 성장 성공(detailLogStatusClass success)
+  //   ② [실무 경험] 필수 라인 강화 완료 = 오픈 라인 전부 강화(total>0 && success>=total)
+  const detailLogPoaMet = detailLogStatusClass.includes("success");
+  const detailLogExpAllEnhanced = detailLogExpTotal > 0 && detailLogExpSuccess >= detailLogExpTotal;
+  const detailLogConditions: DetailLogCondition[] = [
+    {
+      checked: detailLogPoaMet,
+      text: detailLogPoaMet
+        ? `이번 주 ${detailLogPoaName} ${headerDangam}개를 획득해 성장 성공 기준을 달성하셨어요!`
+        : `이번 주 ${detailLogPoaName} ${headerDangam}개를 획득하셨어요. 성장 성공 기준에는 조금 더 필요해요!`,
+    },
+    {
+      checked: detailLogExpAllEnhanced,
+      text:
+        detailLogExpTotal > 0
+          ? `이번 주 [실무 경험] 허브에서 오픈된 라인 ${detailLogExpTotal}개 중 ${detailLogExpSuccess}개를 강화하셨어요!`
+          : "이번 주 [실무 경험] 허브에서 오픈된 라인이 없어요.",
+    },
+  ];
+  // 이번 주 도움말 — 성장 결과 badge 가 아니라 위 두 조건(detailLogPoaMet/detailLogExpAllEnhanced) 결과로 4분기.
+  const detailLogWeeklyHelp =
+    detailLogPoaMet && detailLogExpAllEnhanced
+      ? `이번 주 ${detailLogPoaName} 기준을 모두 달성하고, [실무 경험]의 필수 라인들을 모두 강화하셨어요! 주차 성장에 성공한 만큼, 실무 정보, 실무 역량, 실무 경력 허브의 라인들도 놓치지 않으셨겠죠? 너무 멋져요! 😊`
+      : !detailLogPoaMet && detailLogExpAllEnhanced
+        ? `이번 주 ${detailLogPoaName} 기준을 넘지 못했어요! ${detailLogPoaName}은 클럽 활동에 필수적인 프로세스들을 잘 챙기고, 공지들을 확인하면 아주 쉽게 얻을 수 있으니 놓치지 말아주세요! 😊`
+        : detailLogPoaMet && !detailLogExpAllEnhanced
+          ? `이번 주 [실무 경험] 허브 라인을 강화하지 못했어요! [실무 경험]의 허브는 클럽 활동에서 크루분이 자신의 포트폴리오를 한 주 한 주 누적해나가는 핵심 활동이기 때문에 놓치면 안된답니다! 😊`
+          : `이번 주 ${detailLogPoaName} 기준이 미달되고, [실무 경험] 허브의 라인들도 강화하지 못했어요. 😂 혹시 규정이나 클럽 프로세스에 대한 이해가 부족하시다면, 팀장, 앰배서더 등 운영진 분들에게 도움을 요청해주세요! 알고나면 너무 쉽게 쑥쑥 성장할 수 있답니다! 😊`;
+  // Detail Log 기간 표기 — 공통 압축 포맷(YYYY.MM.DD(요일)). header 의 formatDate(YYYY - MM - DD)와 별도.
+  const formatDetailLogDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const days = ["일", "월", "화", "수", "목", "금", "토"];
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${d.getFullYear()}.${m}.${day}(${days[d.getDay()]})`;
+  };
+  const detailLogData: DetailLogData = {
+    seasonWeekTitle: headerTitle || "-",
+    periodText:
+      headerStartDate && headerEndDate
+        ? `${formatDetailLogDate(headerStartDate)} ~ ${formatDetailLogDate(headerEndDate)}`
+        : "-",
+    crew: {
+      name: ownerPersonalInfo.name || "-",
+      team: headerTeamName ? `${headerTeamName} 팀` : "-",
+      part: headerPartName ? `${headerPartName} 파트` : "-",
+      level:
+        (ownerPersonalInfo.membershipLevel || "") +
+        (headerRoleLabel && headerRoleLabel !== "-" && headerRoleLabel !== ownerPersonalInfo.membershipLevel
+          ? `(${headerRoleLabel})`
+          : ""),
+    },
+    statusText: headerStatusText || "-",
+    statusClass: detailLogStatusClass,
+    cumulativeWeeks: detailLogCumulativeWeeks,
+    resultMessage: detailLogResultMessage,
+    // 조직별 명칭 적용(아이콘은 기존 유지). 조직 미상 시 Po.A/B/C.
+    points: [
+      { label: detailLogPointNames[0], icon: resolveHeaderPoint("단감").icon, value: headerDangam },
+      { label: detailLogPointNames[1], icon: resolveHeaderPoint("인절미").icon, value: headerInjeolmi },
+      { label: detailLogPointNames[2], icon: resolveHeaderPoint("어흥").icon, value: headerEoheung },
+    ],
+    conditions: detailLogConditions,
+    weeklyHelp: detailLogWeeklyHelp,
+  };
+  // 휴식(개인/공식)·전환 주차는 Detail Log 대신 안내 팝업(기존 Popup 시스템).
+  const handleDetailLogOpen = () => {
+    if (isRestMode || metaIsTransitionRest) {
+      const msg = isOfficialRestLocal
+        ? "이번 주는 클럽 공식 휴식 주차예요.\n휴식 주차에는 Detail Log가 제공되지 않습니다.\n푹 쉬고 다음 주에 만나요! 😊"
+        : metaIsTransitionRest
+          ? "이번 주는 시즌 전환(휴식) 주차예요.\n휴식 주차에는 Detail Log가 제공되지 않습니다."
+          : "이번 주는 개인 휴식 주차예요.\n휴식 주차에는 Detail Log가 제공되지 않습니다.\n푹 쉬고 다음 주에 만나요! 😊";
+      popup.showAlert(msg);
+      return;
+    }
+    setShowDetailLogModal(true);
+  };
+
   // 태그 색상 배열
   const tagColors = ["tag--pink", "tag--red", "tag--yellow", "tag--purple", "tag--green", "tag--cyan", "tag--mint", "tag--dark"];
 
@@ -9161,7 +9291,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   </span>
                   <span>{isWeekConfirmed ? "확인 완료" : "확인 필요"}</span>
                 </button>
-                <button type="button" className="detail-log-btn" onClick={() => setShowDetailLogModal(true)} aria-label="Detail Log 열기">
+                <button type="button" className="detail-log-btn" onClick={handleDetailLogOpen} aria-label="Detail Log 열기">
                   <i className="ti ti-list-details"></i>
                   <span>Detail Log</span>
                 </button>
@@ -14343,7 +14473,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         )}
 
       {/* Detail Log 모달 — 빈 placeholder 컨테이너 (674×826) */}
-      <DetailLogModal show={showDetailLogModal} onHide={() => setShowDetailLogModal(false)} />
+      <DetailLogModal
+        show={showDetailLogModal}
+        onHide={() => setShowDetailLogModal(false)}
+        data={detailLogData}
+      />
 
       {/* Output Link 2차 모달 — Portal로 document.body에 직접 렌더링 (1차 모달 위에 뜸) */}
       {outputLinkEditModal &&
