@@ -39,6 +39,7 @@ async function buildSeasonSummaryAndPoints(
   userStatus: string | null,
   resumeStatusByKey: Map<string, string>,
   currentSeasonRest: boolean,
+  currentSeasonStopped: boolean,
 ): Promise<{ seasonSummary: any | null; seasonPointSummary: { star: number; shield: number; lightning: number } | null }> {
   if (!currentWeek) return { seasonSummary: null, seasonPointSummary: null };
 
@@ -100,7 +101,9 @@ async function buildSeasonSummaryAndPoints(
   // 요약에도 적용한다 (seasonSummaries 와 data.seasonSummary 가 갈리면 안 됨).
   const gs = String(growthStatus || "").toLowerCase();
   const st = String(userStatus || "").toLowerCase();
-  const isFailedStatus = gs === "suspended" || gs === "withdrawn" || gs === "expelled" || gs === "deferred" || st === "suspended";
+  // 시즌 중단 = 시즌 스코프 currentSeasonStopped (현재 시즌 user_season_statuses.status='stopped')
+  //   또는 whole-person 운영 override(suspended 등). 휴식보다 우선.
+  const isFailedStatus = currentSeasonStopped || gs === "suspended" || gs === "withdrawn" || gs === "expelled" || gs === "deferred" || st === "suspended";
   // 시즌 휴식 판정 = 시즌 스코프 currentSeasonRest (현재 시즌 user_season_statuses.status='rest').
   //   ⚠ 종전엔 whole-person growth_status(=seasonal_rest 등)로 판정 → 과거 시즌 휴식 플래그가 잔존해
   //     활동 재개 시즌도 "시즌 휴식"으로 오표시. 현재 시즌 휴식행 기준으로 정정.
@@ -209,10 +212,12 @@ function deriveSeasonStatus(
   resumeProgressStatus: string | null,
   resumeGraftLoaded: boolean,
   currentSeasonRest: boolean,
+  currentSeasonStopped: boolean,
 ): { status: "active" | "ended" | "rest"; seasonResult: "success" | "failed" | "none" | "graduated"; statusLabel: string } {
   const gs = String(growthStatus || "").toLowerCase();
   const st = String(userStatus || "").toLowerCase();
-  const isFailed = gs === "suspended" || gs === "withdrawn" || gs === "expelled" || gs === "deferred" || st === "suspended";
+  // 현재 시즌 중단 = 시즌 스코프 currentSeasonStopped (또는 whole-person 운영 override). 휴식보다 우선.
+  const isFailed = currentSeasonStopped || gs === "suspended" || gs === "withdrawn" || gs === "expelled" || gs === "deferred" || st === "suspended";
   // 현재 시즌 휴식 = 시즌 스코프 currentSeasonRest (whole-person growth_status 아님). 과거 시즌은
   //   아래 resumeProgressStatus(이력서 SoT)로 판정하므로 이 플래그는 isCurrent 분기에서만 쓴다.
   const isRest = currentSeasonRest;
@@ -350,6 +355,7 @@ async function buildSeasonSummaries(
   userStatus: string | null,
   resumeStatusByKey: Map<string, string>,
   currentSeasonRest: boolean,
+  currentSeasonStopped: boolean,
 ): Promise<any[]> {
   // 1. 유저가 활동한 주차(포인트 + 주차상태)의 week_start_date 수집
   const [wpRes, wsRes] = await Promise.all([
@@ -436,8 +442,9 @@ async function buildSeasonSummaries(
       userStatus,
       resumeStatusByKey.get(seasonKey) ?? null,
       resumeStatusByKey.size > 0,
-      // 시즌 휴식은 현재 시즌(isCurrent)에만 시즌 스코프로 적용 — 과거 시즌은 resumeProgressStatus 가 판정.
+      // 시즌 휴식/중단은 현재 시즌(isCurrent)에만 시즌 스코프로 적용 — 과거 시즌은 resumeProgressStatus 가 판정.
       isCurrent && currentSeasonRest,
+      isCurrent && currentSeasonStopped,
     );
 
     out.push({
@@ -496,15 +503,16 @@ export async function GET(request: NextRequest) {
     //   whole-person growth_status 대신 이 값으로 현재 시즌 "시즌 휴식"을 판정한다(시즌 오인 방지).
     const currentSeasonKey: string | null = currentWeek?.season_key ?? null;
     let currentSeasonRest = false;
+    let currentSeasonStopped = false;
     if (currentSeasonKey) {
-      const { data: ssRest } = await supabase
+      const { data: ssRows } = await supabase
         .from("user_season_statuses")
         .select("status")
         .eq("user_id", userId)
         .eq("season_key", currentSeasonKey)
-        .eq("status", "rest")
-        .limit(1);
-      currentSeasonRest = (ssRest?.length ?? 0) > 0;
+        .in("status", ["rest", "stopped"]);
+      currentSeasonRest = (ssRows ?? []).some((r: any) => r.status === "rest");
+      currentSeasonStopped = (ssRows ?? []).some((r: any) => r.status === "stopped");
     }
 
     // 시즌 판정 SoT graft — 시즌 중 졸업/성공/중단/휴식 판정에 단일 요약·시즌별 요약 공용.
@@ -520,6 +528,7 @@ export async function GET(request: NextRequest) {
       userProfile?.status || null,
       resumeStatusByKey,
       currentSeasonRest,
+      currentSeasonStopped,
     );
     // 시즌별 요약 배열(페이지네이션용) — 각 시즌 자기 범위만 누적.
     const seasonSummaries = await buildSeasonSummaries(
@@ -530,6 +539,7 @@ export async function GET(request: NextRequest) {
       userProfile?.status || null,
       resumeStatusByKey,
       currentSeasonRest,
+      currentSeasonStopped,
     );
 
     // 사용 DTO: data.seasonSummary(현재 시즌), data.seasonPointSummary(현재 시즌),
