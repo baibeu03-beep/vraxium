@@ -6442,11 +6442,57 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     if (c.includes("success") || c.includes("fail") || c.startsWith("rest")) return c;
     return "in-progress";
   })();
-  const detailLogResultMessage = detailLogStatusClass.includes("success")
-    ? "이번 주 성장 목표를 멋지게 달성하셨어요! 꾸준함이 곧 실력입니다. 다음 주에도 이 페이스 그대로 함께 달려봐요! 🎉"
-    : detailLogStatusClass.includes("fail")
-      ? "앗, 이번 주 성장 목표에는 조금 못 미쳤어요. 혹시 클럽의 규정이나 프로세스가 아직 익숙하지 않으셨다면, 한번 천천히 살펴보면 다음 주엔 분명 더 수월할 거예요! 지피지기면 백전백승! 💪"
-      : "이번 주 성장 결과를 집계하고 있어요. 잠시 후 다시 확인해 주세요!";
+  // dl-alert 결과 메시지: 백엔드 DTO detailLogMessageMeta(v29) 단일 출처로 4분기.
+  //   프론트에서 cards 배열을 훑어 지난 주/연속 주차를 계산하지 않는다. 메타가 없을 때만 기존 문구로 fallback.
+  //   demoUserId/일반 사용자 모두 동일 DTO(weeklyCardMeta)를 소비하므로 경로 분기 없이 동작한다.
+  const detailLogMessageMeta =
+    (weeklyCardMeta as
+      | (AdminCluster4WeeklyCardDto & {
+          detailLogMessageMeta?: {
+            previousWeekStatus?: "success" | "fail" | "none" | "rest";
+            currentWeekStatus?: "success" | "fail";
+            successStreakWeeks?: number;
+          } | null;
+        })
+      | null)?.detailLogMessageMeta ?? null;
+  const detailLogResultMessage = (() => {
+    // 신규 성공: 이번 주 성공 + 지난 주 비성공(또는 streak 비정상 시 fallback 표시)
+    const NEW_SUCCESS =
+      "이번 주, <성장 성공> 달성하셨어요! 열심히 달려온 당신께 찬사를!!";
+    // 성공 후 실패
+    const SUCCESS_THEN_FAIL =
+      "앗..! 지난 주에 성장 성공하셨는데, 이번 주에 성장이 실패했다면, 이번 주에는 잠깐 컨디션이 안 좋았을 수 있어요! 다시 가다듬자구요!";
+    // 연속 실패 또는 실패 유지
+    const FAIL_STREAK =
+      "앗, 연속해서 주차 성장을 실패하셨다면.. 혹시 클럽의 규정이나 프로세스를 잘 인지하지 못하고 있을 가능성이 있어요! 지피지기면 백전백승! 한번 살펴보자구요!";
+
+    if (detailLogMessageMeta && detailLogMessageMeta.currentWeekStatus) {
+      const { currentWeekStatus, previousWeekStatus, successStreakWeeks } = detailLogMessageMeta;
+      if (currentWeekStatus === "success") {
+        if (previousWeekStatus === "success") {
+          // 연속 성공: {n} = successStreakWeeks(최대 10). 값이 없거나 이상하면 신규 성공으로 fallback.
+          const n =
+            typeof successStreakWeeks === "number" && Number.isFinite(successStreakWeeks) && successStreakWeeks >= 2
+              ? Math.min(successStreakWeeks, 10)
+              : null;
+          return n === null
+            ? NEW_SUCCESS
+            : `지난 주에 이어, 이번주도 역시! 성장 흐름이 ${n}주 째 이어지고 있어요!!`;
+        }
+        // 신규 성공: 이번 주 성공 + 지난 주 비성공
+        return NEW_SUCCESS;
+      }
+      // currentWeekStatus === "fail"
+      return previousWeekStatus === "success" ? SUCCESS_THEN_FAIL : FAIL_STREAK;
+    }
+
+    // detailLogMessageMeta 미수신 시에만 기존 status 기반 문구로 fallback.
+    return detailLogStatusClass.includes("success")
+      ? "이번 주 성장 목표를 멋지게 달성하셨어요! 꾸준함이 곧 실력입니다. 다음 주에도 이 페이스 그대로 함께 달려봐요! 🎉"
+      : detailLogStatusClass.includes("fail")
+        ? "앗, 이번 주 성장 목표에는 조금 못 미쳤어요. 혹시 클럽의 규정이나 프로세스가 아직 익숙하지 않으셨다면, 한번 천천히 살펴보면 다음 주엔 분명 더 수월할 거예요! 지피지기면 백전백승! 💪"
+        : "이번 주 성장 결과를 집계하고 있어요. 잠시 후 다시 확인해 주세요!";
+  })();
   // ── Detail Log: 조직별 포인트 명칭(Po.A/B/C → 별/단감/투구 …) ──
   // 우선순위: ?org= 쿼리(slug 또는 organization 표기) → pathname org. 항상 oranke/encre/phalanx 로 해석.
   const detailLogOrgSlug: "oranke" | "encre" | "phalanx" =

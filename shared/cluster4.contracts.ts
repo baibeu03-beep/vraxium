@@ -334,6 +334,17 @@ export interface AdminCluster4WeeklyCardDto {
   // 본 주차가 온보딩 주차인지 여부 (weekId === user_profiles.onboarding_week_id).
   isOnboarding?: boolean | null;
 
+  // ── Detail Log dl-alert 결과 메시지 분기 메타 (백엔드 append-only — DTO v29) ──
+  // 프론트는 cards 배열을 직접 훑어 지난 주/연속 주차를 계산하지 않고 이 메타만 사용한다.
+  //   previousWeekStatus: 직전 주차 결과(success/fail/none/rest)
+  //   currentWeekStatus : 본 주차 결과(success/fail)
+  //   successStreakWeeks: 연속 성공 주차 수(연속 성공 문구의 {n})
+  detailLogMessageMeta?: {
+    previousWeekStatus: "success" | "fail" | "none" | "rest";
+    currentWeekStatus: "success" | "fail";
+    successStreakWeeks: number;
+  } | null;
+
   [key: string]: unknown;
 }
 
