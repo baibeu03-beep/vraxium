@@ -1011,12 +1011,9 @@ export async function GET(request: NextRequest) {
       return parsed;
     };
 
-    // Cluster3 주차 평균 백분위: admin canonical route(/api/cluster3/club-rank) 실시간 계산값.
-    // DB 쿼리들과 병렬로 선행 호출하고 응답 직전에 await 한다.
-    // cluster41 은 gradeStats.avgPercentile 을 읽지 않으므로 외부 admin 프록시 호출을 스킵한다.
-    const clubRankAvgPercentilePromise = isCluster41
-      ? Promise.resolve<number | null>(null)
-      : fetchClubRankAvgPercentile(request, profile.id);
+    // Cluster3 주차 평균 백분위: user_grade_stats.avg_percentile 캐시 우선(admin 과 동일 SoT).
+    // 캐시 hit 시 admin 실시간 계산(/api/cluster3/club-rank 풀스캔) 호출을 아예 생략한다.
+    // 폴백(캐시 null)은 gradeStats 해석 후 lazy 하게 fetchClubRankAvgPercentile 로 처리(아래).
 
     // 사이드바 이력서 카드 단일 SoT — admin getCluster1Resume DTO. DB 쿼리들과 병렬 선행 호출.
     const adminResumePromise = fetchAdminCluster1Resume(request, profile.id);
@@ -1097,10 +1094,10 @@ export async function GET(request: NextRequest) {
         "id, user_id, season_id, rating, review, created_at, updated_at"
       ).eq("user_id", profile.id),
 
-      // grade_stats (품계 정보) — grade/grade_label 만 사용.
-      // avgPercentile 은 더 이상 이 캐시 컬럼(avg_percentile)에서 읽지 않고
-      // GET /api/cluster3/club-rank 의 실시간 계산값을 사용한다 (아래 clubRankAvgPercentile).
-      supabaseAdmin.from("user_grade_stats").select("grade, grade_label").eq("user_id", profile.id).maybeSingle(),
+      // grade_stats (품계 정보) — grade/grade_label/avg_percentile 모두 캐시(user_grade_stats)에서 읽는다.
+      // 품계 SoT 를 admin(/admin/members)과 동일하게 user_grade_stats 캐시로 통일 →
+      // avgPercentile 도 캐시 컬럼 우선(아래 clubRankAvgPercentile), 캐시 null 일 때만 실시간 폴백.
+      supabaseAdmin.from("user_grade_stats").select("grade, grade_label, avg_percentile").eq("user_id", profile.id).maybeSingle(),
 
       // growth_stats (성장 기간 집계 + reliability_rate)
       supabaseAdmin.from("user_growth_stats").select("approved_weeks, unapproved_weeks, rest_weeks, club_break_weeks, passed_weeks, available_weeks, available_weeks_club, available_seasons, rest_seasons, approved_seasons, reliability_rate").eq("user_id", profile.id).maybeSingle(),
@@ -1320,7 +1317,13 @@ export async function GET(request: NextRequest) {
       console.log("[Profile API] user_cumulative_points point row", cumulativePointUserId, cumulativePointsRes.data);
     }
     const cumulativePointDto = cumulativePointsRes.data;
-    const clubRankAvgPercentile = await clubRankAvgPercentilePromise;
+    // 품계 평균 백분위 — 캐시(user_grade_stats.avg_percentile) 우선, 캐시 null 이고 cluster41 이
+    //   아닐 때만 admin 실시간 계산으로 폴백(풀스캔 회피). cluster41 은 이 값을 읽지 않는다.
+    const cachedAvgPercentile = (gradeStats as { avg_percentile?: number | string | null } | null)?.avg_percentile;
+    const clubRankAvgPercentile =
+      cachedAvgPercentile != null
+        ? Number(cachedAvgPercentile)
+        : (isCluster41 ? null : await fetchClubRankAvgPercentile(request, profile.id));
     // 이력서 카드 SoT DTO (활동완료율·실무성적). 실패 시 null → 아래에서 로컬 계산 폴백.
     const adminResume = await adminResumePromise;
     // 이력서 카드 medal-week-num — admin Details 와 동일 값. 실패 시 null → 로컬 확정 주차 카운트 폴백.
@@ -2619,8 +2622,8 @@ export async function GET(request: NextRequest) {
         endWeekInfo: growthEndWeekInfo,
       },
       gradeStats: gradeStats ? {
-        // avgPercentile: user_grade_stats.avg_percentile 캐시 제거 →
-        // GET /api/cluster3/club-rank 의 실시간 data.avgPercentile 사용 (admin 과 동일 계산식).
+        // avgPercentile: user_grade_stats.avg_percentile 캐시 우선(admin SoT 통일),
+        //   캐시 null 일 때만 /api/cluster3/club-rank 실시간 폴백(위 clubRankAvgPercentile).
         avgPercentile: clubRankAvgPercentile ?? 0,
         grade: gradeStats.grade || 10,
         gradeLabel: gradeStats.grade_label || '정 9품',
