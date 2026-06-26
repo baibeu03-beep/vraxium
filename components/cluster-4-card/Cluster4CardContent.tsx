@@ -7933,8 +7933,23 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // '강화 대기'가 아니라 빈 상태('empty') — empty 는 뱃지/아이콘 미렌더(강화 대기 표시 안 함),
   // 카운트도 0 (competencyStatsAdmin 와 동일 realCompetencyLines 기준). (2026-06-09 정책:
   //  구 v14 "미수행=강화 대기 placeholder" 폐기 — 실제 라인 0개 = 빈 상태 안내만 표시.)
+  // (2026-06-26 정책 D — 프론트 전용 표시) 역량 '미진행 확정 주차' = 보이드 유지 + '강화 실패' 표시.
+  //   확정 = 주차 결과 공표(상태 라벨이 '성장(성공)/성장(실패)'). 집계 중·진행 중·중립 상태는
+  //   아직 미확정이므로 기존대로 보이드 no-badge('empty') 유지(섣부른 실패 표시 금지).
+  //   휴식/온보딩 분기(not_applicable)는 건드리지 않는다. 백엔드 DTO·snapshot 무변경 —
+  //   displayedAbilityCard 폴백의 표시 상태만 'empty'→'failed' 로 승격(내용은 보이드 그대로).
+  const abilityWeekResultClass = cardBadgeClassFromLabel(
+    weeklyCardMeta?.statusLabel ?? "",
+    cardStatusToneClass(weeklyCardMeta?.statusTone),
+  );
+  const isAbilityWeekResultConfirmed =
+    abilityWeekResultClass === "success" || abilityWeekResultClass === "fail";
   const abilityVoidFallbackStatus: EnhancementStatus =
-    isRestMode || isOnboardingWeek ? "not_applicable" : "empty";
+    isRestMode || isOnboardingWeek
+      ? "not_applicable"
+      : isAbilityWeekResultConfirmed
+        ? "failed"
+        : "empty";
   const displayedAbilityCard: WorkAbilityCard = matchedAbilityCard ?? {
     id: 0,
     lineTargetId: null,
@@ -7955,8 +7970,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     status: abilityVoidFallbackStatus,
     statusIcon: enhancementStatusIcons[abilityVoidFallbackStatus],
     enhancementStatus: abilityVoidFallbackStatus,
-    // 폴백은 해당없음(휴식/온보딩) 또는 빈 상태('empty') — 실패/강화 대기 아님 (2026-06-09).
-    isFailed: false,
+    // 폴백 상태: 휴식/온보딩=해당없음, 미확정=빈 상태('empty'), 확정 미진행='failed'(보이드+강화 실패, 2026-06-26 D).
+    isFailed: abilityVoidFallbackStatus === "failed",
     isEmpty: true,
     hasActivity: false,
   };
