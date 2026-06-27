@@ -6672,7 +6672,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         ? `${formatDetailLogDate(headerStartDate)} ~ ${formatDetailLogDate(headerEndDate)}`
         : "-",
     crew: {
-      name: ownerPersonalInfo.name || "-",
+      // 비로그인 열람 시 이름 마스킹 — 카드 본문과 동일 정책(useDataMasking.mask.displayName).
+      //   로그인/데모(localStorage) 시 원문, 비로그인만 마스킹. ownerPersonalInfo.name 은 raw 라 1회 적용(이중 마스킹 아님).
+      name: mask.displayName(ownerPersonalInfo.name),
       team: headerTeamName ? `${headerTeamName} 팀` : "-",
       part: headerPartName ? `${headerPartName} 파트` : "-",
       level:
