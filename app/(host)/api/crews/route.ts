@@ -211,7 +211,7 @@ async function fetchDisplayGrowthStatusMap(
 const isValidUUID = (str: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
-// ─── 시즌 참여자(active + rest) 게이트 ─────────────────────────────────
+// ─── 시즌 참여자 status 맵 (active + rest 게이트 + 상태 카운트) ──────────
 // /crews 활동 크루 목록 = operationalSeasonKey 기준 user_season_statuses 의
 //   status ∈ { 'active', 'rest' } 참여자. (operationalSeasonKey SoT =
 //   lib/seasonCalendar.operationalSeasonDbKey: 전환 주차면 다음 시즌.)
@@ -220,38 +220,77 @@ const isValidUUID = (str: string) =>
 //   · 해당 시즌 user_season_statuses 행이 없는 레거시 전체 DB 풀(user_profiles)도 제외.
 //   · growth_status 가 아니라 user_season_statuses + season_key 로만 거른다(요구 8).
 //   · 과거 시즌 기록/카드/포인트(enrichment)는 불변 — roster 범위만 좁힌다(요구 9).
-// 반환: user_id → 'active' | 'rest' 맵. rest 판별이 필요한 건 rest 사용자의
-//   팀명/파트명을 '-' 로 비우기 위함('시즌전체휴식' 센티넬 노출 금지, 요구 3·4).
+// 반환: { statusByUser(user_id→status, 전 상태), counts(active/rest/stopped/total) }.
+//   - statusByUser 로 active+rest 게이트 + rest 팀/파트 '-' 마스킹.
+//   - counts 는 상단 카운트 검증용(요구 6). 시즌 1회 조회로 게이트+카운트 동시 해결.
 // best-effort: season_key 미산출(null) 또는 조회 실패 시 null 반환 → 호출부에서
 //   필터를 건너뛰어 빈 화면 대신 종전 동작을 유지(인프라 장애 fail-open).
-async function fetchSeasonRosterStatusMap(
+type SeasonStatusCounts = { total: number; active: number; rest: number; stopped: number };
+async function fetchSeasonStatusMap(
   supabase: ReturnType<typeof createAdminClient>,
   seasonKey: string | null,
-): Promise<Map<string, string> | null> {
+): Promise<{ statusByUser: Map<string, string>; counts: SeasonStatusCounts } | null> {
   if (!seasonKey) return null;
   const PAGE = 1000;
-  const map = new Map<string, string>();
+  const statusByUser = new Map<string, string>();
+  const counts: SeasonStatusCounts = { total: 0, active: 0, rest: 0, stopped: 0 };
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from("user_season_statuses")
       .select("user_id, status")
       .eq("season_key", seasonKey)
-      .in("status", ["active", "rest"])
       .order("user_id", { ascending: true })
       .range(from, from + PAGE - 1)
       .returns<{ user_id: string; status: string }[]>();
     if (error) {
       console.error(
-        "[/api/crews] user_season_statuses(active+rest) 조회 실패 — 시즌 필터 건너뜀(fail-open):",
+        "[/api/crews] user_season_statuses 조회 실패 — 시즌 필터 건너뜀(fail-open):",
         JSON.stringify(error),
       );
       return null;
     }
     if (!data || data.length === 0) break;
-    for (const r of data) map.set(r.user_id, r.status);
+    for (const r of data) {
+      statusByUser.set(r.user_id, r.status);
+      counts.total += 1;
+      if (r.status === "active") counts.active += 1;
+      else if (r.status === "rest") counts.rest += 1;
+      else if (r.status === "stopped") counts.stopped += 1;
+    }
     if (data.length < PAGE) break;
   }
-  return map;
+  return { statusByUser, counts };
+}
+
+// user_profiles roster select 컬럼(identity + 학교/학과 + 팀/파트 폴백). 단일 정의소.
+const PROFILE_COLS =
+  "user_id, display_name, contact_email, profile_photo_url, vision, profile_tagline, profile_keyword, status, growth_status, organization_slug, school_name, department_name, gender, birth_date, current_team_name, current_part_name";
+
+function chunk<T>(arr: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+// .in(ids) 를 150개 단위로 쪼개 실행(URL 길이/대량 .in 회피). 한 청크라도 실패 시 error 반환.
+async function inChunkedSelect<Row>(
+  supabase: ReturnType<typeof createAdminClient>,
+  table: string,
+  columns: string,
+  inColumn: string,
+  ids: readonly string[],
+  refine?: (q: any) => any,
+): Promise<{ rows: Row[]; error: { message?: string } | null }> {
+  if (ids.length === 0) return { rows: [], error: null };
+  const out: Row[] = [];
+  for (const part of chunk(ids, 150)) {
+    let q: any = supabase.from(table).select(columns).in(inColumn, part);
+    if (refine) q = refine(q);
+    const { data, error } = (await q) as { data: Row[] | null; error: { message?: string } | null };
+    if (error) return { rows: [], error };
+    out.push(...((data ?? []) as Row[]));
+  }
+  return { rows: out, error: null };
 }
 
 // 팀/파트 필드에 누수된 시즌 상태 센티넬('시즌전체휴식')은 실제 팀명이 아니므로
@@ -366,236 +405,204 @@ export async function GET(request: Request) {
     const orgParam = searchParams.get("org");
     const orgFilter = orgParam && KNOWN_ORGS.has(orgParam) ? orgParam : null;
 
+    // 서버 페이지네이션(요구 4) — page 파라미터가 있을 때만 페이지 슬라이스.
+    //   page 미지정 호출(예: 연계동료 후보 = Cluster4CardContent /api/crews?excludeUserId&org)은
+    //   전체 목록을 그대로 받는다(하위호환). /crews 페이지는 page/pageSize 를 항상 보낸다.
+    const pageParamPresent = searchParams.get("page") != null;
+    const pageRaw = Number(searchParams.get("page"));
+    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? Math.floor(pageRaw) : 1;
+    const pageSizeRaw = Number(searchParams.get("pageSize"));
+    const pageSize = Number.isFinite(pageSizeRaw) && pageSizeRaw > 0 ? Math.min(100, Math.floor(pageSizeRaw)) : 50;
+    // 서버측 필터(요구 5) — 이름(완전일치)·학교명(부분일치)·상태(활동중/졸업).
+    const nameQuery = (searchParams.get("name") ?? searchParams.get("search") ?? "").trim();
+    const schoolQuery = (searchParams.get("school") ?? "").trim();
+    const statusParam = (searchParams.get("status") ?? "").trim(); // "활동 중" | "활동 졸업" | ""
+
     const supabase = createAdminClient();
 
-    // 0) operationalSeasonKey — 오늘 날짜 기준 운영 시즌(전환 주차면 다음 시즌).
-    //    admin/members 와 동일 산출(lib/seasonCalendar.operationalSeasonDbKey).
-    const operationalSeasonKey = operationalSeasonDbKey(
-      new Date().toISOString().slice(0, 10),
-    );
-    // 시즌 참여자(active+rest) status 맵 — roster 게이트 + rest 팀/파트 마스킹.
-    // best-effort(null=필터 스킵, fail-open).
-    const seasonRosterStatus = await fetchSeasonRosterStatusMap(
-      supabase,
-      operationalSeasonKey,
-    );
+    // 0) operationalSeasonKey + 시즌 status 맵(active+rest 게이트 + 상태 카운트). best-effort.
+    const operationalSeasonKey = operationalSeasonDbKey(new Date().toISOString().slice(0, 10));
+    const season = await fetchSeasonStatusMap(supabase, operationalSeasonKey);
 
-    // 1) Roster from user_profiles (source of truth for org membership + identity + 학교/학과).
-    let profileQuery = supabase
-      .from("user_profiles")
-      .select("user_id, display_name, contact_email, profile_photo_url, vision, profile_tagline, profile_keyword, status, growth_status, organization_slug, school_name, department_name, gender, birth_date, current_team_name, current_part_name");
-
-    if (orgFilter) {
-      profileQuery = profileQuery.eq("organization_slug", orgFilter);
-    }
-    if (excludeUserId && isValidUUID(excludeUserId)) {
-      profileQuery = profileQuery.neq("user_id", excludeUserId);
-    }
-
-    const { data: profilesRaw, error: profileError } = await profileQuery.returns<UserProfileRow[]>();
-
-    if (profileError) {
-      console.error("Failed to fetch user_profiles:", JSON.stringify(profileError));
-      return NextResponse.json(
-        { error: "Failed to fetch crews.", detail: profileError.message, code: profileError.code },
-        { status: 500 }
-      );
-    }
-
-    // 모집단 스코프(운영/테스트) — ?mode 미지정/오타 → operating(실사용자만, test_user_markers 제외),
-    // mode=test → test_user_markers 만. 읽기 전용 필터: roster 만 좁히고 enrichment/merge/sort 불변.
-    // (DTO shape 동일 — operating/test 응답 키 집합 불변.) best-effort: markers 조회 실패 시
-    // operating=전체포함(보수적)·test=빈결과(실유저 절대 유입 안 됨).
+    // 모집단 스코프(운영/테스트). 시즌 게이트는 operating 에만(요구 1·2). mode=test 는 시즌
+    // 미참여(test_user_markers) → 게이트 스킵하고 org 전체 풀 사용.
     const scope = await resolveUserScopeFromParams(supabase, searchParams, orgFilter);
+    const applySeasonGate = season != null && scope.mode !== "test";
 
-    // 0.5) 시즌 참여자(active+rest) 게이트 — operationalSeasonKey 기준 user_season_statuses
-    //   status ∈ {active, rest} 인 user_id 만 활동 크루 목록에 남긴다. stopped(활동 중단)
-    //   및 해당 시즌 참여 행이 없는 레거시 전체 DB 풀(엥크레 ~337)은 제외된다(요구 1·2·5~8).
-    //   · operating(실사용자 = demoUserId/일반 동일 DTO)에만 적용한다.
-    //   · mode=test 는 더미 격리 코호트라 test_user_markers 91명 전원이 시즌 미참여
-    //     (user_season_statuses 행 0) — 게이트를 걸면 빈 목록이 되므로 스킵한다.
-    //   · seasonRosterStatus 가 null(시즌키 미산출/조회 실패)이면 fail-open: 종전 동작 유지.
-    const applySeasonGate = seasonRosterStatus != null && scope.mode !== "test";
-    const seasonGated = applySeasonGate
-      ? (profilesRaw ?? []).filter((p) => seasonRosterStatus!.has(p.user_id))
-      : profilesRaw ?? [];
-    const profiles = scope.filter(seasonGated, (p) => p.user_id);
-
-    // [debug] 임시 — 라우트별 결과 확인용. 안정 확인 후 제거 예정.
-    const restCount = applySeasonGate
-      ? seasonGated.filter((p) => seasonRosterStatus!.get(p.user_id) === "rest").length
-      : 0;
-    console.log(
-      "[/api/crews] org=", orgParam, "filter=", orgFilter, "mode=", scope.mode,
-      "opSeasonKey=", operationalSeasonKey,
-      "seasonRoster(active+rest)=", seasonRosterStatus?.size ?? "(fail-open)",
-      "seasonGateApplied=", applySeasonGate,
-      "profilesRaw=", profilesRaw?.length ?? 0,
-      "seasonGated=", seasonGated.length, "restInGate=", restCount, "scoped=", profiles.length,
-      "testUsers=", scope.testUserIds.size, "err=", profileError,
-    );
-
-    if (profiles.length === 0) {
-      return NextResponse.json({ success: true, data: [] });
+    // 1) 모집단 identity 조회 — "전체 user_profiles 풀을 한 번에 로드"하지 않는다(요구 3·7).
+    //    operating: active+rest user_id 로 좁힌 .in(150 청크) 조회 → org∩(active+rest) 만 가져온다.
+    //    test/fail-open: org 전체 identity(레거시 경로). 어느 쪽이든 무거운 per-user enrichment
+    //    (별/주차)는 아래에서 보이는 페이지(≤pageSize)에 대해서만 수행한다(요구 4·7).
+    const isGatedStatus = (st: string | undefined) => st === "active" || st === "rest";
+    let popRows: UserProfileRow[] = [];
+    let popError: { message?: string } | null = null;
+    if (applySeasonGate) {
+      const activeRestIds: string[] = [];
+      season!.statusByUser.forEach((st, uid) => { if (isGatedStatus(st)) activeRestIds.push(uid); });
+      const res = await inChunkedSelect<UserProfileRow>(
+        supabase, "user_profiles", PROFILE_COLS, "user_id", activeRestIds,
+        (q) => {
+          let qq = q;
+          if (orgFilter) qq = qq.eq("organization_slug", orgFilter);
+          if (excludeUserId && isValidUUID(excludeUserId)) qq = qq.neq("user_id", excludeUserId);
+          return qq;
+        },
+      );
+      popRows = res.rows;
+      popError = res.error;
+      if (popError) console.warn("[/api/crews] 시즌 한정 identity 조회 실패 — org 전체 폴백(fail-open)");
+    }
+    if (!applySeasonGate || popError) {
+      let q = supabase.from("user_profiles").select(PROFILE_COLS);
+      if (orgFilter) q = q.eq("organization_slug", orgFilter);
+      if (excludeUserId && isValidUUID(excludeUserId)) q = q.neq("user_id", excludeUserId);
+      const { data, error } = await q.returns<UserProfileRow[]>();
+      if (error) {
+        console.error("Failed to fetch user_profiles:", JSON.stringify(error));
+        return NextResponse.json(
+          { error: "Failed to fetch crews.", detail: error.message, code: error.code },
+          { status: 500 },
+        );
+      }
+      popRows = applySeasonGate
+        ? (data ?? []).filter((p) => isGatedStatus(season!.statusByUser.get(p.user_id)))
+        : (data ?? []);
     }
 
-    // 2~2.8) Enrichment — 5개 source 모두 userIds 에만 의존하며 서로 독립적이므로
-    // Promise.all 로 병렬 실행한다(기존 순차 waterfall 제거). 각 enrichment 는 best-effort:
-    // 하나가 실패해도 roster(user_profiles)는 그대로 표시한다. 병렬화는 round-trip 지연만
-    // 줄일 뿐, 최종 merge + sort 결과(응답 JSON)는 순차 실행 때와 100% 동일하다.
-    const userIds = profiles.map((p) => p.user_id);
+    // 스코프(operating=test 제외 / test=test 만) 적용 → 최종 모집단.
+    const population = scope.filter(popRows, (p) => p.user_id);
+
+    // 조직별 상태 카운트(요구 6) — 모집단(active+rest) 기준.
+    let orgActive = 0, orgRest = 0;
+    if (applySeasonGate) {
+      for (const p of population) {
+        const st = season!.statusByUser.get(p.user_id);
+        if (st === "active") orgActive++;
+        else if (st === "rest") orgRest++;
+      }
+    }
+    const statusCounts = { active: orgActive, rest: orgRest, total: orgActive + orgRest };
+    const emptyEnvelope = (filteredTotal: number) => NextResponse.json({
+      success: true, data: [], page, pageSize, total: population.length, filteredTotal,
+      statusCounts, seasonCounts: season?.counts ?? null, operationalSeasonKey,
+    });
+
+    if (population.length === 0) return emptyEnvelope(0);
+
+    // 2) 모집단 경량 enrichment(필터/정렬용) — 학교/학과(학교명 검색)·승인주차 스냅샷(정렬)·
+    //    displayGrowthStatus(상태 필터). 무거운 별/주차 success 스캔은 여기서 하지 않는다.
+    const popIds = population.map((p) => p.user_id);
+    const [eduRes, growthRes, growthResolutionMap] = await Promise.all([
+      inChunkedSelect<UserEducationRow>(
+        supabase, "user_educations", "user_id, school_name, major_name_1, sort_order", "user_id", popIds,
+        (q) => q.order("sort_order", { ascending: true }),
+      ),
+      inChunkedSelect<UserGrowthStatsRow>(
+        supabase, "user_growth_stats", "user_id, approved_weeks, cumulative_weeks", "user_id", popIds,
+      ),
+      fetchDisplayGrowthStatusMap(orgFilter),
+    ]);
+    if (eduRes.error) console.error("user_educations(pop) failed:", JSON.stringify(eduRes.error));
+    if (growthRes.error) console.error("user_growth_stats(pop) failed:", JSON.stringify(growthRes.error));
+    const eduMap = new Map<string, UserEducationRow>();
+    for (const row of eduRes.rows) if (!eduMap.has(row.user_id)) eduMap.set(row.user_id, row);
+    const growthMap = new Map<string, UserGrowthStatsRow>();
+    for (const row of growthRes.rows) growthMap.set(row.user_id, row);
+
+    // 3) 필터 가능한 모집단 행(학교/학과·displayGrowthStatus·정렬 스냅샷키).
+    const filterable = population.map((p) => {
+      const edu = eduMap.get(p.user_id) ?? null;
+      const school = edu?.school_name ?? p.school_name ?? "";
+      const major = edu?.major_name_1 ?? p.department_name ?? "";
+      const universityMajor = [school, major].filter((v) => v && v !== "-").join(" ");
+      const dgs = growthResolutionMap?.get(p.user_id)?.displayGrowthStatus
+        ?? fallbackDisplayGrowthStatus(p.growth_status);
+      const approvedSnap = Number(growthMap.get(p.user_id)?.approved_weeks ?? 0) || 0;
+      return { p, universityMajor, dgs, approvedSnap, name: p.display_name ?? "-" };
+    });
+
+    // 4) 서버측 필터: suspended 항상 제외 + 이름(완전일치)·학교명(부분일치)·상태.
+    let filtered = filterable.filter((r) => r.dgs !== "suspended");
+    if (nameQuery) filtered = filtered.filter((r) => r.name === nameQuery);
+    if (schoolQuery) filtered = filtered.filter((r) => r.universityMajor.includes(schoolQuery));
+    if (statusParam === "활동 중") filtered = filtered.filter((r) => r.dgs !== "graduated");
+    else if (statusParam === "활동 졸업") filtered = filtered.filter((r) => r.dgs === "graduated");
+
+    // 5) 정렬(스냅샷 승인주차 desc → 이름) 후 페이지 슬라이스. 정렬키=user_growth_stats
+    //    스냅샷(전 모집단 경량, 요구 8); 표시 승인주차는 페이지 live 계산(아래).
+    filtered.sort((a, b) => (b.approvedSnap - a.approvedSnap) || a.name.localeCompare(b.name, "ko"));
+    const filteredTotal = filtered.length;
+    const offset = (page - 1) * pageSize;
+    const targetItems = pageParamPresent ? filtered.slice(offset, offset + pageSize) : filtered;
+    const pageProfiles = targetItems.map((r) => r.p);
+    const pageIds = pageProfiles.map((p) => p.user_id);
+
+    console.log(
+      "[/api/crews] org=", orgParam, "mode=", scope.mode, "opSeasonKey=", operationalSeasonKey,
+      "gate=", applySeasonGate,
+      "season(a/r/s)=", season ? `${season.counts.active}/${season.counts.rest}/${season.counts.stopped}` : "(fail-open)",
+      "population=", population.length, "filteredTotal=", filteredTotal,
+      "paged=", pageParamPresent, "page=", page, "pageSize=", pageSize, "rows=", pageIds.length,
+    );
+
+    if (pageIds.length === 0) return emptyEnvelope(filteredTotal);
+
+    // 6) 페이지(≤pageSize) 전용 enrichment — 무거운 per-user 스캔(별/주차 success)을 보이는
+    //    행에만 한정한다(요구 4·7). crew_list_view·memberships 도 페이지 한정.
     const STAR_PAGE = 1000;
-    const [viewRes, eduRes, growthRes, membershipRes, starsByUser, confirmedWeeksByUser, growthResolutionMap] = await Promise.all([
-      // 2) crew_list_view (rich fields: school, major, club, points, weeks)
-      supabase
-        .from("crew_list_view")
-        .select("*")
-        .in("id", userIds)
-        .returns<CrewListViewRow[]>(),
-      // 2.5) Education — 최종학력(sort_order=0) 우선. sort_order ASC + first-write-wins.
-      // (동일 패턴: weekly-colleagues/route.ts:62-78)
-      supabase
-        .from("user_educations")
-        .select("user_id, school_name, major_name_1, sort_order")
-        .in("user_id", userIds)
-        .order("sort_order", { ascending: true })
-        .returns<UserEducationRow[]>(),
-      // 2.6) Growth stats — user_growth_stats(누적 활동 통계). cumulative_weeks 컬럼 미존재 시
-      // 쿼리 실패 → 에러 로그 후 view 폴백.
-      supabase
-        .from("user_growth_stats")
-        .select("user_id, approved_weeks, cumulative_weeks")
-        .in("user_id", userIds)
-        .returns<UserGrowthStatsRow[]>(),
-      // 2.7) Membership — user_memberships(denormalized team_name / part_name). is_current 필터를
-      // 쿼리 단계에서 걸지 않고 모든 row 를 가져와 아래에서 2-pass 우선순위 채택.
-      supabase
-        .from("user_memberships")
+    const [viewRes, membershipRes, starsByUser, confirmedWeeksByUser] = await Promise.all([
+      // crew_list_view (rich fields: club / total_stars 폴백)
+      supabase.from("crew_list_view").select("*").in("id", pageIds).returns<CrewListViewRow[]>(),
+      // memberships (team/part 표시 + rest 마스킹용)
+      supabase.from("user_memberships")
         .select("user_id, team_name, part_name, membership_level, membership_state, is_current")
-        .in("user_id", userIds)
-        .returns<UserMembershipRow[]>(),
-      // 2.8) Stars — user_weekly_points.points(별) 누적 합산. 별 개수 SoT(=cluster-4-ranking,
-      // cluster4-weekly-cards 와 동일 캐노니컬 source). PostgREST max-rows=1000 강제 →
-      // range 페이지네이션으로 전 행 수집 후 user 별 합산. best-effort: 실패 시 view.total_stars 폴백.
+        .in("user_id", pageIds).returns<UserMembershipRow[]>(),
+      // 별(stars) — user_weekly_points.points 합산(페이지 한정). best-effort.
       (async () => {
         const acc = new Map<string, number>();
         for (let from = 0; ; from += STAR_PAGE) {
           const { data: starRows, error: starError } = await supabase
-            .from("user_weekly_points")
-            .select("user_id, points")
-            .in("user_id", userIds)
-            .range(from, from + STAR_PAGE - 1)
-            .returns<{ user_id: string; points: number | null }[]>();
-          if (starError) {
-            console.error("user_weekly_points(star) enrichment failed (continuing without it):", JSON.stringify(starError));
-            break;
-          }
+            .from("user_weekly_points").select("user_id, points").in("user_id", pageIds)
+            .range(from, from + STAR_PAGE - 1).returns<{ user_id: string; points: number | null }[]>();
+          if (starError) { console.error("user_weekly_points enrichment failed:", JSON.stringify(starError)); break; }
           if (!starRows || starRows.length === 0) break;
-          for (const row of starRows) {
-            const prev = acc.get(row.user_id) ?? 0;
-            acc.set(row.user_id, prev + (Number(row.points) || 0));
-          }
+          for (const row of starRows) acc.set(row.user_id, (acc.get(row.user_id) ?? 0) + (Number(row.points) || 0));
           if (starRows.length < STAR_PAGE) break;
         }
         return acc;
       })(),
-      // 2.9) 누적 인정 주차 — 공용 countConfirmedSuccessWeeks(lib/confirmed-success-weeks).
-      // user_week_statuses(success) live 카운트(공표 완료 ∧ 비-break ∧ 비-전환 주차) —
-      // /api/profile 폴백·admin stats-cards successWeeks 와 동일 규칙. best-effort:
-      // 실패 시 null 반환 → mergeRow 에서 user_growth_stats 스냅샷 폴백.
+      // 누적 인정 주차(live, 공표 완료 ∧ 비-break ∧ 비-전환) — 페이지 한정. best-effort.
       (async (): Promise<Map<string, number> | null> => {
-        // weeks 메타(start_date → 공표/시즌타입/주차번호). weeks 는 소규모 테이블(시즌당 9~17행).
         const { data: weekRows, error: weekErr } = await supabase
-          .from("weeks")
-          .select("start_date, week_number, result_published_at, season_definitions(season_type)")
-          .returns<Array<{
-            start_date: string | null;
-            week_number: number | null;
-            result_published_at: string | null;
-            season_definitions: { season_type: string | null } | null;
-          }>>();
-        if (weekErr || !weekRows) {
-          console.error("weeks meta fetch failed (approvedWeeks falls back to snapshot):", JSON.stringify(weekErr));
-          return null;
-        }
+          .from("weeks").select("start_date, week_number, result_published_at, season_definitions(season_type)")
+          .returns<Array<{ start_date: string | null; week_number: number | null; result_published_at: string | null; season_definitions: { season_type: string | null } | null }>>();
+        if (weekErr || !weekRows) { console.error("weeks meta fetch failed:", JSON.stringify(weekErr)); return null; }
         const metaByStart = new Map<string, ConfirmedWeekMeta>();
         for (const w of weekRows) {
           if (!w.start_date) continue;
-          metaByStart.set(w.start_date, {
-            resultPublishedAt: w.result_published_at ?? null,
-            seasonType: w.season_definitions?.season_type ?? null,
-            weekNumber: w.week_number ?? null,
-          });
+          metaByStart.set(w.start_date, { resultPublishedAt: w.result_published_at ?? null, seasonType: w.season_definitions?.season_type ?? null, weekNumber: w.week_number ?? null });
         }
-        // user_week_statuses success 행 — PostgREST max-rows=1000 → range 페이지네이션.
         const rowsByUser = new Map<string, Array<{ week_start_date: string | null; status: string }>>();
         for (let from = 0; ; from += STAR_PAGE) {
           const { data: wsRows, error: wsErr } = await supabase
-            .from("user_week_statuses")
-            .select("user_id, week_start_date, status")
-            .eq("status", "success")
-            .in("user_id", userIds)
-            .range(from, from + STAR_PAGE - 1)
-            .returns<Array<{ user_id: string; week_start_date: string | null; status: string }>>();
-          if (wsErr) {
-            console.error("user_week_statuses fetch failed (approvedWeeks falls back to snapshot):", JSON.stringify(wsErr));
-            return null;
-          }
+            .from("user_week_statuses").select("user_id, week_start_date, status").eq("status", "success").in("user_id", pageIds)
+            .range(from, from + STAR_PAGE - 1).returns<Array<{ user_id: string; week_start_date: string | null; status: string }>>();
+          if (wsErr) { console.error("user_week_statuses fetch failed:", JSON.stringify(wsErr)); return null; }
           if (!wsRows || wsRows.length === 0) break;
-          for (const row of wsRows) {
-            const list = rowsByUser.get(row.user_id) ?? [];
-            list.push(row);
-            rowsByUser.set(row.user_id, list);
-          }
+          for (const row of wsRows) { const list = rowsByUser.get(row.user_id) ?? []; list.push(row); rowsByUser.set(row.user_id, list); }
           if (wsRows.length < STAR_PAGE) break;
         }
-        // 전원 seed(성공 0건 사용자도 0 으로 확정 — 스냅샷 폴백으로 새지 않게).
         const counts = new Map<string, number>();
-        for (const id of userIds) {
-          counts.set(id, countConfirmedSuccessWeeks(rowsByUser.get(id) ?? [], metaByStart));
-        }
+        for (const id of pageIds) counts.set(id, countConfirmedSuccessWeeks(rowsByUser.get(id) ?? [], metaByStart));
         return counts;
       })(),
-      // 2.10) displayGrowthStatus — admin growth-status-batch graft (SoT).
-      // best-effort: 실패 시 null → mergeRow 에서 raw 폴백.
-      fetchDisplayGrowthStatusMap(orgFilter),
     ]);
-
-    // --- view ---
     const { data: viewData, error: viewError } = viewRes;
-    console.log("[/api/crews] enrichment view rows=", viewData?.length ?? 0, "err=", viewError?.message);
-    if (viewError) {
-      console.error("crew_list_view enrichment failed (continuing without it):", JSON.stringify(viewError));
-    }
+    if (viewError) console.error("crew_list_view enrichment failed:", JSON.stringify(viewError));
     const viewMap = new Map<string, CrewListViewRow>();
     for (const row of viewData ?? []) viewMap.set(row.id, row);
-
-    // --- educations (user 당 첫 row = 최종학력) ---
-    const { data: educations, error: eduError } = eduRes;
-    console.log("[/api/crews] education rows=", educations?.length ?? 0, "err=", eduError?.message);
-    if (eduError) {
-      console.error("user_educations enrichment failed (continuing without it):", JSON.stringify(eduError));
-    }
-    const eduMap = new Map<string, UserEducationRow>();
-    for (const row of educations ?? []) {
-      if (!eduMap.has(row.user_id)) eduMap.set(row.user_id, row);
-    }
-
-    // --- growth stats ---
-    const { data: growthStats, error: growthError } = growthRes;
-    console.log("[/api/crews] growth_stats rows=", growthStats?.length ?? 0, "err=", growthError?.message);
-    if (growthError) {
-      console.error("user_growth_stats enrichment failed (continuing without it):", JSON.stringify(growthError));
-    }
-    const growthMap = new Map<string, UserGrowthStatsRow>();
-    for (const row of growthStats ?? []) growthMap.set(row.user_id, row);
-
-    // --- memberships — user 별 전체 row 를 모아 resolveMembershipDisplay(공용 resolver)로 픽 ---
     const { data: memberships, error: membershipError } = membershipRes;
-    console.log("[/api/crews] membership rows=", memberships?.length ?? 0, "err=", membershipError?.message);
-    if (membershipError) {
-      console.error("user_memberships enrichment failed (continuing without it):", JSON.stringify(membershipError));
-    }
+    if (membershipError) console.error("user_memberships enrichment failed:", JSON.stringify(membershipError));
     const membershipMap = new Map<string, UserMembershipRow[]>();
     for (const m of memberships ?? []) {
       const list = membershipMap.get(m.user_id) ?? [];
@@ -603,14 +610,9 @@ export async function GET(request: Request) {
       membershipMap.set(m.user_id, list);
     }
 
-    console.log(
-      "[/api/crews] star point users=", starsByUser.size,
-      "confirmedWeeks users=", confirmedWeeksByUser?.size ?? "(fallback)",
-      "growthStatus users=", growthResolutionMap?.size ?? "(raw fallback)",
-    );
-
-    // 3) Merge
-    const rows = profiles.map((p) =>
+    // 7) Merge (페이지 행만). DTO shape 불변 — demoUserId/일반 동일(요구 9). 정렬은 위
+    //    스냅샷 기준 순서 유지(표시 approvedWeeks 는 live).
+    const data = pageProfiles.map((p) =>
       mergeRow(
         p,
         viewMap.get(p.user_id) ?? null,
@@ -620,14 +622,21 @@ export async function GET(request: Request) {
         starsByUser.get(p.user_id) ?? null,
         confirmedWeeksByUser?.get(p.user_id) ?? null,
         growthResolutionMap?.get(p.user_id) ?? null,
-        seasonRosterStatus?.get(p.user_id) ?? null,
+        season?.statusByUser.get(p.user_id) ?? null,
       ),
     );
 
-    // 4) Sort: 활동 주차 많은 순 → 이름 가나다순
-    rows.sort((a, b) => (b.approvedWeeks - a.approvedWeeks) || a.name.localeCompare(b.name, "ko"));
-
-    return NextResponse.json({ success: true, data: rows });
+    return NextResponse.json({
+      success: true,
+      data,
+      page,
+      pageSize,
+      total: population.length,
+      filteredTotal,
+      statusCounts,
+      seasonCounts: season?.counts ?? null,
+      operationalSeasonKey,
+    });
   } catch (error) {
     console.error("Crew list API error:", error);
     return NextResponse.json({ error: "Internal server error." }, { status: 500 });

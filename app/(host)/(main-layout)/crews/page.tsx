@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useState, useEffect, useRef, useMemo } from "react";
+import { Suspense, useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Animations from "@/components/shared/Animations";
@@ -54,15 +54,9 @@ const ORG_LABEL: Record<OrgSlug, string> = {
 const statusLabel = (crew: Crew) =>
   crew.displayGrowthStatus === "graduated" ? "활동 졸업" : "활동 중";
 
-// 필터 그룹 판정 — displayGrowthStatus 단일 기준.
-//   활동 중(Cluving) = graduated 외 전부. suspended 는 로드 단계에서 이미 제외되어
-//                      실제로는 graduated 만 빠지지만, 이중 안전망으로 조건을 유지한다.
-//   활동 졸업(Elite) = graduated.
-const isActiveGroup = (crew: Crew) =>
-  crew.displayGrowthStatus !== "graduated" &&
-  crew.displayGrowthStatus !== "suspended";
-
-const sortByName = (a: Crew, b: Crew) => a.name.localeCompare(b.name, "ko");
+// 필터 그룹 판정(활동 중 = graduated/suspended 외)은 서버(/api/crews status 파라미터)로 이관.
+//   활동 중 → status="활동 중"(graduated 제외), 활동 졸업 → status="활동 졸업"(graduated).
+//   suspended 는 서버에서 항상 제외한다.
 
 // 별 개수 표시 정규화 — 별 개수 SoT 는 /api/crews 의 totalStars
 // (어드민 points 테이블 point_type='star' 누적 합). 표시 규칙:
@@ -145,6 +139,13 @@ function CrewsContent() {
   const [schoolQuery, setSchoolQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("활동 중");
   const [filteredCrews, setFilteredCrews] = useState<Crew[]>([]);
+  // 서버 페이지네이션 메타(요구 4·6) — total=모집단(active+rest), filteredTotal=필터 후.
+  const [total, setTotal] = useState(0);
+  const [filteredTotal, setFilteredTotal] = useState(0);
+  // 서버에 적용된 필터(조회/리셋/모바일 적용 시 갱신). 기본 상태 = "활동 중".
+  const [appliedParams, setAppliedParams] = useState<{ name: string; school: string; status: string }>(
+    { name: "", school: "", status: "활동 중" },
+  );
 
   // 페이지네이션
   const [currentPage, setCurrentPage] = useState(1);
@@ -180,10 +181,24 @@ function CrewsContent() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // org 변경 시 필터/페이지 초기화(기본 = 활동 중, 1페이지).
+  useEffect(() => {
+    setCurrentPage(1);
+    setNameQuery("");
+    setClubFilter("");
+    setSchoolQuery("");
+    setStatusFilter("활동 중");
+    setAppliedParams({ name: "", school: "", status: "활동 중" });
+  }, [org]);
+
+  // 서버 페이지네이션 fetch — org/mode/현재페이지/적용필터가 바뀔 때마다 해당 페이지만 조회(요구 4).
+  // 검색·상태·학교 필터는 서버에서 적용(요구 5). 무거운 enrichment 는 서버가 보이는 페이지에만 수행.
   useEffect(() => {
     if (!org) {
       setCrews([]);
       setFilteredCrews([]);
+      setTotal(0);
+      setFilteredTotal(0);
       setLoading(false);
       return;
     }
@@ -193,34 +208,37 @@ function CrewsContent() {
 
     const fetchCrews = async () => {
       try {
-        // cache: "no-store" 로 brower HTTP cache 우회 — user_profiles 변경이 바로 반영되어야 함.
-        // API route 자체는 dynamic="force-dynamic" + revalidate=0 이라 서버단에서도 매 요청 신선.
-        const res = await fetch(
-          appendModeQuery(`/api/crews?org=${encodeURIComponent(org)}`, mode),
-          { cache: "no-store" },
-        );
+        const params = new URLSearchParams();
+        params.set("org", org);
+        params.set("page", String(currentPage));
+        params.set("pageSize", String(ITEMS_PER_PAGE));
+        if (appliedParams.name.trim()) params.set("name", appliedParams.name.trim());
+        if (appliedParams.school.trim()) params.set("school", appliedParams.school.trim());
+        if (appliedParams.status) params.set("status", appliedParams.status);
+        // cache: "no-store" 로 browser HTTP cache 우회 — 변경 즉시 반영. 서버도 force-dynamic.
+        const res = await fetch(appendModeQuery(`/api/crews?${params.toString()}`, mode), { cache: "no-store" });
         const result = await res.json();
         if (cancelled) return;
         if (result.success) {
-          // Defense-in-depth: API already filters server-side, but enforce client-side too.
-          // 활동 중단(suspended)은 /crews UI 목록에 노출하지 않는다(2026-06-08 정책).
-          // 기본/상태 전체/Reset 등 모든 뷰에서 빠지도록 로드 단계에서 제외한다.
-          const scoped: Crew[] = (result.data as Crew[]).filter(
-            (c) => c.organizationSlug === org && c.displayGrowthStatus !== "suspended",
-          );
-          setCrews(scoped);
-          const active = scoped.filter(isActiveGroup);
-          active.sort((a, b) => b.approvedWeeks - a.approvedWeeks);
-          setFilteredCrews(active);
+          // 서버가 이미 시즌 게이트(active+rest)·suspended 제외·필터·정렬·슬라이스를 끝낸 페이지.
+          const rows: Crew[] = (result.data as Crew[]).filter((c) => c.organizationSlug === org);
+          setCrews(rows);
+          setFilteredCrews(rows);
+          setTotal(typeof result.total === "number" ? result.total : rows.length);
+          setFilteredTotal(typeof result.filteredTotal === "number" ? result.filteredTotal : rows.length);
         } else {
           setCrews([]);
           setFilteredCrews([]);
+          setTotal(0);
+          setFilteredTotal(0);
         }
       } catch (err) {
         console.error("크루 목록 조회 실패:", err);
         if (!cancelled) {
           setCrews([]);
           setFilteredCrews([]);
+          setTotal(0);
+          setFilteredTotal(0);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -231,38 +249,12 @@ function CrewsContent() {
     return () => {
       cancelled = true;
     };
-  }, [org, mode]);
+  }, [org, mode, currentPage, appliedParams]);
 
-  const applyFilter = (name: string, club: string, school: string, status: string) => {
-    let result = [...crews];
-
-    if (name.trim()) {
-      result = result.filter((c) => c.name === name.trim());
-    }
-    if (club) {
-      result = result.filter((c) => c.club === club);
-    }
-    if (school.trim()) {
-      result = result.filter((c) => c.universityMajor.includes(school.trim()));
-    }
-    if (status) {
-      switch (status) {
-        case "활동 중":
-          result = result.filter(isActiveGroup);
-          break;
-        case "활동 졸업":
-          result = result.filter((c) => c.displayGrowthStatus === "graduated");
-          break;
-      }
-    }
-
-    result.sort((a, b) => b.approvedWeeks - a.approvedWeeks);
-    setFilteredCrews(result);
-    setCurrentPage(1);
-  };
-
+  // 조회 = 현재 입력값을 서버 필터로 적용(1페이지부터). 클럽은 org 고정이라 서버 파라미터 미사용.
   const handleSearch = () => {
-    applyFilter(nameQuery, clubFilter, schoolQuery, statusFilter);
+    setAppliedParams({ name: nameQuery, school: schoolQuery, status: statusFilter });
+    setCurrentPage(1);
   };
 
   const handleReset = () => {
@@ -270,22 +262,15 @@ function CrewsContent() {
     setClubFilter("");
     setSchoolQuery("");
     setStatusFilter("");
+    setAppliedParams({ name: "", school: "", status: "" });
+    setCurrentPage(1);
     setClubDropdownOpen(false);
     setStatusDropdownOpen(false);
-    const sorted = [...crews].sort(sortByName);
-    setFilteredCrews(sorted);
-    setCurrentPage(1);
   };
 
-  const totalPages = Math.ceil(filteredCrews.length / ITEMS_PER_PAGE);
-  // 현재 페이지 슬라이스 메모이즈 — 드롭다운 토글 등 무관한 리렌더 시 배열 재생성 방지.
-  const paginatedCrews = useMemo(
-    () => filteredCrews.slice(
-      (currentPage - 1) * ITEMS_PER_PAGE,
-      currentPage * ITEMS_PER_PAGE
-    ),
-    [filteredCrews, currentPage]
-  );
+  // 서버가 이미 필터·정렬·슬라이스한 페이지 → 클라 슬라이스 없이 그대로 렌더.
+  const totalPages = Math.max(1, Math.ceil(filteredTotal / ITEMS_PER_PAGE));
+  const paginatedCrews = filteredCrews;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
@@ -373,7 +358,7 @@ function CrewsContent() {
               >
                 <img src="/images/0/cluster4/icon/icon - 3.png" alt="filter" className="card-icon" />
                 <span className="filter-mobile-text">{mobileFilterSummary}</span>
-                <span className="filter-mobile-count">{filteredCrews.length}</span>
+                <span className="filter-mobile-count">{filteredTotal}</span>
               </button>
             </div>
           ) : (
@@ -548,7 +533,7 @@ function CrewsContent() {
                   <img src="/images/0/cluster4/icon/icon - 4.png" alt="result" className="card-icon" />
                   <span className="card-label">검색 결과</span>
                 </div>
-                <span className="card-value">{filteredCrews.length}</span>
+                <span className="card-value">{filteredTotal}</span>
               </div>
 
               {/* 조회 버튼 카드 */}
@@ -666,7 +651,8 @@ function CrewsContent() {
                       setClubFilter(draftClub);
                       setSchoolQuery(draftSchool);
                       setStatusFilter(draftStatus);
-                      applyFilter(draftName, draftClub, draftSchool, draftStatus);
+                      setAppliedParams({ name: draftName, school: draftSchool, status: draftStatus });
+                      setCurrentPage(1);
                       setFilterSheetOpen(false);
                     }}
                   >
@@ -721,7 +707,7 @@ function CrewsContent() {
                       }
                     `}</style>
                   </div>
-                ) : crews.length === 0 ? (
+                ) : total === 0 ? (
                   <div style={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -748,7 +734,7 @@ function CrewsContent() {
                       {ORG_LABEL[org]} 조직에는 아직 등록된 크루가 없습니다.
                     </div>
                   </div>
-                ) : filteredCrews.length === 0 ? (
+                ) : filteredTotal === 0 ? (
                   <div style={{ textAlign: "center", padding: "60px 0", color: "#aaa" }}>
                     조건에 맞는 크루가 없습니다.
                   </div>
