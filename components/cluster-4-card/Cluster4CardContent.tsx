@@ -6606,46 +6606,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 소요 시간 — 구분=변동이면 "-"(스펙), 정규는 등록 분(0이면 "-").
   const dlActDurationText = (source: string, durationMinutes: number): string =>
     source === "regular" && durationMinutes > 0 ? `${durationMinutes}m` : "-";
-  // ╔══════════════════════════════════════════════════════════════════════╗
-  // ║ TEMP_PUBLISHING_PREVIEW_ONLY — 액트 내역 퍼블리싱 확인용 더미 actLogs ║
-  // ║ 제거 방법: 이 블록(TEMP_PUBLISHING_PREVIEW_ACTLOGS + isTestPreviewUser ║
-  // ║   + 아래 sourceActLogs 의 더미 분기)을 삭제하고                        ║
-  // ║   sourceActLogs 를 `weeklyCardMeta?.actLogs ?? []` 로 되돌리면 된다.   ║
-  // ║ 동작: 실제 actLogs 우선. 비어 있고 "테스트 사용자"일 때만 더미 표시.  ║
-  // ║   DB 저장/API 응답 변경 없음 — 프론트 렌더 단계 한정. 운영 유저 미노출.║
-  // ╚══════════════════════════════════════════════════════════════════════╝
-  // 테스트 사용자 판정 — 기존 마커 우선: ?demoUserId=(백엔드 test_user_markers 게이트) /
-  //   로컬 더미 데모(isDemoMode). 보조: 소유자 이름에 라틴 'T' 포함(테스트 유저 명명 규칙
-  //   "T윤도현" 등 — 운영 유저는 한글 이름이라 라틴 'T'가 없어 오노출 위험 없음).
-  const isTestPreviewUser =
-    !!demoUserId || isDemoMode || /T/.test(ownerPersonalInfo.name || ""); // TEMP_PUBLISHING_PREVIEW_ONLY
-  // 더미 행 타입 — 실제 DTO(result="checked" 고정)와 달리 퍼블리싱 미리보기는 "miss"도 표시한다.
-  type TempPreviewActLog = Omit<Cluster4ActLogDto, "result"> & { result: "checked" | "miss" }; // TEMP_PUBLISHING_PREVIEW_ONLY
-  // 더미 행 — 요구 케이스 전부: 체크/미스 · 정규/변동 · 필수/선별/전원/부분 ·
-  //   Po.A 지급/Po.B 지급/Po.C 차감/포인트0행/소요시간 있음/변동 소요시간 '-'. (pointC 는 양수 magnitude → 음수 표기)
-  //   미스 행은 미수행이라 포인트 0. "상태 확인 중" 류 문구는 쓰지 않는다(체크/미스만).
-  const TEMP_PUBLISHING_PREVIEW_ACTLOGS: TempPreviewActLog[] = [
-    // 1) 체크 · 정규 · 필수 · 실무 정보 · Po.A 지급 · 소요시간 있음
-    { weekNumber: 0, result: "checked", actName: "[미리보기] 시작 브리핑", occurredAt: "2026-03-23T00:00:00Z", requestedAt: "2026-03-23T00:00:00Z", hub: "info", lineGroupName: "정보 라인 A", durationMinutes: 30, pointA: 3, pointB: 0, pointC: 0, source: "regular", kind: "required" },
-    // 2) 체크 · 정규 · 선별 · 실무 경험 · Po.B 지급 · 소요시간 있음
-    { weekNumber: 0, result: "checked", actName: "[미리보기] 경험 라인 강화 활동", occurredAt: "2026-03-24T01:30:00Z", requestedAt: "2026-03-24T01:30:00Z", hub: "experience", lineGroupName: "경험 라인 B", durationMinutes: 60, pointA: 2, pointB: 4, pointC: 0, source: "regular", kind: "selection" },
-    // 3) 체크 · 변동 · 전원 · 실무 역량 · Po.C 차감 · 변동→소요시간 '-'
-    { weekNumber: 0, result: "checked", actName: "[미리보기] 전원 대상 역량 점검 공지", occurredAt: "2026-03-25T05:00:00Z", requestedAt: null, hub: "competency", lineGroupName: "역량 라인 C", durationMinutes: 40, pointA: 1, pointB: 0, pointC: 2, source: "irregular", kind: "all" },
-    // 4) 체크 · 변동 · 부분 · 실무 경력 · 포인트 0행 · 변동→소요시간 '-'
-    { weekNumber: 0, result: "checked", actName: "[미리보기] 부분 대상 경력 검수", occurredAt: "2026-03-25T07:15:00Z", requestedAt: null, hub: "career", lineGroupName: "경력 프로젝트", durationMinutes: 0, pointA: 0, pointB: 0, pointC: 0, source: "irregular", kind: "partial" },
-    // 5) 미스 · 정규 · 필수 · 실무 정보 · 포인트 0행(미수행) · 소요시간 있음
-    { weekNumber: 0, result: "miss", actName: "[미리보기] 미참여 필수 브리핑", occurredAt: "2026-03-26T00:00:00Z", requestedAt: null, hub: "info", lineGroupName: "정보 라인 D", durationMinutes: 45, pointA: 0, pointB: 0, pointC: 0, source: "regular", kind: "required" },
-    // 6) 미스 · 정규 · 선별 · 실무 경험 · 포인트 0행(미수행) · 소요시간 있음
-    { weekNumber: 0, result: "miss", actName: "[미리보기] 미수행 선별 과제", occurredAt: "2026-03-26T02:00:00Z", requestedAt: null, hub: "experience", lineGroupName: "경험 라인 E", durationMinutes: 20, pointA: 0, pointB: 0, pointC: 0, source: "regular", kind: "selection" },
-    // 7) 체크 · 정규 · 필수 · 실무 역량 · Po.A·Po.B 지급 · 소요시간 있음
-    { weekNumber: 0, result: "checked", actName: "[미리보기] 역량 심화 필수 세션", occurredAt: "2026-03-27T03:00:00Z", requestedAt: "2026-03-27T03:00:00Z", hub: "competency", lineGroupName: "역량 라인 F", durationMinutes: 90, pointA: 5, pointB: 1, pointC: 0, source: "regular", kind: "required" },
-    // 8) 미스 · 변동 · 전원 · 비귀속(허브/라인 '-') · 포인트 0행 · 변동→소요시간 '-'
-    { weekNumber: 0, result: "miss", actName: "[미리보기] 미확인 전원 공지", occurredAt: "2026-03-27T06:00:00Z", requestedAt: null, hub: null, lineGroupName: null, durationMinutes: 0, pointA: 0, pointB: 0, pointC: 0, source: "irregular", kind: "all" },
-  ];
-  // 실제 actLogs 우선 → 비어있고 테스트 유저면 더미 → 그 외 빈 배열(empty state). // TEMP_PUBLISHING_PREVIEW_ONLY
-  const realActLogs: Cluster4ActLogDto[] = weeklyCardMeta?.actLogs ?? [];
-  const sourceActLogs: TempPreviewActLog[] =
-    realActLogs.length > 0 ? realActLogs : isTestPreviewUser ? TEMP_PUBLISHING_PREVIEW_ACTLOGS : []; // TEMP_PUBLISHING_PREVIEW_ONLY
+  // actLogs 단일 출처 = 백엔드 weekly-cards snapshot(card.actLogs). 없으면 빈 배열 → empty state.
+  const sourceActLogs: Cluster4ActLogDto[] = weeklyCardMeta?.actLogs ?? [];
   const detailLogActs: DetailLogActRow[] = sourceActLogs.map((a) => {
     const source: "regular" | "irregular" = a.source === "irregular" ? "irregular" : "regular";
     const kind = dlActKind(source, a.kind);
