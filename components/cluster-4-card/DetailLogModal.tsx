@@ -19,6 +19,37 @@ export interface DetailLogPoint {
 }
 
 /**
+ * 액트 내역(actLogs) 1행 — 백엔드 snapshot DTO v30(card.actLogs)을 표시용으로 가공한 값.
+ * 1차 범위 = "수행/적립된 액트 내역"만(미스/미수행 row 없음). 호출부(Cluster4CardContent)가
+ * 단일 출처로 가공해 주입한다(본 컴포넌트는 순수 표시 — 임의 row 생성/대상자 재판정 금지).
+ */
+export interface DetailLogActRow {
+  /** 결과 — 1차는 항상 "checked". (후속 Phase 에서 "miss" 추가 대비) */
+  result: "checked" | "miss";
+  actName: string;
+  /** 발생 시점(=체크 신청 시점) 포맷 문자열, 없으면 "-" */
+  occurredText: string;
+  /** 소속 허브 급 — "실무 정보/경험/역량/경력" 또는 "-"(변동·비귀속) */
+  hubLabel: string;
+  /** 소속 라인 급 — line group name 또는 "-" */
+  lineLabel: string;
+  /** 소요 시간 — "30m" 또는 "-"(변동/미상) */
+  durationText: string;
+  /** Po.A(별/단감/투구 …) 적립값 */
+  pointA: number;
+  /** Po.B(방패/인절미 …) 적립값 */
+  pointB: number;
+  /** Po.C(번개/어흥/화살 …) 패널티 magnitude(양수) — 표시는 음수 */
+  pointC: number;
+  /** 구분 — 정규/변동 */
+  source: "regular" | "irregular";
+  /** 종류 — 필수/선별(정규) · 전원/부분(변동) */
+  kindLabel: string;
+  /** 종류 배지 색상 구분 키 */
+  kindKey: "required" | "selective" | "all" | "partial" | "unknown";
+}
+
+/**
  * Detail Log 모달이 표시할 데이터 묶음.
  * 모든 값은 호출부(Cluster4CardContent)에서 단일 출처로 계산해 주입한다.
  * (본 컴포넌트는 순수 표시 — 데이터 fetch/가공을 하지 않는다.)
@@ -48,6 +79,10 @@ export interface DetailLogData {
   conditions: DetailLogCondition[];
   /** 이번 주 도움말 */
   weeklyHelp: string;
+  /** 액트 내역(수행/적립) 행 — 없으면 빈 배열(→ empty state) */
+  acts: DetailLogActRow[];
+  /** Po.A/B/C 컬럼 헤더 조직별 명칭([별,방패,번개] 등). 조직 미상 시 [Po.A,Po.B,Po.C] */
+  actPointNames: [string, string, string];
 }
 
 interface DetailLogModalProps {
@@ -72,6 +107,26 @@ const alertToneFromStatus = (statusClass: string): "positive" | "warn" | "neutra
 
 /** +53개 / -3개 / 0개 — '개' 단위 포함 */
 const formatPointValue = (v: number): string => (v > 0 ? `+${v}개` : `${v}개`);
+
+/** 액트 내역 획득 포인트(A/B) — +n / +0. 0 이하는 미적용(회색). */
+const formatGainPoint = (v: number): string => (v > 0 ? `+${v}` : "+0");
+/** 액트 내역 패널티 포인트(C) — magnitude(양수)를 음수로 표기. 0 은 미적용(회색). */
+const formatPenaltyPoint = (v: number): string => (v > 0 ? `-${v}` : v < 0 ? `${v}` : "0");
+
+/**
+ * 액트 내역 요약 통계 — 표시 중인 행(acts) 단일 출처로 파생.
+ * 불변식: 체크 가능 = 행 개수 = 체크 성공 + 체크 실패. (UI 별도 계산/외부 데이터 없음)
+ * 체크 필수/선별 = 정규(regular) 행 중 종류 필수/선별 개수.
+ */
+const buildActSummary = (acts: DetailLogActRow[]) => {
+  const total = acts.length;
+  const success = acts.filter((a) => a.result === "checked").length;
+  const fail = total - success;
+  const required = acts.filter((a) => a.source === "regular" && a.kindKey === "required").length;
+  const selective = acts.filter((a) => a.source === "regular" && a.kindKey === "selective").length;
+  const rate = total > 0 ? Math.round((success / total) * 100) : 0;
+  return { total, success, fail, required, selective, rate };
+};
 
 const DetailLogModal: React.FC<DetailLogModalProps> = ({
   show,
@@ -119,6 +174,11 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
         (s) => s && s.trim() && s.trim() !== "-",
       )
     : [];
+
+  // 액트 내역 요약 — 표시 중인 행 단일 출처(불변식: 체크 가능 = 행 개수 = 성공 + 실패).
+  const actSummary = data
+    ? buildActSummary(data.acts)
+    : { total: 0, success: 0, fail: 0, required: 0, selective: 0, rate: 0 };
 
   return createPortal(
     <div className={overlayClass} onClick={handleOverlayClick}>
@@ -240,6 +300,131 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                   <p className="dl-help-text">{data.weeklyHelp}</p>
                 </section>
               </div>
+
+              {/* ── 액트 내역 (백엔드 snapshot DTO v30 actLogs) ── */}
+              <section className="dl-card dl-act-section">
+                <header className="dl-card-head">
+                  <i className="ti ti-clipboard-list" aria-hidden="true" />
+                  <h4>액트 내역</h4>
+                </header>
+
+                {data.acts.length === 0 ? (
+                  <div className="dl-act-empty">이번 주 수행·적립된 액트 내역이 없어요.</div>
+                ) : (
+                  <>
+                    {/* Activity Summary — 활동 완료율 + 요약 통계(표시 행 단일 출처) */}
+                    <div className="dl-act-summary">
+                      <div className="dl-act-summary-bar-row">
+                        <span className="dl-act-summary-title">활동 완료율</span>
+                        <div
+                          className="dl-act-progress"
+                          role="progressbar"
+                          aria-valuenow={actSummary.rate}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                        >
+                          <div className="dl-act-progress-fill" style={{ width: `${actSummary.rate}%` }} />
+                        </div>
+                        <span className="dl-act-summary-rate">{actSummary.rate}%</span>
+                      </div>
+                      <div className="dl-act-stats">
+                        <span className="dl-act-stat">
+                          <span className="dl-act-stat-label">체크 가능</span>
+                          <span className="dl-act-stat-value">{actSummary.total}</span>
+                        </span>
+                        <span className="dl-act-stat dl-act-stat--success">
+                          <span className="dl-act-stat-label">체크 성공</span>
+                          <span className="dl-act-stat-value">{actSummary.success}</span>
+                        </span>
+                        <span className="dl-act-stat dl-act-stat--fail">
+                          <span className="dl-act-stat-label">체크 실패</span>
+                          <span className="dl-act-stat-value">{actSummary.fail}</span>
+                        </span>
+                        <span className="dl-act-stat">
+                          <span className="dl-act-stat-label">체크 필수</span>
+                          <span className="dl-act-stat-value">{actSummary.required}</span>
+                        </span>
+                        <span className="dl-act-stat">
+                          <span className="dl-act-stat-label">체크 선별</span>
+                          <span className="dl-act-stat-value">{actSummary.selective}</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="dl-act-table-wrap">
+                      <table className="dl-act-table">
+                        <colgroup>
+                          <col className="dl-col-result" />
+                          <col className="dl-col-name" />
+                          <col className="dl-col-time" />
+                          <col className="dl-col-hub" />
+                          <col className="dl-col-line" />
+                          <col className="dl-col-dur" />
+                          <col className="dl-col-pt" />
+                          <col className="dl-col-pt" />
+                          <col className="dl-col-pt" />
+                          <col className="dl-col-div" />
+                          <col className="dl-col-kind" />
+                        </colgroup>
+                        <thead>
+                          <tr>
+                            <th>결과</th>
+                            <th className="dl-act-col-name">액트명</th>
+                            <th>발생 시점</th>
+                            <th>소속 허브 급</th>
+                            <th>소속 라인 급</th>
+                            <th>소요 시간</th>
+                            <th className="dl-act-col-point">{data.actPointNames[0]}</th>
+                            <th className="dl-act-col-point">{data.actPointNames[1]}</th>
+                            <th className="dl-act-col-point">{data.actPointNames[2]}</th>
+                            <th>구분</th>
+                            <th>종류</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.acts.map((a, i) => (
+                            <tr key={i}>
+                              <td>
+                                <span className={`dl-act-badge dl-act-result dl-act-result--${a.result}`}>
+                                  {a.result === "checked" ? "✓ 체크" : "✕ 미스"}
+                                </span>
+                              </td>
+                              <td className="dl-act-name" title={a.actName || "-"}>
+                                {a.actName || "-"}
+                              </td>
+                              <td className="dl-act-time">{a.occurredText}</td>
+                              <td className="dl-act-cell">{a.hubLabel}</td>
+                              <td className="dl-act-cell" title={a.lineLabel}>
+                                {a.lineLabel}
+                              </td>
+                              <td className="dl-act-num">{a.durationText}</td>
+                              <td className={`dl-act-point ${a.pointA > 0 ? "is-gain" : "is-zero"}`}>
+                                {formatGainPoint(a.pointA)}
+                              </td>
+                              <td className={`dl-act-point ${a.pointB > 0 ? "is-gain" : "is-zero"}`}>
+                                {formatGainPoint(a.pointB)}
+                              </td>
+                              <td className={`dl-act-point ${a.pointC !== 0 ? "is-penalty" : "is-zero"}`}>
+                                {formatPenaltyPoint(a.pointC)}
+                              </td>
+                              <td>
+                                <span className={`dl-act-badge dl-act-source dl-act-source--${a.source}`}>
+                                  {a.source === "regular" ? "정규" : "변동"}
+                                </span>
+                              </td>
+                              <td>
+                                <span className={`dl-act-badge dl-act-kind dl-act-kind--${a.kindKey}`}>
+                                  {a.kindLabel}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </section>
             </>
           )}
         </div>

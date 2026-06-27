@@ -14332,6 +14332,272 @@
     white-space: pre-line;
   }
 
+  // ── 액트 내역 (DTO v30 actLogs) ──
+  .dl-act-empty {
+    padding: 22px 0;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.5);
+    font-family: "Pretendard", sans-serif;
+    font-size: 13px;
+  }
+
+  // ── Activity Summary — 활동 완료율 + 요약 통계 ──
+  .dl-act-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    padding: 13px 15px;
+    margin-bottom: 12px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    font-family: "Pretendard", sans-serif;
+  }
+  .dl-act-summary-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .dl-act-summary-title {
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.72);
+    white-space: nowrap;
+  }
+  .dl-act-progress {
+    flex: 1;
+    height: 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+  }
+  .dl-act-progress-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--dl-accent) 55%, #9dfa07 45%),
+      var(--dl-accent)
+    );
+    transition: width 0.35s ease;
+  }
+  .dl-act-summary-rate {
+    flex-shrink: 0;
+    min-width: 46px;
+    text-align: right;
+    font-size: 17px;
+    font-weight: 800;
+    color: var(--dl-accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .dl-act-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .dl-act-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 11px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .dl-act-stat-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.6);
+  }
+  .dl-act-stat-value {
+    font-size: 14px;
+    font-weight: 800;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+  }
+  .dl-act-stat--success .dl-act-stat-value {
+    color: #9dfa07;
+  }
+  .dl-act-stat--fail .dl-act-stat-value {
+    color: #ff6b6b;
+  }
+
+  .dl-act-table-wrap {
+    overflow-x: auto;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .dl-act-table {
+    width: 100%;
+    min-width: 880px; // 모달 폭보다 좁아지면 가로 스크롤(레이아웃 깨짐 방지)
+    table-layout: fixed; // 컬럼 폭 고정 → 행 높이 균일
+    border-collapse: collapse;
+    font-family: "Pretendard", sans-serif;
+
+    // 컬럼 폭(colgroup) — 액트명만 가변(나머지 폭 흡수), 나머지는 한 줄 고정.
+    col.dl-col-result { width: 68px; }
+    col.dl-col-name { width: auto; }
+    col.dl-col-time { width: 124px; }
+    col.dl-col-hub { width: 82px; }
+    col.dl-col-line { width: 104px; }
+    col.dl-col-dur { width: 70px; }
+    col.dl-col-pt { width: 48px; }
+    col.dl-col-div { width: 66px; }
+    col.dl-col-kind { width: 66px; }
+
+    // 모든 컬럼 Header·Body 가운데 정렬로 통일.
+    th,
+    td {
+      padding: 9px 10px;
+      text-align: center;
+      vertical-align: middle;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      // ⚠ 전역 overflow/ellipsis 는 두지 않는다 — 배지(inline-flex) 셀에서 '…'(말줄임) 잔상이
+      //   '..' 처럼 보이는 문제 때문. 말줄임은 텍스트 셀(.dl-act-cell/.dl-act-time)에만 적용한다.
+    }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: color-mix(in srgb, var(--dl-accent) 12%, #11151f);
+      color: color-mix(in srgb, var(--dl-accent) 70%, #fff 30%);
+      font-size: 12px;
+      font-weight: 800;
+      border-bottom: 1px solid color-mix(in srgb, var(--dl-accent) 28%, transparent);
+    }
+
+    tbody td {
+      color: rgba(255, 255, 255, 0.82);
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+    tbody tr:hover td {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    // 텍스트 셀(허브/라인) — 한 줄 유지 + 넘치면 말줄임.
+    .dl-act-cell {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    // 액트명 — 최대 2줄 허용(말줄임). 가운데 정렬.
+    .dl-act-name {
+      color: #fff;
+      font-weight: 700;
+      white-space: normal;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      word-break: break-word;
+      line-height: 1.35;
+    }
+    .dl-act-time {
+      color: rgba(255, 255, 255, 0.62);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .dl-act-num {
+      color: rgba(255, 255, 255, 0.7);
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  // 포인트 셀 — A/B 적용값=초록, C 적용값=빨강, 미적용(0)=회색. 색이 들어가는 값만 강조.
+  .dl-act-point {
+    text-align: center;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+
+    &.is-gain {
+      color: #9dfa07;
+    }
+    &.is-penalty {
+      color: #ff6b6b;
+    }
+    &.is-zero {
+      color: rgba(255, 255, 255, 0.28);
+      font-weight: 600;
+    }
+  }
+
+  // 액트 내역 배지(pill) — 결과/구분/종류 공통 베이스.
+  .dl-act-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.3;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+
+  // 결과 — ✓ 체크(초록) / ✕ 미스(빨강)
+  .dl-act-result--checked {
+    background: rgba(157, 250, 7, 0.14);
+    border-color: rgba(157, 250, 7, 0.5);
+    color: #9dfa07;
+  }
+  .dl-act-result--miss {
+    background: rgba(255, 107, 107, 0.14);
+    border-color: rgba(255, 107, 107, 0.5);
+    color: #ff6b6b;
+  }
+
+  // 구분 — 정규(조직 accent) / 변동(시안)
+  .dl-act-source--regular {
+    background: color-mix(in srgb, var(--dl-accent) 16%, transparent);
+    border-color: color-mix(in srgb, var(--dl-accent) 45%, transparent);
+    color: color-mix(in srgb, var(--dl-accent) 72%, #fff 28%);
+  }
+  .dl-act-source--irregular {
+    background: rgba(101, 227, 255, 0.13);
+    border-color: rgba(101, 227, 255, 0.45);
+    color: #65e3ff;
+  }
+
+  // 종류 — 종류별 색상 구분: 필수(핑크)/선별(앰버)/전원(그린)/부분(블루). 미상은 중립.
+  .dl-act-kind--required {
+    background: rgba(255, 121, 198, 0.15);
+    border-color: rgba(255, 121, 198, 0.5);
+    color: #ff9fd4;
+  }
+  .dl-act-kind--selective {
+    background: rgba(255, 213, 102, 0.15);
+    border-color: rgba(255, 213, 102, 0.5);
+    color: #ffd773;
+  }
+  .dl-act-kind--all {
+    background: rgba(157, 250, 7, 0.14);
+    border-color: rgba(157, 250, 7, 0.45);
+    color: #b6ff4d;
+  }
+  .dl-act-kind--partial {
+    background: rgba(101, 184, 255, 0.16);
+    border-color: rgba(101, 184, 255, 0.5);
+    color: #7fc0ff;
+  }
+  .dl-act-kind--unknown {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.16);
+    color: rgba(255, 255, 255, 0.7);
+  }
+
   // 좁은 화면 — 요약 2단·하단 2단을 세로로 전환.
   @media (max-width: 760px) {
     .dl-summary-layout,

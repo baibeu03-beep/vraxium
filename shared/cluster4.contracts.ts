@@ -243,6 +243,41 @@ export interface Cluster4WeeklyColleagueDto {
   [key: string]: unknown;
 }
 
+// ── Detail Log 액트 내역 (백엔드 weekly-cards snapshot append-only — DTO v30) ──
+// 1차 범위 = "수행/적립된 액트 내역"만(미수행/미적립 예정·미스 row 제외 — 후속 Phase).
+// SoT = process_point_awards(사용자·주차 적립 원장). 행이 곧 "이 크루가 받은 액트" 이므로
+//   변동>부분 대상자 필터(recipients matched / manual_grant target)가 원장 단계에서 이미 적용됨.
+//   → 프론트는 이 배열을 "수행 내역"으로 렌더만 하고 별도 계산/대상자 재판정/임의 row 생성을 하지 않는다.
+// 포인트(A/B/C)는 원장 적립값 그대로. pointC(=point_penalty)는 양수 magnitude 로 내려오며,
+//   표시 정책상 패널티는 음수(번개=−penalty)로 보여준다(프론트 렌더 단계에서 부호 적용).
+export type Cluster4ActLogSource = "regular" | "irregular";
+// 1차는 수행/적립된 내역만 포함하므로 항상 "checked". (miss/실패 row 는 후속 Phase.)
+export type Cluster4ActLogResult = "checked";
+export interface Cluster4ActLogDto {
+  // 부착된 카드의 시즌 주차 번호
+  weekNumber: number;
+  // 1차: "checked" 고정 (미스/실패 row 는 후속 Phase)
+  result: Cluster4ActLogResult;
+  actName: string;
+  // 실제 발생/검수 시점 (irregular=scheduled_check_at??created_at, regular=completed_at??requested_at)
+  occurredAt: string | null;
+  // 체크 신청 시점 (regular=process_check_statuses.requested_at, irregular=null)
+  requestedAt: string | null;
+  // regular=process_acts.hub 키("info"|"experience"|"competency"|"career"|"club"…), irregular=null
+  hub: string | null;
+  // regular=process_line_groups.name, irregular=null
+  lineGroupName: string | null;
+  // 소요 시간(분). 없으면 0.
+  durationMinutes: number;
+  pointA: number; // = process_point_awards.point_check
+  pointB: number; // = process_point_awards.point_advantage
+  pointC: number; // = process_point_awards.point_penalty (양수 magnitude — 표시는 음수)
+  source: Cluster4ActLogSource;
+  // regular: process_acts.act_type ("required"|"selection"|레거시 "optional"|"basic")
+  // irregular: process_irregular_acts.crew_reaction ("all"|"partial")
+  kind: string;
+}
+
 // statusTone — 어드민 DTO 가능 값(semantic tone): "neutral" | "info" | "success" | "warning" | "danger".
 // statusIconKey/userWeekStatus 와 별개 축 (tone 은 색상 톤, iconKey 는 아이콘/세부 상태).
 export type AdminCluster4StatusTone =
@@ -344,6 +379,11 @@ export interface AdminCluster4WeeklyCardDto {
     currentWeekStatus: "success" | "fail";
     successStreakWeeks: number;
   } | null;
+
+  // ── Detail Log 액트 내역 (백엔드 snapshot append-only — DTO v30) ──
+  // 그 주차에 이 크루가 수행/적립한 프로세스 액트 목록. 없으면 undefined/[]. SoT=process_point_awards.
+  // 프론트는 이 값을 "수행 내역"으로 렌더만 하고 별도 API 호출/임의 계산 금지(snapshot-only).
+  actLogs?: Cluster4ActLogDto[] | null;
 
   [key: string]: unknown;
 }

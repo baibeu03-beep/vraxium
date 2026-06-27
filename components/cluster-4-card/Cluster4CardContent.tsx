@@ -24,11 +24,11 @@ import { REPUTATION_KEYWORD_GROUPS } from "@/lib/reputation-keywords";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
-import DetailLogModal, { type DetailLogData, type DetailLogCondition } from "./DetailLogModal";
+import DetailLogModal, { type DetailLogData, type DetailLogCondition, type DetailLogActRow } from "./DetailLogModal";
 import confetti from "canvas-confetti";
 import HelpModalBody from "@/components/shared/HelpModalBody";
 import { Skeleton } from "@/components/ui/skeleton/Skeleton";
-import type { AdminCluster4WeeklyCardDto, Cluster4RateDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
+import type { AdminCluster4WeeklyCardDto, Cluster4ActLogDto, Cluster4RateDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
 
 // 주차 결과 결정 시점 = N+1주(목) 12:01 KST = N(월) 00:00 + 10일 12시간 1분
 // 이 시점에 동시에 확정:
@@ -6563,6 +6563,108 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     const day = String(d.getDate()).padStart(2, "0");
     return `${d.getFullYear()}.${m}.${day}(${days[d.getDay()]})`;
   };
+  // ── Detail Log 액트 내역(actLogs, DTO v30) → 표시용 행 가공 (snapshot-only, 순수 매핑) ──
+  // 1차 범위 = "수행/적립된 액트 내역"만(미스/미수행/체크 가능 전체 미구현). actLogs 부재 시 빈 배열 → empty state.
+  // 프론트는 임의 row 생성/대상자 재판정/별도 API 호출을 하지 않는다(변동>부분 대상자 필터는 원장 단계에서 이미 적용됨).
+  const DL_ACT_HUB_LABEL: Record<string, string> = {
+    info: "실무 정보",
+    experience: "실무 경험",
+    competency: "실무 역량",
+    career: "실무 경력",
+  };
+  // hub 키("info"|"experience"|"competency"|"career"|"info-line"…) → 한글 허브 급. club/비귀속/미상 → "-".
+  const dlActHubLabel = (hub: string | null | undefined): string => {
+    if (!hub) return "-";
+    const base = String(hub).replace(/-line$/, "");
+    return DL_ACT_HUB_LABEL[base] ?? "-";
+  };
+  // 종류 — 정규: required/basic→필수, selection/optional→선별 / 변동: all→전원, partial→부분.
+  //   label(표시) + key(배지 색상 클래스) 둘 다 반환.
+  const dlActKind = (
+    source: string,
+    kind: string | null | undefined,
+  ): { label: string; key: DetailLogActRow["kindKey"] } => {
+    const k = String(kind ?? "").toLowerCase();
+    if (source === "irregular") {
+      if (k === "all") return { label: "전원", key: "all" };
+      if (k === "partial") return { label: "부분", key: "partial" };
+      return { label: "-", key: "unknown" };
+    }
+    if (k === "required" || k === "basic") return { label: "필수", key: "required" };
+    if (k === "selection" || k === "optional") return { label: "선별", key: "selective" };
+    return { label: "-", key: "unknown" };
+  };
+  // 발생 시점(=체크 신청 시점) — regular requestedAt 우선, 없으면(변동 등) occurredAt.
+  //   테이블 정렬용 압축 포맷 "YYYY.MM.DD HH:mm"(tabular-nums 로 자릿수 정렬).
+  const dlActTimeText = (iso: string | null): string => {
+    if (!iso) return "-";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "-";
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+  // 소요 시간 — 구분=변동이면 "-"(스펙), 정규는 등록 분(0이면 "-").
+  const dlActDurationText = (source: string, durationMinutes: number): string =>
+    source === "regular" && durationMinutes > 0 ? `${durationMinutes}m` : "-";
+  // ╔══════════════════════════════════════════════════════════════════════╗
+  // ║ TEMP_PUBLISHING_PREVIEW_ONLY — 액트 내역 퍼블리싱 확인용 더미 actLogs ║
+  // ║ 제거 방법: 이 블록(TEMP_PUBLISHING_PREVIEW_ACTLOGS + isTestPreviewUser ║
+  // ║   + 아래 sourceActLogs 의 더미 분기)을 삭제하고                        ║
+  // ║   sourceActLogs 를 `weeklyCardMeta?.actLogs ?? []` 로 되돌리면 된다.   ║
+  // ║ 동작: 실제 actLogs 우선. 비어 있고 "테스트 사용자"일 때만 더미 표시.  ║
+  // ║   DB 저장/API 응답 변경 없음 — 프론트 렌더 단계 한정. 운영 유저 미노출.║
+  // ╚══════════════════════════════════════════════════════════════════════╝
+  // 테스트 사용자 판정 — 기존 마커 우선: ?demoUserId=(백엔드 test_user_markers 게이트) /
+  //   로컬 더미 데모(isDemoMode). 보조: 소유자 이름에 라틴 'T' 포함(테스트 유저 명명 규칙
+  //   "T윤도현" 등 — 운영 유저는 한글 이름이라 라틴 'T'가 없어 오노출 위험 없음).
+  const isTestPreviewUser =
+    !!demoUserId || isDemoMode || /T/.test(ownerPersonalInfo.name || ""); // TEMP_PUBLISHING_PREVIEW_ONLY
+  // 더미 행 타입 — 실제 DTO(result="checked" 고정)와 달리 퍼블리싱 미리보기는 "miss"도 표시한다.
+  type TempPreviewActLog = Omit<Cluster4ActLogDto, "result"> & { result: "checked" | "miss" }; // TEMP_PUBLISHING_PREVIEW_ONLY
+  // 더미 행 — 요구 케이스 전부: 체크/미스 · 정규/변동 · 필수/선별/전원/부분 ·
+  //   Po.A 지급/Po.B 지급/Po.C 차감/포인트0행/소요시간 있음/변동 소요시간 '-'. (pointC 는 양수 magnitude → 음수 표기)
+  //   미스 행은 미수행이라 포인트 0. "상태 확인 중" 류 문구는 쓰지 않는다(체크/미스만).
+  const TEMP_PUBLISHING_PREVIEW_ACTLOGS: TempPreviewActLog[] = [
+    // 1) 체크 · 정규 · 필수 · 실무 정보 · Po.A 지급 · 소요시간 있음
+    { weekNumber: 0, result: "checked", actName: "[미리보기] 시작 브리핑", occurredAt: "2026-03-23T00:00:00Z", requestedAt: "2026-03-23T00:00:00Z", hub: "info", lineGroupName: "정보 라인 A", durationMinutes: 30, pointA: 3, pointB: 0, pointC: 0, source: "regular", kind: "required" },
+    // 2) 체크 · 정규 · 선별 · 실무 경험 · Po.B 지급 · 소요시간 있음
+    { weekNumber: 0, result: "checked", actName: "[미리보기] 경험 라인 강화 활동", occurredAt: "2026-03-24T01:30:00Z", requestedAt: "2026-03-24T01:30:00Z", hub: "experience", lineGroupName: "경험 라인 B", durationMinutes: 60, pointA: 2, pointB: 4, pointC: 0, source: "regular", kind: "selection" },
+    // 3) 체크 · 변동 · 전원 · 실무 역량 · Po.C 차감 · 변동→소요시간 '-'
+    { weekNumber: 0, result: "checked", actName: "[미리보기] 전원 대상 역량 점검 공지", occurredAt: "2026-03-25T05:00:00Z", requestedAt: null, hub: "competency", lineGroupName: "역량 라인 C", durationMinutes: 40, pointA: 1, pointB: 0, pointC: 2, source: "irregular", kind: "all" },
+    // 4) 체크 · 변동 · 부분 · 실무 경력 · 포인트 0행 · 변동→소요시간 '-'
+    { weekNumber: 0, result: "checked", actName: "[미리보기] 부분 대상 경력 검수", occurredAt: "2026-03-25T07:15:00Z", requestedAt: null, hub: "career", lineGroupName: "경력 프로젝트", durationMinutes: 0, pointA: 0, pointB: 0, pointC: 0, source: "irregular", kind: "partial" },
+    // 5) 미스 · 정규 · 필수 · 실무 정보 · 포인트 0행(미수행) · 소요시간 있음
+    { weekNumber: 0, result: "miss", actName: "[미리보기] 미참여 필수 브리핑", occurredAt: "2026-03-26T00:00:00Z", requestedAt: null, hub: "info", lineGroupName: "정보 라인 D", durationMinutes: 45, pointA: 0, pointB: 0, pointC: 0, source: "regular", kind: "required" },
+    // 6) 미스 · 정규 · 선별 · 실무 경험 · 포인트 0행(미수행) · 소요시간 있음
+    { weekNumber: 0, result: "miss", actName: "[미리보기] 미수행 선별 과제", occurredAt: "2026-03-26T02:00:00Z", requestedAt: null, hub: "experience", lineGroupName: "경험 라인 E", durationMinutes: 20, pointA: 0, pointB: 0, pointC: 0, source: "regular", kind: "selection" },
+    // 7) 체크 · 정규 · 필수 · 실무 역량 · Po.A·Po.B 지급 · 소요시간 있음
+    { weekNumber: 0, result: "checked", actName: "[미리보기] 역량 심화 필수 세션", occurredAt: "2026-03-27T03:00:00Z", requestedAt: "2026-03-27T03:00:00Z", hub: "competency", lineGroupName: "역량 라인 F", durationMinutes: 90, pointA: 5, pointB: 1, pointC: 0, source: "regular", kind: "required" },
+    // 8) 미스 · 변동 · 전원 · 비귀속(허브/라인 '-') · 포인트 0행 · 변동→소요시간 '-'
+    { weekNumber: 0, result: "miss", actName: "[미리보기] 미확인 전원 공지", occurredAt: "2026-03-27T06:00:00Z", requestedAt: null, hub: null, lineGroupName: null, durationMinutes: 0, pointA: 0, pointB: 0, pointC: 0, source: "irregular", kind: "all" },
+  ];
+  // 실제 actLogs 우선 → 비어있고 테스트 유저면 더미 → 그 외 빈 배열(empty state). // TEMP_PUBLISHING_PREVIEW_ONLY
+  const realActLogs: Cluster4ActLogDto[] = weeklyCardMeta?.actLogs ?? [];
+  const sourceActLogs: TempPreviewActLog[] =
+    realActLogs.length > 0 ? realActLogs : isTestPreviewUser ? TEMP_PUBLISHING_PREVIEW_ACTLOGS : []; // TEMP_PUBLISHING_PREVIEW_ONLY
+  const detailLogActs: DetailLogActRow[] = sourceActLogs.map((a) => {
+    const source: "regular" | "irregular" = a.source === "irregular" ? "irregular" : "regular";
+    const kind = dlActKind(source, a.kind);
+    return {
+      result: a.result === "checked" ? "checked" : "miss",
+      actName: a.actName ?? "",
+      occurredText: dlActTimeText(a.requestedAt ?? a.occurredAt ?? null),
+      hubLabel: dlActHubLabel(a.hub),
+      lineLabel: a.lineGroupName && String(a.lineGroupName).trim() ? a.lineGroupName : "-",
+      durationText: dlActDurationText(source, a.durationMinutes ?? 0),
+      pointA: a.pointA ?? 0,
+      pointB: a.pointB ?? 0,
+      pointC: a.pointC ?? 0,
+      source,
+      kindLabel: kind.label,
+      kindKey: kind.key,
+    };
+  });
+
   const detailLogData: DetailLogData = {
     seasonWeekTitle: headerTitle || "-",
     periodText:
@@ -6591,6 +6693,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     ],
     conditions: detailLogConditions,
     weeklyHelp: detailLogWeeklyHelp,
+    acts: detailLogActs,
+    // Po.A/B/C 컬럼 헤더 조직별 명칭(별/방패/번개 등) — 포인트 카드와 동일 단일 출처.
+    actPointNames: detailLogPointNames,
   };
   // 휴식(개인/공식)·전환 주차는 Detail Log 대신 안내 팝업(기존 Popup 시스템).
   const handleDetailLogOpen = () => {
