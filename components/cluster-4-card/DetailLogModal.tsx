@@ -305,7 +305,7 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
               <section className="dl-card dl-act-section">
                 <header className="dl-card-head">
                   <i className="ti ti-clipboard-list" aria-hidden="true" />
-                  <h4>액트 내역</h4>
+                  <h4>액트 내역 목록</h4>
                 </header>
 
                 {data.acts.length === 0 ? (

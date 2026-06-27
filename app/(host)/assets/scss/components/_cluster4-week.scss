@@ -13804,10 +13804,18 @@
 .section-modal-detail-log {
   --dl-accent: var(--org-accent, #faab07);
 
-  width: min(1024px, calc(100vw - 48px)) !important;
-  max-width: 1024px !important;
-  height: 794px !important;
-  max-height: min(794px, calc(100dvh - 80px)) !important;
+  // 내부 전체 1.5배 확대 — 모달 루트에 zoom 적용(폰트·표·아이콘·여백 균일 스케일 → 레이아웃 미파손).
+  //   지정 px 은 목표 렌더값 ÷ scale 로 두어, zoom 후 실제 렌더 = 1468 × 855(가로형_대) 가 되게 한다.
+  //   반응형(작은 화면) 제약도 ÷ scale 로 적용해 zoom 후에도 viewport 안에 들어오고 본문이 스크롤된다.
+  //   ⚠ scope = .section-modal-detail-log 전용 — 사이트 전역/다른 모달(2차 도움말 포함) 폰트 무영향.
+  //   값만 바꾸면 렌더 크기는 1468×855 고정 유지(치수=목표÷scale, zoom=scale 라 상쇄), 내부 스케일만 변경.
+  --dl-fs: 1.25;
+  zoom: var(--dl-fs);
+
+  width: calc(min(1468px, 100vw - 48px) / var(--dl-fs)) !important;
+  max-width: calc(1468px / var(--dl-fs)) !important;
+  height: calc(855px / var(--dl-fs)) !important;
+  max-height: calc(min(855px, 100dvh - 80px) / var(--dl-fs)) !important;
 
   display: flex;
   flex-direction: column;
