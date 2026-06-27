@@ -502,7 +502,7 @@ export async function GET(request: Request) {
     // 2) 모집단 경량 enrichment(필터/정렬용) — 학교/학과(학교명 검색)·승인주차 스냅샷(정렬)·
     //    displayGrowthStatus(상태 필터). 무거운 별/주차 success 스캔은 여기서 하지 않는다.
     const popIds = population.map((p) => p.user_id);
-    const [eduRes, growthRes, growthResolutionMap] = await Promise.all([
+    const [eduRes, growthRes] = await Promise.all([
       timed("edu", () => inChunkedSelect<UserEducationRow>(
         supabase, "user_educations", "user_id, school_name, major_name_1, sort_order", "user_id", popIds,
         (q) => q.order("sort_order", { ascending: true }),
@@ -510,8 +510,16 @@ export async function GET(request: Request) {
       timed("growth", () => inChunkedSelect<UserGrowthStatsRow>(
         supabase, "user_growth_stats", "user_id, approved_weeks, cumulative_weeks", "user_id", popIds,
       )),
-      timed("graft", () => fetchDisplayGrowthStatusMap(orgFilter)),
     ]);
+    // ⚠️ displayGrowthStatus admin graft(growth-status-batch) 비활성화 — Vercel 운영에서
+    //   org당 10~20s(20s 타임아웃 근접) 소요해 /crews 전체 지연의 90%+ 였음
+    //   (2026-06-27 timing: encre graft 20.1s/total 21.9s, phalanx 10.1s/11.5s).
+    //   /crews 는 2분류(활동중/졸업)만 노출하고 그 분기는 displayGrowthStatus==='graduated'
+    //   하나로 결정되는데, graduated 는 수동 오버라이드 전용이라 raw growth_status 가 신뢰성 있게
+    //   보유한다(fallbackDisplayGrowthStatus 가 graduated/suspended/paused·휴식·active 를 그대로
+    //   추종). graft 의 유일한 보정(graduating/extra_growth→active)은 어차피 둘 다 '활동 중'으로
+    //   매핑돼 2분류 결과를 바꾸지 않는다. → raw 폴백으로 동등한 표시 + 20s 제거.
+    const growthResolutionMap = null as Map<string, GrowthStatusResolutionRow> | null;
     if (eduRes.error) console.error("user_educations(pop) failed:", JSON.stringify(eduRes.error));
     if (growthRes.error) console.error("user_growth_stats(pop) failed:", JSON.stringify(growthRes.error));
     const eduMap = new Map<string, UserEducationRow>();
