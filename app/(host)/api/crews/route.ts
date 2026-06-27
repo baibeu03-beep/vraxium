@@ -549,14 +549,6 @@ export async function GET(request: Request) {
     const pageProfiles = targetItems.map((r) => r.p);
     const pageIds = pageProfiles.map((p) => p.user_id);
 
-    console.log(
-      "[/api/crews] org=", orgParam, "mode=", scope.mode, "opSeasonKey=", operationalSeasonKey,
-      "gate=", applySeasonGate,
-      "season(a/r/s)=", season ? `${season.counts.active}/${season.counts.rest}/${season.counts.stopped}` : "(fail-open)",
-      "population=", population.length, "filteredTotal=", filteredTotal,
-      "paged=", pageParamPresent, "page=", page, "pageSize=", pageSize, "rows=", pageIds.length,
-    );
-
     if (pageIds.length === 0) return emptyEnvelope(filteredTotal);
 
     // 6) 페이지(≤pageSize) 전용 enrichment — 무거운 per-user 스캔(별/주차 success)을 보이는
