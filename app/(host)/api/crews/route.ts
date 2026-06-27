@@ -282,13 +282,17 @@ async function inChunkedSelect<Row>(
   refine?: (q: any) => any,
 ): Promise<{ rows: Row[]; error: { message?: string } | null }> {
   if (ids.length === 0) return { rows: [], error: null };
-  const out: Row[] = [];
-  for (const part of chunk(ids, 150)) {
+  // 청크를 병렬 실행(왕복 지연 누적 방지). 한 청크라도 실패하면 error 반환.
+  const parts = chunk(ids, 150);
+  const results = await Promise.all(parts.map(async (part) => {
     let q: any = supabase.from(table).select(columns).in(inColumn, part);
     if (refine) q = refine(q);
-    const { data, error } = (await q) as { data: Row[] | null; error: { message?: string } | null };
-    if (error) return { rows: [], error };
-    out.push(...((data ?? []) as Row[]));
+    return (await q) as { data: Row[] | null; error: { message?: string } | null };
+  }));
+  const out: Row[] = [];
+  for (const r of results) {
+    if (r.error) return { rows: [], error: r.error };
+    out.push(...((r.data ?? []) as Row[]));
   }
   return { rows: out, error: null };
 }
@@ -430,13 +434,13 @@ export async function GET(request: Request) {
     };
     const debugTiming = searchParams.get("debug") === "timing";
 
-    // 0) operationalSeasonKey + 시즌 status 맵(active+rest 게이트 + 상태 카운트). best-effort.
+    // 0) operationalSeasonKey + 시즌 status 맵 + 스코프. season/scope 는 서로 독립 → 병렬.
+    //    (season=active+rest 게이트+카운트, scope=운영/테스트 모집단; 게이트는 operating 만.)
     const operationalSeasonKey = operationalSeasonDbKey(new Date().toISOString().slice(0, 10));
-    const season = await timed("season", () => fetchSeasonStatusMap(supabase, operationalSeasonKey));
-
-    // 모집단 스코프(운영/테스트). 시즌 게이트는 operating 에만(요구 1·2). mode=test 는 시즌
-    // 미참여(test_user_markers) → 게이트 스킵하고 org 전체 풀 사용.
-    const scope = await timed("scope", () => resolveUserScopeFromParams(supabase, searchParams, orgFilter));
+    const [season, scope] = await Promise.all([
+      timed("season", () => fetchSeasonStatusMap(supabase, operationalSeasonKey)),
+      timed("scope", () => resolveUserScopeFromParams(supabase, searchParams, orgFilter)),
+    ]);
     const applySeasonGate = season != null && scope.mode !== "test";
 
     // 1) 모집단 identity 조회 — "전체 user_profiles 풀을 한 번에 로드"하지 않는다(요구 3·7).

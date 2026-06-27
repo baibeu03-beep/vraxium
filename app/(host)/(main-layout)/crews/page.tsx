@@ -181,8 +181,12 @@ function CrewsContent() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // org 변경 시 필터/페이지 초기화(기본 = 활동 중, 1페이지).
+  // org 변경 시 필터/페이지 초기화(기본 = 활동 중, 1페이지). 최초 마운트는 스킵 —
+  // 초기 state 가 이미 기본값이라, 여기서 재설정하면 appliedParams 새 객체로 fetch 가 한 번 더
+  // 나간다(운영에서 /api/crews 가 2회 호출되던 원인). ref 가드로 실제 org 변경 때만 초기화.
+  const orgInitRef = useRef(true);
   useEffect(() => {
+    if (orgInitRef.current) { orgInitRef.current = false; return; }
     setCurrentPage(1);
     setNameQuery("");
     setClubFilter("");
