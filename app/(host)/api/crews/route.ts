@@ -420,13 +420,23 @@ export async function GET(request: Request) {
 
     const supabase = createAdminClient();
 
+    // [perf 진단] 단계별 소요 시간 측정 — ?debug=timing 이면 응답에 _timings 포함,
+    //   항상 console.log 로 남겨 Vercel function 로그에서도 확인 가능.
+    const T0 = Date.now();
+    const timings: Record<string, number> = {};
+    const timed = async <T>(label: string, fn: () => Promise<T>): Promise<T> => {
+      const s = Date.now();
+      try { return await fn(); } finally { timings[label] = Date.now() - s; }
+    };
+    const debugTiming = searchParams.get("debug") === "timing";
+
     // 0) operationalSeasonKey + 시즌 status 맵(active+rest 게이트 + 상태 카운트). best-effort.
     const operationalSeasonKey = operationalSeasonDbKey(new Date().toISOString().slice(0, 10));
-    const season = await fetchSeasonStatusMap(supabase, operationalSeasonKey);
+    const season = await timed("season", () => fetchSeasonStatusMap(supabase, operationalSeasonKey));
 
     // 모집단 스코프(운영/테스트). 시즌 게이트는 operating 에만(요구 1·2). mode=test 는 시즌
     // 미참여(test_user_markers) → 게이트 스킵하고 org 전체 풀 사용.
-    const scope = await resolveUserScopeFromParams(supabase, searchParams, orgFilter);
+    const scope = await timed("scope", () => resolveUserScopeFromParams(supabase, searchParams, orgFilter));
     const applySeasonGate = season != null && scope.mode !== "test";
 
     // 1) 모집단 identity 조회 — "전체 user_profiles 풀을 한 번에 로드"하지 않는다(요구 3·7).
@@ -439,7 +449,7 @@ export async function GET(request: Request) {
     if (applySeasonGate) {
       const activeRestIds: string[] = [];
       season!.statusByUser.forEach((st, uid) => { if (isGatedStatus(st)) activeRestIds.push(uid); });
-      const res = await inChunkedSelect<UserProfileRow>(
+      const res = await timed("popIdentity", () => inChunkedSelect<UserProfileRow>(
         supabase, "user_profiles", PROFILE_COLS, "user_id", activeRestIds,
         (q) => {
           let qq = q;
@@ -447,7 +457,7 @@ export async function GET(request: Request) {
           if (excludeUserId && isValidUUID(excludeUserId)) qq = qq.neq("user_id", excludeUserId);
           return qq;
         },
-      );
+      ));
       popRows = res.rows;
       popError = res.error;
       if (popError) console.warn("[/api/crews] 시즌 한정 identity 조회 실패 — org 전체 폴백(fail-open)");
@@ -493,14 +503,14 @@ export async function GET(request: Request) {
     //    displayGrowthStatus(상태 필터). 무거운 별/주차 success 스캔은 여기서 하지 않는다.
     const popIds = population.map((p) => p.user_id);
     const [eduRes, growthRes, growthResolutionMap] = await Promise.all([
-      inChunkedSelect<UserEducationRow>(
+      timed("edu", () => inChunkedSelect<UserEducationRow>(
         supabase, "user_educations", "user_id, school_name, major_name_1, sort_order", "user_id", popIds,
         (q) => q.order("sort_order", { ascending: true }),
-      ),
-      inChunkedSelect<UserGrowthStatsRow>(
+      )),
+      timed("growth", () => inChunkedSelect<UserGrowthStatsRow>(
         supabase, "user_growth_stats", "user_id, approved_weeks, cumulative_weeks", "user_id", popIds,
-      ),
-      fetchDisplayGrowthStatusMap(orgFilter),
+      )),
+      timed("graft", () => fetchDisplayGrowthStatusMap(orgFilter)),
     ]);
     if (eduRes.error) console.error("user_educations(pop) failed:", JSON.stringify(eduRes.error));
     if (growthRes.error) console.error("user_growth_stats(pop) failed:", JSON.stringify(growthRes.error));
@@ -552,13 +562,13 @@ export async function GET(request: Request) {
     const STAR_PAGE = 1000;
     const [viewRes, membershipRes, starsByUser, confirmedWeeksByUser] = await Promise.all([
       // crew_list_view (rich fields: club / total_stars 폴백)
-      supabase.from("crew_list_view").select("*").in("id", pageIds).returns<CrewListViewRow[]>(),
+      timed("pageView", async () => await supabase.from("crew_list_view").select("*").in("id", pageIds).returns<CrewListViewRow[]>()),
       // memberships (team/part 표시 + rest 마스킹용)
-      supabase.from("user_memberships")
+      timed("pageMembership", async () => await supabase.from("user_memberships")
         .select("user_id, team_name, part_name, membership_level, membership_state, is_current")
-        .in("user_id", pageIds).returns<UserMembershipRow[]>(),
+        .in("user_id", pageIds).returns<UserMembershipRow[]>()),
       // 별(stars) — user_weekly_points.points 합산(페이지 한정). best-effort.
-      (async () => {
+      timed("pageStars", async () => {
         const acc = new Map<string, number>();
         for (let from = 0; ; from += STAR_PAGE) {
           const { data: starRows, error: starError } = await supabase
@@ -570,9 +580,9 @@ export async function GET(request: Request) {
           if (starRows.length < STAR_PAGE) break;
         }
         return acc;
-      })(),
+      }),
       // 누적 인정 주차(live, 공표 완료 ∧ 비-break ∧ 비-전환) — 페이지 한정. best-effort.
-      (async (): Promise<Map<string, number> | null> => {
+      timed("pageWeeks", async (): Promise<Map<string, number> | null> => {
         const { data: weekRows, error: weekErr } = await supabase
           .from("weeks").select("start_date, week_number, result_published_at, season_definitions(season_type)")
           .returns<Array<{ start_date: string | null; week_number: number | null; result_published_at: string | null; season_definitions: { season_type: string | null } | null }>>();
@@ -595,7 +605,7 @@ export async function GET(request: Request) {
         const counts = new Map<string, number>();
         for (const id of pageIds) counts.set(id, countConfirmedSuccessWeeks(rowsByUser.get(id) ?? [], metaByStart));
         return counts;
-      })(),
+      }),
     ]);
     const { data: viewData, error: viewError } = viewRes;
     if (viewError) console.error("crew_list_view enrichment failed:", JSON.stringify(viewError));
@@ -626,6 +636,9 @@ export async function GET(request: Request) {
       ),
     );
 
+    timings.total = Date.now() - T0;
+    console.log("[/api/crews][timing]", orgParam, JSON.stringify(timings));
+
     return NextResponse.json({
       success: true,
       data,
@@ -636,6 +649,7 @@ export async function GET(request: Request) {
       statusCounts,
       seasonCounts: season?.counts ?? null,
       operationalSeasonKey,
+      ...(debugTiming ? { _timings: timings } : {}),
     });
   } catch (error) {
     console.error("Crew list API error:", error);
