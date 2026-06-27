@@ -4,6 +4,7 @@ import { resolveMembershipDisplay } from "@/lib/membership";
 import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confirmed-success-weeks";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import { resolveUserScopeFromParams } from "@/lib/userScope";
+import { operationalSeasonDbKey } from "@/lib/seasonCalendar";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -210,6 +211,58 @@ async function fetchDisplayGrowthStatusMap(
 const isValidUUID = (str: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
+// ─── 시즌 참여자(active + rest) 게이트 ─────────────────────────────────
+// /crews 활동 크루 목록 = operationalSeasonKey 기준 user_season_statuses 의
+//   status ∈ { 'active', 'rest' } 참여자. (operationalSeasonKey SoT =
+//   lib/seasonCalendar.operationalSeasonDbKey: 전환 주차면 다음 시즌.)
+//   · active(활동) + rest(시즌전체휴식) 포함, stopped(활동 중단) 제외.
+//     → /crews user_id 집합 = /admin/members 시즌 전체 − stopped.
+//   · 해당 시즌 user_season_statuses 행이 없는 레거시 전체 DB 풀(user_profiles)도 제외.
+//   · growth_status 가 아니라 user_season_statuses + season_key 로만 거른다(요구 8).
+//   · 과거 시즌 기록/카드/포인트(enrichment)는 불변 — roster 범위만 좁힌다(요구 9).
+// 반환: user_id → 'active' | 'rest' 맵. rest 판별이 필요한 건 rest 사용자의
+//   팀명/파트명을 '-' 로 비우기 위함('시즌전체휴식' 센티넬 노출 금지, 요구 3·4).
+// best-effort: season_key 미산출(null) 또는 조회 실패 시 null 반환 → 호출부에서
+//   필터를 건너뛰어 빈 화면 대신 종전 동작을 유지(인프라 장애 fail-open).
+async function fetchSeasonRosterStatusMap(
+  supabase: ReturnType<typeof createAdminClient>,
+  seasonKey: string | null,
+): Promise<Map<string, string> | null> {
+  if (!seasonKey) return null;
+  const PAGE = 1000;
+  const map = new Map<string, string>();
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("user_season_statuses")
+      .select("user_id, status")
+      .eq("season_key", seasonKey)
+      .in("status", ["active", "rest"])
+      .order("user_id", { ascending: true })
+      .range(from, from + PAGE - 1)
+      .returns<{ user_id: string; status: string }[]>();
+    if (error) {
+      console.error(
+        "[/api/crews] user_season_statuses(active+rest) 조회 실패 — 시즌 필터 건너뜀(fail-open):",
+        JSON.stringify(error),
+      );
+      return null;
+    }
+    if (!data || data.length === 0) break;
+    for (const r of data) map.set(r.user_id, r.status);
+    if (data.length < PAGE) break;
+  }
+  return map;
+}
+
+// 팀/파트 필드에 누수된 시즌 상태 센티넬('시즌전체휴식')은 실제 팀명이 아니므로
+// 표시값에서 제거한다(요구 4). rest 사용자는 아래 mergeRow 에서 팀/파트 전체를
+// '-' 로 비우지만, active 사용자 team_name 에 남은 동일 센티넬도 여기서 정리된다.
+const SEASON_REST_TEAM_SENTINEL = "시즌전체휴식";
+function stripSeasonRestSentinel(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  return value.trim() === SEASON_REST_TEAM_SENTINEL ? null : value;
+}
+
 function toAge(birthDate: string | null | undefined) {
   if (!birthDate) return "-";
   const birthYear = new Date(birthDate).getFullYear();
@@ -226,6 +279,7 @@ function mergeRow(
   starsTotal: number | null,
   confirmedWeeks: number | null,
   growthResolution: GrowthStatusResolutionRow | null,
+  seasonStatus: string | null,
 ) {
   // 팀/파트/등급 — 공용 resolver(resolveMembershipDisplay)로 통일.
   //   team_name 보유 row 우선(is_current 단독 신뢰 금지) + user_profiles.current_*_name 폴백.
@@ -235,6 +289,16 @@ function mergeRow(
     current_team_name: profile.current_team_name,
     current_part_name: profile.current_part_name,
   });
+  // rest(시즌전체휴식) 사용자는 팀명/파트명을 노출하지 않는다 → '-' (요구 3).
+  //   active 사용자는 실제 팀/파트를 표시하되, team_name 에 누수된 '시즌전체휴식'
+  //   센티넬은 stripSeasonRestSentinel 로 제거(요구 4) → 그 경우도 '-'.
+  const isSeasonRest = seasonStatus === "rest";
+  const teamDisplay = isSeasonRest
+    ? null
+    : stripSeasonRestSentinel(resolved.teamName ?? view?.team_name ?? view?.team);
+  const partDisplay = isSeasonRest
+    ? null
+    : stripSeasonRestSentinel(resolved.partName ?? view?.part_name ?? view?.part);
   // 우선순위: user_educations(최종학력 sort_order=0) > user_profiles > crew_list_view(legacy) > "-".
   // user_educations 가 truth source — educations PUT(educations/route.ts:297-374)이
   // user_educations 만 갱신하고 user_profiles.school_name/department_name 은 sync 하지
@@ -256,8 +320,9 @@ function mergeRow(
     university: schoolName,
     major: majorName,
     // 우선순위: user_memberships(team_name 보유 우선 resolver) > crew_list_view(legacy) > "-".
-    team: resolved.teamName ?? view?.team_name ?? view?.team ?? "-",
-    part: resolved.partName ?? view?.part_name ?? view?.part ?? "-",
+    //   rest 사용자는 '-' 고정(isSeasonRest), active 도 '시즌전체휴식' 센티넬은 제거(위 계산).
+    team: teamDisplay ?? "-",
+    part: partDisplay ?? "-",
     nickname: profile.vision ?? view?.vision ?? view?.nickname ?? "-",
     // 한줄소개 체인(profile_tagline → profile_keyword → vision) — 연계동료/평판 카드의
     // "닉네임" 칸 표시값과 동일 규칙(personProfiles.buildPersonProfileMap mirror). additive 필드.
@@ -303,6 +368,18 @@ export async function GET(request: Request) {
 
     const supabase = createAdminClient();
 
+    // 0) operationalSeasonKey — 오늘 날짜 기준 운영 시즌(전환 주차면 다음 시즌).
+    //    admin/members 와 동일 산출(lib/seasonCalendar.operationalSeasonDbKey).
+    const operationalSeasonKey = operationalSeasonDbKey(
+      new Date().toISOString().slice(0, 10),
+    );
+    // 시즌 참여자(active+rest) status 맵 — roster 게이트 + rest 팀/파트 마스킹.
+    // best-effort(null=필터 스킵, fail-open).
+    const seasonRosterStatus = await fetchSeasonRosterStatusMap(
+      supabase,
+      operationalSeasonKey,
+    );
+
     // 1) Roster from user_profiles (source of truth for org membership + identity + 학교/학과).
     let profileQuery = supabase
       .from("user_profiles")
@@ -330,12 +407,31 @@ export async function GET(request: Request) {
     // (DTO shape 동일 — operating/test 응답 키 집합 불변.) best-effort: markers 조회 실패 시
     // operating=전체포함(보수적)·test=빈결과(실유저 절대 유입 안 됨).
     const scope = await resolveUserScopeFromParams(supabase, searchParams, orgFilter);
-    const profiles = scope.filter(profilesRaw ?? [], (p) => p.user_id);
+
+    // 0.5) 시즌 참여자(active+rest) 게이트 — operationalSeasonKey 기준 user_season_statuses
+    //   status ∈ {active, rest} 인 user_id 만 활동 크루 목록에 남긴다. stopped(활동 중단)
+    //   및 해당 시즌 참여 행이 없는 레거시 전체 DB 풀(엥크레 ~337)은 제외된다(요구 1·2·5~8).
+    //   · operating(실사용자 = demoUserId/일반 동일 DTO)에만 적용한다.
+    //   · mode=test 는 더미 격리 코호트라 test_user_markers 91명 전원이 시즌 미참여
+    //     (user_season_statuses 행 0) — 게이트를 걸면 빈 목록이 되므로 스킵한다.
+    //   · seasonRosterStatus 가 null(시즌키 미산출/조회 실패)이면 fail-open: 종전 동작 유지.
+    const applySeasonGate = seasonRosterStatus != null && scope.mode !== "test";
+    const seasonGated = applySeasonGate
+      ? (profilesRaw ?? []).filter((p) => seasonRosterStatus!.has(p.user_id))
+      : profilesRaw ?? [];
+    const profiles = scope.filter(seasonGated, (p) => p.user_id);
 
     // [debug] 임시 — 라우트별 결과 확인용. 안정 확인 후 제거 예정.
+    const restCount = applySeasonGate
+      ? seasonGated.filter((p) => seasonRosterStatus!.get(p.user_id) === "rest").length
+      : 0;
     console.log(
       "[/api/crews] org=", orgParam, "filter=", orgFilter, "mode=", scope.mode,
-      "profilesRaw=", profilesRaw?.length ?? 0, "scoped=", profiles.length,
+      "opSeasonKey=", operationalSeasonKey,
+      "seasonRoster(active+rest)=", seasonRosterStatus?.size ?? "(fail-open)",
+      "seasonGateApplied=", applySeasonGate,
+      "profilesRaw=", profilesRaw?.length ?? 0,
+      "seasonGated=", seasonGated.length, "restInGate=", restCount, "scoped=", profiles.length,
       "testUsers=", scope.testUserIds.size, "err=", profileError,
     );
 
@@ -524,6 +620,7 @@ export async function GET(request: Request) {
         starsByUser.get(p.user_id) ?? null,
         confirmedWeeksByUser?.get(p.user_id) ?? null,
         growthResolutionMap?.get(p.user_id) ?? null,
+        seasonRosterStatus?.get(p.user_id) ?? null,
       ),
     );
 
