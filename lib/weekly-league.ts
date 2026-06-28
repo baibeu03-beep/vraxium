@@ -19,6 +19,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { seasonLabel } from "@/lib/cluster4-types";
 import { isOfficialRestWeek, normalizeSeason } from "@/lib/cluster4-transition-week";
 import { getWeekImageUrl } from "@/lib/cluster4-week-image";
+import { operationalSeasonDbKey } from "@/lib/seasonCalendar";
 import { pickPrimaryMembership, type MembershipRow } from "@/lib/membership";
 import type { ScopeMode } from "@/lib/userScopeShared";
 import type {
@@ -27,8 +28,27 @@ import type {
   RestReason,
 } from "@/constants/dummyData/weekly-card-dummy";
 
-// (2026-06-09) weekly-ranking 노출 제한 — 당분간 2026 봄 시즌만. 과거 시즌은 숨김(보존).
-export const WEEKLY_LEAGUE_SEASON_KEY = "2026-spring";
+// 운영 데이터 시작(이관 정책 경계) = 2026 봄 시즌 시작일.
+//   기본(누적) 노출은 이 날짜 이후 시작 주차만 노출한다 — 그 이전(2023~2026 겨울)은
+//   이관(PMS migration) 데이터라 기본 화면에서 숨긴다(삭제·미수정, 보존).
+//   과거 이관 데이터는 ?seasonKey=YYYY-season 명시 조회로만 접근 가능(예: 2025-spring).
+export const WEEKLY_LEAGUE_ERA_START_DATE = "2026-03-02";
+
+// 봄 아카이브 키(호환) — 봄 정합 예외 보정(cluster4_weekly_ranking_exceptions) 문서/조회용 별칭.
+export const WEEKLY_LEAGUE_ARCHIVE_SEASON_KEY = "2026-spring";
+export const WEEKLY_LEAGUE_SEASON_KEY = WEEKLY_LEAGUE_ARCHIVE_SEASON_KEY; // 과거 import 보호
+
+const SEASON_KEY_RE = /^\d{4}-(spring|summer|autumn|fall|winter)$/;
+export const isValidSeasonKey = (v: string | null | undefined): v is string =>
+  !!v && SEASON_KEY_RE.test(v);
+
+// 현재 운영 시즌 키 — operationalSeasonDbKey(전환 주차 선반영) 기반.
+//   누적 리스트에서 "현재 시즌"(최상단에 새로 추가되는 시즌) 지표다. 리스트의 필터가 아니라
+//   참고/검증용 — 실제 최상단 카드는 확정(공표) 게이트로 자연 결정된다(= 공표된 최신 주차).
+//   today = new Date().toISOString().split("T")[0](UTC date) → 09:00 KST 경계와 일치.
+export function resolveCurrentSeasonKey(today: string): string | null {
+  return operationalSeasonDbKey(today);
+}
 
 // 알려진 org slug — page.tsx KNOWN_ORGS 와 동일.
 export const WEEKLY_LEAGUE_ORGS = ["phalanx", "encre", "oranke"] as const;
@@ -133,6 +153,9 @@ export async function aggregateWeeklyLeague(
   // test: test_user_markers 만(실사용자 제외). 읽기 전용 필터일 뿐 집계 로직/SoT 불변.
   // mode 미지정은 operating(기존 동작 == byte-identical).
   mode: ScopeMode = "operating",
+  // 조회 시즌 키 — 미지정/오타 시 현재 운영 시즌(날짜 구동)으로 결정.
+  // 명시 전달(예: "2026-spring")은 과거 아카이브 조회용. 집계 로직/SoT 불변.
+  seasonKeyParam?: string | null,
 ): Promise<WeeklyLeagueResult> {
   if (!isWeeklyLeagueOrg(org)) {
     return { success: false, org: org ?? null, cards: [], error: "org 파라미터가 필요합니다 (phalanx · encre · oranke)." };
@@ -144,6 +167,11 @@ export async function aggregateWeeklyLeague(
 
   try {
     const today = new Date().toISOString().split("T")[0];
+    // 조회 모드:
+    //   · 명시(seasonKeyParam 유효) → 단일 시즌만(과거 이관 아카이브 포함). 예: ?seasonKey=2025-spring.
+    //   · 기본(미지정)             → 운영 era 누적(2026 봄~ 현재). 시즌별 필터 없이 확정 주차 전체를
+    //                                최신순으로 노출 → 새 시즌이 위에 추가되고 이전 시즌이 그대로 이어짐.
+    const explicitSeasonKey = isValidSeasonKey(seasonKeyParam) ? seasonKeyParam : null;
 
     // 0) 시드 테스트 유저 집합 — test_user_markers(어드민이 시드한 더미 계정 SoT).
     //    모집단 스코프(mode)로 포함/제외를 결정한다:
@@ -252,15 +280,23 @@ export async function aggregateWeeklyLeague(
       else for (const m of msRows || []) memberStartByUser.set(m.user_id, m.member_start_date);
     }
 
-    // 2) 종료된 주차 메타 — cluster-4-ranking 과 동일 source(weeks + season_definitions).
-    //    (2026-06-09) 당분간 2026 봄 시즌만 노출 — 과거 시즌/주차는 숨김(데이터 보존, 렌더 제외).
-    //    API 1차 필터: season_key='2026-spring'. 프론트(WeeklyRankingContent)에서 2차 방어 필터.
-    const { data: weekRows, error: weekErr } = await db
+    // 2) 확정(공표) 종료 주차 메타 — cluster-4-ranking 과 동일 source(weeks + season_definitions).
+    //    노출 정책(2026 여름 시즌부터, 누적):
+    //      · 확정 게이트 : weeks.result_published_at NOT NULL (주차 결과 공표 완료 SoT).
+    //        미공표(집계 대기) 주차는 카드 없음 — 예: 여름 1주차 공표 전에는 빈 목록.
+    //      · 종료 게이트 : end_date < today.
+    //      · 범위 게이트 : 기본=운영 era(start_date >= 2026-03-02) 전체 누적(시즌 무관),
+    //                     명시 ?seasonKey= 시 해당 시즌만(과거 이관 포함).
+    //    최신순(start_date DESC) → 여름이 위, 봄이 아래로 자연 연결. 봄 데이터 미삭제·계속 조회.
+    let weekQuery = db
       .from("weeks")
-      .select("id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, season_definitions!inner(season_label, season_type, year)")
-      .eq("season_key", WEEKLY_LEAGUE_SEASON_KEY)
-      .lt("end_date", today)
-      .order("start_date", { ascending: false });
+      .select("id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, result_published_at, season_definitions!inner(season_label, season_type, year)")
+      .not("result_published_at", "is", null)
+      .lt("end_date", today);
+    weekQuery = explicitSeasonKey
+      ? weekQuery.eq("season_key", explicitSeasonKey)
+      : weekQuery.gte("start_date", WEEKLY_LEAGUE_ERA_START_DATE);
+    const { data: weekRows, error: weekErr } = await weekQuery.order("start_date", { ascending: false });
 
     if (weekErr) {
       return { success: false, org, cards: [], error: `주차 메타 조회 실패: ${weekErr.message}` };
@@ -403,7 +439,9 @@ export async function aggregateWeeklyLeague(
       .from("cluster4_weekly_ranking_exceptions")
       .select("week_id, user_id, exception_type, int_value")
       .eq("organization_slug", org)
-      .eq("season_key", WEEKLY_LEAGUE_SEASON_KEY);
+      // 누적 리스트 — 표시 주차(week_id) 기준으로 예외 조회(시즌 무관). 봄 정합 예외는
+      // 봄 week_id 에만 매칭되어 그대로 적용되고, 다른 시즌엔 예외 행이 없으면 무영향.
+      .in("week_id", weeks.map((w) => w.id));
     const confirmStarOverrideByWeekId = new Map<string, number>();
     const cohortExcludeKey = new Set<string>(); // `${user_id}|${week_id}`
     for (const e of exRows || []) {

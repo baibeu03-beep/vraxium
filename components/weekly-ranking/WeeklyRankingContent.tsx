@@ -55,13 +55,6 @@ const getSeasonFilterValue = (seasonName: string) => {
   return `${ys.year}년, ${ys.season} 시즌`;
 };
 
-// (2026-06-09) 당분간 2026 봄 시즌만 노출 — API(season_key='2026-spring') 1차 필터 +
-// 프론트 2차 방어 필터. 과거 시즌 카드는 렌더하지 않음(데이터는 보존).
-const isSpring2026Card = (seasonName: string): boolean => {
-  const ys = parseYearSeason(seasonName);
-  return !!ys && ys.year === 2026 && ys.season === "봄";
-};
-
 interface WeeklyRankingContentProps {
   // 조직 slug(phalanx · encre · oranke). page.tsx 에서 ?org= 검증 후 전달.
   org: string;
@@ -71,6 +64,9 @@ const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
   const searchParams = useSearchParams();
   // 모집단 스코프 — mode 미지정/오타 → operating(실사용자), mode=test → 테스트 유저만.
   const mode = readScopeMode(searchParams);
+  // 아카이브 시즌 키 — 미지정 시 서버가 운영 era 누적(2026 봄~ 현재, 최신순)으로 반환.
+  // 명시(예: ?seasonKey=2025-spring) 시 단일 과거 시즌 조회.
+  const seasonKeyParam = searchParams?.get("seasonKey") ?? null;
   const [sortValue, setSortValue] = useState<string>("latest");
   const [seasonValue, setSeasonValue] = useState<string>("");
   const [leagueValue, setLeagueValue] = useState<string>("");
@@ -102,15 +98,14 @@ const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
     setLoading(true);
     (async () => {
       try {
-        const res = await fetch(
-          appendModeQuery(`/api/weekly-league?org=${encodeURIComponent(org)}`, mode),
-          { cache: "no-store" },
-        );
+        // 시즌 게이트/확정(공표) 게이트는 서버(aggregateWeeklyLeague)에서 단일 적용한다 —
+        // 프론트는 응답 카드를 그대로 렌더(프론트 시즌 하드코딩 필터 없음).
+        let url = appendModeQuery(`/api/weekly-league?org=${encodeURIComponent(org)}`, mode);
+        if (seasonKeyParam) url += `&seasonKey=${encodeURIComponent(seasonKeyParam)}`;
+        const res = await fetch(url, { cache: "no-store" });
         const json = await res.json();
         if (!cancelled && json?.success && Array.isArray(json.cards)) {
-          // 2차 방어 필터 — API가 이미 2026-spring만 주지만, 과거 시즌 카드 유입을 프론트에서도 차단.
-          const cards = (json.cards as WeeklyCardData[]).filter((c) => isSpring2026Card(c.seasonName));
-          setFetchedCards(cards);
+          setFetchedCards(json.cards as WeeklyCardData[]);
         }
       } catch {
         if (!cancelled) setFetchedCards([]);
@@ -122,7 +117,7 @@ const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
     return () => {
       cancelled = true;
     };
-  }, [demo, org, mode]);
+  }, [demo, org, mode, seasonKeyParam]);
 
   const allCards = useMemo<WeeklyCardData[]>(
     () => (demo ? WEEKLY_CARD_DUMMY : fetchedCards),
