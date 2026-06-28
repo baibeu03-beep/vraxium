@@ -504,13 +504,17 @@ export async function GET(request: NextRequest) {
     const currentSeasonKey: string | null = currentWeek?.season_key ?? null;
     let currentSeasonRest = false;
     let currentSeasonStopped = false;
+    // 현재 시즌 참여 여부(상태 무관) — 시즌 명부(user_season_statuses)에 현재 시즌 row 가 있으면
+    //   주차 결과(user_week_statuses)/포인트가 아직 없어도 현재 시즌 카드를 생성하기 위한 신호.
+    //   (종전엔 rest/stopped 만 조회 → 활동 데이터 없는 신규 참여 시즌은 카드 자체가 안 생겼다.)
+    let currentSeasonParticipation = false;
     if (currentSeasonKey) {
       const { data: ssRows } = await supabase
         .from("user_season_statuses")
         .select("status")
         .eq("user_id", userId)
-        .eq("season_key", currentSeasonKey)
-        .in("status", ["rest", "stopped"]);
+        .eq("season_key", currentSeasonKey);
+      currentSeasonParticipation = (ssRows ?? []).length > 0;
       currentSeasonRest = (ssRows ?? []).some((r: any) => r.status === "rest");
       currentSeasonStopped = (ssRows ?? []).some((r: any) => r.status === "stopped");
     }
@@ -541,6 +545,44 @@ export async function GET(request: NextRequest) {
       currentSeasonRest,
       currentSeasonStopped,
     );
+
+    // ── 현재 운영 시즌 카드 자동 prepend (2026-06-28) ──────────────────────────────
+    // /cluster-4-1 은 시즌 기준 화면이다. 시즌이 바뀌면 user_week_statuses/user_weekly_points
+    // 결과 row 가 아직 없어도, 시즌 명부(user_season_statuses)에 현재 시즌 참여 row 가 있는
+    // 유저는 현재 시즌 상세 카드가 생성되어야 한다. buildSeasonSummaries 는 활동 데이터가 있는
+    // 시즌만 포함하므로(candidateDates = user_weekly_points ∪ user_week_statuses), 시즌 시작
+    // 직후 신규 참여 시즌은 누락된다 → seasonSummaries[0] 에 현재 시즌 골격을 prepend 한다.
+    //   · 현재 시즌 키 = currentSeasonKey(현재 주차의 season_key — 기존 weeks/seasonCalendar 로직).
+    //     활동 주차에서는 getSeasonForDate(today) 와 동일하며, 여름은 정확히 2026-06-29(여름 W1)
+    //     부터 현재 시즌이 된다(전환 주차엔 그대로 직전 시즌 유지 — getOperationalSeason 의 "다음
+    //     시즌" 선행 노출은 06-29 기대와 어긋나므로 사용하지 않는다).
+    //   · 표시값은 이미 산출된 현재 시즌 단일 요약(seasonSummary)+포인트(seasonPointSummary) 재사용
+    //     → status="시즌 진행 중"(active)·포인트 0(데이터 없으면 0). area-6/area-7 강화율·주차
+    //     활용도는 클라이언트가 weekly-cards *BySeason 맵에서 조회하며 데이터 없으면 0/대기.
+    //   · 이미 활동 데이터로 seasonSummaries 에 포함돼 있으면 중복 생성하지 않는다(seasonKey dedupe).
+    //   · user_week_statuses 에 가짜 success/fail/rest row 를 만들지 않는다(조회 시점 카드 골격만).
+    //   · 과거 시즌 항목·정렬·상태는 손대지 않는다(prepend 만).
+    if (
+      currentSeasonParticipation &&
+      currentSeasonKey &&
+      seasonSummary &&
+      !seasonSummaries.some((s: any) => s.seasonKey === currentSeasonKey)
+    ) {
+      seasonSummaries.unshift({
+        seasonKey: currentSeasonKey,
+        year: seasonSummary.year,
+        seasonName: seasonSummary.seasonName,
+        seasonCode: seasonSummary.seasonCode,
+        displayTitle: seasonSummary.displayTitle,
+        dateRangeLabel: seasonSummary.dateRangeLabel,
+        status: seasonSummary.status,
+        statusLabel: seasonSummary.statusLabel,
+        seasonResult: seasonSummary.seasonResult,
+        startDate: seasonSummary.startDate,
+        endDate: seasonSummary.endDate,
+        pointSummary: seasonPointSummary ?? { star: 0, shield: 0, lightning: 0 },
+      });
+    }
 
     // 사용 DTO: data.seasonSummary(현재 시즌), data.seasonPointSummary(현재 시즌),
     //          data.seasonSummaries[](시즌별 — 페이지네이션용, 각 pointSummary 포함)
