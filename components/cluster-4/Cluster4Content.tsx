@@ -1851,6 +1851,47 @@ const Cluster4Content = () => {
       ? seasonHistories[section3Page] || seasonHistories[0]
       : (defaultSeasonData as SeasonHistoryData);
 
+  // ── 진입 화면 시즌 이미지 — selectedSeasonSummary(제목/날짜/배지와 동일 소스) 기준 선택 ──
+  //   seasonHistories 인덱스에 의존하지 않는다. (2026-06-29 봄→여름 전환 시 제목/날짜/배지는
+  //   seasonSummaries[0]=여름으로 바뀌는데 이미지만 seasonHistories[0]=봄을 읽어 어긋나던 문제 수정.)
+  //   판정: seasonName(한글) 우선 → seasonCode(영문 type) → seasonKey("YYYY-type")의 type 순 폴백.
+  //   파일은 public/images/0/cluster4/시즌 이미지/ 의 기존 파일명 그대로 사용(여름은 _후보_3).
+  const SEASON_ENTRY_IMAGE_BASE = "/images/0/cluster4/시즌 이미지";
+  const SEASON_ENTRY_IMAGE_BY_NAME: Record<string, string> = {
+    "봄": `${SEASON_ENTRY_IMAGE_BASE}/봄_후보_1.png`,
+    "여름": `${SEASON_ENTRY_IMAGE_BASE}/여름_후보_3.png`,
+    "가을": `${SEASON_ENTRY_IMAGE_BASE}/가을_후보_1.png`,
+    "겨울": `${SEASON_ENTRY_IMAGE_BASE}/겨울_후보_1.png`,
+  };
+  const SEASON_ENTRY_IMAGE_FALLBACK = `${SEASON_ENTRY_IMAGE_BASE}/봄_후보_1.png`;
+  const SEASON_CODE_TO_NAME: Record<string, string> = {
+    spring: "봄", summer: "여름", autumn: "가을", fall: "가을", winter: "겨울",
+  };
+  const resolveSeasonEntryImage = (s: SeasonSummaryDto | null | undefined): string => {
+    if (!s) return SEASON_ENTRY_IMAGE_FALLBACK;
+    if (s.seasonName && SEASON_ENTRY_IMAGE_BY_NAME[s.seasonName]) return SEASON_ENTRY_IMAGE_BY_NAME[s.seasonName];
+    const codeName =
+      SEASON_CODE_TO_NAME[String(s.seasonCode || "").toLowerCase()] ||
+      SEASON_CODE_TO_NAME[String(s.seasonKey || "").split("-")[1]?.toLowerCase() || ""];
+    return (codeName && SEASON_ENTRY_IMAGE_BY_NAME[codeName]) || SEASON_ENTRY_IMAGE_FALLBACK;
+  };
+  // 앞면(메인) 이미지 + 배경 = 선택 시즌(selectedSeasonSummary). seasonSummaries 가 있으면 그 기준,
+  //   없으면(로컬 더미/무데이터) 기존 currentSeason.image 유지(데모/더미 동작 불변, 일반=demoUserId 동일).
+  const selectedSeasonImage =
+    seasonSummaries.length > 0 ? resolveSeasonEntryImage(selectedSeasonSummary) : currentSeason.image;
+  // 스택 뒤/중간 카드 = 페이지네이션 이웃 시즌. seasonSummaries 기준으로 회전(seasonHistories 인덱스
+  //   비의존). seasonSummaries 가 없으면 기존 seasonHistories 동작/더미 이미지 유지.
+  const seasonImageAtOffset = (offset: number, dummyFallback: string): string => {
+    if (seasonSummaries.length > 0) {
+      const idx = (section3Page + offset) % seasonSummaries.length;
+      return resolveSeasonEntryImage(seasonSummaries[idx]);
+    }
+    if (seasonHistories.length > 0) {
+      return seasonHistories[(section3Page + offset) % seasonHistories.length]?.image || currentSeason.image;
+    }
+    return dummyFallback;
+  };
+
   // 영역 2 Qualified — 휴식 시즌은 시즌 내 활동 자체가 없으므로 전부 UnQualified(inactive) 처리.
   const isQualifiedView = !isVoidSeason && currentSeason.isQualified;
   // 영역 5 평점 — 휴식 시즌은 별 0개 + "- / 10" (실평점 0 과 구분).
@@ -3371,7 +3412,7 @@ const Cluster4Content = () => {
             margin: "0 auto",
           }}
         />
-        <div className="season-detail-container" style={{ backgroundImage: `url('${currentSeason.image}')`, marginTop: 0, paddingTop: "30px" }}>
+        <div className="season-detail-container" style={{ backgroundImage: `url('${selectedSeasonImage}')`, marginTop: 0, paddingTop: "30px" }}>
           {/* 상단 헤더 영역 (영역 1 + 영역 2) */}
           <div className="top-header-row">
             {/* 영역 1: 타이틀 + 날짜 + 상태 */}
@@ -3426,17 +3467,17 @@ const Cluster4Content = () => {
               <div className={`season-image-stack ${isFlipping ? "flipping" : ""}`}>
                 <div className="image-card card-back">
                   <div className="card-frame">
-                    <img src={seasonHistories.length > 0 ? seasonHistories[(section3Page + 2) % seasonHistories.length]?.image || currentSeason.image : "/images/0/cluster4/cluster4-1/image3.png"} alt="시즌" />
+                    <img src={seasonImageAtOffset(2, "/images/0/cluster4/cluster4-1/image3.png")} alt="시즌" />
                   </div>
                 </div>
                 <div className="image-card card-middle">
                   <div className="card-frame">
-                    <img src={seasonHistories.length > 0 ? seasonHistories[(section3Page + 1) % seasonHistories.length]?.image || currentSeason.image : "/images/0/cluster4/cluster4-1/image2.png"} alt="시즌" />
+                    <img src={seasonImageAtOffset(1, "/images/0/cluster4/cluster4-1/image2.png")} alt="시즌" />
                   </div>
                 </div>
                 <div className="image-card card-front">
                   <div className="card-frame">
-                    <img src={currentSeason.image} alt={`${currentSeason.season} 시즌`} />
+                    <img src={selectedSeasonImage} alt={`${selectedSeasonSummary?.seasonName || currentSeason.season} 시즌`} />
                   </div>
                 </div>
               </div>
