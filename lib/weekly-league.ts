@@ -17,7 +17,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase";
 import { seasonLabel } from "@/lib/cluster4-types";
-import { isOfficialRestWeek, normalizeSeason } from "@/lib/cluster4-transition-week";
+import { isOfficialRestWeek, isTransitionWeek, normalizeSeason } from "@/lib/cluster4-transition-week";
 import { getWeekImageUrl } from "@/lib/cluster4-week-image";
 import { operationalSeasonDbKey } from "@/lib/seasonCalendar";
 import { pickPrimaryMembership, type MembershipRow } from "@/lib/membership";
@@ -64,12 +64,12 @@ export interface WeeklyLeagueResult {
   error?: string;
 }
 
-// 주차 결과 확정 시점 = N+1주(목) 12:01 KST (cluster-4-ranking 과 동일 정책).
-// 이 시점 도달 전인 종료 주차는 아직 '집계 중'(대전 집계)으로 표기한다.
-const computeResultDecidedMs = (startDate: string): number => {
-  const weekStartMs = new Date(`${startDate}T00:00:00+09:00`).getTime();
-  return weekStartMs + (10 * 24 + 12) * 3600 * 1000 + 60 * 1000;
-};
+// 현재 활동 날짜(YYYY-MM-DD) — 주차 경계 = 매주 월요일 00:01 KST.
+//   now 를 KST(UTC+9)로 옮긴 뒤 1분을 빼고 날짜만 취하면, 월요일 00:01 KST 에 그 주
+//   날짜로 넘어간다(admin getCurrentActivityDateIso / weekStartToBoundaryMs 와 동일 경계).
+//   주차 카드 "생성"(=대전 중 등장) 및 "종료/진행" 판정의 단일 기준.
+const resolveActivityDate = (): string =>
+  new Date(Date.now() + 9 * 3600 * 1000 - 60 * 1000).toISOString().split("T")[0];
 
 const DOW = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -139,6 +139,10 @@ type WeekMeta = {
   isBreak: boolean;
   isOfficialRest: boolean;
   holidayName: string | null;
+  // 공표(결과 공표) 시각 SoT. null = 미공표(종료 시 '대전 집계', 미종료 시 '대전 중').
+  resultPublishedAt: string | null;
+  // 검수 완료 시각 SoT(관리자 검수 완료 버튼). null = 미검수. 공표+검수 → '검수 완료'.
+  resultReviewedAt: string | null;
   // 시즌명(봄/여름/가을/겨울)+주차번호 기준 public 이미지 경로. 미상이면 null → placeholder.
   imageUrl: string | null;
 };
@@ -166,7 +170,8 @@ export async function aggregateWeeklyLeague(
   const db = supabaseAdmin;
 
   try {
-    const today = new Date().toISOString().split("T")[0];
+    // 주차 경계 = 월 00:01 KST (요구사항). UTC date(=09:00 KST 경계) 대신 사용.
+    const today = resolveActivityDate();
     // 조회 모드:
     //   · 명시(seasonKeyParam 유효) → 단일 시즌만(과거 이관 아카이브 포함). 예: ?seasonKey=2025-spring.
     //   · 기본(미지정)             → 운영 era 누적(2026 봄~ 현재). 시즌별 필터 없이 확정 주차 전체를
@@ -280,23 +285,34 @@ export async function aggregateWeeklyLeague(
       else for (const m of msRows || []) memberStartByUser.set(m.user_id, m.member_start_date);
     }
 
-    // 2) 확정(공표) 종료 주차 메타 — cluster-4-ranking 과 동일 source(weeks + season_definitions).
-    //    노출 정책(2026 여름 시즌부터, 누적):
-    //      · 확정 게이트 : weeks.result_published_at NOT NULL (주차 결과 공표 완료 SoT).
-    //        미공표(집계 대기) 주차는 카드 없음 — 예: 여름 1주차 공표 전에는 빈 목록.
-    //      · 종료 게이트 : end_date < today.
+    // 2) 주차 메타 — cluster-4-ranking 과 동일 source(weeks + season_definitions).
+    //    노출 정책(Phase 1 — 주차 시작 시점 생성, 상태만 변경):
+    //      · 시작 게이트 : start_date <= today(월 00:01 KST). "시작된 주차"부터 카드 1장 생성.
+    //        미래(미시작) 주차는 제외. 공표/종료 게이트는 제거 — 공표 전·진행 중 주차도 카드가 보인다.
+    //        상태(leagueRecordStatus)는 카드별 종료·공표 여부로 산정(아래):
+    //          진행 중(미종료)=대전 중 · 종료+미공표=대전 집계 · 공표(result_published_at)=공표 중 ·
+    //          공표+검수(result_reviewed_at)=검수 완료. (검수 완료는 시간이 아니라 별도 신호 — Phase 2)
     //      · 범위 게이트 : 기본=운영 era(start_date >= 2026-03-02) 전체 누적(시즌 무관),
     //                     명시 ?seasonKey= 시 해당 시즌만(과거 이관 포함).
-    //    최신순(start_date DESC) → 여름이 위, 봄이 아래로 자연 연결. 봄 데이터 미삭제·계속 조회.
-    let weekQuery = db
-      .from("weeks")
-      .select("id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, result_published_at, season_definitions!inner(season_label, season_type, year)")
-      .not("result_published_at", "is", null)
-      .lt("end_date", today);
-    weekQuery = explicitSeasonKey
-      ? weekQuery.eq("season_key", explicitSeasonKey)
-      : weekQuery.gte("start_date", WEEKLY_LEAGUE_ERA_START_DATE);
-    const { data: weekRows, error: weekErr } = await weekQuery.order("start_date", { ascending: false });
+    //    최신순(start_date DESC) → 현재 주차가 맨 위, 과거가 아래로 자연 연결.
+    // result_reviewed_at 는 마이그레이션(2026-06-29_weeks_result_reviewed_at) 미적용 DB 에서는
+    //   존재하지 않을 수 있다. 미적용 시 select 오류 → reviewed_at 없는 select 로 폴백(검수 완료 신호만
+    //   비활성 = Phase 1 동작 보존, /weekly-ranking 은 깨지지 않는다). 적용되면 자동으로 검수 완료 표시.
+    const SELECT_WITH_REVIEWED =
+      "id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, result_published_at, result_reviewed_at, season_definitions!inner(season_label, season_type, year)";
+    const SELECT_BASE =
+      "id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, result_published_at, season_definitions!inner(season_label, season_type, year)";
+    const buildWeekQuery = (sel: string) => {
+      let q = db.from("weeks").select(sel).lte("start_date", today);
+      q = explicitSeasonKey
+        ? q.eq("season_key", explicitSeasonKey)
+        : q.gte("start_date", WEEKLY_LEAGUE_ERA_START_DATE);
+      return q.order("start_date", { ascending: false });
+    };
+    let { data: weekRows, error: weekErr } = await buildWeekQuery(SELECT_WITH_REVIEWED);
+    if (weekErr && /result_reviewed_at|column .* does not exist/i.test(weekErr.message ?? "")) {
+      ({ data: weekRows, error: weekErr } = await buildWeekQuery(SELECT_BASE));
+    }
 
     if (weekErr) {
       return { success: false, org, cards: [], error: `주차 메타 조회 실패: ${weekErr.message}` };
@@ -326,11 +342,16 @@ export async function aggregateWeeklyLeague(
         isBreak,
         isOfficialRest: !!w.is_official_rest,
         holidayName: w.holiday_name ?? null,
+        resultPublishedAt: w.result_published_at ?? null,
+        resultReviewedAt: w.result_reviewed_at ?? null,
         // 휴식·활동 주차 공통 — 시즌 단어(displayName)+주차번호로 썸네일 경로 도출.
         // 매칭 실패(전환/break/미상 주차)는 null → 클라이언트 placeholder 폴백.
         imageUrl: getWeekImageUrl({ seasonName: displayName, weekNumber: w.week_number }),
       };
-    });
+    })
+    // 전환 주차(봄·가을 17 / 여름·겨울 9)는 '대전'이 없는 시즌 사이 주차 → 목록 제외
+    //   (기존엔 미공표라 자연히 숨겨졌던 주차 — 공표/종료 게이트 제거 후 명시 제외로 동작 보존).
+    .filter((w) => !isTransitionWeek(w.seasonName, w.weekNumber));
 
     if (weeks.length === 0) {
       return { success: true, org, cards: [] };
@@ -466,8 +487,6 @@ export async function aggregateWeeklyLeague(
       return { team, part };
     };
 
-    const nowMs = Date.now();
-
     const cards: WeeklyCardData[] = weeks.map((week) => {
       // 주차 레벨 공식 휴식 — 전환 주차(봄·가을 17 / 여름·겨울 9)는 제외(공용 헬퍼).
       const weekOfficialRest = isOfficialRestWeek(
@@ -476,8 +495,14 @@ export async function aggregateWeeklyLeague(
         week.isOfficialRest || week.isBreak,
       );
 
-      // 결과 확정 여부(N+1 목 12:01 KST 도달).
-      const decided = nowMs >= computeResultDecidedMs(week.startDate);
+      // 주차 생명주기 판정(시간 기반 자동전환 미사용 — 공표/검수는 관리자 신호):
+      //   · 진행 중(미종료) = today(월 00:01 KST) <= end_date            → '대전 중'
+      //   · 종료 + 미공표(result_published_at NULL)                       → '대전 집계'
+      //   · 종료 + 공표(result_published_at) + 미검수(result_reviewed NULL) → '공표 중'
+      //   · 종료 + 공표 + 검수(result_reviewed_at)                        → '검수 완료'
+      const isEnded = week.endDate < today;
+      const isPublished = !!week.resultPublishedAt;
+      const isReviewed = !!week.resultReviewedAt;
 
       const dateRangeText = `${fmtDate(week.startDate)} - ${fmtDate(week.endDate)}`;
 
@@ -572,8 +597,14 @@ export async function aggregateWeeklyLeague(
       const growthChallengeRate = totalCrews > 0 ? Math.round((growthChallenge / totalCrews) * 100) : 0;
       const growthSuccessRate = growthChallenge > 0 ? Math.round((growthSuccess / growthChallenge) * 100) : 0;
 
-      // 결과 확정 주차만 '검수 완료', 미확정(최근 종료)은 '대전 집계'.
-      const leagueRecordStatus: WeeklyCardData["leagueRecordStatus"] = decided ? "검수 완료" : "대전 집계";
+      // 진행 중=대전 중 · 종료+미공표=대전 집계 · 공표+미검수=공표 중 · 공표+검수=검수 완료.
+      const leagueRecordStatus: WeeklyCardData["leagueRecordStatus"] = !isEnded
+        ? "대전 중"
+        : isReviewed
+          ? "검수 완료"
+          : isPublished
+            ? "공표 중"
+            : "대전 집계";
 
       // top3 — 별점(points) DESC. 동점은 안정적 정렬 위해 user_id tie-break.
       const top3: WeeklyCardCrew[] = (pointsByWeek.get(week.startDate) || [])
@@ -595,7 +626,8 @@ export async function aggregateWeeklyLeague(
         seasonName: week.seasonName,
         weekNumber: week.weekNumber,
         dateRangeText,
-        status: decided ? "정상 진행" : "대전 집계",
+        // 코어스 status(필터/표시 비사용) — 집계 중만 '대전 집계', 그 외 '정상 진행'.
+        status: isEnded && !isPublished ? "대전 집계" : "정상 진행",
         leagueResultStatus: "정상 진행",
         leagueRecordStatus,
         imageUrl: week.imageUrl,
