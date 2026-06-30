@@ -6,6 +6,7 @@ import { getCachedActivityTypes } from "@/lib/cached-data";
 import { getProfileLookupKey, resolveUserProfileAccess } from "@/lib/user-profile-access";
 import { isTransitionWeek } from "@/lib/cluster4-transition-week";
 import { resolveWeekScopeForUser, resolveWeekResultStates, statesByStartDate } from "@/lib/weekResultState";
+import { enforceQaMode } from "@/lib/qaModeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -16,6 +17,10 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const targetUserId = searchParams.get('userId');
+
+    // QA 모드 게이트(Phase C): mode=test 에서 실사용자 세션/대상 차단.
+    const qaBlock = await enforceQaMode(request, { targetUserId });
+    if (qaBlock) return qaBlock;
 
     if (!supabaseAdmin) {
       return NextResponse.json(

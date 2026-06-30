@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
+import { enforceQaMode } from "@/lib/qaModeGate";
 import type {
   Cluster4LineDetailDto,
   Cluster4LinePartType,
@@ -94,6 +95,10 @@ function toSubmissionDto(row: SubmissionRow): Cluster4LineSubmissionDto {
 }
 
 export async function GET(request: NextRequest) {
+  // QA 모드 게이트(Phase C): mode=test 에서 실사용자 세션(마커 미등재) 차단.
+  const qaBlock = await enforceQaMode(request);
+  if (qaBlock) return qaBlock;
+
   const weekId = request.nextUrl.searchParams.get("weekId")?.trim() || null;
   const partType = request.nextUrl.searchParams.get("partType")?.trim() || null;
 

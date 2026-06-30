@@ -21,6 +21,7 @@ import { createAdminClient } from "@/lib/supabase-server";
 import { seasonLabel } from "@/lib/cluster4-types";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import { pageSlugFromReferer, applyPageSlug } from "@/lib/pageSlugForward";
+import { enforceQaMode } from "@/lib/qaModeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -475,6 +476,10 @@ export async function GET(request: NextRequest) {
   if (!userId) {
     return NextResponse.json({ error: "userId query param required" }, { status: 400 });
   }
+
+  // QA 모드 게이트(Phase C): mode=test 에서 실사용자 세션/대상 차단.
+  const qaBlock = await enforceQaMode(request, { targetUserId: userId });
+  if (qaBlock) return qaBlock;
 
   try {
     const supabase = createAdminClient();

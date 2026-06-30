@@ -5,6 +5,7 @@ import { pageSlugFromReferer, applyPageSlug } from "@/lib/pageSlugForward";
 import type { Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
 import { resolveMembershipDisplay } from "@/lib/membership";
 import { clampAdminOutputs } from "@/lib/cluster4-admin-output-clamp";
+import { enforceQaMode } from "@/lib/qaModeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -212,6 +213,12 @@ function clampAdminOutputsBody(rawBody: string): string {
 }
 
 export async function GET(request: NextRequest) {
+  // QA 모드 게이트(Phase C): mode=test 에서 실사용자 세션/대상이면 upstream 프록시 전 차단.
+  const qaBlock = await enforceQaMode(request, {
+    targetUserId: new URL(request.url).searchParams.get("userId"),
+  });
+  if (qaBlock) return qaBlock;
+
   const adminApiBaseUrl = await resolveAdminBaseUrl();
 
   console.log("[cluster4/weekly-cards] admin base url =", JSON.stringify(adminApiBaseUrl));

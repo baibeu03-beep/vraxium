@@ -3,6 +3,9 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { seasonLabel, type GrowthStatusKey } from "@/lib/cluster4-types";
 import { pickPrimaryMembership, type MembershipRow } from "@/lib/membership";
 import { resolveMembershipRoleLabel } from "@/lib/cluster4-role-label";
+import { readScopeMode } from "@/lib/userScopeShared";
+import { fetchTestUserMarkerIds } from "@/lib/userScope";
+import { enforceQaMode } from "@/lib/qaModeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -23,9 +26,15 @@ const computeResultDecidedMs = (startDate: string): number => {
 
 export async function GET(request: NextRequest) {
   try {
+    // QA 모드 게이트(Phase C): mode=test 에서 실사용자 세션(마커 미등재) 차단.
+    const qaBlock = await enforceQaMode(request);
+    if (qaBlock) return qaBlock;
+
     const { searchParams } = new URL(request.url);
     let weekId = searchParams.get('weekId');
     const useDefault = searchParams.get('default') === 'true';
+    // 모집단 스코프 — operating: 기존 동작 유지(무변경). test: test_user_markers 만(실사용자 미노출).
+    const scopeMode = readScopeMode(searchParams);
 
     if (!supabaseAdmin) {
       return NextResponse.json(
@@ -122,11 +131,19 @@ export async function GET(request: NextRequest) {
     };
 
     // 다운스트림(profileMap/userIds 등)이 기대하는 id/joined_week_id 키로 정규화
-    const allProfiles = (rawProfiles || []).map(p => ({
+    const allProfilesRaw = (rawProfiles || []).map(p => ({
       ...p,
       id: p.user_id,
       joined_week_id: findWeekIdByDate(String(p.activity_started_at)),
     }));
+
+    // QA 모드(mode=test): 랭킹 모집단을 test_user_markers 로 한정 → 실사용자 데이터 미노출.
+    //   operating(기본): 무변경(기존 동작 유지).
+    let allProfiles = allProfilesRaw;
+    if (scopeMode === "test") {
+      const markerIds = await fetchTestUserMarkerIds(supabaseAdmin);
+      allProfiles = allProfilesRaw.filter(p => markerIds.has(p.user_id));
+    }
 
     // 해당 주차에 이미 가입되어 있던 사용자만 필터링
     const eligibleProfiles = allProfiles.filter(profile => {

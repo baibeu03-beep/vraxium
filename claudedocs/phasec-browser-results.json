@@ -1,0 +1,42 @@
+[
+  {
+    "name": "phasec-realuser-test-cluster4",
+    "path": "/cluster-4/?mode=test",
+    "expectBlock": true,
+    "blockShown": true,
+    "textLen": 828,
+    "ok": true
+  },
+  {
+    "name": "phasec-realuser-test-crews",
+    "path": "/crews/?org=phalanx&mode=test",
+    "expectBlock": true,
+    "blockShown": true,
+    "textLen": 828,
+    "ok": true
+  },
+  {
+    "name": "phasec-realuser-operating-crews",
+    "path": "/crews/?org=phalanx",
+    "expectBlock": false,
+    "blockShown": false,
+    "textLen": 2077,
+    "ok": true
+  },
+  {
+    "name": "phasec-demo-testuser-cluster4",
+    "path": "/cluster-4/?mode=test&demoUserId=e649370f-ba2c-4d2f-b642-6800cb078d54&admin=true",
+    "expectBlock": false,
+    "blockShown": false,
+    "textLen": 1964,
+    "ok": true
+  },
+  {
+    "name": "phasec-anon-test-weeklyranking",
+    "path": "/weekly-ranking/?org=phalanx&mode=test",
+    "expectBlock": false,
+    "blockShown": false,
+    "textLen": 3161,
+    "ok": true
+  }
+]

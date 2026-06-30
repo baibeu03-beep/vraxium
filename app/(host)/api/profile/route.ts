@@ -12,6 +12,7 @@ import { requireOwnerOrAdmin } from "@/lib/api-auth";
 import { resolveMembershipDisplay } from "@/lib/membership";
 import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confirmed-success-weeks";
 import { resolveWeekScopeForUser, resolveWeekResultStates, statesByStartDate } from "@/lib/weekResultState";
+import { enforceQaMode } from "@/lib/qaModeGate";
 import { isTransitionWeek, getTransitionSeasonSpan } from "@/lib/cluster4-transition-week";
 
 export const dynamic = "force-dynamic";
@@ -458,6 +459,10 @@ export async function GET(request: NextRequest) {
     // GET 은 공개 read 경로이므로 demoUserId 도 동일하게 user_id 조회 키로 사용한다
     // (test_user_markers 게이트는 쓰기 경로 전용 — 읽기는 어떤 userId 든 공개).
     const targetUserId = searchParams.get('userId') || searchParams.get('demoUserId');
+
+    // QA 모드 게이트(Phase C): mode=test 에서 실사용자 세션/대상이면 차단(운영·QA 데이터 미노출).
+    const qaBlock = await enforceQaMode(request, { targetUserId });
+    if (qaBlock) return qaBlock;
 
     // context: 'card'(사이드바/카드 경량) / 'cluster41'(cluster-4-1 전용 경량).
     // cluster41 은 plain 분기를 그대로 타되, cluster-4-1 이 응답에서 읽지 않는

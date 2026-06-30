@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { aggregateWeeklyLeague } from "@/lib/weekly-league";
 import { readScopeMode } from "@/lib/userScopeShared";
+import { enforceQaMode } from "@/lib/qaModeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -12,6 +13,10 @@ export const revalidate = 0;
 //   ?mode 미지정/오타 → operating(실사용자만), mode=test → test_user_markers 만.
 //   ?seasonKey 미지정 → 운영 era 누적(2026 봄~ 현재, 최신순). 명시 → 단일 시즌 조회(예: 2025-spring 아카이브).
 export async function GET(request: NextRequest) {
+  // QA 모드 게이트(Phase C): mode=test 에서 실사용자 세션(마커 미등재) 차단.
+  const qaBlock = await enforceQaMode(request);
+  if (qaBlock) return qaBlock;
+
   const { searchParams } = new URL(request.url);
   const org = searchParams.get("org");
   const mode = readScopeMode(searchParams);

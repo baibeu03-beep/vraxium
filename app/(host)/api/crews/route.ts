@@ -5,6 +5,7 @@ import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confir
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import { resolveUserScopeFromParams } from "@/lib/userScope";
 import { resolveWeekResultStates, statesByStartDate } from "@/lib/weekResultState";
+import { enforceQaMode } from "@/lib/qaModeGate";
 import { operationalSeasonDbKey } from "@/lib/seasonCalendar";
 
 export const dynamic = "force-dynamic";
@@ -405,6 +406,11 @@ function mergeRow(
 
 export async function GET(request: Request) {
   try {
+    // QA 모드 게이트(Phase C): mode=test 에서 실사용자 세션(마커 미등재) 차단.
+    //   (mode=test 집계는 이미 마커 모집단만 노출하나, 실사용자 세션 자체를 차단해 사용 금지.)
+    const qaBlock = await enforceQaMode(request);
+    if (qaBlock) return qaBlock;
+
     const { searchParams } = new URL(request.url);
     const excludeUserId = searchParams.get("excludeUserId");
     const orgParam = searchParams.get("org");
