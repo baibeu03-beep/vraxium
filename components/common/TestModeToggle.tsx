@@ -17,6 +17,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { parseScopeMode, toggleModeInHref } from "@/lib/userScopeShared";
 
 const STORAGE_KEY = "testModeSeen";
+const TEST_MODE_TOGGLE_VISIBLE = false;
 
 function TestModeToggleInner() {
   const router = useRouter();
@@ -85,10 +86,14 @@ function TestModeToggleInner() {
 
 // useSearchParams 는 prerender 시 Suspense 경계를 요구 → 컴포넌트 내부에서 감싼다
 // (layout 전체 bailout 방지).
-const TestModeToggle = () => (
-  <Suspense fallback={null}>
-    <TestModeToggleInner />
-  </Suspense>
-);
+const TestModeToggle = () => {
+  if (!TEST_MODE_TOGGLE_VISIBLE) return null;
+
+  return (
+    <Suspense fallback={null}>
+      <TestModeToggleInner />
+    </Suspense>
+  );
+};
 
 export default TestModeToggle;
