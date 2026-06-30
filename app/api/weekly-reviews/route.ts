@@ -8,6 +8,7 @@ import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { enforceQaMode } from "@/lib/qaModeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -51,6 +52,9 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const weekCardId = searchParams.get("weekCardId");
     const explicitUserId = searchParams.get("userId");
+
+    const qaBlock = await enforceQaMode(request, { targetUserId: explicitUserId });
+    if (qaBlock) return qaBlock;
 
     if (!weekCardId || !isValidUUID(weekCardId)) {
       return NextResponse.json(

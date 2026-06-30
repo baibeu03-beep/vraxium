@@ -40,25 +40,29 @@ export default function TestUserBanner() {
     ? `테스트 유저 모드: 현재 ${name} 님 계정으로 UX 검증 중입니다.`
     : "테스트 유저 모드로 UX 검증 중입니다.";
 
-  return (
-    <div
-      role="status"
-      style={{
-        position: "sticky",
-        top: 0,
-        zIndex: 1000,
-        width: "100%",
-        padding: "10px 16px",
-        background: "#1E9503",
-        color: "#fff",
-        fontSize: "14px",
-        fontWeight: 600,
-        textAlign: "center",
-        lineHeight: 1.4,
-        boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
-      }}
-    >
-      {message}
-    </div>
-  );
+  void message;
+
+  // QA/test-user banner is temporarily disabled. Preserve the UI for future QA deployment reuse.
+  // return (
+  //   <div
+  //     role="status"
+  //     style={{
+  //       position: "sticky",
+  //       top: 0,
+  //       zIndex: 1000,
+  //       width: "100%",
+  //       padding: "10px 16px",
+  //       background: "#1E9503",
+  //       color: "#fff",
+  //       fontSize: "14px",
+  //       fontWeight: 600,
+  //       textAlign: "center",
+  //       lineHeight: 1.4,
+  //       boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
+  //     }}
+  //   >
+  //     {message}
+  //   </div>
+  // );
+  return null;
 }

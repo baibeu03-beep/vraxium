@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import { pageSlugFromReferer, applyPageSlug } from "@/lib/pageSlugForward";
+import { enforceQaMode } from "@/lib/qaModeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -79,6 +80,10 @@ export async function GET(request: NextRequest) {
   // 대상 userId: 쿼리에 있으면 그대로(다른 유저 조회), 없으면 세션 사용자 본인으로 resolve.
   // admin 의 internal-key 경로는 ?userId= 가 필수이므로, 본인 페이지에서도 반드시 채워 보낸다.
   let userId = sourceUrl.searchParams.get("userId")?.trim() || null;
+
+  const qaBlock = await enforceQaMode(request, { targetUserId: userId });
+  if (qaBlock) return qaBlock;
+
   if (!userId) {
     userId = await resolveSessionProfileId();
     if (!userId) {

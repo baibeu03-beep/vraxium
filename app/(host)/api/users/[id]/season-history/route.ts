@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase-server'
 import { NextRequest, NextResponse } from 'next/server'
+import { enforceQaMode } from '@/lib/qaModeGate'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -11,6 +12,9 @@ export async function GET(
   try {
     const supabase = createAdminClient()
     const userId = (await params).id
+
+    const qaBlock = await enforceQaMode(request, { targetUserId: userId })
+    if (qaBlock) return qaBlock
 
     console.log('Fetching season history for userId:', userId)
 

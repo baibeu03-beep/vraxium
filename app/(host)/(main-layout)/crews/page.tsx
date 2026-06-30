@@ -10,7 +10,8 @@ import { DEMO_CREW_MEMBERS } from "@/constants/dummyData";
 import { getOrgClusterRouteBase, getOrgConfigForSlug, getOrgMascotSrc } from "@/lib/cluster-route";
 import { getOrgAlias } from "@/utils/orgLabelAlias";
 import { appendDemoQuery } from "@/lib/appendDemoQuery";
-import { readScopeMode, appendModeQuery } from "@/lib/userScopeShared";
+// QA(mode=test) scope/link propagation is temporarily disabled. Keep for future QA deployment reuse.
+// import { readScopeMode, appendModeQuery } from "@/lib/userScopeShared";
 
 interface Crew {
   id: string;
@@ -86,7 +87,8 @@ function CrewsContent() {
   const orgParam = searchParams?.get("org") ?? null;
   const org: OrgSlug | null = isOrgSlug(orgParam) ? orgParam : null;
   // 모집단 스코프 — mode 미지정/오타 → operating(실사용자), mode=test → 테스트 유저만.
-  const mode = readScopeMode(searchParams);
+  // QA(mode=test) scope disabled.
+  // const mode = readScopeMode(searchParams);
   // 조직별 alias mapping (단감 = helmet 슬롯) — single source of truth 는
   // utils/orgLabelAlias.ts 의 ORG_LABEL_ALIAS. /crews 는 segment-suffix
   // 라우트가 아니므로 path-based 감지가 안 통해 명시적 slug-based 헬퍼
@@ -127,7 +129,9 @@ function CrewsContent() {
     // 유지한다(공통 헬퍼). userId(=대상자/target)는 위에서 crew.id 로 고정, demoUserId(=작성자/
     // actor)는 헬퍼가 부착 → target/actor 분리 유지. demoUserId 없으면 완전 no-op(기존 동작).
     // mode=test 면 cluster-4 링크에도 mode 를 유지(operating 이면 no-op → 링크 byte-identical).
-    return appendModeQuery(appendDemoQuery(target, searchParams), mode);
+    // QA(mode=test) cluster-4 link generation disabled.
+    // return appendModeQuery(appendDemoQuery(target, searchParams), mode);
+    return appendDemoQuery(target, searchParams);
   };
   const [crews, setCrews] = useState<Crew[]>([]);
   const [loading, setLoading] = useState(true);
@@ -220,7 +224,9 @@ function CrewsContent() {
         if (appliedParams.school.trim()) params.set("school", appliedParams.school.trim());
         if (appliedParams.status) params.set("status", appliedParams.status);
         // cache: "no-store" 로 browser HTTP cache 우회 — 변경 즉시 반영. 서버도 force-dynamic.
-        const res = await fetch(appendModeQuery(`/api/crews?${params.toString()}`, mode), { cache: "no-store" });
+        // QA(mode=test) API URL generation disabled.
+        // const res = await fetch(appendModeQuery(`/api/crews?${params.toString()}`, mode), { cache: "no-store" });
+        const res = await fetch(`/api/crews?${params.toString()}`, { cache: "no-store" });
         const result = await res.json();
         if (cancelled) return;
         if (result.success) {
@@ -253,7 +259,7 @@ function CrewsContent() {
     return () => {
       cancelled = true;
     };
-  }, [org, mode, currentPage, appliedParams]);
+  }, [org, currentPage, appliedParams]);
 
   // 조회 = 현재 입력값을 서버 필터로 적용(1페이지부터). 클럽은 org 고정이라 서버 파라미터 미사용.
   const handleSearch = () => {

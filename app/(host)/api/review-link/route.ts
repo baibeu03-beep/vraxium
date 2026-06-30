@@ -8,6 +8,7 @@ import {
   findReviewLinkOrderViolation,
   reviewLinkOrderErrorMessage,
 } from "@/lib/reviewLinkOrder";
+import { enforceQaMode } from "@/lib/qaModeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -174,6 +175,9 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const queryUserId = searchParams.get("userId");
+
+    const qaBlock = await enforceQaMode(request, { targetUserId: queryUserId });
+    if (qaBlock) return qaBlock;
 
     // viewer 확인 (세션 없어도 OK — 공개 조회 허용, 단 canEdit=false)
     const session = await getServerSession(authOptions);

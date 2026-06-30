@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { DemoModeError, resolveDemoProfileUserIdFromRequest } from '@/lib/demoMode'
+import { enforceQaMode } from '@/lib/qaModeGate'
 
 export const dynamic = "force-dynamic"
 
@@ -24,6 +25,9 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('user_id')
     const weekId = searchParams.get('week_id')
     const seasonKey = searchParams.get('season_key') || searchParams.get('season_id')
+
+    const qaBlock = await enforceQaMode(request, { targetUserId: userId })
+    if (qaBlock) return qaBlock
 
     // 로그인만 검증 — 타 크루 카드 진입(peer-view) 허용.
     // 단, 유효한 테스트 유저(demoUserId)면 세션 없이 통과(데모 UX 읽기). season-reputations GET 과 동일 패턴.

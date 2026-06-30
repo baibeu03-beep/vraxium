@@ -3,7 +3,8 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { withThemeRoute, getRouteOrgSuffix } from "@/lib/cluster-route";
 import { useDemoUserMode } from "@/hooks/useDemoUserMode";
-import { appendModeQuery, parseScopeMode } from "@/lib/userScopeShared";
+// QA(mode=test) propagation is temporarily disabled. Keep for future QA deployment reuse.
+// import { appendModeQuery, parseScopeMode } from "@/lib/userScopeShared";
 
 const ClusterTabs = () => {
   const pathname = usePathname();
@@ -81,9 +82,11 @@ const ClusterTabs = () => {
           ? `${tab.path}?userId=${userId}${demoName ? `&demoName=${encodeURIComponent(demoName)}` : ''}`
           : tab.path
       : tab.path;
-    const tabHref = tab.path
-      ? appendModeQuery(rawTabHref, parseScopeMode(searchParams.get("mode")))
-      : rawTabHref;
+    // QA(mode=test) tab link generation disabled.
+    // const tabHref = tab.path
+    //   ? appendModeQuery(rawTabHref, parseScopeMode(searchParams.get("mode")))
+    //   : rawTabHref;
+    const tabHref = rawTabHref;
     const active = tab.path ? isActive(tab.path) : false;
 
     if (tab.path) {

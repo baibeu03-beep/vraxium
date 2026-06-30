@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import { isAdminEmail } from '@/lib/admin'
 import { maskProfileForResponse } from '@/lib/dataMasking'
 import { getViewerContext, getActiveTeamPart, canSeePersonalInfo } from '@/lib/permissions'
+import { enforceQaMode } from '@/lib/qaModeGate'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -16,6 +17,9 @@ export async function GET(
   try {
     const supabase = createAdminClient()
     const userId = (await params).id
+
+    const qaBlock = await enforceQaMode(request, { targetUserId: userId })
+    if (qaBlock) return qaBlock
 
     console.log('Fetching profile for userId:', userId)
 

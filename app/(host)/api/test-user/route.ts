@@ -1,9 +1,13 @@
 import { createAdminClient } from '@/lib/supabase-server'
 import { NextResponse } from 'next/server'
+import { enforceQaMode } from '@/lib/qaModeGate'
 
 // 김팔녀 데이터 테스트용
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const qaBlock = await enforceQaMode(request, { targetUserId: '054bd63d-d6b4-434c-a40d-06521b9c2a95' })
+    if (qaBlock) return qaBlock
+
     const supabase = createAdminClient()
 
     const { data, error } = await supabase

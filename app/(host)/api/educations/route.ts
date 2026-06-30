@@ -7,6 +7,7 @@ import { resolveWriteUserId } from "@/lib/api-auth";
 import { isAdminEmail } from "@/lib/admin";
 import { hasOpenEditWindow } from "@/lib/editWindow";
 import { normalizeSchool, normalizeMajor } from "@/lib/schoolNormalize";
+import { enforceQaMode } from "@/lib/qaModeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -293,6 +294,9 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const targetUserId = searchParams.get("userId");
+
+    const qaBlock = await enforceQaMode(request, { targetUserId });
+    if (qaBlock) return qaBlock;
 
     if (!supabaseAdmin) {
       console.error(TAG, "supabaseAdmin missing — SUPABASE_SERVICE_ROLE_KEY 누락");

@@ -6,7 +6,8 @@ import WeeklyFilterBar from "./WeeklyFilterBar";
 import WeeklyCardList from "./WeeklyCardList";
 import { WEEKLY_CARD_DUMMY, type WeeklyCardData } from "@/constants/dummyData/weekly-card-dummy";
 import { isDemoMode } from "@/utils/isDemoMode";
-import { readScopeMode, appendModeQuery } from "@/lib/userScopeShared";
+// QA(mode=test) scope/link propagation is temporarily disabled. Keep for future QA deployment reuse.
+// import { readScopeMode, appendModeQuery } from "@/lib/userScopeShared";
 import {
   resolveRankingQuarter,
   getRankingTheme,
@@ -63,7 +64,8 @@ interface WeeklyRankingContentProps {
 const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
   const searchParams = useSearchParams();
   // 모집단 스코프 — mode 미지정/오타 → operating(실사용자), mode=test → 테스트 유저만.
-  const mode = readScopeMode(searchParams);
+  // QA(mode=test) scope disabled.
+  // const mode = readScopeMode(searchParams);
   // 아카이브 시즌 키 — 미지정 시 서버가 운영 era 누적(2026 봄~ 현재, 최신순)으로 반환.
   // 명시(예: ?seasonKey=2025-spring) 시 단일 과거 시즌 조회.
   const seasonKeyParam = searchParams?.get("seasonKey") ?? null;
@@ -100,7 +102,9 @@ const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
       try {
         // 시즌 게이트/확정(공표) 게이트는 서버(aggregateWeeklyLeague)에서 단일 적용한다 —
         // 프론트는 응답 카드를 그대로 렌더(프론트 시즌 하드코딩 필터 없음).
-        let url = appendModeQuery(`/api/weekly-league?org=${encodeURIComponent(org)}`, mode);
+        // QA(mode=test) API URL generation disabled.
+        // let url = appendModeQuery(`/api/weekly-league?org=${encodeURIComponent(org)}`, mode);
+        let url = `/api/weekly-league?org=${encodeURIComponent(org)}`;
         if (seasonKeyParam) url += `&seasonKey=${encodeURIComponent(seasonKeyParam)}`;
         const res = await fetch(url, { cache: "no-store" });
         const json = await res.json();
@@ -117,7 +121,7 @@ const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
     return () => {
       cancelled = true;
     };
-  }, [demo, org, mode, seasonKeyParam]);
+  }, [demo, org, seasonKeyParam]);
 
   const allCards = useMemo<WeeklyCardData[]>(
     () => (demo ? WEEKLY_CARD_DUMMY : fetchedCards),

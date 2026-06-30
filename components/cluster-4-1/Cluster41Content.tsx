@@ -15,7 +15,8 @@ import { Skeleton } from "@/components/ui/skeleton/Skeleton";
 import { isTransitionWeek } from "@/lib/cluster4-transition-week";
 import { resolveSeasonWeekText } from "@/lib/cluster4-types";
 import { getGrowthBadgeText } from "@/lib/cluster4-status-label";
-import { parseScopeMode } from "@/lib/userScopeShared";
+// QA(mode=test) API/link suffix is temporarily disabled. Keep for future QA deployment reuse.
+// import { parseScopeMode } from "@/lib/userScopeShared";
 
 const truncate = (text: string | null | undefined, maxLen: number = 5): string => {
   const t = text || "-";
@@ -301,7 +302,9 @@ const Cluster41Content = () => {
   const demoQS = demoUserId ? `&demoUserId=${encodeURIComponent(demoUserId)}` : '';
   // weekly-cards 모집단 스코프 suffix — mode=test 면 admin 이 테스트 모드(여름 시뮬레이션) 정책으로
   // 카드/라인을 내려준다. operating(미지정)이면 빈 문자열 → 요청 byte-identical.
-  const modeQS = parseScopeMode(searchParams.get('mode')) === 'test' ? '&mode=test' : '';
+  // QA(mode=test) API suffix disabled.
+  // const modeQS = parseScopeMode(searchParams.get('mode')) === 'test' ? '&mode=test' : '';
+  const modeQS = '';
   // 페이지 내 네비게이션에 붙일 쿼리: target(userId)·actor(demoUserId)·org 를 모두 보존한다.
   // ⚠️ 과거엔 테스트 모드에서 demoUserId 만 싣고 userId(대상자)를 떨궈, 타 크루 주차 카드로
   //    진입할 때 urlUserId 가 demoUserId 로 폴백되어 "내 카드로 복귀"하는 버그가 있었다.
@@ -319,7 +322,8 @@ const Cluster41Content = () => {
     if (org) params.set('org', org);
     // 모집단 스코프(mode=test) 보존 — 주차카드/탭 이동 시 테스트 모드 유지.
     // operating(미지정)이면 미부착 → 링크 byte-identical.
-    if (parseScopeMode(searchParams.get('mode')) === 'test') params.set('mode', 'test');
+    // QA(mode=test) page navigation propagation disabled.
+    // if (parseScopeMode(searchParams.get('mode')) === 'test') params.set('mode', 'test');
     const qs = params.toString();
     return qs ? `?${qs}` : '';
   })();

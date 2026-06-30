@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
 import { resolveWriteUserId } from "@/lib/api-auth";
+import { enforceQaMode } from "@/lib/qaModeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -62,6 +63,9 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const queryUserId = searchParams.get("userId");
+
+    const qaBlock = await enforceQaMode(request, { targetUserId: queryUserId });
+    if (qaBlock) return qaBlock;
 
     let targetUserId: string;
 

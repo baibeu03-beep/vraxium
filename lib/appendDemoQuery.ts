@@ -13,7 +13,8 @@
 //   - 이미 href 에 있는 키는 덮어쓰지 않는다(호출부가 명시한 org/userId 우선).
 //   - 해시(#anchor)는 쿼리 뒤에 보존한다.
 
-import { appendModeQuery, parseScopeMode } from "@/lib/userScopeShared";
+// QA(mode=test) propagation is temporarily disabled. Keep this import line for future QA deployment reuse.
+// import { appendModeQuery, parseScopeMode } from "@/lib/userScopeShared";
 
 export type DemoParamSource = { get(name: string): string | null };
 
@@ -35,7 +36,9 @@ export function appendDemoQuery(
   // 테스트 모드(mode=test)는 demoUserId 없이도 켜질 수 있으므로(우하단 토글/직접 진입),
   // 내부 네비게이션 전 구간에서 mode 를 유지해야 페이지 전환 시 꺼지지 않는다.
   // operating(mode 미지정)이면 appendModeQuery 가 no-op → 링크 byte-identical.
-  const withMode = appendModeQuery(href, parseScopeMode(source?.get("mode") ?? null));
+  // QA(mode=test) link generation disabled.
+  // const withMode = appendModeQuery(href, parseScopeMode(source?.get("mode") ?? null));
+  const withMode = href;
 
   const demoUserId = source?.get("demoUserId") ?? null;
   if (!demoUserId) return withMode;

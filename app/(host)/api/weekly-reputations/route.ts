@@ -10,6 +10,7 @@ import { hasOpenEditWindow } from "@/lib/editWindow";
 import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { triggerAdminSnapshotRecompute } from "@/lib/triggerAdminSnapshotRecompute";
+import { enforceQaMode } from "@/lib/qaModeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -27,6 +28,9 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const targetUserId = searchParams.get("targetUserId");
     const weekCardId = searchParams.get("weekCardId");
+
+    const qaBlock = await enforceQaMode(request, { targetUserId });
+    if (qaBlock) return qaBlock;
 
     if (targetUserId) {
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

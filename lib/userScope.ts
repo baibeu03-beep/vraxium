@@ -26,11 +26,12 @@ import {
   readScopeMode,
   appendModeQuery,
   toggleModeInHref,
+  getDeployMode,
   type ScopeMode,
 } from "@/lib/userScopeShared";
 
 // 순수 헬퍼는 userScopeShared(클라이언트 공용)에서 정의·여기서 재노출(서버 호출부 호환).
-export { parseScopeMode, readScopeMode, appendModeQuery, toggleModeInHref };
+export { parseScopeMode, readScopeMode, appendModeQuery, toggleModeInHref, getDeployMode };
 export type { ScopeMode };
 
 // useSearchParams()(ReadonlyURLSearchParams)·URLSearchParams 양쪽 호환 최소 형태.

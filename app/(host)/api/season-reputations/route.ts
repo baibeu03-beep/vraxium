@@ -12,6 +12,7 @@ import { authOptions } from "@/lib/auth";
 // import { hasOpenEditWindow } from "@/lib/editWindow";
 import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
+import { enforceQaMode } from "@/lib/qaModeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -25,6 +26,9 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const targetUserId = searchParams.get("targetUserId");
     const seasonHistoryId = searchParams.get("seasonHistoryId");
+
+    const qaBlock = await enforceQaMode(request, { targetUserId });
+    if (qaBlock) return qaBlock;
 
     if (!supabaseAdmin) {
       return NextResponse.json(

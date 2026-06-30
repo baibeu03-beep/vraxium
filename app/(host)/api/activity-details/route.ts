@@ -13,6 +13,7 @@ import {
 import { EDIT_WINDOW_LOCKED_MESSAGE } from '@/lib/editWindowMessages'
 import { DemoModeError, resolveDemoProfileUserId } from '@/lib/demoMode'
 import { triggerAdminSnapshotRecompute } from '@/lib/triggerAdminSnapshotRecompute'
+import { enforceQaMode } from '@/lib/qaModeGate'
 
 // cluster4 라인 저장 분기에서 line_target_id 형식 검증용.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -69,6 +70,9 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('user_id')
     const weekId = searchParams.get('week_id')
     const activityTypeId = searchParams.get('activity_type_id')
+
+    const qaBlock = await enforceQaMode(request, { targetUserId: userId })
+    if (qaBlock) return qaBlock
 
     // 테스트 유저(데모) 모드 — query demoUserId 가 유효한 테스트 유저면 조회 대상을 그 id 로 고정.
     let demoProfileUserId: string | null = null

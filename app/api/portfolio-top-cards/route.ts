@@ -6,6 +6,7 @@ import { getUserProfile } from "@/lib/get-user-profile";
 import { isAdminEmail } from "@/lib/admin";
 import { resolveWriteUserId } from "@/lib/api-auth";
 import { hasOpenTopCardEditWindow } from "@/lib/topCardsEditWindow";
+import { enforceQaMode } from "@/lib/qaModeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -73,6 +74,9 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const queryUserId = searchParams.get("userId");
     const cardTypeParam = searchParams.get("cardType");
+
+    const qaBlock = await enforceQaMode(request, { targetUserId: queryUserId });
+    if (qaBlock) return qaBlock;
 
     let targetUserId: string;
     if (queryUserId) {

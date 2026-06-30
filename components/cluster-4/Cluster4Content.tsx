@@ -25,7 +25,8 @@ import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
 import { appendDemoQuery } from "@/lib/appendDemoQuery";
-import { parseScopeMode } from "@/lib/userScopeShared";
+// QA(mode=test) API suffix is temporarily disabled. Keep for future QA deployment reuse.
+// import { parseScopeMode } from "@/lib/userScopeShared";
 import HelpModalBody from "@/components/shared/HelpModalBody";
 
 // 글자수 초과 시 '..' 표시 (CSS ellipsis '…' 대신 JS 처리)
@@ -331,7 +332,9 @@ const Cluster4Content = () => {
   const demoQS = demoUserId ? `&demoUserId=${encodeURIComponent(demoUserId)}` : "";
   // weekly-cards 모집단 스코프 suffix — mode=test 면 admin 테스트 모드(여름 시뮬레이션) 정책.
   // operating(미지정)이면 빈 문자열 → 요청 byte-identical.
-  const modeQS = parseScopeMode(searchParams.get("mode")) === "test" ? "&mode=test" : "";
+  // QA(mode=test) API suffix disabled.
+  // const modeQS = parseScopeMode(searchParams.get("mode")) === "test" ? "&mode=test" : "";
+  const modeQS = "";
   // 로컬 더미(localStorage demoMode)는 테스트 유저(?demoUserId=) 모드에서는 끈다 —
   // 테스트 모드는 실제 DB 를 source of truth 로 읽어야 하므로 더미가 응답을 덮으면 안 된다.
   const isDemoMode = checkDemoMode() && !demoUserId;

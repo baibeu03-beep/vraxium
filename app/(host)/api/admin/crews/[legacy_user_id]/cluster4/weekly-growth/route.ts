@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-server";
 import { seasonLabel } from "@/lib/cluster4-types";
 import { buildWeeklyCards } from "@/lib/cluster4-weekly-cards";
+import { enforceQaMode } from "@/lib/qaModeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -96,6 +97,9 @@ export async function GET(
   if (!userId) {
     return NextResponse.json({ error: "legacy_user_id is required" }, { status: 400 });
   }
+
+  const qaBlock = await enforceQaMode(request, { targetUserId: userId });
+  if (qaBlock) return qaBlock;
 
   const supabase = createAdminClient();
   const today = new Date().toISOString().split("T")[0];

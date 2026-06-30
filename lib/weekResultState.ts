@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ScopeMode } from "@/lib/userScopeShared";
+import { getDeployMode, type ScopeMode } from "@/lib/userScopeShared";
 
 // ─────────────────────────────────────────────────────────────────────────
 // 주차 결과 상태(weekResultState) 단일 SoT — 고객 앱 Phase B.
@@ -67,11 +67,17 @@ export async function isTestUserId(
   return Boolean(data);
 }
 
-// targetUserId → scope. test_user_markers 등재면 "test", 아니면 "operating".
+// targetUserId → scope.
+//   ⚠️ 배포 환경변수가 1차 게이트다(QA 배포 전환):
+//     · 운영 배포(getDeployMode()==='operating') : 항상 operating — qa_* 테이블을 절대 조회하지 않는다.
+//       (운영 배포에서 테스트 마커 유저 프로필을 봐도 QA overlay 가 새지 않게 하는 안전판.)
+//     · QA   배포(getDeployMode()==='test')        : target 이 test_user_markers 등재면 "test"(overlay),
+//       미등재면 "operating" 폴백(어차피 enforceQaMode 가 실유저 target 을 403 차단).
 export async function resolveWeekScopeForUser(
   db: SupabaseClient,
   targetUserId: string | null | undefined,
 ): Promise<WeekResultScope> {
+  if (getDeployMode() !== "test") return "operating"; // 운영 배포 — qa_* 미조회
   return (await isTestUserId(db, targetUserId)) ? "test" : "operating";
 }
 
