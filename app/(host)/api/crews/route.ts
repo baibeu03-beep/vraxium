@@ -4,6 +4,7 @@ import { resolveMembershipDisplay } from "@/lib/membership";
 import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confirmed-success-weeks";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import { resolveUserScopeFromParams } from "@/lib/userScope";
+import { resolveWeekResultStates, statesByStartDate } from "@/lib/weekResultState";
 import { operationalSeasonDbKey } from "@/lib/seasonCalendar";
 
 export const dynamic = "force-dynamic";
@@ -577,14 +578,18 @@ export async function GET(request: Request) {
       })(),
       // 누적 인정 주차(live, 공표 완료 ∧ 비-break ∧ 비-전환) — 페이지 한정. best-effort.
       (async (): Promise<Map<string, number> | null> => {
+        // 공표 상태(result_published_at)는 공용 resolver 로 일원화 — operating=운영 weeks,
+        // test=qa_weeks_state overlay(없으면 운영 baseline). 직접 raw read 금지(Phase B).
+        const weekStates = await resolveWeekResultStates(supabase, { scope: scope.mode });
+        const publishedByStart = statesByStartDate(weekStates);
         const { data: weekRows, error: weekErr } = await supabase
-          .from("weeks").select("start_date, week_number, result_published_at, season_definitions(season_type)")
-          .returns<Array<{ start_date: string | null; week_number: number | null; result_published_at: string | null; season_definitions: { season_type: string | null } | null }>>();
+          .from("weeks").select("start_date, week_number, season_definitions(season_type)")
+          .returns<Array<{ start_date: string | null; week_number: number | null; season_definitions: { season_type: string | null } | null }>>();
         if (weekErr || !weekRows) { console.error("weeks meta fetch failed:", JSON.stringify(weekErr)); return null; }
         const metaByStart = new Map<string, ConfirmedWeekMeta>();
         for (const w of weekRows) {
           if (!w.start_date) continue;
-          metaByStart.set(w.start_date, { resultPublishedAt: w.result_published_at ?? null, seasonType: w.season_definitions?.season_type ?? null, weekNumber: w.week_number ?? null });
+          metaByStart.set(w.start_date, { resultPublishedAt: publishedByStart.get(w.start_date)?.resultPublishedAt ?? null, seasonType: w.season_definitions?.season_type ?? null, weekNumber: w.week_number ?? null });
         }
         const rowsByUser = new Map<string, Array<{ week_start_date: string | null; status: string }>>();
         for (let from = 0; ; from += STAR_PAGE) {

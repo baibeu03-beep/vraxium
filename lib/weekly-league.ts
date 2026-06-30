@@ -22,6 +22,11 @@ import { getWeekImageUrl } from "@/lib/cluster4-week-image";
 import { operationalSeasonDbKey } from "@/lib/seasonCalendar";
 import { pickPrimaryMembership, type MembershipRow } from "@/lib/membership";
 import type { ScopeMode } from "@/lib/userScopeShared";
+import {
+  resolveWeekResultStates,
+  resolveOrgWeekThresholds,
+  type WeekResultScope,
+} from "@/lib/weekResultState";
 import type {
   WeeklyCardData,
   WeeklyCardCrew,
@@ -295,13 +300,11 @@ export async function aggregateWeeklyLeague(
     //      · 범위 게이트 : 기본=운영 era(start_date >= 2026-03-02) 전체 누적(시즌 무관),
     //                     명시 ?seasonKey= 시 해당 시즌만(과거 이관 포함).
     //    최신순(start_date DESC) → 현재 주차가 맨 위, 과거가 아래로 자연 연결.
-    // result_reviewed_at 는 마이그레이션(2026-06-29_weeks_result_reviewed_at) 미적용 DB 에서는
-    //   존재하지 않을 수 있다. 미적용 시 select 오류 → reviewed_at 없는 select 로 폴백(검수 완료 신호만
-    //   비활성 = Phase 1 동작 보존, /weekly-ranking 은 깨지지 않는다). 적용되면 자동으로 검수 완료 표시.
-    const SELECT_WITH_REVIEWED =
-      "id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, result_published_at, result_reviewed_at, season_definitions!inner(season_label, season_type, year)";
-    const SELECT_BASE =
-      "id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, result_published_at, season_definitions!inner(season_label, season_type, year)";
+    // result_published_at / result_reviewed_at 는 여기서 직접 읽지 않는다(Phase B):
+    //   공용 resolveWeekResultStates 가 운영/QA overlay 를 일원화해 아래에서 weeks[] 에 주입한다.
+    //   (reviewed_at 미마이그레이션 DB 폴백도 resolver 내부에서 처리.)
+    const WEEK_SELECT =
+      "id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, season_definitions!inner(season_label, season_type, year)";
     const buildWeekQuery = (sel: string) => {
       let q = db.from("weeks").select(sel).lte("start_date", today);
       q = explicitSeasonKey
@@ -309,10 +312,7 @@ export async function aggregateWeeklyLeague(
         : q.gte("start_date", WEEKLY_LEAGUE_ERA_START_DATE);
       return q.order("start_date", { ascending: false });
     };
-    let { data: weekRows, error: weekErr } = await buildWeekQuery(SELECT_WITH_REVIEWED);
-    if (weekErr && /result_reviewed_at|column .* does not exist/i.test(weekErr.message ?? "")) {
-      ({ data: weekRows, error: weekErr } = await buildWeekQuery(SELECT_BASE));
-    }
+    const { data: weekRows, error: weekErr } = await buildWeekQuery(WEEK_SELECT);
 
     if (weekErr) {
       return { success: false, org, cards: [], error: `주차 메타 조회 실패: ${weekErr.message}` };
@@ -342,8 +342,9 @@ export async function aggregateWeeklyLeague(
         isBreak,
         isOfficialRest: !!w.is_official_rest,
         holidayName: w.holiday_name ?? null,
-        resultPublishedAt: w.result_published_at ?? null,
-        resultReviewedAt: w.result_reviewed_at ?? null,
+        // 공표/검수 시각은 아래 resolveWeekResultStates overlay 로 주입(운영/QA 일원화).
+        resultPublishedAt: null,
+        resultReviewedAt: null,
         // 휴식·활동 주차 공통 — 시즌 단어(displayName)+주차번호로 썸네일 경로 도출.
         // 매칭 실패(전환/break/미상 주차)는 null → 클라이언트 placeholder 폴백.
         imageUrl: getWeekImageUrl({ seasonName: displayName, weekNumber: w.week_number }),
@@ -355,6 +356,16 @@ export async function aggregateWeeklyLeague(
 
     if (weeks.length === 0) {
       return { success: true, org, cards: [] };
+    }
+
+    // 2-1) 공표/검수 상태 overlay — operating=운영 weeks, test=qa_weeks_state(없으면 운영 baseline).
+    //   weeks.result_published_at / result_reviewed_at 직접 읽기는 resolver 로 일원화(Phase B).
+    const weekScope: WeekResultScope = isTestMode ? "test" : "operating";
+    const weekStates = await resolveWeekResultStates(db, { scope: weekScope });
+    for (const w of weeks) {
+      const st = weekStates.get(w.id);
+      w.resultPublishedAt = st?.resultPublishedAt ?? null;
+      w.resultReviewedAt = st?.resultReviewedAt ?? null;
     }
 
     // 3) 성장 상태 스냅샷(SoT) — user_week_statuses. org 유저 한정, 전 행 수집.
@@ -443,13 +454,13 @@ export async function aggregateWeeklyLeague(
       pmsActByUserWeek.set(`${r.user_id}|${r.week_start_date}`, { submitted: !!r.user_activity_submitted, star: r.user_activity_star });
       weeksWithPmsData.add(r.week_start_date);
     }
-    const { data: owtRows } = await db
-      .from("org_week_thresholds")
-      .select("week_id, check_threshold")
-      .eq("organization_slug", org)
-      .in("week_id", weeks.map((w) => w.id));
-    const confirmStarByWeekId = new Map<string, number>();
-    for (const r of owtRows || []) confirmStarByWeekId.set(r.week_id, Number(r.check_threshold));
+    // org 차원 check_threshold — operating=org_week_thresholds, test=qa_org_week_thresholds overlay.
+    //   check_threshold 직접 읽기는 resolver 로 일원화(Phase B). null-부재(미설정) 동작 보존.
+    const confirmStarByWeekId = await resolveOrgWeekThresholds(db, {
+      scope: weekScope,
+      org,
+      weekIds: weeks.map((w) => w.id),
+    });
 
     // 6-1) 봄 정합 예외 보정 — cluster4_weekly_ranking_exceptions (org + season_key 한정).
     //   confirm_star_override: 주차 effectiveConfirmStar 대체(예: W1=51)

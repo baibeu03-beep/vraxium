@@ -11,6 +11,7 @@ import { DemoModeError, resolveDemoProfileUserId } from "@/lib/demoMode";
 import { requireOwnerOrAdmin } from "@/lib/api-auth";
 import { resolveMembershipDisplay } from "@/lib/membership";
 import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confirmed-success-weeks";
+import { resolveWeekScopeForUser, resolveWeekResultStates, statesByStartDate } from "@/lib/weekResultState";
 import { isTransitionWeek, getTransitionSeasonSpan } from "@/lib/cluster4-transition-week";
 
 export const dynamic = "force-dynamic";
@@ -1103,8 +1104,8 @@ export async function GET(request: NextRequest) {
       supabaseAdmin.from("user_growth_stats").select("approved_weeks, unapproved_weeks, rest_weeks, club_break_weeks, passed_weeks, available_weeks, available_weeks_club, available_seasons, rest_seasons, approved_seasons, reliability_rate").eq("user_id", profile.id).maybeSingle(),
 
       // 모든 주차 (실시간 계산용) - 미래 주차 포함 (시즌 전체 주차 수 계산용)
-      // result_published_at: 주차 결과 확정(공표) 여부 — medal-week-num 로컬 폴백의 확정 주차 필터용.
-      supabaseAdmin.from("weeks").select("id, start_date, end_date, is_official_rest, season_key, week_number, result_published_at").order("start_date", { ascending: true }),
+      // 공표 여부(result_published_at)는 공용 resolveWeekResultStates 로 일원화(Phase B) — 아래 주입.
+      supabaseAdmin.from("weeks").select("id, start_date, end_date, is_official_rest, season_key, week_number").order("start_date", { ascending: true }),
 
       // 해당 유저의 승인된 휴식 요청
       supabaseAdmin.from("rest_requests").select("week_id").eq("user_id", profile.id).eq("status", "approved"),
@@ -1520,6 +1521,12 @@ export async function GET(request: NextRequest) {
     // (published 주차의 experience verdict fail 전환까지는 반영하지 못함).
     // 카운트 규칙은 공용 countConfirmedSuccessWeeks(lib/confirmed-success-weeks) —
     // /api/crews approvedWeeks 와 같은 함수를 공유한다(화면 간 누적 주차 불일치 방지).
+    // 공표 상태(result_published_at)는 공용 resolver 로 일원화(Phase B): 대상이 test_user_markers
+    //   등재 유저면 qa_weeks_state overlay, 실유저면 운영 weeks baseline.
+    const profileWeekScope = await resolveWeekScopeForUser(supabaseAdmin, profile.id);
+    const profileWeekStateByStart = statesByStartDate(
+      await resolveWeekResultStates(supabaseAdmin, { scope: profileWeekScope }),
+    );
     const confirmedApprovedWeeksCount = (() => {
       const wsRowsFull = ((userWeeklyGrowthResult as {
         data: Array<{ week_start_date: string | null; status: string }> | null;
@@ -1534,7 +1541,7 @@ export async function GET(request: NextRequest) {
       (allWeeks as any[]).forEach((w) => {
         if (!w?.start_date) return;
         weekMetaByStart.set(w.start_date, {
-          resultPublishedAt: w.result_published_at ?? null,
+          resultPublishedAt: profileWeekStateByStart.get(w.start_date)?.resultPublishedAt ?? null,
           seasonType: w.season_key ? seasonTypeByKey.get(w.season_key) ?? null : null,
           weekNumber: typeof w.week_number === "number" ? w.week_number : null,
         });

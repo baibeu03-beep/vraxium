@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getCachedActivityTypes } from "@/lib/cached-data";
 import { getProfileLookupKey, resolveUserProfileAccess } from "@/lib/user-profile-access";
 import { isTransitionWeek } from "@/lib/cluster4-transition-week";
+import { resolveWeekScopeForUser, resolveWeekResultStates, statesByStartDate } from "@/lib/weekResultState";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -145,9 +146,9 @@ export async function GET(request: NextRequest) {
       `).eq("user_id", profile.user_id),
       // growth_stats (reliability_rate)
       supabaseAdmin.from("user_growth_stats").select("approved_weeks, unapproved_weeks, rest_weeks, club_break_weeks, passed_weeks, available_weeks, available_weeks_club, available_seasons, rest_seasons, approved_seasons, reliability_rate").eq("user_id", profile.user_id).maybeSingle(),
-      // 모든 주차 — result_published_at(공표 게이트)·season_definitions.season_type(전환 판정)
-      // 포함 (SoT 감사 2026-06-05: 성공 카운트에 전환 제외·공표 게이트 적용 — confirmed-success-weeks 동일 규칙).
-      supabaseAdmin.from("weeks").select("id, start_date, end_date, is_club_break, season_id, week_number, result_published_at, season_definitions(season_type)").order("start_date", { ascending: true }),
+      // 모든 주차 — season_definitions.season_type(전환 판정). 공표 게이트(result_published_at)는
+      // 공용 resolveWeekResultStates 로 일원화(Phase B) — confirmed-success-weeks 와 동일 규칙 유지.
+      supabaseAdmin.from("weeks").select("id, start_date, end_date, is_club_break, season_id, week_number, season_definitions(season_type)").order("start_date", { ascending: true }),
       // 휴식 요청
       supabaseAdmin.from("rest_requests").select("week_id").eq("user_id", profile.user_id).eq("status", "approved"),
       // 모든 시즌
@@ -239,6 +240,13 @@ export async function GET(request: NextRequest) {
       allSeasons.filter((s: any) => s.name?.toLowerCase().includes('break')).map((s: any) => s.id)
     );
 
+    // 공표 상태(result_published_at)는 공용 resolver 로 일원화(Phase B): 대상이 test_user_markers
+    //   등재 유저면 qa_weeks_state overlay, 실유저면 운영 weeks baseline. (raw read 금지)
+    const summaryWeekScope = await resolveWeekScopeForUser(supabaseAdmin, profile.user_id);
+    const summaryWeekStateByStart = statesByStartDate(
+      await resolveWeekResultStates(supabaseAdmin, { scope: summaryWeekScope }),
+    );
+
     let approvedWeeksCount = 0;
     let unapprovedWeeksCount = 0;
     let restWeeksCount = 0;
@@ -263,7 +271,7 @@ export async function GET(request: NextRequest) {
       if (hasPersonalRest) { restWeeksCount++; return; }
       // 결과 미공표(집계 중) 주차는 성공/미이행 어느 쪽으로도 확정하지 않는다 —
       // 분자·분모 모두 제외 (공표 게이트, admin 정본과 동일).
-      if (!week.result_published_at) return;
+      if (!summaryWeekStateByStart.get(week.start_date)?.resultPublishedAt) return;
       if (hasActivity) { approvedWeeksCount++; return; }
       unapprovedWeeksCount++;
     });
@@ -333,7 +341,7 @@ export async function GET(request: NextRequest) {
       if (ws.status !== "success") return;
       const weekMeta = weekByStartDateSummary.get(ws.week_start_date);
       if (!weekMeta) return;
-      if (!weekMeta.result_published_at) return; // 미공표(집계 중) 주차 제외
+      if (!summaryWeekStateByStart.get(weekMeta.start_date)?.resultPublishedAt) return; // 미공표(집계 중) 주차 제외
       const seasonType = String(weekMeta.season_definitions?.season_type ?? "");
       if (seasonType.includes("break")) return; // break(전환) 시즌 제외
       if (isTransitionWeek(seasonType, weekMeta.week_number ?? null)) return; // 시즌 말미 전환 주차 제외

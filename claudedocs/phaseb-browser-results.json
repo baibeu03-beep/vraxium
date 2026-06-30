@@ -1,0 +1,34 @@
+[
+  {
+    "name": "phaseb-weekly-ranking-operating",
+    "url": "http://localhost:3001/weekly-ranking/?org=phalanx",
+    "ok": true,
+    "textLen": 3077,
+    "hasErrorOverlay": false,
+    "pageErrors": []
+  },
+  {
+    "name": "phaseb-weekly-ranking-test",
+    "url": "http://localhost:3001/weekly-ranking/?org=phalanx&mode=test",
+    "ok": true,
+    "textLen": 3161,
+    "hasErrorOverlay": false,
+    "pageErrors": []
+  },
+  {
+    "name": "phaseb-crews-phalanx",
+    "url": "http://localhost:3001/crews/?org=phalanx",
+    "ok": true,
+    "textLen": 2100,
+    "hasErrorOverlay": false,
+    "pageErrors": []
+  },
+  {
+    "name": "phaseb-cluster4-testuser",
+    "url": "http://localhost:3001/cluster-4/?demoUserId=e649370f-ba2c-4d2f-b642-6800cb078d54",
+    "ok": true,
+    "textLen": 1965,
+    "hasErrorOverlay": false,
+    "pageErrors": []
+  }
+]
