@@ -8718,51 +8718,32 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         ? Math.round((careerStatsAdmin.success / careerStatsAdmin.total) * 100)
         : 0;
 
-  // ── 상단 주차 성장률(성장 허브) 단일 출처 ──
-  // 0순위(신규 SoT): weekly-cards 카드 DTO 의 growthRate{rate,count,total} 객체.
-  //   infoStatsAdmin(infoRate)·주차 목록(Cluster41Content readRateObject(week.growthRate))과 *동일 출처*.
-  //   total/count/rate 가 한 객체에서 나오므로 헤더 3값(총 n개 중 m개 / 퍼센트 / progress bar)이
-  //   구조적으로 일치하고, 목록·모달과도 같은 값을 쓴다.
-  // 1순위: flat growthDenominator/growthNumerator/weeklyGrowthRate.
-  // 2순위: DTO 미수신 시 lines[] denominator/numerator 합산. 3순위: 0/0/0.
+  // ── 상단 주차 성장률(성장 허브) 단일 출처 = 아래 4개 허브 section-count 합산 ──
+  // (2026-07-01) 이전엔 별도 growthRate{rate,count,total} DTO(백엔드 재집계값)를 상단에 그대로 썼다.
+  //   그런데 하단 허브 카운트(infoStatsAdmin/experienceStatsAdmin/competencyStatsAdmin/careerStatsAdmin)에는
+  //   프론트 표시 보정 — 특히 competency 의 empty-zero 게이트(realCompetencyLines 0 → total 0),
+  //   info 의 placeholder 제외 등 — 이 반영되지만 growthRate DTO 에는 반영되지 않아
+  //   "상단 총 N개" ≠ "하단 허브 합" 이 발생했다(예: 하단 0+1+0=1 인데 상단 growthRate=... 로 어긋남).
+  // 이제 상단은 화면에 실제로 렌더되는 4개 허브 stat 을 그대로 합산한다 → top == Σsection 이 구조적으로 보장.
+  //   - 별도 source(growthRate/growthDenominator/lines 재합산) 제거: stale snapshot·산식 차이로 인한 괴리 원천 차단.
+  //   - onboarding 주차엔 경험/역량/경력 섹션이 "-"(값 미포함)로 표시되므로 합산에서도 동일하게 제외한다
+  //     (info 는 onboarding 에서도 값 표시 → 항상 포함). rest 주차는 상단·하단 모두 "-" 라 합산값과 무관.
+  //   - rate(퍼센트·progress bar)도 합산 total/success 로 재계산해 헤더 3값이 내부적으로 일치하게 한다.
+  //   - demo/일반 모드 동일: 4개 허브 stat 자체가 이미 동일 DTO 필드(infoRate 등)에서 나오므로 경로 무관 동일값.
   const growthStatsAdmin = (() => {
-    const growthRate = (weeklyCardMeta as (AdminCluster4WeeklyCardDto & { growthRate?: Cluster4RateDto | null }) | null)?.growthRate ?? null;
-    if (growthRate && typeof growthRate.total === "number" && typeof growthRate.count === "number") {
-      const total = Number(growthRate.total) || 0;
-      const success = Number(growthRate.count) || 0;
-      const rate =
-        typeof growthRate.rate === "number"
-          ? growthRate.rate
-          : total > 0
-            ? Math.round((success / total) * 100)
-            : 0;
-      return { total, success, rate };
-    }
-    const metaTotal = weeklyCardMeta?.growthDenominator;
-    const metaSuccess = weeklyCardMeta?.growthNumerator;
-    const metaRate = weeklyCardMeta?.weeklyGrowthRate;
-    if (typeof metaTotal === "number" && typeof metaSuccess === "number" && typeof metaRate === "number") {
-      return { total: metaTotal, success: metaSuccess, rate: metaRate };
-    }
-    const growthPartTypes = ["information", "experience", "competency", "career"] as const;
-    const currentWeekLines = cluster4Lines.filter(
-      (l) => (l.weekId ?? null) === weekId && (growthPartTypes as readonly string[]).includes(normalizePartType(l.partType)),
-    );
-    if (currentWeekLines.length > 0) {
-      // part 별 첫 denominator/numerator(=part 집계값) 합산 — 라인별 reduce 는 같은 part 값이
-      // 라인 수만큼 중복 가산돼 분모가 부풀었다(허브 4개 section-count 합산과도 불일치).
-      let total = 0;
-      let success = 0;
-      for (const p of growthPartTypes) {
-        const ls = currentWeekLines.filter((l) => normalizePartType(l.partType) === p);
-        total += Number(ls.map((l) => l.denominator).find((d) => typeof d === "number") ?? 0) || 0;
-        success += Number(ls.map((l) => l.numerator).find((n) => typeof n === "number") ?? 0) || 0;
-      }
-      // 라운딩은 admin roundGrowthRate(Math.round)와 일치시킨다(Math.ceil 금지 — DTO 값과 1% 어긋남 방지).
-      // 단, 1순위 DTO(weeklyGrowthRate)가 항상 우선이라 이 폴백은 DTO 전체 미수신 시에만 동작한다.
-      return { total, success, rate: total > 0 ? Math.round((success / total) * 100) : 0 };
-    }
-    return { total: 0, success: 0, rate: 0 };
+    const gateExpCompCareer = isOnboardingWeek; // 온보딩: 경험/역량/경력 섹션 "-" → 합산 제외(info 만 포함)
+    const total =
+      infoStatsAdmin.total +
+      (gateExpCompCareer ? 0 : experienceStatsAdmin.total) +
+      (gateExpCompCareer ? 0 : competencyStatsAdmin.total) +
+      (gateExpCompCareer ? 0 : careerStatsAdmin.total);
+    const success =
+      infoStatsAdmin.success +
+      (gateExpCompCareer ? 0 : experienceStatsAdmin.success) +
+      (gateExpCompCareer ? 0 : competencyStatsAdmin.success) +
+      (gateExpCompCareer ? 0 : careerStatsAdmin.success);
+    // 라운딩은 admin roundGrowthRate(Math.round)와 일치(Math.ceil 금지).
+    return { total, success, rate: total > 0 ? Math.round((success / total) * 100) : 0 };
   })();
   const growthSuccessRate = growthStatsAdmin.rate;
 
