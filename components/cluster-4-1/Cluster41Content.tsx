@@ -1490,10 +1490,23 @@ const Cluster41Content = () => {
                 partType: (typeof PART_LINE_ORDER)[number],
                 cardRateObj: unknown,
               ): RateTriple => readRateObject(cardRateObj) ?? lineTriple(linesByPart.get(partType));
+              // ── 실무 역량 empty-zero 정책 — 상세 카드(Cluster4CardContent competencyStatsAdmin)와 동일 기준 ──
+              // 실제 개설된 역량 라인 = lineTargetId 보유. lineTargetId 없는 placeholder(미배정/folded pending,
+              // na)는 '실제 라인'이 아니므로, 하나도 없으면 competencyRate/placeholder 라인을 무시하고 0/0 을 쓴다.
+              // (구버그) 목록 카드는 이 게이트 없이 week.competencyRate 또는 placeholder 라인(denominator=1)을
+              // 그대로 읽어 "0/1" 로 표시 → 상세 카드는 0/0 → 불일치. 상세 카드는 이미 realCompetencyLines
+              // 게이트를 적용하므로, 목록도 동일 게이트를 적용해 양쪽 값을 일치시킨다.
+              const realCompetencyLines = (week.lines || []).filter(
+                (l) => normalizePartType(l.partType) === 'competency' && !!l.lineTargetId,
+              );
+              const competencyRate: RateTriple =
+                realCompetencyLines.length === 0
+                  ? { rate: 0, count: 0, total: 0 }
+                  : hubRate('competency', week.competencyRate);
               const rateByPart: Record<(typeof PART_LINE_ORDER)[number], RateTriple> = {
                 information: hubRate('information', week.infoRate),
                 experience: hubRate('experience', week.experienceRate),
-                competency: hubRate('competency', week.competencyRate),
+                competency: competencyRate,
                 career: hubRate('career', week.careerRate),
               };
               const currentWeekValue = numberField(week, ["approvedWeeks", "currentCumulative", "cumulative", "accumulatedApprovedWeeks"]);
