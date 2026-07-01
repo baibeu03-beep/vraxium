@@ -358,9 +358,11 @@ export async function aggregateWeeklyLeague(
       return { success: true, org, cards: [] };
     }
 
-    // 2-1) 공표/검수 상태 overlay — operating=운영 weeks, test=qa_weeks_state(없으면 운영 baseline).
-    //   weeks.result_published_at / result_reviewed_at 직접 읽기는 resolver 로 일원화(Phase B).
-    const weekScope: WeekResultScope = isTestMode ? "test" : "operating";
+    // 2-1) 공표/검수 상태 — ⚠️ QA 워크백(2026-07-01): test·operating 무관하게 **항상 운영 weeks baseline**.
+    //   과거 test 모집단에 qa_weeks_state / qa_org_week_thresholds overlay 를 씌웠으나, 주차/공표/검수/
+    //   체크기준(비즈니스 정책)은 operating 기준이어야 하므로 isTestMode 와 분리한다. 랭킹에 노출되는
+    //   "모집단"만 위(238)에서 test_user_markers 로 필터되고, 데이터 로직 divergence 는 0 이다.
+    const weekScope: WeekResultScope = "operating";
     const weekStates = await resolveWeekResultStates(db, { scope: weekScope });
     for (const w of weeks) {
       const st = weekStates.get(w.id);

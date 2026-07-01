@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getDeployMode, type ScopeMode } from "@/lib/userScopeShared";
+import { type ScopeMode } from "@/lib/userScopeShared";
 
 // ─────────────────────────────────────────────────────────────────────────
 // 주차 결과 상태(weekResultState) 단일 SoT — 고객 앱 Phase B.
@@ -68,17 +68,20 @@ export async function isTestUserId(
 }
 
 // targetUserId → scope.
-//   ⚠️ 배포 환경변수가 1차 게이트다(QA 배포 전환):
-//     · 운영 배포(getDeployMode()==='operating') : 항상 operating — qa_* 테이블을 절대 조회하지 않는다.
-//       (운영 배포에서 테스트 마커 유저 프로필을 봐도 QA overlay 가 새지 않게 하는 안전판.)
-//     · QA   배포(getDeployMode()==='test')        : target 이 test_user_markers 등재면 "test"(overlay),
-//       미등재면 "operating" 폴백(어차피 enforceQaMode 가 실유저 target 을 403 차단).
+//   ⚠️ QA 워크백(2026-07-01): 고객앱 주차 결과 상태는 **항상 operating baseline** 만 읽는다.
+//     과거 QA 배포(getDeployMode()==='test')에서 test_user_markers 유저에게 qa_weeks_state /
+//     qa_org_week_thresholds overlay 를 씌우던 분기를 제거했다. 시즌/주차/정책/snapshot/카드
+//     로직은 test·operating 배포 무관하게 동일한 운영 기준(weeks / org_week_thresholds)만 본다.
+//     QA 기간 차이는 "사용자 목록 노출"(resolveUserScope 모집단 필터 + enforceQaMode 게이트)에서만
+//     유지되고, 비즈니스 로직 divergence 는 0 이다. (qa_* overlay fetch 함수는 향후 재사용 대비
+//     남겨두되 이 경로에서 호출하지 않는다 — scope 는 언제나 "operating".)
 export async function resolveWeekScopeForUser(
   db: SupabaseClient,
   targetUserId: string | null | undefined,
 ): Promise<WeekResultScope> {
-  if (getDeployMode() !== "test") return "operating"; // 운영 배포 — qa_* 미조회
-  return (await isTestUserId(db, targetUserId)) ? "test" : "operating";
+  void db;
+  void targetUserId; // 스코프 무관 — 항상 운영 baseline(qa_* overlay 미조회).
+  return "operating";
 }
 
 interface WeekBaselineRow {

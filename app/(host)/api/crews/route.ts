@@ -432,13 +432,16 @@ export async function GET(request: Request) {
     const supabase = createAdminClient();
 
     // 0) operationalSeasonKey + 시즌 status 맵 + 스코프. season/scope 는 서로 독립 → 병렬.
-    //    (season=active+rest 게이트+카운트, scope=운영/테스트 모집단; 게이트는 operating 만.)
+    //    (season=active+rest 게이트+카운트, scope=운영/테스트 모집단.)
     const operationalSeasonKey = operationalSeasonDbKey(new Date().toISOString().slice(0, 10));
     const [season, scope] = await Promise.all([
       fetchSeasonStatusMap(supabase, operationalSeasonKey),
       resolveUserScopeFromParams(supabase, searchParams, orgFilter),
     ]);
-    const applySeasonGate = season != null && scope.mode !== "test";
+    // ⚠️ QA 워크백(2026-07-01): 시즌 참여 게이트는 test·operating 무관하게 **항상 적용**(operating 정책).
+    //   과거 test 모집단은 게이트를 스킵했으나 시즌/정책은 operating 기준이어야 하므로 mode 조건 제거.
+    //   모집단(실유저 vs 테스트 유저) 필터는 아래 scope.filter 에서만 유지된다.
+    const applySeasonGate = season != null;
 
     // 1) 모집단 identity 조회 — "전체 user_profiles 풀을 한 번에 로드"하지 않는다(요구 3·7).
     //    operating: active+rest user_id 로 좁힌 .in(150 청크) 조회 → org∩(active+rest) 만 가져온다.
@@ -584,9 +587,10 @@ export async function GET(request: Request) {
       })(),
       // 누적 인정 주차(live, 공표 완료 ∧ 비-break ∧ 비-전환) — 페이지 한정. best-effort.
       (async (): Promise<Map<string, number> | null> => {
-        // 공표 상태(result_published_at)는 공용 resolver 로 일원화 — operating=운영 weeks,
-        // test=qa_weeks_state overlay(없으면 운영 baseline). 직접 raw read 금지(Phase B).
-        const weekStates = await resolveWeekResultStates(supabase, { scope: scope.mode });
+        // 공표 상태(result_published_at)는 공용 resolver 로 일원화.
+        // ⚠️ QA 워크백(2026-07-01): test·operating 무관하게 **항상 운영 weeks baseline**(qa_* overlay 미조회).
+        // 누적 인정 주차는 비즈니스 정책 → operating 기준. 직접 raw read 금지(Phase B).
+        const weekStates = await resolveWeekResultStates(supabase, { scope: "operating" });
         const publishedByStart = statesByStartDate(weekStates);
         const { data: weekRows, error: weekErr } = await supabase
           .from("weeks").select("start_date, week_number, season_definitions(season_type)")
