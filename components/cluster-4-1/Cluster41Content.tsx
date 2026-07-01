@@ -9,7 +9,7 @@ import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
 import { isPxRoute, isEcRoute, withPxRoute, getOrgConfigFromPathname, getGraduationWeeksFromPathname } from "@/lib/cluster-route";
-import type { AdminCluster4WeeklyCardDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto, Cluster4RateDto } from "@/shared/cluster4.contracts";
+import type { AdminCluster4WeeklyCardDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
 import type { Cluster3StatsCards } from "@/lib/cluster3StatsCardsTypes";
 import { Skeleton } from "@/components/ui/skeleton/Skeleton";
 import { isTransitionWeek } from "@/lib/cluster4-transition-week";
@@ -1464,26 +1464,13 @@ const Cluster41Content = () => {
               // 이 카드(week item)의 필드만 사용한다. 전역 selected card / 상세 weeklyCardMeta / dummy 금지.
               const linesByPart = adminCardLinesByPart(week);
 
-              // 주차 성장률 + 총 A개 중 B개 — 신규 growthRate{rate,count,total} 우선, 없으면 flat.
-              // A(총 개수) = total(=growthDenominator, 분모), B(달성 개수) = count(=growthNumerator, 분자).
-              const growthObj =
-                readRateObject((week as { growthRate?: Cluster4RateDto | null }).growthRate) ??
-                readRateObject((week as Record<string, unknown>).weeklyGrowth);
-              const growthRate =
-                growthObj?.rate ??
-                (typeof week.weeklyGrowthRate === 'number' && Number.isFinite(week.weeklyGrowthRate)
-                  ? week.weeklyGrowthRate
-                  : 0);
-              const growthTotal =
-                growthObj?.total ??
-                (typeof week.growthDenominator === 'number' && Number.isFinite(week.growthDenominator)
-                  ? week.growthDenominator
-                  : 0);
-              const growthCount =
-                growthObj?.count ??
-                (typeof week.growthNumerator === 'number' && Number.isFinite(week.growthNumerator)
-                  ? week.growthNumerator
-                  : 0);
+              // 주차 성장률(상단 총 A개 중 B개 / %)은 아래 rateByPart(게이트 적용 후) 합산으로 계산한다.
+              // (2026-07-01) 이전엔 week.growthRate{rate,count,total} DTO(백엔드 재집계값)를 그대로 읽었는데,
+              //   그 DTO 는 competency empty-zero 게이트(realCompetencyLines 0 → 0)를 반영하지 않아
+              //   "총 1개 중 0개"인데 하단 4허브(정보/경험/역량/경력)는 전부 0 → 상단≠Σ허브 불일치가 났다.
+              //   상세 카드(Cluster4CardContent.growthStatsAdmin)와 동일하게, 화면에 실제 렌더되는 게이트된
+              //   허브 rate 를 그대로 합산한다 → 상단 == Σ허브 가 구조적으로 보장. growthRate DTO 는 읽지 않는다.
+              //   (growthTotal/growthCount/growthRate 정의는 rateByPart 아래로 이동 — 합산 입력을 먼저 확정.)
 
               // 4허브 강화율 — 신규 {info,experience,competency,career}Rate 객체 우선, 없으면 lines[] (part별 첫 라인) fallback.
               const hubRate = (
@@ -1509,6 +1496,22 @@ const Cluster41Content = () => {
                 competency: competencyRate,
                 career: hubRate('career', week.careerRate),
               };
+              // ── 상단 주차 성장률 = 위 rateByPart(게이트 적용 후) 합산 (상세 카드 growthStatsAdmin 동일 산식) ──
+              //   온보딩 주차엔 경험/역량/경력 허브가 값 미포함("-")이므로 합산에서도 제외(info 만 포함).
+              //   rest 주차는 상·하단 모두 표시 자체가 억제되므로 합산값과 무관.
+              const gateExpCompCareer = week.isOnboarding === true;
+              const growthTotal =
+                rateByPart.information.total +
+                (gateExpCompCareer ? 0 : rateByPart.experience.total) +
+                (gateExpCompCareer ? 0 : rateByPart.competency.total) +
+                (gateExpCompCareer ? 0 : rateByPart.career.total);
+              const growthCount =
+                rateByPart.information.count +
+                (gateExpCompCareer ? 0 : rateByPart.experience.count) +
+                (gateExpCompCareer ? 0 : rateByPart.competency.count) +
+                (gateExpCompCareer ? 0 : rateByPart.career.count);
+              // 라운딩은 상세 카드(Math.round)와 일치 — 목록·상세 % 동일값 보장.
+              const growthRate = growthTotal > 0 ? Math.round((growthCount / growthTotal) * 100) : 0;
               const currentWeekValue = numberField(week, ["approvedWeeks", "currentCumulative", "cumulative", "accumulatedApprovedWeeks"]);
               // 전체 주차(분모): DTO totalWeeks/totalWeekCount → totalRequiredWeeks/baseWeekCount 우선,
               // 모두 없을 때만 org 정책값(marketing 25 / encre·phalanx 30)으로 폴백.
