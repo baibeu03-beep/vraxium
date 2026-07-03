@@ -171,7 +171,9 @@
         polygon {
           fill: none;
           stroke-width: 3px;
-          stroke: #505d6a;
+          // 조직 테두리 색 — 현재 org(쿼리>slug)에 따라 Sidebar 가 주입하는 CSS 변수.
+          // org 미검출 시 기본 회색(#505d6a) 유지. SoT = getHeaderThemeAccent.
+          stroke: var(--sidebar-org-hex-border, #505d6a);
           transition: all 1s ease-out 1s;
         }
       }
@@ -192,7 +194,8 @@
               stroke-dashoffset: -400px;
               animation: animate-stroke 1s linear forwards;
               animation-delay: 1s;
-              stroke: var(--quaternary-color);
+              // 활성 슬라이드도 org 색 우선 — 미검출 시 기존 --quaternary-color 폴백.
+              stroke: var(--sidebar-org-hex-border, var(--quaternary-color));
             }
           }
         }

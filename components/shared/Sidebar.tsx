@@ -8,7 +8,7 @@ import { dedupedJson } from "@/lib/fetch-dedupe";
 import { Autoplay } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { usePopup } from "@/components/ui/popup";
-import { getOrgClusterRouteBase } from "@/lib/cluster-route";
+import { getOrgClusterRouteBase, getHeaderThemeAccent } from "@/lib/cluster-route";
 import { appendDemoQuery } from "@/lib/appendDemoQuery";
 // Define the type for the game object
 interface Game {
@@ -66,6 +66,13 @@ const Sidebar = () => {
     () => resolveCurrentOrg(pathname ?? null, searchParams?.get("org") ?? null),
     [pathname, searchParams]
   );
+  // 조직 선택 슬라이더 육각형 테두리 색 — 현재 org(쿼리>cluster slug>없음)에 따라 결정.
+  // SoT = 헤더 포인트 컬러와 동일한 공용 getHeaderThemeAccent(EC #FF4B70 / OK #FAAB07 /
+  // PX #1E9503). org 미검출이면 null → CSS 변수 미주입 → 기본 회색 테두리 유지.
+  const hexBorderColor = useMemo(
+    () => getHeaderThemeAccent(pathname ?? null, searchParams?.get("org") ?? null),
+    [pathname, searchParams]
+  );
   // 테스트 유저(데모) 모드 컨텍스트(demoUserId/admin=true/demoUserName/org)를 사이드바
   // 네비게이션 전 구간에 유지한다(공통 헬퍼 lib/appendDemoQuery). 진입 후 중간 페이지를
   // 거치며 demoUserId 가 끊기면 타 크루 카드에서 평판 작성이 "로그인이 필요합니다" 로 막힌다.
@@ -110,7 +117,10 @@ const Sidebar = () => {
   };
 
   return (
-    <aside className="nftg-sidebar">
+    <aside
+      className="nftg-sidebar"
+      style={hexBorderColor ? ({ ["--sidebar-org-hex-border"]: hexBorderColor } as React.CSSProperties) : undefined}
+    >
       <div className="container">
         <div className="row">
           <div className="col-12">
