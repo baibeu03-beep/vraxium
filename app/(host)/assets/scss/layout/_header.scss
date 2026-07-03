@@ -186,7 +186,14 @@
 
     li.active > a {
       color: #fff !important;
-      background: linear-gradient(to right, #21E786, #4AE89D) !important;
+      // dropdown active 배경도 헤더 포인트 컬러(org 테마)를 따른다. 종전 하드코딩
+      // 초록(#21E786/#4AE89D) 대신 --quaternary-color 기반 그라데이션 — 조직 화면에선
+      // org 색, 기본 화면에선 상위 route-theme 색으로 자동 통일.
+      background: linear-gradient(
+        to right,
+        var(--quaternary-color),
+        color-mix(in srgb, var(--quaternary-color) 78%, #ffffff)
+      ) !important;
       border-left: none !important;
       font-weight: 600 !important;
       &::before {

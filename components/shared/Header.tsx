@@ -2,10 +2,11 @@
 import logo from "@/public/images/0/header-logo.png";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Fragment, useEffect, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Fragment, Suspense, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { appSignOut } from "@/lib/auth-logout";
+import { getHeaderThemeAccent } from "@/lib/cluster-route";
 import Cart from "./Cart";
 import Message from "./header/Message";
 import Notification from "./header/Notification";
@@ -196,6 +197,20 @@ const menu = [
   // ===== 주석 처리 끝 =====
 ];
 
+// 헤더 포인트 컬러(--quaternary-color)를 현재 URL 의 조직으로 통일한다.
+// 우선순위: org query(?org=) > cluster path slug > 미검출(상위 route-theme 상속).
+// `.header` 스코프로 주입하므로 그 자손인 데스크톱 nav + 모바일 메뉴(.mobile-menu)가
+// 동일 accent 를 상속받는다(hover/active/dropdown active/버튼/border/icon accent 전부).
+// useSearchParams 를 쓰므로 정적 프리렌더 대비 상위에서 <Suspense> 로 감싼다.
+// 레이아웃/드롭다운 동작은 건드리지 않고 색상 변수만 덮어쓴다.
+const HeaderThemeStyle = () => {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const accent = getHeaderThemeAccent(pathname, searchParams?.get("org"));
+  if (!accent) return null;
+  return <style>{`.header{--quaternary-color:${accent};}`}</style>;
+};
+
 const Header = () => {
   const { data: session, status } = useSession();
   const isLoading = status === "loading";
@@ -236,6 +251,9 @@ const Header = () => {
 
   return (
     <>
+      <Suspense fallback={null}>
+        <HeaderThemeStyle />
+      </Suspense>
       <header className="header">
         <div className="container-fluid">
           <div className="row">

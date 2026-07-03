@@ -68,6 +68,10 @@ const SUFFIX_TO_ORG_ENTRIES: ReadonlyArray<readonly [string, Organization]> = [
   ["-marketing", "marketing"],
   ["-entertainment", "entertainment"],
   ["-planning", "planning"],
+  // "-consulting" — planning(팔랑크스=기획/컨설팅)의 표기 별칭. canonical 은 -planning
+  // 이지만, consulting 슬러그로 진입한 URL 도 동일 조직으로 인식·테마 적용되게 한다.
+  // (canonical 생성은 여전히 -planning — 본 엔트리는 인식 전용.)
+  ["-consulting", "planning"],
   ["-ok", "marketing"],
   ["-ec", "entertainment"],
   ["-px", "planning"],
@@ -513,6 +517,58 @@ export function getOrgConfigForSlug(
 ): OrganizationConfig {
   const org = (slug && SLUG_TO_ORGANIZATION[slug]) || "marketing";
   return ORGANIZATION_CONFIG[org];
+}
+
+// =============================================================
+// 헤더/공통 포인트 컬러 해석 — org query + cluster path slug 통합 SoT.
+//
+// 조직별 화면에 들어가면 헤더 포인트 컬러도 해당 조직 색으로 통일한다.
+// org query(?org=) 모드와 cluster path slug(-entertainment 등) 모드가 서로
+// 다른 테마를 만들지 않도록, 둘 다 같은 Organization 으로 정규화한 뒤
+// ORGANIZATION_CONFIG.themeColor 라는 동일 accent 를 재사용한다.
+// =============================================================
+
+/**
+ * 현재 URL(pathname + org query)에서 Organization 을 해석한다.
+ * 우선순위: org query(?org=) > cluster path slug > null(미검출).
+ *
+ *   resolveOrgFromLocation("/crews", "encre")                 // "entertainment"
+ *   resolveOrgFromLocation("/weekly-ranking", "oranke")       // "marketing"
+ *   resolveOrgFromLocation("/cluster-1-entertainment", null)  // "entertainment"
+ *   resolveOrgFromLocation("/cluster-3-consulting", null)     // "planning"
+ *   resolveOrgFromLocation("/profile", null)                  // null (미검출)
+ *
+ * org query 가 유효하면 pathname 보다 우선한다(요구 우선순위). 둘 다 없으면
+ * null 을 반환해 호출부가 기본 테마(상속)로 처리하도록 한다.
+ */
+export function resolveOrgFromLocation(
+  pathname: string | null | undefined,
+  orgQuery: string | null | undefined,
+): Organization | null {
+  // 1) org query 우선 — /crews, /weekly-ranking 등 slug 기반 진입.
+  const byQuery = orgQuery ? SLUG_TO_ORGANIZATION[orgQuery] : undefined;
+  if (byQuery) return byQuery;
+  // 2) cluster path slug — canonical(-marketing/-entertainment/-planning) +
+  //    legacy(-ok/-ec/-px) + 별칭(-consulting) 모두 인식.
+  if (getRouteOrgSuffix(pathname) !== "") {
+    return getCurrentOrganizationFromPathname(pathname);
+  }
+  // 3) org/slug 미검출.
+  return null;
+}
+
+/**
+ * 현재 URL 의 헤더 포인트 컬러(hex). org/slug 가 없으면 null → 호출부는
+ * 오버라이드를 주입하지 않고 상위 route-theme(--quaternary-color)를 상속한다.
+ * 값 SoT = ORGANIZATION_CONFIG.themeColor (엥크레 #FF4B70 / 오랑캐 #FAAB07 /
+ * 팔랑크스 #1E9503). org 모드·slug 모드가 동일 accent 를 공유한다.
+ */
+export function getHeaderThemeAccent(
+  pathname: string | null | undefined,
+  orgQuery: string | null | undefined,
+): string | null {
+  const org = resolveOrgFromLocation(pathname, orgQuery);
+  return org ? ORGANIZATION_CONFIG[org].themeColor : null;
 }
 
 /**
