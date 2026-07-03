@@ -25,6 +25,10 @@ interface Crew {
   part: string;
   nickname: string;
   club: string;
+  // 클래스명(수강/지원 클래스 — 예: Beginner/Intermediate/Advanced). /api/crews DTO 확장 필드.
+  //   서버가 user_profiles.application_grade 를 정규화(공백/"-"→null)해 내려준다.
+  //   값이 없으면(null) 팀명 옆 클래스 배지를 렌더링하지 않는다.
+  className: string | null;
   universityMajor: string;
   status: string;
   growthStatus: string;
@@ -846,12 +850,20 @@ function CrewsContent() {
                         <div className="content-wrapper">
                           <div className="info">
                             <p className="text-sm fw-6">
-                              <Link
-                                href={resolveHref(crew)}
-                                className="crew-club-badge"
-                              >
-                                {[crew.team, crew.club].find((v) => v && v !== "-") ?? "-"}
-                              </Link>
+                              {/* 팀명 배지 + 클래스명 배지를 같은 행에 나란히(줄바꿈 없이). */}
+                              {/* .info p 는 space-between 이므로 두 배지를 한 wrapper 로 묶어 왼쪽 정렬·간격만 부여. */}
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "nowrap", minWidth: 0 }}>
+                                <Link
+                                  href={resolveHref(crew)}
+                                  className="crew-club-badge"
+                                >
+                                  {[crew.team, crew.club].find((v) => v && v !== "-") ?? "-"}
+                                </Link>
+                                {/* 클래스명 배지 — 값이 있을 때만. 팀명 배지와 동일 디자인(.crew-club-badge). */}
+                                {crew.className && (
+                                  <span className="crew-club-badge">{crew.className}</span>
+                                )}
+                              </span>
                             </p>
                             <p className="text-sm" style={{ marginTop: "18px", display: "flex", alignItems: "center", justifyContent: "flex-start", gap: "3px", flexWrap: "nowrap", minWidth: 0, overflow: "hidden" }} title={`${mask.school(crew.university)} ${mask.major(crew.major)}`}>
                               <span style={{ display: "inline-block", width: "7px", height: "7px", borderRadius: "50%", backgroundColor: schoolDotBackground, flexShrink: 0, position: "relative", top: "-1px" }} />
