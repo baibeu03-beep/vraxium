@@ -347,7 +347,7 @@ function CrewsContent() {
   return (
     <main
       className={`nftg-content nftg-content-home${
-        org === "phalanx" ? " phalanx-theme" : org === "encre" ? " encre-theme" : ""
+        org === "phalanx" ? " phalanx-theme" : org === "encre" ? " encre-theme" : org === "oranke" ? " oranke-theme" : ""
       }`}
       style={{ padding: 0 }}
     >

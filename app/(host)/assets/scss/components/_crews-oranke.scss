@@ -1,0 +1,123 @@
+// =============================================================
+// Oranke (오랑캐 / marketing) — /crews?org=oranke scoped theme override.
+//
+// Wrapper class .oranke-theme 는 page.tsx 의 <main> 에 부착됨(encre/phalanx 패턴 동일).
+// 목적: 오랑캐 페이지의 포인트 컬러를 오랑캐 대표색(노랑/amber)으로 통일한다.
+//   - 기존엔 테마 변수 미정의 → --quaternary-color 가 앱 기본 초록(#45f882)으로 상속돼
+//     "보기" 가격버튼/btn--primary/hexagon active 등이 초록으로 남아 있었다.
+//   - encre/phalanx 와 동일하게 --crews-* / --quaternary-color / --primary-color 를
+//     오랑캐 톤으로 매핑해 버튼·배지·hover·active·border·highlight·아이콘 accent 를 통일.
+//
+// palette (ORGANIZATION_CONFIG.marketing — 기존 오랑캐 컬러 재사용, 신규색 생성 금지):
+//   soft accent   #FFC300  (accentSoft) — 연한/기본 tint
+//   strong accent #FAAB07  (themeColor) — 진한/대표 accent
+//   dark text     #3D2A00  (amber 명도 하향 — soft 배경 위 가독성)
+//
+// .encre-theme / .phalanx-theme 에는 영향 0.
+// =============================================================
+.oranke-theme {
+  --crews-accent-soft: #FFC300;
+  --crews-accent-soft-rgb: 255, 195, 0;
+  --crews-accent-strong: #FAAB07;
+  --crews-accent-strong-rgb: 250, 171, 7;
+
+  // 페이지 전역 포인트 컬러 — 기본 초록(--quaternary-color)을 오랑캐 톤으로 덮어씀.
+  --quaternary-color: var(--crews-accent-soft);
+  --quaternary-hover: var(--crews-accent-strong);
+  --primary-color: var(--crews-accent-strong);
+
+  // page.tsx 가 var() 로 읽는 inline-style hook — encre/phalanx 와 동일 키.
+  --crews-filter-accent: var(--crews-accent-strong);
+  --crews-filter-accent-bg: rgba(var(--crews-accent-strong-rgb), 0.1);
+  --crews-primary-accent: var(--crews-accent-strong);
+  --crews-primary-accent-bg: rgba(var(--crews-accent-strong-rgb), 0.15);
+  // amber(밝은) 대표색 위 텍스트는 흰색 대신 짙게 — encre/phalanx(어두운 accent)와 달리 contrast 확보.
+  --crews-primary-accent-contrast: #111;
+  --crews-team-badge-bg: var(--crews-accent-strong);
+  --crews-team-badge-text: #111;
+  --crews-school-dot-bg: var(--crews-accent-soft);
+
+  // ─────────────────────────────────────────────
+  // weekly-filter-bar
+  // ─────────────────────────────────────────────
+  .weekly-filter-bar .filter-card:hover {
+    border-color: var(--crews-accent-strong);
+    box-shadow: 0 0 0 1px rgba(var(--crews-accent-strong-rgb), 0.16);
+  }
+
+  .weekly-filter-bar .filter-card.filter-card-large {
+    background: var(--crews-accent-soft);
+    border-color: var(--crews-accent-soft);
+    box-shadow: 0 0 24px rgba(var(--crews-accent-soft-rgb), 0.14);
+
+    // soft gold 배경 위 Reset 라벨/아이콘 contrast.
+    span { color: #3D2A00; }
+  }
+
+  .weekly-filter-bar .filter-card.filter-dropdown .dropdown-menu .dropdown-item:hover {
+    background: rgba(var(--crews-accent-strong-rgb), 0.1);
+  }
+
+  .weekly-filter-bar .filter-card.filter-dropdown .dropdown-menu .dropdown-item.selected {
+    background: rgba(var(--crews-accent-strong-rgb), 0.2);
+    color: var(--crews-accent-strong);
+  }
+
+  .weekly-filter-bar--mobile .filter-mobile-btn .filter-mobile-count {
+    background: rgba(var(--crews-accent-strong-rgb), 0.2);
+    border-color: rgba(var(--crews-accent-strong-rgb), 0.35);
+    color: var(--crews-accent-strong);
+  }
+
+  .filter-sheet .filter-sheet-btn.primary {
+    background: var(--crews-accent-strong);
+    border-color: var(--crews-accent-strong);
+  }
+
+  .filter-sheet .filter-sheet-select:focus {
+    border-color: var(--crews-accent-strong);
+    box-shadow: 0 0 0 2px rgba(var(--crews-accent-strong-rgb), 0.2);
+  }
+
+  // ─────────────────────────────────────────────
+  // 카드 hover glow / divider
+  // ─────────────────────────────────────────────
+  .trending__single:hover {
+    box-shadow: 0 0 34px rgba(var(--crews-accent-soft-rgb), 0.18);
+  }
+
+  .trending__single .author-title {
+    border-left-color: rgba(var(--crews-accent-soft-rgb), 0.35);
+  }
+
+  .trending__single .price-footer .price-inner {
+    box-shadow: 0 0 18px rgba(var(--crews-accent-soft-rgb), 0.08);
+  }
+
+  // ─────────────────────────────────────────────
+  // crew-club-badge (연한 기본 → 진한 hover, 가독성 유지)
+  // ─────────────────────────────────────────────
+  .crews-grid {
+    .crew-club-badge,
+    .crew-club-badge:visited {
+      color: #3D2A00 !important;
+      background: #FFC300 !important;
+      border-color: rgba(255, 195, 0, 0.45) !important;
+    }
+
+    .crew-club-badge:hover,
+    .crew-club-badge:hover:visited,
+    .crew-club-badge:focus,
+    .crew-club-badge:active {
+      color: #ffffff !important;
+      background: rgba(250, 171, 7, 0.20) !important;
+      border-color: #FAAB07 !important;
+    }
+
+    .crew-club-badge:hover *,
+    .crew-club-badge:focus *,
+    .crew-club-badge:active * {
+      color: #ffffff !important;
+    }
+  }
+}
