@@ -6639,9 +6639,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         ? `${formatDetailLogDate(headerStartDate)} ~ ${formatDetailLogDate(headerEndDate)}`
         : "-",
     crew: {
-      // 비로그인 열람 시 이름 마스킹 — 카드 본문과 동일 정책(useDataMasking.mask.displayName).
-      //   로그인/데모(localStorage) 시 원문, 비로그인만 마스킹. ownerPersonalInfo.name 은 raw 라 1회 적용(이중 마스킹 아님).
-      name: mask.displayName(ownerPersonalInfo.name),
+      // 비로그인 열람 시 이름 마스킹 — 크루 이름 공통 규칙(useDataMasking.mask.crewName = 마지막 글자만).
+      //   로그인/데모(localStorage) 시 원문, 비로그인만 마스킹. ownerPersonalInfo.name 은 raw 라 1회 적용(멱등이라 이중 마스킹 무해).
+      name: mask.crewName(ownerPersonalInfo.name),
       team: headerTeamName ? `${headerTeamName} 팀` : "-",
       part: headerPartName ? `${headerPartName} 파트` : "-",
       level:
@@ -9520,7 +9520,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         style={{ cursor: isEmpty ? "default" : "pointer" }}
                       >
                         <div className="card-profile">
-                          <div className="profile-image">{!isEmpty && user.profileImg ? <img src={user.profileImg} alt={user.name} loading="lazy" decoding="async" /> : <div className="profile-placeholder"></div>}</div>
+                          <div className="profile-image">{!isEmpty && user.profileImg ? <img src={user.profileImg} alt={mask.crewName(user.name)} loading="lazy" decoding="async" /> : <div className="profile-placeholder"></div>}</div>
                           <div className="profile-info">
                             <div className="profile-name">
                               {isEmpty ? (
@@ -9529,7 +9529,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                 </>
                               ) : (
                                 <>
-                                  <span className="text">{user.name}</span> | <span className="text">{user.gender}</span> | <span className="text">{mask.age(user.age)}세</span>
+                                  <span className="text">{mask.crewName(user.name)}</span> | <span className="text">{user.gender}</span> | <span className="text">{mask.age(user.age)}세</span>
                                 </>
                               )}
                             </div>
@@ -9724,7 +9724,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     style={{ cursor: isEmpty ? "default" : "pointer" }}
                   >
                     <div className="card-profile">
-                      <div className="profile-image">{!isEmpty && user.profileImg ? <img src={user.profileImg} alt={user.name} loading="lazy" decoding="async" /> : <div className="profile-placeholder"></div>}</div>
+                      <div className="profile-image">{!isEmpty && user.profileImg ? <img src={user.profileImg} alt={mask.crewName(user.name)} loading="lazy" decoding="async" /> : <div className="profile-placeholder"></div>}</div>
                       <div className="profile-info">
                         <div className="profile-name-row">
                           <div className="profile-name">
@@ -9734,7 +9734,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                               </>
                             ) : (
                               <>
-                                <span className="text">{user.name}</span> | <span className="text">{user.gender}</span> | <span className="text">{mask.age(user.age)}세</span>
+                                <span className="text">{mask.crewName(user.name)}</span> | <span className="text">{user.gender}</span> | <span className="text">{mask.age(user.age)}세</span>
                               </>
                             )}
                           </div>
@@ -11519,7 +11519,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <div className="crew-info">
                       <span className="crew-number">{colleagueEditData.selectedColleague.number ?? colleagueEditData.selectedColleague.id}</span>
                       <span className="crew-divider">|</span>
-                      <span className="crew-name">{colleagueEditData.selectedColleague.name || "-"}</span>
+                      <span className="crew-name">{mask.crewName(colleagueEditData.selectedColleague.name)}</span>
                       <span className="crew-divider">|</span>
                       <span className="crew-team">{colleagueEditData.selectedColleague.team || "-"}</span>
                     </div>
@@ -11560,7 +11560,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                             <div className="crew-info">
                               <span className="crew-number">{crew.number ?? crew.id}</span>
                               <span className="crew-divider">|</span>
-                              <span className="crew-name">{crew.name || "-"}</span>
+                              <span className="crew-name">{mask.crewName(crew.name)}</span>
                               <span className="crew-divider">|</span>
                               <span className="crew-team">{crew.team || "-"}</span>
                             </div>
@@ -11909,11 +11909,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               {/* 상단: 인적사항 카드 (4개 모달과 동일 구조) */}
               <div className="workinfo-personal-card">
                 <div className="personal-grid">
-                  <div className="personal-photo">{selectedReputationCard.profileImg ? <img src={selectedReputationCard.profileImg} alt={selectedReputationCard.name} /> : <img src="/images/0/crew profile/남 1.webp" alt="profile" />}</div>
+                  <div className="personal-photo">{selectedReputationCard.profileImg ? <img src={selectedReputationCard.profileImg} alt={mask.crewName(selectedReputationCard.name)} /> : <img src="/images/0/crew profile/남 1.webp" alt="profile" />}</div>
 
                   <div className="personal-info">
                     <div className="personal-row-1">
-                      <span className="personal-name">{mask.displayName(selectedReputationCard.name)}</span>
+                      <span className="personal-name">{mask.crewName(selectedReputationCard.name)}</span>
                       <span className="personal-separator">|</span>
                       <span className="personal-gender">{mask.gender(selectedReputationCard.gender)}</span>
                       <span className="personal-separator">|</span>
@@ -12075,11 +12075,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               {/* 인적사항 카드 — reputation-view-modal .workinfo-personal-card 구조 재사용 */}
               <div className="workinfo-personal-card">
                 <div className="personal-grid">
-                  <div className="personal-photo">{selectedColleagueCard.profileImg ? <img src={selectedColleagueCard.profileImg} alt={selectedColleagueCard.name} /> : <img src="/images/0/crew profile/남 1.webp" alt="profile" />}</div>
+                  <div className="personal-photo">{selectedColleagueCard.profileImg ? <img src={selectedColleagueCard.profileImg} alt={mask.crewName(selectedColleagueCard.name)} /> : <img src="/images/0/crew profile/남 1.webp" alt="profile" />}</div>
 
                   <div className="personal-info">
                     <div className="personal-row-1">
-                      <span className="personal-name">{mask.displayName(selectedColleagueCard.name)}</span>
+                      <span className="personal-name">{mask.crewName(selectedColleagueCard.name)}</span>
                       <span className="personal-separator">|</span>
                       <span className="personal-gender">{mask.gender(selectedColleagueCard.gender)}</span>
                       <span className="personal-separator">|</span>
@@ -12124,13 +12124,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               <div className="colleague-fromto">
                 <span className="fromto-block fromto-from">
                   <span className="fromto-label">From -</span>
-                  <span className="fromto-name">{selectedColleagueCard.fromName || myDisplayName || session?.user?.name || "-"}</span>
+                  <span className="fromto-name">{mask.crewName(selectedColleagueCard.fromName || myDisplayName || session?.user?.name)}</span>
                   <span className="fromto-suffix">님</span>
                 </span>
                 <span className="fromto-arrow">→</span>
                 <span className="fromto-block fromto-to">
                   <span className="fromto-label">To -</span>
-                  <span className="fromto-name">{selectedColleagueCard.toName || selectedColleagueCard.name || "-"}</span>
+                  <span className="fromto-name">{mask.crewName(selectedColleagueCard.toName || selectedColleagueCard.name)}</span>
                   <span className="fromto-suffix">님</span>
                 </span>
               </div>
@@ -12199,7 +12199,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       <div className="personal-info">
                         {/* 1행 — 이름·성별·나이 + 역할/키워드 태그 (태그는 우측 정렬) */}
                         <div className="personal-row-1">
-                          <span className="personal-name">{ownerInfoReady ? mask.displayName(ownerPersonalInfo.name) : <Skeleton width={60} height={15} />}</span>
+                          <span className="personal-name">{ownerInfoReady ? mask.crewName(ownerPersonalInfo.name) : <Skeleton width={60} height={15} />}</span>
                           <span className="personal-separator">|</span>
                           <span className="personal-gender">{ownerInfoReady ? mask.gender(ownerPersonalInfo.gender) : <Skeleton width={16} height={15} />}</span>
                           <span className="personal-separator">|</span>
@@ -12754,7 +12754,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{ownerInfoReady ? mask.displayName(ownerPersonalInfo.name) : <Skeleton width={60} height={15} />}</span>
+                          <span className="personal-name">{ownerInfoReady ? mask.crewName(ownerPersonalInfo.name) : <Skeleton width={60} height={15} />}</span>
                           <span className="personal-separator">|</span>
                           <span className="personal-gender">{ownerInfoReady ? mask.gender(ownerPersonalInfo.gender) : <Skeleton width={16} height={15} />}</span>
                           <span className="personal-separator">|</span>
@@ -13271,7 +13271,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       </div>
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{ownerInfoReady ? mask.displayName(ownerPersonalInfo.name) : <Skeleton width={60} height={15} />}</span>
+                          <span className="personal-name">{ownerInfoReady ? mask.crewName(ownerPersonalInfo.name) : <Skeleton width={60} height={15} />}</span>
                           <span className="personal-separator">|</span>
                           <span className="personal-gender">{ownerInfoReady ? mask.gender(ownerPersonalInfo.gender) : <Skeleton width={16} height={15} />}</span>
                           <span className="personal-separator">|</span>
@@ -13746,7 +13746,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{ownerInfoReady ? mask.displayName(ownerPersonalInfo.name) : <Skeleton width={60} height={15} />}</span>
+                          <span className="personal-name">{ownerInfoReady ? mask.crewName(ownerPersonalInfo.name) : <Skeleton width={60} height={15} />}</span>
                           <span className="personal-separator">|</span>
                           <span className="personal-gender">{ownerInfoReady ? mask.gender(ownerPersonalInfo.gender) : <Skeleton width={16} height={15} />}</span>
                           <span className="personal-separator">|</span>
@@ -14413,7 +14413,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       </div>
                       <div className="personal-info">
                         <div className="personal-row-1">
-                          <span className="personal-name">{ownerInfoReady ? mask.displayName(ownerPersonalInfo.name) : <Skeleton width={60} height={15} />}</span>
+                          <span className="personal-name">{ownerInfoReady ? mask.crewName(ownerPersonalInfo.name) : <Skeleton width={60} height={15} />}</span>
                           <span className="personal-separator">|</span>
                           <span className="personal-gender">{ownerInfoReady ? mask.gender(ownerPersonalInfo.gender) : <Skeleton width={16} height={15} />}</span>
                           <span className="personal-separator">|</span>

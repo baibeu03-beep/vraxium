@@ -13,6 +13,7 @@ import {
   maskPeriod,
   maskAge,
   maskDisplayName,
+  maskCrewName,
 } from '@/lib/dataMasking';
 import { isDemoMode as checkDemoMode } from '@/utils/isDemoMode';
 
@@ -51,6 +52,8 @@ export function useDataMasking() {
     period: (v: string | null | undefined) => v || '-',
     age: (v: string | number | null | undefined) => String(v ?? '-'),
     displayName: (v: string | null | undefined) => v || '-',
+    // 크루 이름 — 어드민은 원본 그대로(isLoggedIn=true 로 전달).
+    crewName: (v: string | null | undefined) => maskCrewName(v, true),
     gender: (v: string | null | undefined) => v || '-',
   };
 
@@ -70,6 +73,10 @@ export function useDataMasking() {
     period: (v: string | null | undefined) => skipMask ? (v || '-') : maskPeriod(v),
     age: (v: string | number | null | undefined) => skipMask ? String(v ?? '-') : maskAge(v),
     displayName: (v: string | null | undefined) => skipMask ? (v || '-') : maskDisplayName(v),
+    // 크루 이름 — 로그인/데모면 원본, 비로그인이면 마지막 글자만 마스킹(공용 maskCrewName).
+    //   백엔드 /api/crews 가 이미 비로그인 응답에서 마스킹하지만, 표시 컴포넌트도 동일 공통 함수를
+    //   경유시켜 이중 방어 + 단일 규칙을 보장한다(idempotent 라 이미 마스킹된 값도 안전).
+    crewName: (v: string | null | undefined) => maskCrewName(v, skipMask),
     // 성별 — 비로그인은 비공개('-'). 로그인/데모는 원문. (부분 마스킹이 의미없는 1글자 필드라 전체 가림)
     gender: (v: string | null | undefined) => skipMask ? (v || '-') : '-',
   };

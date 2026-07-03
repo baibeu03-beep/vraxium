@@ -4227,7 +4227,7 @@ const Cluster4Content = () => {
                           <div className="personal-row-1">
                             {/* 비로그인 마스킹 — 카드(reviewer)와 동일한 useDataMasking 규칙 사용.
                                 로그인/데모 시 mask.* 가 raw 반환 → 기존 표시 유지. */}
-                            <span className="personal-name">{mask.displayName(pi.name)}</span>
+                            <span className="personal-name">{mask.crewName(pi.name)}</span>
                             <span className="personal-separator">|</span>
                             <span className="personal-gender">{pi.gender || "-"}</span>
                             <span className="personal-separator">|</span>
@@ -4592,7 +4592,7 @@ const Cluster4Content = () => {
                             <span className="personal-name">
                               {isDemoMode
                                 ? (session?.user?.name || demoUserName || "-")
-                                : mask.displayName(pi.name)}
+                                : mask.crewName(pi.name)}
                             </span>
                             <span className="personal-separator">|</span>
                             <span className="personal-gender">{isDemoMode ? "-" : (pi.gender || "-")}</span>

@@ -2506,7 +2506,7 @@ const Cluster2Content = () => {
                 <div className="quote-author">
                   {quoteAuthorPhoto && <img src={quoteAuthorPhoto} alt="" />}
                   <div className="author-info">
-                    <span className="author-name">{sloganAuthorName || (!urlUserId ? session?.user?.name : "") || "Unknown"}</span>
+                    <span className="author-name">{(sloganAuthorName || (!urlUserId ? session?.user?.name : "")) ? mask.crewName(sloganAuthorName || (!urlUserId ? session?.user?.name : "")) : "Unknown"}</span>
                     <span className="author-role">{sloganData.slogan2.content ? sloganData.slogan2.option : SECTION2_SLOGAN_DEFAULTS.slogans[1].option}</span>
                   </div>
                 </div>
@@ -2578,7 +2578,7 @@ const Cluster2Content = () => {
                 <div className="quote-author">
                   {quoteAuthorPhoto && <img src={quoteAuthorPhoto} alt="" />}
                   <div className="author-info">
-                    <span className="author-name">{sloganAuthorName || (!urlUserId ? session?.user?.name : "") || "Unknown"}</span>
+                    <span className="author-name">{(sloganAuthorName || (!urlUserId ? session?.user?.name : "")) ? mask.crewName(sloganAuthorName || (!urlUserId ? session?.user?.name : "")) : "Unknown"}</span>
                     <span className="author-role">{sloganData.slogan3.content ? sloganData.slogan3.option : SECTION2_SLOGAN_DEFAULTS.slogans[2].option}</span>
                   </div>
                 </div>

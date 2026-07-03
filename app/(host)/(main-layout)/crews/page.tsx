@@ -822,7 +822,7 @@ function CrewsContent() {
                             {crew.profileImg ? (
                               <img
                                 src={crew.profileImg}
-                                alt={crew.name}
+                                alt={mask.crewName(crew.name)}
                                 loading="lazy"
                                 decoding="async"
                                 style={{ width: "100%", height: "100%", objectFit: "cover" }}
@@ -866,7 +866,7 @@ function CrewsContent() {
                                     {crew.profileImg ? (
                                       <img
                                         src={crew.profileImg}
-                                        alt={crew.name}
+                                        alt={mask.crewName(crew.name)}
                                         loading="lazy"
                                         decoding="async"
                                         style={{ width: "100%", height: "100%", objectFit: "cover" }}
@@ -878,7 +878,7 @@ function CrewsContent() {
                                       <polygon points="50 0, 100 25, 100 75, 50 100, 0 75, 0 25" />
                                     </svg>
                                   </span>
-                                  <span className="text-sm fw-6">{crew.name}</span>
+                                  <span className="text-sm fw-6">{mask.crewName(crew.name)}</span>
                                 </Link>
                               </div>
                               <div className="author-title">

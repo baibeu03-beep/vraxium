@@ -2603,7 +2603,7 @@ const Sidebar = () => {
                     >
                       <Image src="/images/0/cluster 1/small icon/Chevron_Right_MD.png" alt="" width={18} height={18} />
                     </span>
-                    {mask.displayName(currentProfile.name)} <span className="name-eng">{mask.displayName(currentProfile.nameEng)}</span>
+                    {mask.crewName(currentProfile.name)} <span className="name-eng">{mask.crewName(currentProfile.nameEng)}</span>
                   </h1>
 
                   <div className="resume-details">

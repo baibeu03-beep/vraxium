@@ -15,6 +15,7 @@ import { isPxRoute, isEcRoute, getThemeClass, ORGANIZATION_CONFIG } from "@/lib/
 import type { Cluster3StatsCards } from "@/lib/cluster3StatsCardsTypes";
 import { usePopup } from "@/components/ui/popup";
 import { useDemoUserMode } from "@/hooks/useDemoUserMode";
+import { useDataMasking } from "@/hooks/useDataMasking";
 import { dedupedJson, invalidateDedupe } from "@/lib/fetch-dedupe";
 import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
 import LoadingPanel from "@/components/ui/loading/LoadingPanel";
@@ -219,6 +220,8 @@ const EC_ACCENT_SOFT = ORGANIZATION_CONFIG.entertainment.accentSoft;
 const Cluster3Content = () => {
   // 세션 및 본인 프로필 여부 확인
   const { data: session, status: sessionStatus } = useSession();
+  // 크루 이름 마스킹(전역 공통) — 비로그인 프로필 열람 시 타이틀 "{이름} 님" 마지막 글자 가림.
+  const { mask } = useDataMasking();
   // Sidebar와 동일한 ProfileContext 캐시 — display_name 등 공통 프로필 정보 빠르게 접근
   const { profileData: cachedProfile } = useProfile();
   const searchParams = useSearchParams();
@@ -2989,7 +2992,7 @@ const Cluster3Content = () => {
                 <div className="channel-info-section">
                   <h4 className="channel-info-title">
                     <img src="/images/0/portfolio.png" alt="portfolio" className="title-icon" />
-                    <span className="user-name">{displayName || "크루"} 님</span>
+                    <span className="user-name">{displayName ? mask.crewName(displayName) : "크루"} 님</span>
                     <span className="channel-title-text">의 Portfolio Channel</span>
                   </h4>
                   {(() => {
@@ -3671,7 +3674,7 @@ const Cluster3Content = () => {
                   <div className="output-title-row">
                     <img src="/images/0/portfolio.png" alt="portfolio" className="title-icon" />
                     <span className="output-user-title">
-                      <span className="user-name">{displayName || "크루"} 님</span>
+                      <span className="user-name">{displayName ? mask.crewName(displayName) : "크루"} 님</span>
                       <span style={{ marginLeft: "4px", fontSize: "23px", fontWeight: 700, color: isPX ? PX_ACCENT : isEC ? EC_ACCENT : "#faab07" }}>의 Output Top 5 [{currentOutputIndex + 1}]</span>
                     </span>
                     <div className="output-period" data-field="period">
@@ -4431,7 +4434,7 @@ const Cluster3Content = () => {
                   <div className="output-title-row">
                     <img src="/images/0/portfolio.png" alt="portfolio" className="title-icon" />
                     <span className="output-user-title">
-                      <span className="user-name">{displayName || "크루"} 님</span>
+                      <span className="user-name">{displayName ? mask.crewName(displayName) : "크루"} 님</span>
                       <span style={{ marginLeft: "4px", fontSize: "23px", fontWeight: 700, color: isPX ? PX_ACCENT : isEC ? EC_ACCENT : "#faab07" }}>의 Output Detail 10 [{currentDetailIndex + 1}]</span>
                     </span>
                     <div className="output-period" data-field="period">

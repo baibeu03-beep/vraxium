@@ -219,6 +219,29 @@ export function maskDisplayName(value: string | null | undefined): string {
 }
 
 /**
+ * 크루 이름 마스킹 (전역 공통 함수)
+ * - 규칙: 비로그인 사용자에게는 **마지막 글자 1개만** '*' 로 가린다. 접두 이니셜 포함 앞부분은 그대로.
+ *     · "T윤서진" → "T윤서*"  · "윤서진" → "윤서*"  · "김민수" → "김민*"  · "T김민수" → "T김민*"
+ * - isLoggedIn=true(로그인/데모/어드민): 원본 전체 이름 그대로 반환.
+ * - idempotent: 이미 마스킹된 값("김민*")을 다시 넣어도 동일 결과 → 백엔드 DTO 마스킹 후
+ *   프론트에서 한 번 더 통과시켜도 안전(방어적 이중 적용 허용).
+ * - 빈값/'-' 은 '-' 로, 1글자 이름은 '*' 로.
+ * - 문자열 인덱싱 기반(maskDisplayName 과 동일 스타일) — 한글/영문 이름 기준 마지막 1글자만 가린다.
+ */
+export function maskCrewName(value: string | null | undefined, isLoggedIn: boolean): string {
+  if (value == null) return '-';
+  const str = String(value);
+  if (isLoggedIn) {
+    return str.trim() === '' ? '-' : str;
+  }
+  const trimmed = str.trim();
+  if (trimmed === '' || trimmed === '-') return '-';
+  const len = trimmed.length;
+  if (len === 1) return '*';
+  return trimmed.slice(0, len - 1) + '*';
+}
+
+/**
  * 서버 사이드 프로필 마스킹
  * - isAdmin: 원본 그대로
  * - canSeePersonal (앰배서더/팀장/에이전트/파트장이 자기 권한 범위 타겟을 볼 때): 원본 그대로

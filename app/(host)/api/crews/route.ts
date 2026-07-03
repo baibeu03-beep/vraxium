@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { maskCrewName } from "@/lib/dataMasking";
 import { createAdminClient } from "@/lib/supabase-server";
 import { resolveMembershipDisplay } from "@/lib/membership";
 import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confirmed-success-weeks";
@@ -411,6 +414,13 @@ export async function GET(request: Request) {
     const qaBlock = await enforceQaMode(request);
     if (qaBlock) return qaBlock;
 
+    // 이름 마스킹 게이트 — 비로그인 공개 응답에는 원본 이름을 절대 싣지 않는다(요구: 공개 API DTO
+    //   단계 마스킹). 로그인(어드민/데모 어드민 세션 포함)이면 원본 전체 이름을 그대로 내려준다.
+    //   ⚠️ DTO shape 은 불변(name 필드 그대로) — 로그인/비로그인/데모 경로 모두 동일 구조,
+    //      값만 달라진다(요구 6). 내부 필터/정렬은 raw display_name 을 그대로 사용(아래 filterable).
+    const session = await getServerSession(authOptions);
+    const isLoggedIn = !!session;
+
     const { searchParams } = new URL(request.url);
     const excludeUserId = searchParams.get("excludeUserId");
     const orgParam = searchParams.get("org");
@@ -631,8 +641,10 @@ export async function GET(request: Request) {
 
     // 7) Merge (페이지 행만). DTO shape 불변 — demoUserId/일반 동일(요구 9). 정렬은 위
     //    스냅샷 기준 순서 유지(표시 approvedWeeks 는 live).
-    const data = pageProfiles.map((p) =>
-      mergeRow(
+    //    name 은 표시용 displayName — 비로그인이면 공용 maskCrewName 으로 마지막 글자만 가려
+    //    내려보낸다(원본 이름은 응답에 남기지 않음). 별도 원본 name 필드는 추가하지 않는다.
+    const data = pageProfiles.map((p) => {
+      const row = mergeRow(
         p,
         viewMap.get(p.user_id) ?? null,
         eduMap.get(p.user_id) ?? null,
@@ -642,8 +654,9 @@ export async function GET(request: Request) {
         confirmedWeeksByUser?.get(p.user_id) ?? null,
         growthResolutionMap?.get(p.user_id) ?? null,
         season?.statusByUser.get(p.user_id) ?? null,
-      ),
-    );
+      );
+      return { ...row, name: maskCrewName(row.name, isLoggedIn) };
+    });
 
     return NextResponse.json({
       success: true,
