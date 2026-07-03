@@ -32,145 +32,168 @@ const menu = [
   },
   {
     id: "2",
-    title: "About Us",
-    url: "/about-us",
+    title: "Cluv", // 기존 About Us → Cluv (조직별 /crews)
+    submenus: [
+      {
+        id: "2.1",
+        title: "엔터테인먼트/미디어 클럽, 엥크레",
+        url: "/crews/?org=encre",
+      },
+      {
+        id: "2.2",
+        title: "마케팅/퍼포먼스 클럽, 오랑캐",
+        url: "/crews/?org=oranke",
+      },
+      {
+        id: "2.3",
+        title: "기획/컨설팅 클럽, 팔랑크스",
+        url: "/crews/?org=phalanx",
+      },
+    ],
   },
   {
     id: "3",
-    title: "Games",
+    title: "League", // 기존 Games → League (조직별 /weekly-ranking)
     submenus: [
       {
         id: "3.1",
-        title: "Games",
-        url: "/games",
+        title: "엔터테인먼트/미디어 클럽, 엥크레",
+        url: "/weekly-ranking/?org=encre",
       },
       {
         id: "3.2",
-        title: "Game Details",
-        url: "/games/1",
+        title: "마케팅/퍼포먼스 클럽, 오랑캐",
+        url: "/weekly-ranking/?org=oranke",
+      },
+      {
+        id: "3.3",
+        title: "기획/컨설팅 클럽, 팔랑크스",
+        url: "/weekly-ranking/?org=phalanx",
       },
     ],
   },
-  {
-    id: "4",
-    title: "Tournaments",
-    submenus: [
-      {
-        id: "4.1",
-        title: "Tournaments",
-        url: "/tournaments",
-      },
-      {
-        id: "4.2",
-        title: "Tournament Details",
-        url: "/tournaments/1",
-      },
-      {
-        id: "4.3",
-        title: "Leaderboard",
-        url: "/leaderboard",
-      },
-      {
-        id: "4.4",
-        title: "Badges",
-        url: "/badges",
-      },
-    ],
-  },
-  {
-    id: "5",
-    title: "Shop",
-    submenus: [
-      {
-        id: "5.1",
-        title: "NFT Marketplace",
-        url: "/shop",
-      },
-      {
-        id: "5.2",
-        title: "Product Details",
-        url: "/shop/1",
-      },
-      {
-        id: "5.3",
-        title: "Explore Packages",
-        url: "/package",
-      },
-      {
-        id: "5.4",
-        title: "Single Package",
-        url: "/package/2",
-      },
-      {
-        id: "5.5",
-        title: "Checkout",
-        url: "/checkout",
-      },
-    ],
-  },
-  {
-    id: "6",
-    title: "Pages",
-    submenus: [
-      {
-        id: "6.1",
-        title: "Faq",
-        url: "/faq",
-      },
-      {
-        id: "6.3",
-        title: "Profile",
-        submenus: [
-          {
-            id: "6.3.1",
-            title: "Profile",
-            url: "/profile",
-          },
-          {
-            id: "6.3.2",
-            title: "Inbox",
-            url: "/chat",
-          },
-          {
-            id: "6.3.3",
-            title: "View As Public",
-            url: "/public-profile",
-          },
-        ],
-      },
-      {
-        id: "6.4",
-        title: "Blog",
-        submenus: [
-          {
-            id: "6.4.1",
-            title: "Our Blog",
-            url: "/blog",
-          },
-          {
-            id: "6.4.2",
-            title: "Blog Details",
-            url: "/blog/1",
-          },
-        ],
-      },
-      {
-        id: "6.5",
-        title: "Sign In",
-        url: "/sign-in",
-      },
-      {
-        id: "6.6",
-        title: "Create Account",
-        url: "/sign-up",
-      },
-    ],
-  },
-  {
-    id: "7",
-    title: "Contact Us",
-    url: "/contact-us",
-  },
+  // ===== 아래 메뉴는 나중에 복구하기 위해 주석 처리 (삭제 금지) =====
+  // {
+  //   id: "4",
+  //   title: "Tournaments",
+  //   submenus: [
+  //     {
+  //       id: "4.1",
+  //       title: "Tournaments",
+  //       url: "/tournaments",
+  //     },
+  //     {
+  //       id: "4.2",
+  //       title: "Tournament Details",
+  //       url: "/tournaments/1",
+  //     },
+  //     {
+  //       id: "4.3",
+  //       title: "Leaderboard",
+  //       url: "/leaderboard",
+  //     },
+  //     {
+  //       id: "4.4",
+  //       title: "Badges",
+  //       url: "/badges",
+  //     },
+  //   ],
+  // },
+  // {
+  //   id: "5",
+  //   title: "Shop",
+  //   submenus: [
+  //     {
+  //       id: "5.1",
+  //       title: "NFT Marketplace",
+  //       url: "/shop",
+  //     },
+  //     {
+  //       id: "5.2",
+  //       title: "Product Details",
+  //       url: "/shop/1",
+  //     },
+  //     {
+  //       id: "5.3",
+  //       title: "Explore Packages",
+  //       url: "/package",
+  //     },
+  //     {
+  //       id: "5.4",
+  //       title: "Single Package",
+  //       url: "/package/2",
+  //     },
+  //     {
+  //       id: "5.5",
+  //       title: "Checkout",
+  //       url: "/checkout",
+  //     },
+  //   ],
+  // },
+  // {
+  //   id: "6",
+  //   title: "Pages",
+  //   submenus: [
+  //     {
+  //       id: "6.1",
+  //       title: "Faq",
+  //       url: "/faq",
+  //     },
+  //     {
+  //       id: "6.3",
+  //       title: "Profile",
+  //       submenus: [
+  //         {
+  //           id: "6.3.1",
+  //           title: "Profile",
+  //           url: "/profile",
+  //         },
+  //         {
+  //           id: "6.3.2",
+  //           title: "Inbox",
+  //           url: "/chat",
+  //         },
+  //         {
+  //           id: "6.3.3",
+  //           title: "View As Public",
+  //           url: "/public-profile",
+  //         },
+  //       ],
+  //     },
+  //     {
+  //       id: "6.4",
+  //       title: "Blog",
+  //       submenus: [
+  //         {
+  //           id: "6.4.1",
+  //           title: "Our Blog",
+  //           url: "/blog",
+  //         },
+  //         {
+  //           id: "6.4.2",
+  //           title: "Blog Details",
+  //           url: "/blog/1",
+  //         },
+  //       ],
+  //     },
+  //     {
+  //       id: "6.5",
+  //       title: "Sign In",
+  //       url: "/sign-in",
+  //     },
+  //     {
+  //       id: "6.6",
+  //       title: "Create Account",
+  //       url: "/sign-up",
+  //     },
+  //   ],
+  // },
+  // {
+  //   id: "7",
+  //   title: "Contact Us",
+  //   url: "/contact-us",
+  // },
+  // ===== 주석 처리 끝 =====
 ];
 
 const Header = () => {

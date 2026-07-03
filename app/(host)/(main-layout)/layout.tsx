@@ -3,7 +3,8 @@ import RouteThemeShell from "@/components/shared/RouteThemeShell";
 import Header from "@/components/shared/Header";
 import Sidebar from "@/components/shared/Sidebar";
 import QaModeGuard from "@/components/common/QaModeGuard";
-import QaDeployBanner from "@/components/common/QaDeployBanner";
+// QA 안내 배너 UI 는 노출하지 않음(복구 대비 주석 유지). QA 가드/필터링 기능은 그대로 유지.
+// import QaDeployBanner from "@/components/common/QaDeployBanner";
 import { getDeployMode } from "@/lib/userScopeShared";
 
 export default function RootLayout({
@@ -21,7 +22,8 @@ export default function RootLayout({
       <Sidebar />
       <div className="nftg-layout">
         <Header />
-        {isQaDeploy ? <QaDeployBanner /> : null}
+        {/* QA 안내 배너 UI 숨김(복구 대비 주석 유지) — QA 가드/데이터 필터링은 아래 유지 */}
+        {/* {isQaDeploy ? <QaDeployBanner /> : null} */}
         {isQaDeploy ? <QaModeGuard>{children}</QaModeGuard> : children}
         <Footer />
       </div>

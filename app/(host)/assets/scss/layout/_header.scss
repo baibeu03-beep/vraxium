@@ -131,6 +131,18 @@
       transition: var(--transition);
       z-index: -1;
     }
+    // hover 브리지: 부모 라벨과 서브메뉴 사이 gap 을 투명 영역으로 메워
+    // 마우스가 대각선으로 이동해도 hover 가 끊기지 않게 한다(li 전체+서브메뉴를 하나의 hover 영역으로).
+    // 서브메뉴가 열렸을 때만 pointer-events:all 이 상속되므로 닫힌 상태에선 클릭을 막지 않는다.
+    &::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: -24px;
+      height: 24px;
+      background: transparent;
+    }
 
     li {
       &:nth-last-of-type(1) {
@@ -206,6 +218,15 @@
       left: -5px;
       top: 17px;
       box-shadow: -2px 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    // 중첩 서브메뉴는 오른쪽으로 열리므로 hover 브리지도 왼쪽 축으로 보정.
+    &::after {
+      top: 0;
+      bottom: 0;
+      left: -24px;
+      right: auto;
+      width: 24px;
+      height: auto;
     }
   }
 
