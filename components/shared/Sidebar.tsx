@@ -1,5 +1,4 @@
 "use client";
-import logo from "@/public/images/0/header-logo.png";
 import one from "@/public/images/sidebar/one.png";
 import two from "@/public/images/sidebar/two.png";
 import three from "@/public/images/sidebar/three.png";
@@ -117,7 +116,7 @@ const Sidebar = () => {
             <div className="sidebar__wrapper">
               <div className="sidebar__widget">
                 <Link href="/" className="sidebar__logo not-cursor" aria-label="home page" title="logo">
-                  <Image src={logo} alt="Logo" 
+                  <Image src="/images/logo_blacksmith.png" alt="Blacksmith Logo"
                     className="w-16 h-16 left-0 top-[4px] absolute"
                     width={64} height={64} />
                 </Link>

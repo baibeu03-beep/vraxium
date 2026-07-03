@@ -1,5 +1,4 @@
 "use client";
-import logo from "@/public/images/0/header-logo.png";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -261,7 +260,7 @@ const Header = () => {
               <nav className="navbar p-0">
                 <div className="navbar__logo d-none">
                   <Link href="/" aria-label="home page" title="logo" className="not-cursor">
-                    <Image src={logo} alt="Image" width={77} height={77} />
+                    <Image src="/images/logo_blacksmith.png" alt="Blacksmith Logo" width={77} height={77} />
                   </Link>
                 </div>
                 <div className="navbar__menu">
@@ -378,7 +377,7 @@ const Header = () => {
             <div className="mobile-menu__header nav-fade">
               <div className="logo">
                 <Link href="/" aria-label="home page" title="logo">
-                  <Image src={logo} alt="Image" width={77} height={77} />
+                  <Image src="/images/logo_blacksmith.png" alt="Blacksmith Logo" width={77} height={77} />
                 </Link>
               </div>
               <button onClick={() => setMobileMenu(false)} aria-label="close mobile menu" className="close-mobile-menu">
