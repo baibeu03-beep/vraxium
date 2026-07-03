@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { maskCrewName } from "@/lib/dataMasking";
 import { createAdminClient } from "@/lib/supabase-server";
 import { resolveMembershipDisplay } from "@/lib/membership";
+import { resolveResumeClassLabel } from "@/lib/crewClassLabel";
 import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confirmed-success-weeks";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import { resolveUserScopeFromParams } from "@/lib/userScope";
@@ -36,7 +37,8 @@ interface UserProfileRow {
   current_team_name: string | null;
   current_part_name: string | null;
   // 직급/역할 코드(crew/team_leader/part_leader/agent/ambassador/super_admin/null).
-  //   → 클래스명 라벨(정규/팀장/파트장 …)로 변환해 DTO className 으로 노출(resolveClassName).
+  //   → 표시용 클래스명 라벨(일반(정규)/심화(파트장)/운영진(팀장) …)로 변환해 DTO className 으로
+  //     노출(resolveResumeClassLabel, 이력서 카드와 동일 라벨 SoT).
   role: string | null;
 }
 
@@ -314,32 +316,15 @@ function stripSeasonRestSentinel(value: string | null | undefined): string | nul
   return value.trim() === SEASON_REST_TEAM_SENTINEL ? null : value;
 }
 
-// 클래스명(직급/역할 클래스) 라벨 resolver.
-//   source = user_profiles.role (어드민/멤버 관리에서 쓰는 직급 코드와 동일 SoT).
-//   멤버 관리 표기와 동일하게 정규/팀장/파트장 … 으로 매핑한다.
-//     · crew         → 정규
-//     · team_leader  → 팀장
-//     · part_leader  → 파트장
-//     · agent        → 에이전트
-//     · ambassador   → 앰배서더
-//   super_admin(관리자 계정)·null·미지 코드 → null (크루 클래스 아님 → 배지 미표시, 요구 5).
-//   ⚠️ role 코드→한글 라벨은 lib/cluster4-role-label(등급 라벨: 일반/심화…)과 다른, 멤버 관리
-//      직급 라벨 축(정규/팀장/파트장)이다. 라벨 문구 조정은 이 맵 한 곳만 바꾸면 된다.
-const ROLE_CLASS_LABELS: Record<string, string> = {
-  crew: "정규",
-  crew_regular: "정규",
-  crew_normal: "정규",
-  team_leader: "팀장",
-  part_leader: "파트장",
-  agent: "에이전트",
-  ambassador: "앰배서더",
-};
-function resolveClassName(role: string | null | undefined): string | null {
-  if (typeof role !== "string") return null;
-  const key = role.trim();
-  if (key === "" || key === "-") return null;
-  return ROLE_CLASS_LABELS[key] ?? null;
-}
+// 클래스명(표시용 역할/직급 라벨) resolver.
+//   source = user_profiles.role. 라벨 SoT = lib/crewClassLabel.RESUME_ROLE_CLASS_LABELS
+//   (이력서 카드 home-career/Sidebar 활동이력 역할 라벨과 동일 정의소를 공유):
+//     · crew        → 일반(정규)
+//     · part_leader → 심화(파트장)
+//     · agent       → 심화(에이전트)
+//     · team_leader → 운영진(팀장)
+//     · ambassador  → 운영진(앰배서더)
+//   super_admin·null·미지 코드 → null (배지 미표시, 요구 5).
 
 function toAge(birthDate: string | null | undefined) {
   if (!birthDate) return "-";
@@ -401,10 +386,10 @@ function mergeRow(
     //   rest 사용자는 '-' 고정(isSeasonRest), active 도 '시즌전체휴식' 센티넬은 제거(위 계산).
     team: teamDisplay ?? "-",
     part: partDisplay ?? "-",
-    // 클래스명(직급/역할 클래스 — 정규/팀장/파트장/에이전트/앰배서더) — user_profiles.role.
-    //   팀명 배지 옆에 동일 디자인으로 표시(프론트). 값이 비면(null) 프론트가 배지를 숨긴다.
-    //   ⚠️ 팀/파트 같은 rest 마스킹 대상 아님 — 직급은 시즌 휴식과 무관한 정적 속성이라 그대로 노출.
-    className: resolveClassName(profile.role),
+    // 클래스명(표시용 역할 라벨 — 일반(정규)/심화(파트장)/운영진(팀장) …) — user_profiles.role.
+    //   이력서 카드와 동일 라벨 SoT(resolveResumeClassLabel). 팀명 배지 옆 동일 디자인 표시(프론트).
+    //   값이 비면(null) 프론트가 배지를 숨긴다. rest 마스킹 대상 아님(직급은 시즌 휴식과 무관).
+    className: resolveResumeClassLabel(profile.role),
     nickname: profile.vision ?? view?.vision ?? view?.nickname ?? "-",
     // 한줄소개 체인(profile_tagline → profile_keyword → vision) — 연계동료/평판 카드의
     // "닉네임" 칸 표시값과 동일 규칙(personProfiles.buildPersonProfileMap mirror). additive 필드.

@@ -17,6 +17,7 @@ import { usePopup } from "@/components/ui/popup";
 import { logEvent } from "@/utils/blackScreenDiagnostics";
 import koreaRegionsData from "@/data/korea-regions.json";
 import { isPxRoute, isEcRoute, getThemeClass, withPxRoute, getOrgConfigFromPathname, getOrgMascotSrc, getOrgStampSrc } from "@/lib/cluster-route";
+import { RESUME_ROLE_CLASS_LABELS } from "@/lib/crewClassLabel";
 import { LoadingPanel } from "@/components/ui/loading/LoadingPanel";
 import { progressStatusToSeasonKey, RESUME_SEASON_BADGE_TEXT, type SeasonStatusKey } from "@/lib/cluster4-status-label";
 
@@ -397,24 +398,9 @@ const Sidebar = () => {
     winter: "겨울",
   };
 
-  // 역할 한글 변환
-  const roleKorean: { [key: string]: string } = {
-    crew: "일반(정규)",
-    crew_regular: "일반(정규)",
-    crew_normal: "일반(정규)",
-    crew_advanced: "심화(파트장)",
-    crew_partleader: "심화(파트장)",
-    crew_advanced_part_leader: "심화(파트장)",
-    part_leader: "심화(파트장)",
-    crew_agent: "심화(에이전트)",
-    crew_advanced_agent: "심화(에이전트)",
-    admin: "운영진(앰베서더)",
-    admin_team_leader: "운영진(팀장)",
-    crew_team_leader: "운영진(팀장)",
-    admin_ambassador: "운영진(앰배서더)",
-    crew_ambassador: "운영진(앰배서더)",
-    operations_ambassador: "운영진(앰배서더)",
-  };
+  // 역할 한글 변환 — 라벨 SoT 는 lib/crewClassLabel(RESUME_ROLE_CLASS_LABELS).
+  //   /crews 크루 카드 클래스 배지와 동일 정의소를 공유한다(라벨 문구 수정은 그 파일 한 곳).
+  const roleKorean = RESUME_ROLE_CLASS_LABELS;
 
   // 활동 이력(activity-line) 표시용 정규화.
   // 백엔드 DTO 필드명/시즌 시스템 편차(두 시즌 시스템: seasons(uuid) vs season_definitions)를
