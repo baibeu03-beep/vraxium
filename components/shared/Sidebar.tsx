@@ -1,8 +1,5 @@
 "use client";
-import one from "@/public/images/sidebar/one.png";
-import two from "@/public/images/sidebar/two.png";
-import three from "@/public/images/sidebar/three.png";
-import Image, { StaticImageData } from "next/image";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useMemo, useState, useEffect } from "react";
@@ -16,19 +13,23 @@ import { appendDemoQuery } from "@/lib/appendDemoQuery";
 // Define the type for the game object
 interface Game {
   id: number;
-  image: StaticImageData;
+  image: string;
   href: string;
 }
+// 좌측 네비게이션 육각형 조직 아이콘 = side_*.png 전용.
+//   EC(/index-two-ec)=side_EC · OK(/index-two-ok)=side_OK · PX(/index-two-px)=side_PX.
+//   ⚠️ 이 아이콘엔 금장_*(getOrgMascotSrc / 데이터 로딩 UI 앰블럼)를 절대 쓰지 않는다 — 두 이미지
+//      세트는 사용 위치가 섞이면 안 된다(로딩 UI=금장, 좌측 네비 육각형=side).
 const games: Game[] = [
-  { id: 1, image: one, href: "/index-two-ec" },
-  { id: 2, image: two, href: "/index-two-ok" },
-  { id: 3, image: three, href: "/index-two-px" },
-  { id: 4, image: one, href: "/index-two-ec" },
-  { id: 5, image: two, href: "/index-two-ok" },
-  { id: 6, image: three, href: "/index-two-px" },
-  { id: 7, image: one, href: "/index-two-ec" },
-  { id: 8, image: two, href: "/index-two-ok" },
-  { id: 9, image: three, href: "/index-two-px" },
+  { id: 1, image: "/images/0/side_EC.png", href: "/index-two-ec" },
+  { id: 2, image: "/images/0/side_OK.png", href: "/index-two-ok" },
+  { id: 3, image: "/images/0/side_PX.png", href: "/index-two-px" },
+  { id: 4, image: "/images/0/side_EC.png", href: "/index-two-ec" },
+  { id: 5, image: "/images/0/side_OK.png", href: "/index-two-ok" },
+  { id: 6, image: "/images/0/side_PX.png", href: "/index-two-px" },
+  { id: 7, image: "/images/0/side_EC.png", href: "/index-two-ec" },
+  { id: 8, image: "/images/0/side_OK.png", href: "/index-two-ok" },
+  { id: 9, image: "/images/0/side_PX.png", href: "/index-two-px" },
 ];
 // 동물별 organization slug 매핑.
 // 고슴도치(/index-two-px) → phalanx · 사슴(/index-two-ec) → encre · 호랑이(/index-two-ok) → oranke
@@ -180,7 +181,9 @@ const Sidebar = () => {
                           {/* 동물 랜딩(index-two-*)은 목적지가 org 를 경로로 결정하므로 carryOrg:false
                               — 현재 org 를 실으면 목적지 org 와 충돌. demoUserId 등만 유지. */}
                           <Link href={appendDemoQuery(game.href, searchParams, { carryOrg: false })} aria-label="open landing page" title="open landing page">
-                            <Image src={game.image} alt="Image" />
+                            {/* 좌측 네비 조직 아이콘 = side_*.png(로딩 UI 금장과 분리). CSS(.sidebar--images a img)
+                                가 width/height 100% + object-fit:cover + object-position:center + hexagon clip 처리. */}
+                            <img src={game.image} alt="조직 아이콘" loading="lazy" decoding="async" />
                             <svg viewBox="-3 -3 106 106" xmlns="http://www.w3.org/2000/svg" fill="none" className="hexagon-border">
                               <polygon points="50 0, 100 25, 100 75, 50 100, 0 75, 0 25" />
                             </svg>

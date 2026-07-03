@@ -139,12 +139,25 @@
       gap: 0px;
       position: relative;
       display: inline-block;
+      // 육각형 컨테이너를 직접 클리핑(overflow+clip-path) → 내부 이미지(자체 육각 프레임 포함)가
+      // 육각형 경계 밖으로 튀어나오지 않는다. clip 은 컨테이너가 담당하고 img 는 채우기만.
+      overflow: hidden;
+      clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
 
       img {
+        // 육각형 안을 빈틈없이 채움: 절대배치 + 중앙정렬 + cover(비율 유지, 찌그러짐 없음).
+        // scale(1.2): side_*.png 는 '원형 메달 + 정사각 여백(모서리 어두움)' 구조라 그대로는
+        //   원형이 육각형 꼭짓점까지 못 닿아 배경이 비친다. 1.2배 확대로 원형 로고 바깥쪽이
+        //   육각형 안쪽 경계까지 차도록 보정(브라우저 육안 검증값 — 1.15 여백남음/1.25 과크롭).
+        //   컨테이너 overflow+clip-path 가 초과분을 육각형으로 잘라낸다.
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) scale(1.2);
         width: 100%;
         height: 100%;
-        clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-        z-index: -1;
+        object-fit: cover;
+        object-position: center;
       }
 
       .hexagon-shape {
