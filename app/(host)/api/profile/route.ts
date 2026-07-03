@@ -1554,12 +1554,33 @@ export async function GET(request: NextRequest) {
       return countConfirmedSuccessWeeks(wsRowsFull, weekMetaByStart);
     })();
 
-    // 일정 신뢰도: i = (a+c)/(h-d) * 100, 올림
+    // 일정 신뢰도 로컬 계산(레거시): i = (a+c)/(h-d) * 100, 올림.
+    // ⚠ 표시에는 사용하지 않는다 — 아래 admin 단일 SoT 그래프트로 대체(진단 로그용으로만 보존).
     const totalWeeks = approvedWeeksCount + unapprovedWeeksCount + restWeeksCount + clubBreakWeeksCount; // h
     const reliabilityDenominator = totalWeeks - clubBreakWeeksCount; // h - d
     let calculatedReliabilityRate = 0;
     if (reliabilityDenominator > 0) {
       calculatedReliabilityRate = Math.min(100, Math.ceil(((approvedWeeksCount + restWeeksCount) / reliabilityDenominator) * 100));
+    }
+
+    // 일정 신뢰도 단일 SoT: admin getCluster1Resume.scheduleReliability.rate.
+    //   활동완료율(completionRate)·실무 4종(practicalStats)과 동일하게 어드민 canonical
+    //   (/api/cluster1/resume)에서 그래프트한다. 로컬 산식(위 calculatedReliabilityRate =
+    //   ceil((인정+휴식)/(전체−클럽휴식)×100))은 어드민 산식(scheduleReliabilityCore:
+    //   ((인정활동+사전휴식)/(물리주차−공식휴식))×100)과 달라, 같은 사용자가 이력서 카드(고객)와
+    //   클럽 결과(종합)(어드민 /admin/members 상세)에서 서로 다른 값을 보이던 근본 원인이었다
+    //   (2026-07-03: 예 — 어드민 14% vs 카드 23%). 그래프트 실패 시 completionRate/practicalStats
+    //   와 동일 정책으로 null('-' 표시) — 레거시 로컬 값으로 조용히 폴백하지 않는다.
+    const graftedReliabilityRate: number | null =
+      adminResume?.scheduleReliability &&
+      typeof adminResume.scheduleReliability.rate === "number"
+        ? adminResume.scheduleReliability.rate
+        : null;
+    if (graftedReliabilityRate === null) {
+      console.warn("[profile] admin resume graft 실패 — reliabilityRate null('-' 표시), 레거시 로컬값 미사용", {
+        hadAdminResume: Boolean(adminResume),
+        legacyLocal: calculatedReliabilityRate,
+      });
     }
 
     const finalGrowthPeriodStats = {
@@ -1571,7 +1592,7 @@ export async function GET(request: NextRequest) {
       availableSeasons: availableSeasonsCount,
       restSeasons: restSeasonsFromTable,
       approvedSeasons: approvedSeasonsFromTable,
-      reliabilityRate: calculatedReliabilityRate,
+      reliabilityRate: graftedReliabilityRate,
     };
 
     // 실무 정보 습득(info) SoT — 어드민 practicalStats.infoCount 와 동일 기준으로 통일.
