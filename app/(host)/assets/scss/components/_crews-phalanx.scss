@@ -96,26 +96,29 @@
 .phalanx-theme {
   .crews-grid {
 
+    // 기본/hover 배경 교체(요구): 기본 = 기존 hover 색(#B2FF8F), 글자도 함께 스왑(#0F4F02)해
+    // 가독성 유지. border/padding/radius/transition 은 불변.
     .crew-club-badge,
     .crew-club-badge:visited {
-      color: #ffffff !important;
-      background: rgba(30, 149, 3, 0.18) !important;
+      color: #0F4F02 !important;
+      background: #B2FF8F !important;
       border-color: rgba(178, 255, 143, 0.45) !important;
     }
 
+    // hover = 기존 기본 색(rgba(30,149,3,0.18)) + 흰 글자로 스왑.
     .crew-club-badge:hover,
     .crew-club-badge:hover:visited,
     .crew-club-badge:focus,
     .crew-club-badge:active {
-      color: #0F4F02 !important;
-      background: #B2FF8F !important;
+      color: #ffffff !important;
+      background: rgba(30, 149, 3, 0.18) !important;
       border-color: #1E9503 !important;
     }
 
     .crew-club-badge:hover *,
     .crew-club-badge:focus *,
     .crew-club-badge:active * {
-      color: #0F4F02 !important;
+      color: #ffffff !important;
     }
   }
 }
