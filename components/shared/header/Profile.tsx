@@ -1,5 +1,3 @@
-import avatar from "@/public/images/0/profile.png";
-
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
@@ -12,8 +10,8 @@ const Profile = () => {
   const [profileOpen, setProfileOpen] = useState(false);
   const isLoading = status === "loading";
 
-  const userName = session?.user?.name || "David Malan";
-  const userImage = session?.user?.image || avatar;
+  const userName = session?.user?.name || "Happy Friends";
+  const userImage = session?.user?.image || "/images/sunflower.jpg";
 
   if (isLoading) {
     return null;
@@ -22,9 +20,9 @@ const Profile = () => {
   return (
     <OutsideClickHandler onOutsideClick={() => setProfileOpen(false)}>
       <div className="profile-dropdown nftg-modal-wrapper">
-        <button onClick={() => setProfileOpen(!profileOpen)} type="button" aria-label="view profile" title="view profile" className={`open-profile nftg-open-modal ${profileOpen && "nftg-open-modal-active"}`}>
+        <button onClick={() => setProfileOpen(!profileOpen)} type="button" aria-label="Happy Friends" title="Happy Friends" className={`open-profile nftg-open-modal ${profileOpen && "nftg-open-modal-active"}`}>
           <span className="hexagon-wrapper">
-            <Image src={userImage} alt="View Profile" width={40} height={40} />
+            <Image src={userImage} alt="Happy Friends" width={40} height={40} />
             <svg viewBox="-3 -3 106 106" xmlns="http://www.w3.org/2000/svg" fill="none" className="hexagon-border">
               <polygon points="50 0, 100 25, 100 75, 50 100, 0 75, 0 25" />
             </svg>
