@@ -5,7 +5,13 @@ import { usePathname } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
 
 const ROUTE_THEME_MAP: Record<string, { accent: string; name: string }> = {
-  "/index-two": { accent: "#B2FF8F", name: "mint" },
+  // 사용자가 처음 접속하는 실제 기본 랜딩 화면(root "/") 및 /index-two 를
+  // 보라 계열 포인트 컬러로 변경. org 변형(-ec/-ok/-px)은 기존 색상 그대로 유지.
+  // root "/" 는 기존에 테마가 없어 --quaternary-color 기본값(#45f882 초록)을 그대로
+  // 노출했으므로, grape 테마를 부여해 Play Now/카드/슬라이더/사이드바/아이콘 등
+  // var(--quaternary-color) 기반 포인트 컬러를 일괄 보라(#e1c2f8/#bf7ff0)로 전환.
+  "/": { accent: "#e1c2f8", name: "grape" },
+  "/index-two": { accent: "#e1c2f8", name: "grape" },
   "/index-two-ec": { accent: "#FF98A6", name: "pink" },
   "/index-two-ok": { accent: "#FFEC8F", name: "yellow" },
   "/index-two-px": { accent: "#B2FF8F", name: "mint" },

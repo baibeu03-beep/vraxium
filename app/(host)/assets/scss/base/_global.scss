@@ -962,6 +962,14 @@ svg {
 .route-theme--mint   { --quaternary-color: #B2FF8F; --quaternary-hover: #7AE852; }
 .route-theme--pink   { --quaternary-color: #FF98A6; --quaternary-hover: #FF6B7E; }
 .route-theme--yellow { --quaternary-color: #FFEC8F; --quaternary-hover: #FFD24A; }
+// 비-org 기본 진입 화면(/index-two) 전용 보라 계열.
+// Main Color #B2FF8F → #e1c2f8, Point Color #36DA60 → #bf7ff0.
+// org 변형(mint/pink/yellow)은 위 정의 그대로 유지되므로 색상 회귀 없음.
+.route-theme--grape  { --quaternary-color: #e1c2f8; --quaternary-hover: #bf7ff0; }
+
+// 기본 진입 화면 content 컬럼의 하드코딩 올리브-그린 테두리(_sidebar.scss #313f11)를
+// grape 라우트에서만 다크 보라로 교체. org 라우트(mint/pink/yellow)는 #313f11 유지.
+.route-theme--grape .home-two-content { border-color: #2f2140; }
 
 // 라우트별 --primary-color override (#FAAB07 자리에 페이지 고유색 주입).
 // data-route-path attribute selector를 쓰면 mint를 공유하는 /index-two와
