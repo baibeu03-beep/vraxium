@@ -3628,7 +3628,7 @@ const Cluster4Content = () => {
                     </div>
                   </div>
                   <div className="circle-wrapper">
-                    <img src="/images/0/cluster4/icon/icon - 일정 신뢰도.png" alt="일정 신뢰도" className="circle-icon" />
+                    <img src="/images/0/cluster4/icon/icon - 일정 신뢰도.png" alt="시즌 일정 신뢰도" className="circle-icon" />
                     <div className="circle yellow">
                       <svg viewBox="0 0 100 100">
                         <circle className="bg" cx="50" cy="50" r="40" />
@@ -3637,7 +3637,9 @@ const Cluster4Content = () => {
                       <div className="percent">{voidPct(circlesView.scheduleReliability)}</div>
                     </div>
                   </div>
-                  <div className="label-main">일정 신뢰도</div>
+                  {/* 선택 시즌 스냅샷(circlesView.scheduleReliability, weekly-cards *BySeason).
+                      이력서 카드의 "누적 일정 신뢰도"(전체 기간)와 스코프가 달라 "시즌"으로 구분한다. */}
+                  <div className="label-main">시즌 일정 신뢰도</div>
                 </div>
                 <div className="circle-item">
                   <div className="label-sub">

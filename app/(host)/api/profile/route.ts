@@ -1017,12 +1017,20 @@ export async function GET(request: NextRequest) {
       return parsed;
     };
 
-    // Cluster3 주차 평균 백분위: user_grade_stats.avg_percentile 캐시 우선(admin 과 동일 SoT).
-    // 캐시 hit 시 admin 실시간 계산(/api/cluster3/club-rank 풀스캔) 호출을 아예 생략한다.
-    // 폴백(캐시 null)은 gradeStats 해석 후 lazy 하게 fetchClubRankAvgPercentile 로 처리(아래).
+    // Cluster3 주차 평균 백분위: admin canonical(/api/cluster3/club-rank)을 SoT 로 우선한다.
+    // 다른 graft 필드(practicalStats·activityCompletion)와 동일하게 admin 값을 먼저 쓰고,
+    // admin 미가용(미설정/실패/타임아웃)일 때만 user_grade_stats.avg_percentile 캐시로 폴백한다.
+    // (기존 cache-first 는 stale 캐시가 admin 값을 덮어써 이력서 카드에 옛 백분위가 남는 문제가
+    //  있었음 — 예: cache 81.5 vs admin 74.25, cache 1 vs admin 92.) cluster41 은 이 값을 읽지
+    //  않으므로 admin 풀스캔 호출을 스킵하고 캐시만(존재 시) 사용한다.
 
     // 사이드바 이력서 카드 단일 SoT — admin getCluster1Resume DTO. DB 쿼리들과 병렬 선행 호출.
     const adminResumePromise = fetchAdminCluster1Resume(request, profile.id);
+
+    // 주차 평균 백분위 admin SoT — 캐시와 무관하게 항상 선행 호출(병렬). cluster41 은 미조회.
+    const clubRankAvgPercentilePromise = isCluster41
+      ? Promise.resolve<number | null>(null)
+      : fetchClubRankAvgPercentile(request, profile.id);
 
     // 이력서 카드 medal-week-num SoT — admin stats-cards period.successWeeks (Details 카드와 동일 값).
     // cluster41 은 statsCards 프록시를 직접 호출하므로 중복 외부 호출 스킵 (club-rank 와 동일 정책).
@@ -1323,13 +1331,16 @@ export async function GET(request: NextRequest) {
       console.log("[Profile API] user_cumulative_points point row", cumulativePointUserId, cumulativePointsRes.data);
     }
     const cumulativePointDto = cumulativePointsRes.data;
-    // 품계 평균 백분위 — 캐시(user_grade_stats.avg_percentile) 우선, 캐시 null 이고 cluster41 이
-    //   아닐 때만 admin 실시간 계산으로 폴백(풀스캔 회피). cluster41 은 이 값을 읽지 않는다.
-    const cachedAvgPercentile = (gradeStats as { avg_percentile?: number | string | null } | null)?.avg_percentile;
-    const clubRankAvgPercentile =
-      cachedAvgPercentile != null
-        ? Number(cachedAvgPercentile)
-        : (isCluster41 ? null : await fetchClubRankAvgPercentile(request, profile.id));
+    // 품계 평균 백분위 — admin canonical(club-rank)을 SoT 로 우선하고, admin 미가용일 때만
+    //   user_grade_stats.avg_percentile 캐시로 폴백한다(stale 캐시가 admin 값을 덮어쓰지 않게).
+    //   cluster41 은 이 값을 읽지 않으므로 admin 호출을 스킵(위 promise=null)하고 캐시만 사용한다.
+    const cachedAvgPercentileRaw = (gradeStats as { avg_percentile?: number | string | null } | null)?.avg_percentile;
+    const cachedAvgPercentile =
+      cachedAvgPercentileRaw != null && Number.isFinite(Number(cachedAvgPercentileRaw))
+        ? Number(cachedAvgPercentileRaw)
+        : null;
+    const adminAvgPercentile = await clubRankAvgPercentilePromise;
+    const clubRankAvgPercentile = adminAvgPercentile ?? cachedAvgPercentile;
     // 이력서 카드 SoT DTO (활동완료율·실무성적). 실패 시 null → 아래에서 로컬 계산 폴백.
     const adminResume = await adminResumePromise;
     // 이력서 카드 medal-week-num — admin Details 와 동일 값. 실패 시 null → 로컬 확정 주차 카운트 폴백.
@@ -2655,8 +2666,8 @@ export async function GET(request: NextRequest) {
         endWeekInfo: growthEndWeekInfo,
       },
       gradeStats: gradeStats ? {
-        // avgPercentile: user_grade_stats.avg_percentile 캐시 우선(admin SoT 통일),
-        //   캐시 null 일 때만 /api/cluster3/club-rank 실시간 폴백(위 clubRankAvgPercentile).
+        // avgPercentile: admin canonical(/api/cluster3/club-rank) SoT 우선, admin 미가용 시에만
+        //   user_grade_stats.avg_percentile 캐시로 폴백(위 clubRankAvgPercentile).
         avgPercentile: clubRankAvgPercentile ?? 0,
         grade: gradeStats.grade || 10,
         gradeLabel: gradeStats.grade_label || '정 9품',

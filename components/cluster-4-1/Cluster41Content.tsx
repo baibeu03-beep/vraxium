@@ -1550,14 +1550,19 @@ const Cluster41Content = () => {
               const weekReputations = Array.isArray(week.weeklyReputations) ? week.weeklyReputations : [];
               const weekColleagues = Array.isArray(week.weeklyColleagues) ? week.weeklyColleagues : [];
 
-              // ── 주차 평판: reputationSummary.receivedCount/receivedLimit 단일 출처 (해당 weekId) ──
-              // 요약 부재 시에만 기존 reputationCount → 해당 주차 weeklyReputations.length → 분모 4 fallback.
+              // ── 주차 평판: 분자 = "표시 중인 평판" 개수 우선(상세 카드 Cluster4CardContent 정책) ──
+              // 분모 = receivedLimit → 정책 4. precomputed repSummary.receivedCount 는 평판 추가
+              // 직전(0)으로 stale 일 수 있어 목록↔상세가 "1/4 vs 0/4" 로 어긋났다 → 표시 배열 우선.
               const repSummary =
                 week.reputationSummary && typeof week.reputationSummary === 'object'
                   ? week.reputationSummary
                   : null;
+              // 표시 중인 평판(주차 최대 4건) — 상세 카드 displayedReputations 와 동일 source/slice.
+              const displayedReputations = weekReputations.slice(0, 4);
               const reputationCount =
-                repSummary && typeof repSummary.receivedCount === 'number' && Number.isFinite(repSummary.receivedCount)
+                displayedReputations.length > 0
+                  ? displayedReputations.length
+                  : repSummary && typeof repSummary.receivedCount === 'number' && Number.isFinite(repSummary.receivedCount)
                   ? repSummary.receivedCount
                   : typeof week.reputationCount === 'number' && Number.isFinite(week.reputationCount)
                   ? week.reputationCount
@@ -1569,21 +1574,31 @@ const Cluster41Content = () => {
                   ? week.reputationTotal
                   : 4;
 
-              // ── 명성도(FM): reputationSummary.fm 단일 출처 (해당 weekId) ──
-              // 누적 포인트(fmScore/fameScore)·count·length 금지. 요약 부재 시에만 "해당 주차" rating 합계.
+              // ── 명성도(FM): 표시 중인 평판 rating 합계 우선(상세 카드와 동일) ──
+              // 누적 포인트(fmScore/fameScore)·count·length 금지. 표시 평판 없을 때만 precomputed fm.
+              const reputationRatingsSum = displayedReputations.reduce(
+                (s, r) => s + (typeof r?.rating === 'number' ? r.rating : Number(r?.rating) || 0),
+                0,
+              );
               const fame =
-                repSummary && typeof repSummary.fm === 'number' && Number.isFinite(repSummary.fm)
+                reputationRatingsSum > 0
+                  ? reputationRatingsSum
+                  : repSummary && typeof repSummary.fm === 'number' && Number.isFinite(repSummary.fm)
                   ? repSummary.fm
-                  : weekReputations.reduce((s, r) => s + (typeof r?.rating === 'number' ? r.rating : 0), 0);
+                  : 0;
 
-              // ── 연계 동료: colleagueSummary.writtenCount/writtenLimit 단일 출처 (해당 weekId) ──
-              // 요약 부재 시에만 기존 colleagueCount → 해당 주차 weeklyColleagues.length → 분모 3 fallback.
+              // ── 연계 동료: 분자 = "표시 중인 동료" 개수 우선(상세 카드 정책), 분모 = writtenLimit → 3 ──
+              // precomputed writtenCount 는 저장 직전(0)으로 stale 가능 → 표시 배열 우선(평판과 동일).
               const colSummary =
                 week.colleagueSummary && typeof week.colleagueSummary === 'object'
                   ? week.colleagueSummary
                   : null;
+              // 표시 중인 연계 동료(주차 최대 3건) — 상세 카드 displayedColleagues 와 동일 source/slice.
+              const displayedColleagues = weekColleagues.slice(0, 3);
               const colleagueCount =
-                colSummary && typeof colSummary.writtenCount === 'number' && Number.isFinite(colSummary.writtenCount)
+                displayedColleagues.length > 0
+                  ? displayedColleagues.length
+                  : colSummary && typeof colSummary.writtenCount === 'number' && Number.isFinite(colSummary.writtenCount)
                   ? colSummary.writtenCount
                   : typeof week.colleagueCount === 'number' && Number.isFinite(week.colleagueCount)
                   ? week.colleagueCount

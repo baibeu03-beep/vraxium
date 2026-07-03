@@ -2805,7 +2805,9 @@ const Sidebar = () => {
               <div className="stat-item">
                 <div className="stat-row">
                   <span className="stat-label">
-                    <span className="stat-dot">·</span> 일정 신뢰도
+                    {/* 누적(전체 성장기간) 일정 신뢰도 = /api/profile reliabilityRate(admin scheduleReliability.rate).
+                        cluster4 area-6 의 "시즌 일정 신뢰도"(선택 시즌 스냅샷)와 스코프가 달라 라벨로 구분한다. */}
+                    <span className="stat-dot">·</span> 누적 일정 신뢰도
                   </span>
                   <span className="stat-value">
                     {hasReliabilityData ? reliabilityRate : "-"}
