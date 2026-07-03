@@ -25,8 +25,8 @@ interface Crew {
   part: string;
   nickname: string;
   club: string;
-  // 클래스명(수강/지원 클래스 — 예: Beginner/Intermediate/Advanced). /api/crews DTO 확장 필드.
-  //   서버가 user_profiles.application_grade 를 정규화(공백/"-"→null)해 내려준다.
+  // 클래스명(직급/역할 클래스 — 정규/팀장/파트장 …). /api/crews DTO 확장 필드.
+  //   서버가 user_profiles.role 을 멤버 관리 직급 라벨로 매핑해 내려준다.
   //   값이 없으면(null) 팀명 옆 클래스 배지를 렌더링하지 않는다.
   className: string | null;
   universityMajor: string;

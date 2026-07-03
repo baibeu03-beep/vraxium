@@ -35,9 +35,9 @@ interface UserProfileRow {
   birth_date: string | null;
   current_team_name: string | null;
   current_part_name: string | null;
-  // 지원/수강 등급 코드. 현 스키마상 smallint(=number) 이며 전원 null(미배정).
-  //   → 클래스명 라벨로 변환해 DTO className 으로 노출(resolveClassName).
-  application_grade: number | string | null;
+  // 직급/역할 코드(crew/team_leader/part_leader/agent/ambassador/super_admin/null).
+  //   → 클래스명 라벨(정규/팀장/파트장 …)로 변환해 DTO className 으로 노출(resolveClassName).
+  role: string | null;
 }
 
 interface CrewListViewRow {
@@ -272,7 +272,7 @@ async function fetchSeasonStatusMap(
 
 // user_profiles roster select 컬럼(identity + 학교/학과 + 팀/파트 폴백). 단일 정의소.
 const PROFILE_COLS =
-  "user_id, display_name, contact_email, profile_photo_url, vision, profile_tagline, profile_keyword, status, growth_status, organization_slug, school_name, department_name, gender, birth_date, current_team_name, current_part_name, application_grade";
+  "user_id, display_name, contact_email, profile_photo_url, vision, profile_tagline, profile_keyword, status, growth_status, organization_slug, school_name, department_name, gender, birth_date, current_team_name, current_part_name, role";
 
 function chunk<T>(arr: readonly T[], size: number): T[][] {
   const out: T[][] = [];
@@ -314,26 +314,31 @@ function stripSeasonRestSentinel(value: string | null | undefined): string | nul
   return value.trim() === SEASON_REST_TEAM_SENTINEL ? null : value;
 }
 
-// 클래스명(수강/지원 클래스) 라벨 resolver.
-//   source = user_profiles.application_grade. 현 스키마상 smallint(number) 이며 전원 null(미배정).
-//   admin 이 등급 코드(1/2/3)를 채우면 각각 Beginner/Intermediate/Advanced 로 표시한다.
-//   규칙:
-//     · null/공백/"-"        → null (프론트가 배지 숨김)
-//     · 숫자 코드(1/2/3)      → APPLICATION_GRADE_LABELS 매핑
-//     · 그 외 숫자            → null (미정의 코드는 표시하지 않음)
-//     · 이미 라벨 문자열       → 그대로 통과(향후 text 컬럼으로 바뀌어도 동작)
-//   ⚠️ 숫자↔라벨 매핑(1=입문 … 3=심화)은 admin 코드 규약 가정 — 규약 확정 시 이 맵만 교체.
-const APPLICATION_GRADE_LABELS: Record<string, string> = {
-  "1": "Beginner",
-  "2": "Intermediate",
-  "3": "Advanced",
+// 클래스명(직급/역할 클래스) 라벨 resolver.
+//   source = user_profiles.role (어드민/멤버 관리에서 쓰는 직급 코드와 동일 SoT).
+//   멤버 관리 표기와 동일하게 정규/팀장/파트장 … 으로 매핑한다.
+//     · crew         → 정규
+//     · team_leader  → 팀장
+//     · part_leader  → 파트장
+//     · agent        → 에이전트
+//     · ambassador   → 앰배서더
+//   super_admin(관리자 계정)·null·미지 코드 → null (크루 클래스 아님 → 배지 미표시, 요구 5).
+//   ⚠️ role 코드→한글 라벨은 lib/cluster4-role-label(등급 라벨: 일반/심화…)과 다른, 멤버 관리
+//      직급 라벨 축(정규/팀장/파트장)이다. 라벨 문구 조정은 이 맵 한 곳만 바꾸면 된다.
+const ROLE_CLASS_LABELS: Record<string, string> = {
+  crew: "정규",
+  crew_regular: "정규",
+  crew_normal: "정규",
+  team_leader: "팀장",
+  part_leader: "파트장",
+  agent: "에이전트",
+  ambassador: "앰배서더",
 };
-function resolveClassName(applicationGrade: number | string | null | undefined): string | null {
-  if (applicationGrade == null) return null;
-  const raw = String(applicationGrade).trim();
-  if (raw === "" || raw === "-") return null;
-  if (APPLICATION_GRADE_LABELS[raw]) return APPLICATION_GRADE_LABELS[raw];
-  return /^[0-9]+$/.test(raw) ? null : raw;
+function resolveClassName(role: string | null | undefined): string | null {
+  if (typeof role !== "string") return null;
+  const key = role.trim();
+  if (key === "" || key === "-") return null;
+  return ROLE_CLASS_LABELS[key] ?? null;
 }
 
 function toAge(birthDate: string | null | undefined) {
@@ -396,11 +401,10 @@ function mergeRow(
     //   rest 사용자는 '-' 고정(isSeasonRest), active 도 '시즌전체휴식' 센티넬은 제거(위 계산).
     team: teamDisplay ?? "-",
     part: partDisplay ?? "-",
-    // 클래스명(수강/지원 클래스 — 예: Beginner/Intermediate/Advanced) — user_profiles.application_grade.
+    // 클래스명(직급/역할 클래스 — 정규/팀장/파트장/에이전트/앰배서더) — user_profiles.role.
     //   팀명 배지 옆에 동일 디자인으로 표시(프론트). 값이 비면(null) 프론트가 배지를 숨긴다.
-    //   ⚠️ 팀/파트 같은 rest 마스킹 대상 아님 — 클래스는 시즌 휴식과 무관한 정적 속성이라 그대로 노출.
-    //   현재 DB 전원 null 이라 배지 미표시(정상) — admin 이 application_grade 를 채우면 자동 노출.
-    className: resolveClassName(profile.application_grade),
+    //   ⚠️ 팀/파트 같은 rest 마스킹 대상 아님 — 직급은 시즌 휴식과 무관한 정적 속성이라 그대로 노출.
+    className: resolveClassName(profile.role),
     nickname: profile.vision ?? view?.vision ?? view?.nickname ?? "-",
     // 한줄소개 체인(profile_tagline → profile_keyword → vision) — 연계동료/평판 카드의
     // "닉네임" 칸 표시값과 동일 규칙(personProfiles.buildPersonProfileMap mirror). additive 필드.
