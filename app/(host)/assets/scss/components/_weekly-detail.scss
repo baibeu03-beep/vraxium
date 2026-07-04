@@ -22,6 +22,17 @@
   to { transform: rotate(360deg); }
 }
 
+@keyframes wd-prog-shimmer {
+  0% { transform: translateX(-120%); }
+  60%, 100% { transform: translateX(320%); }
+}
+
+// Champion's Hall 탭 패널 전환(fade + slide).
+@keyframes wd-champ-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 .weekly-detail-page {
   --wd-accent: var(--wr-accent, #f0c419);
   --wd-accent-soft: var(--wr-accent-soft, #ffe16a);
@@ -37,6 +48,12 @@
   --wd-font-quote: "HakgyoansimTuho", "Pretendard", serif;                   // 격언
   --wd-font-script: var(--lobster, "HakgyoansimTuho", cursive);              // 저자 서명
   --wd-font-body: "Pretendard", sans-serif;                                  // 본문(유지)
+
+  // ── 대시보드 시맨틱 컬러(성공=green / 실패=red / 도전=blue / 휴식=gray) ──
+  --wd-c-green: #2ea043;   --wd-c-green-soft: #56d364;
+  --wd-c-red: #e5534b;     --wd-c-red-soft: #ff7b72;
+  --wd-c-blue: #388bfd;    --wd-c-blue-soft: #6cb6ff;
+  --wd-c-gray: #768390;    --wd-c-gray-soft: #adbac7;
 
   position: relative;
   width: 100%;
@@ -192,6 +209,598 @@
     border-radius: 2px;
     background: linear-gradient(90deg, transparent, var(--wd-accent), transparent);
     opacity: 0.85;
+  }
+
+  /* ---------- [2] 활동 Dashboard ---------- */
+  .wd-dash {
+    position: relative;
+    padding: 26px 28px 28px;
+    border-radius: 22px;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+      rgba(14, 23, 32, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
+    overflow: hidden;
+
+    // 상단 강조 라인(프리미엄 리포트 느낌)
+    &::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--wd-accent), transparent);
+      opacity: 0.7;
+    }
+
+    &__head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 6px 14px;
+      margin-bottom: 20px;
+    }
+
+    &__title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0;
+      font-family: var(--wd-font-heading);
+      font-size: clamp(17px, 1.7vw, 20px);
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: #fff;
+    }
+
+    &__mark {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+      border-radius: 4px;
+      background: linear-gradient(135deg, var(--wd-accent), var(--wd-accent-soft));
+      box-shadow: 0 0 14px var(--wd-glow);
+    }
+
+    &__caption {
+      margin: 0;
+      font-family: var(--wd-font-body);
+      font-size: 13px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.55);
+    }
+
+    // 좌 55% / 우 45%
+    &__body {
+      display: grid;
+      grid-template-columns: minmax(0, 55fr) minmax(0, 45fr);
+      gap: 22px;
+      align-items: stretch;
+    }
+
+    &__kpis {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    &__progress {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+  }
+
+  /* KPI Stat Card */
+  .wd-kpi {
+    --tone: var(--wd-accent);
+    --tone-soft: var(--wd-accent-soft);
+    --tone-bg: rgba(255, 255, 255, 0.06);
+    --tone-glow: var(--wd-glow);
+
+    position: relative;
+    // [컴팩트] 아이콘(좌) | 라벨·값(우) 한 row 배치 → 카드 높이 축소, 여백 최소화.
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 13px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+    transition: transform 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
+
+    // 좌측 톤 액센트 바
+    &::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: linear-gradient(180deg, var(--tone), var(--tone-soft));
+    }
+
+    &:hover {
+      transform: translateY(-3px);
+      border-color: color-mix(in srgb, var(--tone) 45%, rgba(255, 255, 255, 0.08));
+      box-shadow: 0 16px 34px rgba(0, 0, 0, 0.4);
+    }
+
+    &__icon {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      background: var(--tone-bg);
+      border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent);
+      color: var(--tone-soft);
+      font-size: 21px;
+      box-shadow: 0 0 18px var(--tone-glow);
+
+      i { line-height: 1; }
+    }
+
+    &__content {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      min-width: 0;
+    }
+
+    &__label {
+      font-family: var(--wd-font-body);
+      font-size: 12.5px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      color: rgba(255, 255, 255, 0.6);
+      white-space: nowrap;
+    }
+
+    &__value {
+      display: flex;
+      align-items: baseline;
+      gap: 3px;
+      font-family: var(--wd-font-heading);
+      font-size: clamp(23px, 2.3vw, 28px);
+      font-weight: 700;
+      line-height: 1.1;
+      letter-spacing: 0.01em;
+      color: var(--tone-soft);
+      font-variant-numeric: tabular-nums;
+    }
+
+    &__unit {
+      font-family: var(--wd-font-body);
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    // 톤 모디파이어
+    &--accent { --tone: var(--wd-accent); --tone-soft: var(--wd-accent-soft); --tone-bg: color-mix(in srgb, var(--wd-accent) 16%, transparent); --tone-glow: var(--wd-glow); }
+    &--green  { --tone: var(--wd-c-green); --tone-soft: var(--wd-c-green-soft); --tone-bg: rgba(46, 160, 67, 0.15); --tone-glow: rgba(46, 160, 67, 0.32); }
+    &--red    { --tone: var(--wd-c-red);   --tone-soft: var(--wd-c-red-soft);   --tone-bg: rgba(229, 83, 75, 0.15);  --tone-glow: rgba(229, 83, 75, 0.32); }
+    &--blue   { --tone: var(--wd-c-blue);  --tone-soft: var(--wd-c-blue-soft);  --tone-bg: rgba(56, 139, 253, 0.15); --tone-glow: rgba(56, 139, 253, 0.32); }
+    &--gray   { --tone: var(--wd-c-gray);  --tone-soft: var(--wd-c-gray-soft);  --tone-bg: rgba(118, 131, 144, 0.16); --tone-glow: rgba(118, 131, 144, 0.28); }
+  }
+
+  /* Progress Card */
+  .wd-prog {
+    --tone: var(--wd-c-blue);
+    --tone-soft: var(--wd-c-blue-soft);
+    --tone-glow: rgba(56, 139, 253, 0.4);
+
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    // [컴팩트] 상하 padding·요소 간격 축소로 빈 공간 최소화.
+    gap: 9px;
+    padding: 14px 18px;
+    border-radius: 14px;
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+
+    &--blue  { --tone: var(--wd-c-blue);  --tone-soft: var(--wd-c-blue-soft);  --tone-glow: rgba(56, 139, 253, 0.4); }
+    &--green { --tone: var(--wd-c-green); --tone-soft: var(--wd-c-green-soft); --tone-glow: rgba(46, 160, 67, 0.4); }
+
+    &__head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    &__label {
+      font-family: var(--wd-font-heading);
+      font-size: clamp(14px, 1.5vw, 16px);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.82);
+    }
+
+    &__value {
+      display: inline-flex;
+      align-items: baseline;
+      font-family: var(--wd-font-display);
+      font-size: clamp(30px, 3.4vw, 40px);
+      font-weight: 700;
+      line-height: 1;
+      color: var(--tone-soft);
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 0 22px var(--tone-glow);
+    }
+
+    &__unit {
+      margin-left: 2px;
+      font-size: 0.5em;
+      font-weight: 700;
+      color: rgba(255, 255, 255, 0.55);
+    }
+
+    &__track {
+      position: relative;
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      overflow: hidden;
+    }
+
+    &__fill {
+      position: relative;
+      height: 100%;
+      min-width: 0;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--tone), var(--tone-soft));
+      box-shadow: 0 0 16px var(--tone-glow);
+      // 진입 애니메이션(0% → 목표%)
+      transition: width 1.25s cubic-bezier(0.22, 1, 0.36, 1);
+
+      // 은은한 하이라이트 흐름
+      &::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: linear-gradient(
+          100deg,
+          transparent 20%,
+          rgba(255, 255, 255, 0.35) 50%,
+          transparent 80%
+        );
+        transform: translateX(-120%);
+        animation: wd-prog-shimmer 2.6s ease-in-out 1.2s infinite;
+      }
+    }
+  }
+
+  /* ---------- [3] Champion's Hall ---------- */
+  .wd-champ {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+
+    /* [0] 헤드 — 명예의 전당 타이틀 */
+    &__head {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 22px;
+    }
+
+    &__deco {
+      position: relative;
+      flex: 1 1 auto;
+      max-width: 220px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--wd-accent));
+
+      // 안쪽 끝 작은 다이아몬드 장식
+      &::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        right: -3px;
+        width: 6px;
+        height: 6px;
+        transform: translateY(-50%) rotate(45deg);
+        background: var(--wd-accent);
+        box-shadow: 0 0 10px var(--wd-glow);
+      }
+      &:last-child {
+        background: linear-gradient(90deg, var(--wd-accent), transparent);
+        &::after { right: auto; left: -3px; }
+      }
+    }
+
+    &__title {
+      position: relative;
+      margin: 0;
+      font-family: var(--wd-font-display);
+      font-size: clamp(28px, 4.6vw, 52px);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #fff;
+      text-align: center;
+      white-space: nowrap;
+      text-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+    }
+    // 뒤에 깔리는 은은한 글로우 복제
+    &__title-glow {
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      color: var(--wd-accent);
+      filter: blur(18px);
+      opacity: 0.5;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    /* 큰 카드(탭 컨테이너) */
+    &__card {
+      padding: 22px 22px 24px;
+      border-radius: 22px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+        rgba(14, 23, 32, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
+    }
+
+    /* [2] Tabs */
+    &__tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding-bottom: 16px;
+      margin-bottom: 18px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    &__tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 15px;
+      border-radius: 12px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: rgba(255, 255, 255, 0.5);
+      font-family: var(--wd-font-heading);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      cursor: pointer;
+      transition: color 0.2s ease, background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+
+      &-icon {
+        width: 20px;
+        height: 20px;
+        object-fit: contain;
+        flex-shrink: 0;
+      }
+
+      &:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      &.is-active {
+        color: #fff;
+        background: color-mix(in srgb, var(--wd-accent) 16%, transparent);
+        border-color: color-mix(in srgb, var(--wd-accent) 55%, transparent);
+        box-shadow: 0 0 18px var(--wd-glow);
+      }
+    }
+
+    /* 탭 패널 — 전환 애니메이션 */
+    &__panel {
+      animation: wd-champ-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    &__grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 13px;
+    }
+
+    &__empty {
+      min-height: 160px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.42);
+      font-family: var(--wd-font-body);
+      font-size: 14px;
+    }
+  }
+
+  /* 크루 카드 — 게임 랭킹 느낌(정보 밀도 우선) */
+  .wd-champ-card {
+    --card-accent: var(--wd-accent);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 14px 13px 12px;
+    border-radius: 16px;
+    background: linear-gradient(165deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    overflow: hidden;
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+
+    // 상단 accent 라인(순위별 색)
+    &::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--card-accent), transparent);
+    }
+
+    &:hover {
+      transform: translateY(-4px) scale(1.015);
+      border-color: color-mix(in srgb, var(--card-accent) 55%, rgba(255, 255, 255, 0.09));
+      box-shadow: 0 20px 42px rgba(0, 0, 0, 0.46), 0 0 0 1px var(--card-accent);
+    }
+
+    &__rank {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-family: var(--wd-font-heading);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      color: #10141a;
+      background: var(--card-accent);
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+    }
+
+    &__head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-right: 52px; // 순위 뱃지 회피
+      min-width: 0;
+    }
+
+    &__avatar {
+      flex-shrink: 0;
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      overflow: hidden;
+      border: 2px solid var(--card-accent);
+      box-shadow: 0 0 14px color-mix(in srgb, var(--card-accent) 45%, transparent);
+
+      img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    }
+
+    &__avatar-ph {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: color-mix(in srgb, var(--card-accent) 22%, rgba(255, 255, 255, 0.04));
+      color: var(--card-accent);
+      font-family: var(--wd-font-heading);
+      font-weight: 800;
+      font-size: 18px;
+    }
+
+    &__id {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    &__name {
+      font-family: var(--wd-font-heading);
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    &__class {
+      align-self: flex-start;
+      max-width: 100%;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--card-accent) 16%, transparent);
+      color: var(--card-accent);
+      font-family: var(--wd-font-body);
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    &__meta {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    &__meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    &__tag {
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.055);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      font-family: var(--wd-font-body);
+      font-size: 11px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.7);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+
+    &__point {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: auto;
+      padding-top: 9px;
+      border-top: 1px solid rgba(255, 255, 255, 0.07);
+
+      &-icon {
+        width: 24px;
+        height: 24px;
+        object-fit: contain;
+        flex-shrink: 0;
+        filter: drop-shadow(0 0 6px color-mix(in srgb, var(--card-accent) 40%, transparent));
+      }
+
+      &-value {
+        font-family: var(--wd-font-display);
+        font-size: 26px;
+        font-weight: 700;
+        line-height: 1;
+        color: var(--card-accent);
+        font-variant-numeric: tabular-nums;
+      }
+
+      &-unit {
+        font-family: var(--wd-font-body);
+        font-size: 12px;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.5);
+      }
+    }
   }
 
   /* ---------- 메인 그리드 ---------- */
@@ -531,9 +1140,18 @@
   }
 }
 
+/* Champion's Hall 그리드 — Tablet 4열 */
+@media (max-width: 1200px) {
+  .weekly-detail-page .wd-champ__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
 /* ---------- 반응형 — 모바일 1컬럼 ---------- */
 @media (max-width: 900px) {
   .weekly-detail-page {
+    // Champion's Hall — 태블릿 하단: 3열
+    .wd-champ__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .wd-champ__head { gap: 12px; }
+    .wd-champ__deco { max-width: 90px; }
     .wd-grid {
       grid-template-columns: 1fr;
       gap: 22px;
@@ -550,6 +1168,9 @@
       min-height: 0;
       aspect-ratio: 4 / 5;
     }
+
+    // 대시보드 — 모바일: KPI ↓ Progress 세로 배치.
+    .wd-dash__body { grid-template-columns: 1fr; gap: 16px; }
   }
 }
 
@@ -558,6 +1179,14 @@
     .wd-hero { height: 240px; }
     .wd-repr__overlays { padding: 14px 14px 0; flex-direction: column; align-items: flex-start; }
     .wd-glass, .wd-quote { padding: 22px 20px; }
+    .wd-dash { padding: 20px 18px 22px; }
+    .wd-kpi { padding: 14px 13px; }
+    .wd-kpi__icon { width: 36px; height: 36px; font-size: 19px; }
+    // Champion's Hall — 모바일: 2열
+    .wd-champ__card { padding: 18px 16px 20px; }
+    .wd-champ__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+    .wd-champ__tab { font-size: 12.5px; padding: 8px 12px; }
+    .wd-champ__tab-icon { width: 18px; height: 18px; }
   }
 }
 
@@ -568,5 +1197,8 @@
     .wd-hero__bg { animation: none !important; }
     .wd-repr:hover { transform: none; }
     .wd-repr:hover .wd-repr__img { transform: none; }
+    .wd-prog__fill { transition: none !important; &::after { animation: none !important; } }
+    .wd-champ__panel { animation: none !important; }
+    .wd-champ-card:hover { transform: none; }
   }
 }

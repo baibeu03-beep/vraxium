@@ -21,6 +21,8 @@ import { isOfficialRestWeek, isTransitionWeek, normalizeSeason } from "@/lib/clu
 import { getWeekImageUrl } from "@/lib/cluster4-week-image";
 import { operationalSeasonDbKey } from "@/lib/seasonCalendar";
 import { pickPrimaryMembership, type MembershipRow } from "@/lib/membership";
+import { resolveMembershipRoleLabel } from "@/lib/cluster4-role-label";
+import { resolveResumeClassLabel } from "@/lib/crewClassLabel";
 import type { ScopeMode } from "@/lib/userScopeShared";
 import {
   resolveWeekResultStates,
@@ -30,6 +32,7 @@ import {
 import type {
   WeeklyCardData,
   WeeklyCardCrew,
+  ChampionCrew,
   RestReason,
 } from "@/constants/dummyData/weekly-card-dummy";
 
@@ -390,15 +393,18 @@ export async function aggregateWeeklyLeague(
       return { success: false, org, cards: [], error: `주차 상태 조회 실패: ${(statusErr as Error)?.message ?? String(statusErr)}` };
     }
 
-    // 4) top3 별점 SoT — user_weekly_points.points. org 유저 한정, 전 행 수집.
+    // 4) top3/Champion's Hall 포인트 SoT — user_weekly_points.
+    //    points=포인트 A(별/활동량), advantages=포인트 B(방패/집중력), penalty=포인트 C(번개, tie-break).
     const { data: pointRows, error: pointErr } = await fetchAllRows<{
       user_id: string;
       week_start_date: string;
       points: number | null;
+      advantages: number | null;
+      penalty: number | null;
     }>((from, to) =>
       db
         .from("user_weekly_points")
-        .select("user_id, week_start_date, points")
+        .select("user_id, week_start_date, points, advantages, penalty")
         .in("user_id", orgUserIds)
         // 동일 사유 — 안정적 ORDER BY 로 range 페이지네이션 중복/누락 방지.
         .order("user_id", { ascending: true })
@@ -421,6 +427,54 @@ export async function aggregateWeeklyLeague(
       membershipByUser.set(m.user_id, arr);
     });
 
+    // 5-1) Champion's Hall 확장 프로필(프로필사진/역할/학교/전공) — **격리·best-effort**.
+    //   별도 쿼리 + try/catch 로 감싸 실패해도 top10 만 축소되고 카드 본체/기존 응답은 무영향.
+    //   학교/전공은 user_educations(대표=sort_order 최소) 우선, 없으면 user_profiles 폴백.
+    const champProfile = new Map<
+      string,
+      { photo: string | null; role: string | null; school: string | null; major: string | null }
+    >();
+    // (a) user_profiles — 아바타/역할/학교/전공(폴백). 컬럼명: profile_photo_url(=/crews 동일).
+    try {
+      const { data: cp } = await db
+        .from("user_profiles")
+        .select("user_id, profile_photo_url, role, school_name, department_name")
+        .in("user_id", orgUserIds);
+      for (const p of cp || []) {
+        champProfile.set((p as { user_id: string }).user_id, {
+          photo: (p as { profile_photo_url?: string | null }).profile_photo_url ?? null,
+          role: (p as { role?: string | null }).role ?? null,
+          school: (p as { school_name?: string | null }).school_name ?? null,
+          major: (p as { department_name?: string | null }).department_name ?? null,
+        });
+      }
+    } catch (err) {
+      console.warn("[weekly-league] champion user_profiles 조회 실패", (err as Error)?.message ?? String(err));
+    }
+    // (b) user_educations 우선(대표=sort_order 최소) — 학교/전공 canonical. profiles 폴백 유지.
+    //     (a)와 독립 try/catch — 한쪽 실패가 다른 쪽/school·major 전체를 날리지 않도록.
+    try {
+      const { data: edu } = await db
+        .from("user_educations")
+        .select("user_id, school_name, major_name_1, sort_order")
+        .in("user_id", orgUserIds)
+        .order("sort_order", { ascending: true });
+      const eduSeen = new Set<string>();
+      for (const e of edu || []) {
+        const uid = (e as { user_id: string }).user_id;
+        if (eduSeen.has(uid)) continue; // 대표(첫) 학력만
+        eduSeen.add(uid);
+        const cur = champProfile.get(uid) || { photo: null, role: null, school: null, major: null };
+        champProfile.set(uid, {
+          ...cur,
+          school: (e as { school_name?: string | null }).school_name ?? cur.school,
+          major: (e as { major_name_1?: string | null }).major_name_1 ?? cur.major,
+        });
+      }
+    } catch (err) {
+      console.warn("[weekly-league] champion educations 조회 실패", (err as Error)?.message ?? String(err));
+    }
+
     // week_start_date 별 인덱싱.
     const statusByWeek = new Map<string, Array<{ user_id: string; status: string }>>();
     for (const r of statusRows) {
@@ -428,10 +482,18 @@ export async function aggregateWeeklyLeague(
       arr.push({ user_id: r.user_id, status: r.status });
       statusByWeek.set(r.week_start_date, arr);
     }
-    const pointsByWeek = new Map<string, Array<{ user_id: string; points: number }>>();
+    const pointsByWeek = new Map<
+      string,
+      Array<{ user_id: string; points: number; advantages: number; penalty: number }>
+    >();
     for (const r of pointRows) {
       const arr = pointsByWeek.get(r.week_start_date) || [];
-      arr.push({ user_id: r.user_id, points: Number(r.points) || 0 });
+      arr.push({
+        user_id: r.user_id,
+        points: Number(r.points) || 0,
+        advantages: Number(r.advantages) || 0,
+        penalty: Number(r.penalty) || 0,
+      });
       pointsByWeek.set(r.week_start_date, arr);
     }
 
@@ -619,20 +681,66 @@ export async function aggregateWeeklyLeague(
             ? "공표 중"
             : "대전 집계";
 
-      // top3 — 별점(points) DESC. 동점은 안정적 정렬 위해 user_id tie-break.
-      const top3: WeeklyCardCrew[] = (pointsByWeek.get(week.startDate) || [])
+      // 별점(points=포인트 A) DESC 정렬본 — top3/top10 공용. 동점은 user_id tie-break.
+      //   (전체 랭킹 규칙의 상위 키 = 포인트 A. 하위 키(B/C·강화·주차)는 별도 데이터라 미적용.)
+      const rankedByPoints = (pointsByWeek.get(week.startDate) || [])
         .filter((p) => p.points > 0)
-        .sort((a, b) => b.points - a.points || a.user_id.localeCompare(b.user_id))
-        .slice(0, 3)
-        .map((p, i) => {
-          const { team, part } = teamPartFor(p.user_id);
-          return {
-            rank: (i + 1) as 1 | 2 | 3,
-            name: profileMap.get(p.user_id)?.display_name || "-",
-            team,
-            part,
-          };
+        .sort((a, b) => b.points - a.points || a.user_id.localeCompare(b.user_id));
+
+      const top3: WeeklyCardCrew[] = rankedByPoints.slice(0, 3).map((p, i) => {
+        const { team, part } = teamPartFor(p.user_id);
+        return {
+          rank: (i + 1) as 1 | 2 | 3,
+          name: profileMap.get(p.user_id)?.display_name || "-",
+          team,
+          part,
+        };
+      });
+
+      // Champion's Hall 크루 매퍼 — 포인트 엔트리 → 표시 카드(포인트 A/B 동시 보유).
+      const championFor = (
+        p: { user_id: string; points: number; advantages: number },
+        rank: number,
+      ): ChampionCrew => {
+        const { team, part } = teamPartFor(p.user_id);
+        const primary = pickPrimaryMembership(membershipByUser.get(p.user_id) || []);
+        const cp = champProfile.get(p.user_id);
+        const className = resolveMembershipRoleLabel({
+          role: cp?.role ?? null,
+          membershipLevel: primary?.membership_level ?? null,
+          roleBasedLabel: resolveResumeClassLabel(cp?.role ?? null),
         });
+        return {
+          rank,
+          name: profileMap.get(p.user_id)?.display_name || "-",
+          className,
+          school: cp?.school ?? null,
+          major: cp?.major ?? null,
+          team: team === "-" ? null : team,
+          part: part === "-" ? null : part,
+          pointA: p.points,
+          pointB: p.advantages,
+          profileImage: cp?.photo ?? null,
+        };
+      };
+
+      // ① 성장 활동량(포인트 A) Top 10.
+      const top10: ChampionCrew[] = rankedByPoints.slice(0, 10).map((p, i) => championFor(p, i + 1));
+
+      // ② 성장 집중력(포인트 B=advantages) Top 10.
+      //    정렬: B desc → A desc → C(penalty) asc → user_id.
+      //    (스펙의 4·5순위 '강화 성공 라인수'/'활동 가능 주차'는 본 집계 데이터에 없어 미적용 — user_id 로 결정성 보강.)
+      const top10Focus: ChampionCrew[] = (pointsByWeek.get(week.startDate) || [])
+        .filter((p) => p.advantages > 0)
+        .sort(
+          (a, b) =>
+            b.advantages - a.advantages ||
+            b.points - a.points ||
+            a.penalty - b.penalty ||
+            a.user_id.localeCompare(b.user_id),
+        )
+        .slice(0, 10)
+        .map((p, i) => championFor(p, i + 1));
 
       return {
         id: week.id,
@@ -653,6 +761,8 @@ export async function aggregateWeeklyLeague(
         personalRest,
         winningTeamImage: null,
         top3,
+        top10,
+        top10Focus,
       };
     });
 

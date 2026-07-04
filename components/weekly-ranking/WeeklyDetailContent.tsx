@@ -2,13 +2,53 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { WEEKLY_CARD_DUMMY, type WeeklyCardData } from "@/constants/dummyData/weekly-card-dummy";
+import { WEEKLY_CARD_DUMMY, type WeeklyCardData, type ChampionCrew } from "@/constants/dummyData/weekly-card-dummy";
 import { isDemoMode } from "@/utils/isDemoMode";
 import { getRankingThemeForSeason, getRankingThemeVars } from "@/lib/rankingTheme";
 
 // ── 기본 이미지(요구사항 SoT) ── DTO 이미지 필드 미설정 시 폴백.
 const DEFAULT_HERO_IMAGE = "/images/0/weekly-b.png";
 const DEFAULT_REPRESENTATIVE_IMAGE = "/images/0/weekly-b-2.png";
+
+// ── Champion's Hall ── 포인트 아이콘은 조직(org)별로 매칭한다.
+//   포인트 A = 성장 활동량 / 포인트 B = 성장 집중력. 탭 아이콘과 카드 내부 아이콘이 동일 매핑 사용.
+const GROWTH_RATE_ICON = "/images/0/cluster4/icon/icon - 시즌 성장률.png"; // 주차 성장률(공통)
+
+// 조직별 포인트 아이콘(웹 경로 = public 기준). 경로 대소문자·공백을 정확히 유지.
+const ORG_POINT_ICONS: Record<string, { a: string; b: string }> = {
+  encre: { a: "/images/0/Graphic10.png", b: "/images/0/Shield.png" },
+  oranke: { a: "/images/0/cluster 1/Ok01.png", b: "/images/0/cluster 1/OK02.png" },
+  phalanx: { a: "/images/0/cluster 1/PX01.png", b: "/images/0/cluster 1/pX02.png" },
+};
+// 기본값(org 미지정/미매칭) — encre 세트로 폴백.
+const DEFAULT_POINT_ICONS = ORG_POINT_ICONS.encre;
+
+// org slug(phalanx·encre·oranke) 또는 한글 클럽명을 정규화해 포인트 아이콘 세트를 반환.
+function resolvePointIcons(org: string | null): { a: string; b: string } {
+  const key = (org ?? "").trim().toLowerCase();
+  if (key === "encre" || key === "엥크레") return ORG_POINT_ICONS.encre;
+  if (key === "oranke" || key === "오랑캐") return ORG_POINT_ICONS.oranke;
+  if (key === "phalanx" || key === "팔랑크스") return ORG_POINT_ICONS.phalanx;
+  return DEFAULT_POINT_ICONS;
+}
+
+type ChampTabKey = "activity" | "focus" | "growth";
+
+// 순위별 Accent Color(카드 전체가 아닌 강조색만 변경) — 무지개(빨→보) 순서 10단계.
+const RANK_ACCENTS = [
+  "#FF4B4B", // 1 빨강
+  "#FF7A2F", // 2 주황
+  "#FFB020", // 3 노랑(앰버)
+  "#FFE23D", // 4 노랑
+  "#7ED957", // 5 연두
+  "#2FD07E", // 6 초록
+  "#22C3D6", // 7 청록
+  "#3D8BFF", // 8 파랑
+  "#6C5CE7", // 9 남색
+  "#A55CF0", // 10 보라
+];
+// 이니셜 폴백 아바타용 — 순위 accent 로 틴트.
+const initialOf = (name: string) => (name?.trim()?.[0] ?? "?");
 
 // ── [5] 하단 격언(페이지 디자인 상수 — 주차 데이터 아님) ──
 const QUOTE_TEXT =
@@ -39,7 +79,24 @@ type LoadState = "loading" | "ready" | "notfound";
 export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContentProps) {
   const [card, setCard] = useState<WeeklyCardData | null>(null);
   const [state, setState] = useState<LoadState>("loading");
+  // 대시보드 Progress Bar 진입 애니메이션 트리거(0% → 목표%).
+  const [barsIn, setBarsIn] = useState(false);
+  // Champion's Hall 활성 탭 — 기본 '성장 활동량 Top 10'.
+  const [champTab, setChampTab] = useState<ChampTabKey>("activity");
   const rootRef = useRef<HTMLElement | null>(null);
+
+  // 조직별 포인트 아이콘(포인트 A/B) — 탭·카드가 공유하는 단일 소스.
+  const pointIcons = useMemo(() => resolvePointIcons(org), [org]);
+  const championTabs = useMemo<
+    Array<{ key: ChampTabKey; label: string; icon: string; ready: boolean }>
+  >(
+    () => [
+      { key: "activity", label: "성장 활동량 Top 10", icon: pointIcons.a, ready: true },
+      { key: "focus", label: "성장 집중력 Top 10", icon: pointIcons.b, ready: true },
+      { key: "growth", label: "주차 성장률 Top 10", icon: GROWTH_RATE_ICON, ready: false },
+    ],
+    [pointIcons],
+  );
 
   // 데이터 로드 — 데모: 더미에서 id 매칭 / 일반: /api/weekly-league?org= 응답에서 id 매칭.
   //   리스트와 동일 DTO(WeeklyCardData)를 그대로 소비(현재 Week DTO 재사용).
@@ -128,6 +185,16 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
     };
   }, [state]);
 
+  // Progress Bar 진입 애니메이션 — 카드 준비 후 0% → 목표% 로 전개.
+  useEffect(() => {
+    if (state !== "ready") {
+      setBarsIn(false);
+      return;
+    }
+    const t = window.setTimeout(() => setBarsIn(true), 260);
+    return () => window.clearTimeout(t);
+  }, [state]);
+
   // 조직 + 주차 시즌 → 테마 변수(--wr-*). 카드 부재 시에도 org 브랜드색으로 폴백.
   const themeVars = useMemo(
     () => getRankingThemeVars(getRankingThemeForSeason(org, card?.seasonName)),
@@ -166,6 +233,47 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
   const weeklyComment = card.weeklyComment || SAMPLE_WEEKLY_COMMENT;
   const activityFlow = card.cluvActivityFlow || SAMPLE_ACTIVITY_FLOW;
   const { isRest, label: activityLabel } = resolveActivity(card);
+
+  // ── [2] 대시보드 값 ── 원자 DTO 필드에서 파생 계산해 화면 등식을 항상 보장한다:
+  //   ① 소속크루 = ② 시즌휴식 + ③ 개인휴식 + ④ 성장도전,  ④ = ⑤ 성장성공 + ⑥ 성장실패
+  //   도전율 = ④/①·100,  성공률 = ⑤/④·100. (DTO totalCrews/growthChallenge 대신 재계산 → 불일치 방지)
+  const successCount = card.growthSuccess ?? 0;
+  const failCount = card.growthFail ?? 0;
+  const challengeCount = successCount + failCount;
+  const personalRest = card.personalRest ?? 0;
+  const seasonRest = card.seasonRest ?? 0;
+  const totalCrew = seasonRest + personalRest + challengeCount;
+  const challengeRate = totalCrew > 0 ? Math.round((challengeCount / totalCrew) * 100) : 0;
+  const successRate = challengeCount > 0 ? Math.round((successCount / challengeCount) * 100) : 0;
+
+  // KPI 카드(라벨/아이콘은 UI 카피, 값은 위 파생값). 3행×2열 배치 순서 = 스펙 ①~⑥.
+  //   보조 설명(desc)은 노출하지 않는다 — 아이콘/label/value 핵심 정보만.
+  const kpis: Array<{ tone: string; icon: string; label: string; value: number }> = [
+    { tone: "accent", icon: "ti ti-users", label: "소속 크루", value: totalCrew },
+    { tone: "gray", icon: "ti ti-zzz", label: "시즌 휴식", value: seasonRest },
+    { tone: "gray", icon: "ti ti-bed", label: "개인 휴식", value: personalRest },
+    { tone: "blue", icon: "ti ti-flame", label: "성장 도전", value: challengeCount },
+    { tone: "green", icon: "ti ti-trophy", label: "성장 성공", value: successCount },
+    { tone: "red", icon: "ti ti-circle-x", label: "성장 실패", value: failCount },
+  ];
+  // 공식(formula)은 화면 비노출 — 값은 위에서 계산 완료. 카드에는 제목/퍼센트/바만 표시.
+  const progresses: Array<{ tone: string; label: string; value: number }> = [
+    { tone: "blue", label: "성장 도전율", value: challengeRate },
+    { tone: "green", label: "성장 성공률", value: successRate },
+  ];
+
+  // Champion's Hall — DTO(card.top10 / card.top10Focus)에서 수신(하드코딩 없음).
+  const activeTab = championTabs.find((t) => t.key === champTab) ?? championTabs[0];
+  // 탭별 표시 데이터: 리스트 / 포인트 아이콘 / 포인트 값 getter.
+  const champTabData: Record<
+    ChampTabKey,
+    { list: ChampionCrew[]; pointIcon: string; pointOf: (c: ChampionCrew) => number }
+  > = {
+    activity: { list: Array.isArray(card.top10) ? card.top10 : [], pointIcon: pointIcons.a, pointOf: (c) => c.pointA },
+    focus: { list: Array.isArray(card.top10Focus) ? card.top10Focus : [], pointIcon: pointIcons.b, pointOf: (c) => c.pointB },
+    growth: { list: [], pointIcon: GROWTH_RATE_ICON, pointOf: () => 0 },
+  };
+  const activeChamp = champTabData[champTab];
 
   return (
     <section className="weekly-detail-page" style={themeVars} ref={rootRef}>
@@ -240,6 +348,153 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
           </article>
         </div>
       </div>
+
+      {/* [8] 이번 주 크루 종합 결과 Dashboard — wd-grid 아래 배치. 좌 KPI(55%) / 우 Progress(45%) */}
+      <section className="wd-dash" data-fadeup aria-label="이번 주 크루 종합 결과">
+        <div className="wd-dash__head">
+          <h2 className="wd-dash__title">
+            <span className="wd-dash__mark" aria-hidden="true" />
+            이번 주 크루 종합 결과
+          </h2>
+          <p className="wd-dash__caption">{card.seasonName} · 이번 주 클럽 전체 활동 현황</p>
+        </div>
+
+        <div className="wd-dash__body">
+          {/* 좌측 — KPI 3×2 (아이콘 | label/value) */}
+          <div className="wd-dash__kpis">
+            {kpis.map((k) => (
+              <div key={k.label} className={`wd-kpi wd-kpi--${k.tone}`}>
+                <span className="wd-kpi__icon" aria-hidden="true">
+                  <i className={k.icon} />
+                </span>
+                <div className="wd-kpi__content">
+                  <span className="wd-kpi__label">{k.label}</span>
+                  <strong className="wd-kpi__value">
+                    {k.value.toLocaleString()}
+                    <span className="wd-kpi__unit">명</span>
+                  </strong>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* 우측 — Progress 2개 */}
+          <div className="wd-dash__progress">
+            {progresses.map((p) => (
+              <div key={p.label} className={`wd-prog wd-prog--${p.tone}`}>
+                <div className="wd-prog__head">
+                  <span className="wd-prog__label">{p.label}</span>
+                  <span className="wd-prog__value">
+                    {p.value}
+                    <span className="wd-prog__unit">%</span>
+                  </span>
+                </div>
+                <div
+                  className="wd-prog__track"
+                  role="progressbar"
+                  aria-valuenow={p.value}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={p.label}
+                >
+                  <div className="wd-prog__fill" style={{ width: barsIn ? `${p.value}%` : "0%" }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* [3] Champion's Hall — 우수 크루 Top 10 (탭 전환) */}
+      <section className="wd-champ" data-fadeup aria-label="Champion's Hall">
+        {/* [0] 헤드 — 명예의 전당 타이틀(장식 라인·글로우) */}
+        <header className="wd-champ__head">
+          <span className="wd-champ__deco" aria-hidden="true" />
+          <h2 className="wd-champ__title">
+            Champion&rsquo;s Hall
+            <span className="wd-champ__title-glow" aria-hidden="true">Champion&rsquo;s Hall</span>
+          </h2>
+          <span className="wd-champ__deco" aria-hidden="true" />
+        </header>
+
+        <div className="wd-champ__card">
+          {/* [2] Tabs — 포인트 아이콘 + 라벨 */}
+          <div className="wd-champ__tabs" role="tablist">
+            {championTabs.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={champTab === t.key}
+                className={`wd-champ__tab${champTab === t.key ? " is-active" : ""}`}
+                onClick={() => setChampTab(t.key)}
+              >
+                <img className="wd-champ__tab-icon" src={t.icon} alt="" aria-hidden="true" />
+                <span>{t.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* 탭 내용 — key 로 재마운트해 fade/slide 전환 */}
+          <div className="wd-champ__panel" key={champTab}>
+            {activeTab.ready && activeChamp.list.length > 0 ? (
+              <div className="wd-champ__grid">
+                {activeChamp.list.map((c) => {
+                  const accent = RANK_ACCENTS[(c.rank - 1) % RANK_ACCENTS.length];
+                  return (
+                    <div
+                      key={c.rank}
+                      className="wd-champ-card"
+                      style={{ ["--card-accent" as string]: accent }}
+                    >
+                      <span className="wd-champ-card__rank">TOP {c.rank}</span>
+
+                      <div className="wd-champ-card__head">
+                        <span className="wd-champ-card__avatar">
+                          {c.profileImage ? (
+                            <img src={c.profileImage} alt="" />
+                          ) : (
+                            <span className="wd-champ-card__avatar-ph">{initialOf(c.name)}</span>
+                          )}
+                        </span>
+                        <span className="wd-champ-card__id">
+                          <span className="wd-champ-card__name">{c.name}</span>
+                          {c.className ? <span className="wd-champ-card__class">{c.className}</span> : null}
+                        </span>
+                      </div>
+
+                      <div className="wd-champ-card__meta">
+                        {(c.school || c.major) && (
+                          <span className="wd-champ-card__meta-row">
+                            {c.school ? <span className="wd-champ-card__tag">{c.school}</span> : null}
+                            {c.major ? <span className="wd-champ-card__tag">{c.major}</span> : null}
+                          </span>
+                        )}
+                        {(c.team || c.part) && (
+                          <span className="wd-champ-card__meta-row">
+                            {c.team ? <span className="wd-champ-card__tag">{c.team} 팀</span> : null}
+                            {c.part ? <span className="wd-champ-card__tag">{c.part} 파트</span> : null}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="wd-champ-card__point">
+                        <img className="wd-champ-card__point-icon" src={activeChamp.pointIcon} alt="" aria-hidden="true" />
+                        <strong className="wd-champ-card__point-value">{activeChamp.pointOf(c).toLocaleString()}</strong>
+                        <span className="wd-champ-card__point-unit">개</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="wd-champ__empty">
+                {activeTab.ready ? "표시할 크루가 없습니다." : "곧 공개됩니다."}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
     </section>
   );
 }
