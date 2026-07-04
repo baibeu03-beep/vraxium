@@ -26,6 +26,59 @@ export type ChampionCrew = {
   profileImage?: string | null;    // ① 프로필 이미지(없으면 이니셜 폴백)
 };
 
+// ── Team Battle(대전) — 상세 페이지 팀별 주차 결과 ──
+//   aggregateWeeklyLeague 가 조직 전체 집계와 "같은 기준"으로 팀별로 버킷팅해 산출한다.
+//   불변식(집계 SoT 보장): Σ teams.successCrew == 조직 growthSuccess,
+//     Σ teams.failCrew == growthFail, Σ teams.challengeCrew == growthChallenge,
+//     Σ teams.restCrew == personalRest(+seasonRest). 프론트 재계산 금지 — 값은 그대로 표시.
+export type BattleResult = 'win' | 'lose' | 'draw';
+
+export type WeeklyLeagueTeamPart = {
+  partId: string;    // cluster4_team_parts.id (카탈로그 미매칭 시 합성 키)
+  partName: string;
+};
+
+export type WeeklyLeagueTeamLeader = {
+  name: string | null;            // cluster4_team_halves.leader_name ?? 링크 크루 display_name
+  school: string | null;         // user_educations.school_name ?? user_profiles.school_name
+  major: string | null;          // user_educations.major_name_1 ?? user_profiles.department_name
+  profileImageUrl: string | null; // user_profiles.profile_photo_url
+};
+
+export type WeeklyLeagueTeamBattle = {
+  teamId: string | null;   // cluster4_team_halves.id (null = 해당 반기 카탈로그 미등록 팀)
+  teamName: string;
+
+  leader: WeeklyLeagueTeamLeader;
+
+  parts: WeeklyLeagueTeamPart[];
+  partCount: number;
+
+  // 신규 SoT — 입력 기능 미구현. 현재 항상 null(마이그레이션/DTO 만 선반영).
+  teamGoal: string | null;    // 팀 자체 고정 목표 (cluster4_team_halves.team_goal)
+  weeklyFlow: string | null;  // 팀장 주차 플로우 (cluster4_team_weekly_flow)
+  crewComment: string | null; // 주차 크루 코멘트 (cluster4_team_weekly_crew_comment)
+
+  // 대전 결과 — successCrew 대 failCrew. 동수는 draw(1급 상태).
+  battleResult: BattleResult;
+  matchCount: number; // = challengeCrew
+  winCount: number;   // = successCrew
+  loseCount: number;  // = failCrew
+  winRate: number;    // successCrew/challengeCrew*100 (challenge=0 이면 0)
+
+  // 크루 구성(불변식): totalCrew = challengeCrew + restCrew = advancedCrew + regularCrew,
+  //                   challengeCrew = successCrew + failCrew, restCrew = seasonRestCrew + personalRestCrew.
+  totalCrew: number;
+  challengeCrew: number;
+  restCrew: number;
+  seasonRestCrew: number;
+  personalRestCrew: number;
+  advancedCrew: number;
+  regularCrew: number;
+  successCrew: number;
+  failCrew: number;
+};
+
 export type WeeklyCardData = {
   id: string;
   seasonName: string;     // 예: "2026년, 봄 시즌, 3주차" — 그대로 출력
@@ -59,6 +112,9 @@ export type WeeklyCardData = {
   representativeImage?: string | null;  // [5] 주차 대표 이미지. 미설정 → /images/0/weekly-b-2.png
   weeklyComment?: string | null;        // [6] Weekly Comment 본문(최대 200자). 미설정 → placeholder
   cluvActivityFlow?: string | null;     // [7] Cluv Activity Flow 본문(최대 200자). 미설정 → placeholder
+  // [9] Team Battle(선택) — 팀별 주차 결과. 집계(aggregateWeeklyLeague)가 채운다.
+  //   미설정/빈 배열 → 상세 페이지가 섹션을 숨긴다(non-breaking).
+  teams?: WeeklyLeagueTeamBattle[];
 };
 
 // TOP3 표시 규칙 검증용 — 이름(3/4/5+), 팀(3/5/6+), 파트(3/5/6+) 케이스를
@@ -315,6 +371,67 @@ const buildChampionLists = (
   return { activity, focus, growth };
 };
 
+// 데모 Team Battle — 카드 집계 총합을 3개 팀으로 결정적 분배(합=조직 총합 유지).
+//   실제 API 는 aggregateWeeklyLeague 가 채우며, teamGoal/weeklyFlow/crewComment 는
+//   입력 기능 전이라 null. 데모는 표시 확인용 샘플 문구를 넣는다.
+const DUMMY_TEAM_META = [
+  { name: '프로듀싱', leader: '김프로', school: '순천향 대학교', major: '실용음악', parts: ['일반', '작곡', '편곡'] },
+  { name: 'A&R', leader: '이에이', school: '성균관 대학교', major: '경영학', parts: ['일반', '기획'] },
+  { name: '비주얼', leader: '박비주', school: '한양 대학교', major: '시각디자인', parts: ['일반', '디자인', '영상'] },
+];
+
+const splitInto = (total: number, n: number, seed: number): number[] => {
+  const out = new Array(n).fill(0);
+  for (let i = 0; i < total; i++) out[seededRandom(seed + i, n)]++;
+  return out;
+};
+
+const buildDummyTeams = (
+  seed: number,
+  success: number,
+  fail: number,
+  personalRest: number,
+  seasonRest: number,
+): WeeklyLeagueTeamBattle[] => {
+  const n = DUMMY_TEAM_META.length;
+  const s = splitInto(success, n, seed + 1);
+  const f = splitInto(fail, n, seed + 2);
+  const pr = splitInto(personalRest, n, seed + 3);
+  const sr = splitInto(seasonRest, n, seed + 4);
+  return DUMMY_TEAM_META.map((m, i) => {
+    const successCrew = s[i], failCrew = f[i];
+    const challengeCrew = successCrew + failCrew;
+    const seasonRestCrew = sr[i], personalRestCrew = pr[i];
+    const restCrew = seasonRestCrew + personalRestCrew;
+    const totalCrew = challengeCrew + restCrew;
+    const advancedCrew = Math.round(totalCrew * 0.3);
+    return {
+      teamId: `dummy-team-${i}`,
+      teamName: m.name,
+      leader: { name: m.leader, school: m.school, major: m.major, profileImageUrl: null },
+      parts: m.parts.map((p, k) => ({ partId: `dummy-part-${i}-${k}`, partName: p })),
+      partCount: m.parts.length,
+      teamGoal: `${m.name} 팀은 이번 반기 안에 대표 콘텐츠 3건을 완성한다.`,
+      weeklyFlow: `이번 주 ${m.name} 팀은 라인 오픈과 파트별 산출물 마감에 집중했습니다.`,
+      crewComment: '한 주 동안 다들 정말 고생 많았어요! 다음 주도 파이팅 🔥',
+      battleResult: successCrew > failCrew ? 'win' : successCrew < failCrew ? 'lose' : 'draw',
+      matchCount: challengeCrew,
+      winCount: successCrew,
+      loseCount: failCrew,
+      winRate: challengeCrew > 0 ? Math.round((successCrew / challengeCrew) * 100) : 0,
+      totalCrew,
+      challengeCrew,
+      restCrew,
+      seasonRestCrew,
+      personalRestCrew,
+      advancedCrew,
+      regularCrew: totalCrew - advancedCrew,
+      successCrew,
+      failCrew,
+    };
+  });
+};
+
 export const WEEKLY_CARD_DUMMY: WeeklyCardData[] = WEEKLY_RANKING_DISPLAY_MAP.map(
   (display, i) => {
     const isRest = i % 7 === 6;
@@ -346,10 +463,19 @@ export const WEEKLY_CARD_DUMMY: WeeklyCardData[] = WEEKLY_RANKING_DISPLAY_MAP.ma
       winningTeamImage: null,
       top3: TOP3_TEMPLATES[i % TOP3_TEMPLATES.length],
       ...(isOfficialRest
-        ? { top10: [], top10Focus: [], top10Growth: [] }
+        ? { top10: [], top10Focus: [], top10Growth: [], teams: [] }
         : (() => {
             const { activity, focus, growth } = buildChampionLists(i + 1);
-            return { top10: activity, top10Focus: focus, top10Growth: growth };
+            const success = seededRandom(i + 31, 700, 100);
+            const fail = seededRandom(i + 41, 350, 50);
+            const personalRest = seededRandom(i + 51, 100);
+            const seasonRest = seededRandom(i + 91, 15, 3);
+            return {
+              top10: activity,
+              top10Focus: focus,
+              top10Growth: growth,
+              teams: buildDummyTeams(i + 1, success, fail, personalRest, seasonRest),
+            };
           })()),
     };
   }

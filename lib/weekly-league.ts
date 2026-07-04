@@ -34,7 +34,14 @@ import type {
   WeeklyCardCrew,
   ChampionCrew,
   RestReason,
+  WeeklyLeagueTeamBattle,
 } from "@/constants/dummyData/weekly-card-dummy";
+import {
+  loadTeamBattleContext,
+  buildTeamBattles,
+  type CrewVerdict,
+  type TeamBattleContext,
+} from "@/lib/weekly-league-teams";
 
 // 운영 데이터 시작(이관 정책 경계) = 2026 봄 시즌 시작일.
 //   기본(누적) 노출은 이 날짜 이후 시작 주차만 노출한다 — 그 이전(2023~2026 겨울)은
@@ -143,6 +150,8 @@ type WeekMeta = {
   startDate: string;
   endDate: string;
   seasonName: string;
+  // 원본 season_key(예: '2026-summer') — Team Battle 반기/시즌휴식 파생용.
+  seasonKey: string;
   seasonYear: number;
   isBreak: boolean;
   isOfficialRest: boolean;
@@ -341,6 +350,7 @@ export async function aggregateWeeklyLeague(
         // 프론트 parseYearSeason 정규식이 기대하는 "YYYY년, {시즌} 시즌, N주차" 포맷
         // (cluster-4-ranking label 과 동일 — "년도" 포맷은 필터 파싱 실패하므로 사용 금지).
         seasonName: `${sd?.year}년, ${displayName} 시즌, ${w.week_number}주차`,
+        seasonKey: w.season_key,
         seasonYear: sd?.year || 0,
         isBreak,
         isOfficialRest: !!w.is_official_rest,
@@ -561,6 +571,22 @@ export async function aggregateWeeklyLeague(
       const part = primary?.part_name || profile?.current_part_name || "-";
       return { team, part };
     };
+    // 심화/정규 분류용 — 대표 멤버십의 membership_level.
+    const levelOf = (userId: string): string | null =>
+      pickPrimaryMembership(membershipByUser.get(userId) || [])?.membership_level ?? null;
+
+    // ── Team Battle 컨텍스트(팀 카탈로그/파트/리더/시즌휴식/신규 SoT) — 주차 전체 batch 로드.
+    //   best-effort: 실패해도 teamCtx=null 로 두고 teams[] 없이 기존 카드만 산출(무영향).
+    let teamCtx: TeamBattleContext | null = null;
+    try {
+      teamCtx = await loadTeamBattleContext(
+        db,
+        org,
+        weeks.map((w) => ({ id: w.id, seasonKey: w.seasonKey })),
+      );
+    } catch (err) {
+      console.warn("[weekly-league] Team Battle 컨텍스트 로드 실패 — teams 생략", (err as Error)?.message ?? String(err));
+    }
 
     const cards: WeeklyCardData[] = weeks.map((week) => {
       // 주차 레벨 공식 휴식 — 전환 주차(봄·가을 17 / 여름·겨울 9)는 제외(공용 헬퍼).
@@ -609,6 +635,9 @@ export async function aggregateWeeklyLeague(
       let growthSuccess = 0;
       let growthFail = 0;
       let personalRest = 0;
+      // Team Battle 용 per-user verdict(조직 카운트에 실제로 든 유저만) + override 목표.
+      const verdicts = new Map<string, CrewVerdict>();
+      let overrideSuccess: number | null = null;
       if (memberRosterMode) {
         // ── 회원명부(printUsers) 모드 ──
         //   모집단 = activity_started_at <= 주차종료 인 로스터(운영진/시즌전체휴식/graduated/test 이미 제외).
@@ -620,10 +649,10 @@ export async function aggregateWeeklyLeague(
         for (const p of orgProfiles) {
           const started = memberStartByUser.get(p.user_id) ?? (p as { activity_started_at?: string | null }).activity_started_at ?? null;
           if (!started || started.slice(0, 10) > week.endDate) continue; // 미시작(StartDate>주차종료) 제외
-          if (restUserIds.has(p.user_id)) { personalRest++; continue; }
+          if (restUserIds.has(p.user_id)) { personalRest++; verdicts.set(p.user_id, "rest"); continue; }
           const st = statusByUserWeek.get(`${p.user_id}|${week.startDate}`) ?? null;
-          if (st === "success") growthSuccess++;
-          else growthFail++; // uws fail/기타/행없음 → 실패
+          if (st === "success") { growthSuccess++; verdicts.set(p.user_id, "success"); }
+          else { growthFail++; verdicts.set(p.user_id, "fail"); } // uws fail/기타/행없음 → 실패
         }
         // 주차별 성공수 집계 보정 — PMS 실측 override (total/rest 불변, success/fail split 만).
         const ovSuccess = successOverrideByWeekStart.get(week.startDate);
@@ -631,6 +660,7 @@ export async function aggregateWeeklyLeague(
           const nonRest = growthSuccess + growthFail; // override 전 도전 인원(=total−rest)
           growthSuccess = Math.min(ovSuccess, nonRest);
           growthFail = nonRest - growthSuccess;
+          overrideSuccess = growthSuccess; // Team Battle 재배분 목표(팀 success 합 == override).
         }
       } else {
       // effectiveConfirmStar = 예외 override 우선, 없으면 org_week_thresholds.check_threshold.
@@ -649,19 +679,19 @@ export async function aggregateWeeklyLeague(
           const isRest = st === "personal_rest" || st === "official_rest";
           const inCohort = st !== null || (pts ?? 0) >= ecs || isRest;
           if (!inCohort) continue;
-          if (isRest) { personalRest++; continue; }
+          if (isRest) { personalRest++; verdicts.set(uid, "rest"); continue; }
           const pa = pmsActByUserWeek.get(`${uid}|${week.startDate}`);
           const isSuccess = !!pa?.submitted && (pa.star ?? -1) >= 4 && (pts ?? -1) >= ecs;
-          if (isSuccess) growthSuccess++;
-          else growthFail++;
+          if (isSuccess) { growthSuccess++; verdicts.set(uid, "success"); }
+          else { growthFail++; verdicts.set(uid, "fail"); }
         }
       } else {
         // ── 기존 동작 — user_week_statuses 스냅샷 버킷팅 (PMS 데이터 없는 주차/org) ──
         const rows = statusByWeek.get(week.startDate) || [];
         for (const r of rows) {
-          if (r.status === "success") growthSuccess++;
-          else if (r.status === "personal_rest" || r.status === "official_rest") personalRest++;
-          else growthFail++; // 'fail' 및 기타 → 실패
+          if (r.status === "success") { growthSuccess++; verdicts.set(r.user_id, "success"); }
+          else if (r.status === "personal_rest" || r.status === "official_rest") { personalRest++; verdicts.set(r.user_id, "rest"); }
+          else { growthFail++; verdicts.set(r.user_id, "fail"); } // 'fail' 및 기타 → 실패
         }
       }
       } // end memberRosterMode 분기
@@ -671,6 +701,24 @@ export async function aggregateWeeklyLeague(
       // 성장 도전율 = 도전 인원 / 전체 크루, 성장 성공율 = 성공 인원 / 도전 인원.
       const growthChallengeRate = totalCrews > 0 ? Math.round((growthChallenge / totalCrews) * 100) : 0;
       const growthSuccessRate = growthChallenge > 0 ? Math.round((growthSuccess / growthChallenge) * 100) : 0;
+
+      // ── Team Battle(팀별 주차 결과) — 조직 카운트와 같은 per-user verdict 를 팀별로 재버킷팅.
+      //   불변식: Σ teams.successCrew/failCrew/challengeCrew/restCrew == 위 조직 수치. best-effort.
+      let teams: WeeklyLeagueTeamBattle[] | undefined;
+      if (teamCtx) {
+        try {
+          teams = buildTeamBattles({
+            ctx: teamCtx,
+            week: { id: week.id, seasonKey: week.seasonKey },
+            verdicts,
+            teamNameOf: (uid) => teamPartFor(uid).team,
+            levelOf,
+            overrideSuccess,
+          });
+        } catch (err) {
+          console.warn("[weekly-league] Team Battle 산출 실패 — teams 생략", (err as Error)?.message ?? String(err));
+        }
+      }
 
       // 진행 중=대전 중 · 종료+미공표=대전 집계 · 공표+미검수=공표 중 · 공표+검수=검수 완료.
       const leagueRecordStatus: WeeklyCardData["leagueRecordStatus"] = !isEnded
@@ -786,6 +834,7 @@ export async function aggregateWeeklyLeague(
         top10,
         top10Focus,
         top10Growth,
+        teams,
       };
     });
 

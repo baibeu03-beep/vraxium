@@ -83,6 +83,8 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
   const [barsIn, setBarsIn] = useState(false);
   // Champion's Hall 활성 탭 — 기본 '성장 활동량 Top 10'.
   const [champTab, setChampTab] = useState<ChampTabKey>("activity");
+  // Team Battle 읽기 전용 모달(팀 목표 / 주차 플로우 / 크루 코멘트 전문). null = 닫힘.
+  const [teamNote, setTeamNote] = useState<{ title: string; body: string } | null>(null);
   const rootRef = useRef<HTMLElement | null>(null);
 
   // 조직별 포인트 아이콘(포인트 A/B) — 탭·카드가 공유하는 단일 소스.
@@ -195,6 +197,21 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
     return () => window.clearTimeout(t);
   }, [state]);
 
+  // Team Battle 모달 — ESC 로 닫기 + 열려 있는 동안 배경 스크롤 잠금.
+  useEffect(() => {
+    if (!teamNote) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setTeamNote(null);
+    };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [teamNote]);
+
   // 조직 + 주차 시즌 → 테마 변수(--wr-*). 카드 부재 시에도 org 브랜드색으로 폴백.
   const themeVars = useMemo(
     () => getRankingThemeVars(getRankingThemeForSeason(org, card?.seasonName)),
@@ -286,6 +303,22 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
     : !isFinalizedWeek
       ? "이번 주 랭킹은 주차 종료 후 공개됩니다."
       : "표시할 크루가 없습니다.";
+
+  // ── [9] Team Battle — 팀별 주차 결과(집계 DTO). 미설정/휴식 주차면 섹션 숨김.
+  //   teamGoal/weeklyFlow/crewComment 는 입력 기능 전이라 대부분 null → 해당 줄만 생략(오류 없음).
+  //   ⚠️ 팀별 수치(승률·전적·크루 구성)는 전부 DTO 원값을 그대로 표시한다(프론트 재계산 금지).
+  //   아래 요약(팀 수/파트 수/통합 전적)만 teams[] 의 단순 집계다(표시용 카운트, 비즈니스 로직 아님).
+  const teams = Array.isArray(card.teams) ? card.teams : [];
+  const teamCount = teams.length;
+  const partTotal = teams.reduce((s, t) => s + t.partCount, 0);
+  const battleWins = teams.filter((t) => t.battleResult === "win").length;
+  const battleLoses = teams.filter((t) => t.battleResult === "lose").length;
+  const battleDraws = teams.filter((t) => t.battleResult === "draw").length;
+  const battleRecordText = `${battleWins}승 ${battleLoses}패${battleDraws ? ` ${battleDraws}무` : ""}`;
+  const BATTLE_LABEL: Record<string, string> = { win: "WIN", lose: "LOSE", draw: "DRAW" };
+  // 승률 원형 게이지 SVG 기하(반지름/둘레).
+  const GAUGE_R = 30;
+  const GAUGE_C = 2 * Math.PI * GAUGE_R;
 
   return (
     <section className="weekly-detail-page" style={themeVars} ref={rootRef}>
@@ -507,6 +540,200 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
           </div>
         </div>
       </section>
+
+      {/* [9] Team Battle — 팀별 주차 결과(Champion's Hall 아래). 휴식/무팀 주차는 섹션 숨김 */}
+      {!isRestWeek && teams.length > 0 && (
+        <section className="wd-tb" data-fadeup aria-label="Team Battle">
+          {/* 장식 헤더 — Champion's Hall 과 동일 위계(데코 라인 + 글로우 타이틀) */}
+          <header className="wd-tb__head">
+            <span className="wd-tb__deco" aria-hidden="true" />
+            <h2 className="wd-tb__title">
+              Team Battle
+              <span className="wd-tb__title-glow" aria-hidden="true">Team Battle</span>
+            </h2>
+            <span className="wd-tb__deco" aria-hidden="true" />
+          </header>
+          <p className="wd-tb__subtitle">{card.seasonName} · 팀별 이번 주 성장 대전 결과</p>
+
+          {/* 요약 KPI — 팀 수 / 파트 수 / 통합 전적 (Dashboard: 아이콘 + Label + Value) */}
+          <div className="wd-tb__summary">
+            <div className="wd-tb-kpi wd-tb-kpi--accent">
+              <span className="wd-tb-kpi__icon" aria-hidden="true"><i className="ti ti-users-group" /></span>
+              <div className="wd-tb-kpi__content">
+                <span className="wd-tb-kpi__label">참전 팀</span>
+                <strong className="wd-tb-kpi__value">{teamCount}<span className="wd-tb-kpi__unit">팀</span></strong>
+              </div>
+            </div>
+            <div className="wd-tb-kpi wd-tb-kpi--blue">
+              <span className="wd-tb-kpi__icon" aria-hidden="true"><i className="ti ti-layout-grid" /></span>
+              <div className="wd-tb-kpi__content">
+                <span className="wd-tb-kpi__label">전체 파트</span>
+                <strong className="wd-tb-kpi__value">{partTotal}<span className="wd-tb-kpi__unit">파트</span></strong>
+              </div>
+            </div>
+            <div className="wd-tb-kpi wd-tb-kpi--green">
+              <span className="wd-tb-kpi__icon" aria-hidden="true"><i className="ti ti-swords" /></span>
+              <div className="wd-tb-kpi__content">
+                <span className="wd-tb-kpi__label">통합 전적</span>
+                <strong className="wd-tb-kpi__value wd-tb-kpi__value--record">{battleRecordText}</strong>
+              </div>
+            </div>
+          </div>
+
+          {/* 팀 카드 Grid — Desktop 3열 / Tablet 2열 / Mobile 1열 */}
+          <div className="wd-tb__grid">
+            {teams.map((t) => {
+              // 텍스트 SoT(팀 목표/주차 플로우/크루 코멘트) — null/공백이면 행 자체를 숨긴다(빈 박스 금지).
+              const notes = [
+                { key: "goal", label: "팀 목표", icon: "ti ti-target-arrow", value: t.teamGoal },
+                { key: "flow", label: "주차 플로우", icon: "ti ti-route", value: t.weeklyFlow },
+                { key: "comment", label: "크루 코멘트", icon: "ti ti-message-2", value: t.crewComment },
+              ].filter((n) => n.value && n.value.trim());
+
+              // 크루 구성 7종 — 전부 DTO 원값(프론트 재계산 없음). Dashboard: 아이콘 + label + value.
+              const crewStats = [
+                { icon: "ti ti-users", label: "소속 크루", value: t.totalCrew, tone: "accent" },
+                { icon: "ti ti-flame", label: "성장 도전", value: t.challengeCrew, tone: "blue" },
+                { icon: "ti ti-trophy", label: "성장 성공", value: t.successCrew, tone: "green" },
+                { icon: "ti ti-circle-x", label: "성장 실패", value: t.failCrew, tone: "red" },
+                { icon: "ti ti-bed", label: "휴식 크루", value: t.restCrew, tone: "gray" },
+                { icon: "ti ti-stars", label: "심화 크루", value: t.advancedCrew, tone: "accent" },
+                { icon: "ti ti-user-check", label: "정규 크루", value: t.regularCrew, tone: "gray" },
+              ];
+
+              return (
+                <article key={t.teamId ?? t.teamName} className="wd-tb-card" data-result={t.battleResult}>
+                  {/* 헤더 — 팀장 프로필 + 팀명/팀장 + 대전 결과 뱃지 */}
+                  <div className="wd-tb-card__head">
+                    <span className="wd-tb-card__avatar" aria-hidden="true">
+                      {t.leader.profileImageUrl ? (
+                        <img src={t.leader.profileImageUrl} alt="" />
+                      ) : (
+                        <span className="wd-tb-card__avatar-ph">{t.teamName?.trim()?.[0] ?? "?"}</span>
+                      )}
+                    </span>
+                    <div className="wd-tb-card__id">
+                      <strong className="wd-tb-card__name">{t.teamName} 팀</strong>
+                      <span className="wd-tb-card__leader">
+                        {t.leader.name ? `팀장 ${t.leader.name}` : "팀장 미지정"}
+                        {t.partCount > 0 ? ` · ${t.partCount}개 파트` : ""}
+                      </span>
+                    </div>
+                    <span className="wd-tb-card__badge">{BATTLE_LABEL[t.battleResult] ?? "DRAW"}</span>
+                  </div>
+
+                  {/* 리더 학교/전공(있을 때만) */}
+                  {(t.leader.school || t.leader.major) && (
+                    <div className="wd-tb-card__leadermeta">
+                      {t.leader.school ? <span className="wd-tb-card__tag">{t.leader.school}</span> : null}
+                      {t.leader.major ? <span className="wd-tb-card__tag">{t.leader.major}</span> : null}
+                    </div>
+                  )}
+
+                  {/* 대전 블록 — 승률 원형 게이지 + 전/승/패 */}
+                  <div className="wd-tb-card__battle">
+                    <div className="wd-tb-card__gauge" role="img" aria-label={`승률 ${t.winRate}%`}>
+                      <svg viewBox="0 0 72 72">
+                        <circle className="wd-tb-card__gauge-track" cx="36" cy="36" r={GAUGE_R} />
+                        <circle
+                          className="wd-tb-card__gauge-fill"
+                          cx="36"
+                          cy="36"
+                          r={GAUGE_R}
+                          strokeDasharray={GAUGE_C}
+                          strokeDashoffset={barsIn ? GAUGE_C * (1 - t.winRate / 100) : GAUGE_C}
+                        />
+                      </svg>
+                      <div className="wd-tb-card__gauge-label">
+                        <strong>{t.winRate}<span>%</span></strong>
+                        <span>승률</span>
+                      </div>
+                    </div>
+                    <div className="wd-tb-card__record">
+                      {[
+                        { k: "전", v: t.matchCount, tone: "gray" },
+                        { k: "승", v: t.winCount, tone: "green" },
+                        { k: "패", v: t.loseCount, tone: "red" },
+                      ].map((m) => (
+                        <div key={m.k} className={`wd-tb-card__record-item wd-tb-card__record-item--${m.tone}`}>
+                          <span className="wd-tb-card__record-label">{m.k}</span>
+                          <strong className="wd-tb-card__record-value">{m.v}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 크루 구성 — Dashboard 스타일(아이콘 + label + value) */}
+                  <div className="wd-tb-card__crew">
+                    {crewStats.map((s) => (
+                      <div key={s.label} className={`wd-tb-stat wd-tb-stat--${s.tone}`}>
+                        <span className="wd-tb-stat__icon" aria-hidden="true"><i className={s.icon} /></span>
+                        <span className="wd-tb-stat__label">{s.label}</span>
+                        <strong className="wd-tb-stat__value">{s.value}</strong>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 파트명(있을 때만) — 칩 나열 */}
+                  {t.parts.length > 0 && (
+                    <div className="wd-tb-card__parts">
+                      {t.parts.map((p) => (
+                        <span key={p.partId} className="wd-tb-card__part-chip">{p.partName}</span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 텍스트 SoT — null 이면 행 생략. 값이 있으면 한 줄 미리보기 + 클릭 시 읽기 전용 모달 */}
+                  {notes.length > 0 && (
+                    <div className="wd-tb-card__notes">
+                      {notes.map((n) => (
+                        <button
+                          key={n.key}
+                          type="button"
+                          className="wd-tb-note"
+                          onClick={() => setTeamNote({ title: `${t.teamName} 팀 · ${n.label}`, body: n.value as string })}
+                        >
+                          <span className="wd-tb-note__label">
+                            <i className={n.icon} aria-hidden="true" /> {n.label}
+                          </span>
+                          <span className="wd-tb-note__preview">{n.value}</span>
+                          <i className="ti ti-chevron-right wd-tb-note__caret" aria-hidden="true" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Team Battle 읽기 전용 모달 — 팀 목표/주차 플로우/크루 코멘트 전문 */}
+      {teamNote && (
+        <div
+          className="wd-tb-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label={teamNote.title}
+          onClick={() => setTeamNote(null)}
+        >
+          <div className="wd-tb-modal__panel" onClick={(e) => e.stopPropagation()}>
+            <div className="wd-tb-modal__head">
+              <h3 className="wd-tb-modal__title">{teamNote.title}</h3>
+              <button
+                type="button"
+                className="wd-tb-modal__close"
+                aria-label="닫기"
+                onClick={() => setTeamNote(null)}
+              >
+                <i className="ti ti-x" aria-hidden="true" />
+              </button>
+            </div>
+            <p className="wd-tb-modal__body">{teamNote.body}</p>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
