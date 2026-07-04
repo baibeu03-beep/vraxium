@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import Tilt from "react-parallax-tilt";
 import type { WeeklyCardCrew, WeeklyCardData, RestReason } from "@/constants/dummyData/weekly-card-dummy";
 
@@ -126,9 +127,15 @@ const DEFAULT_REST_CONFIG = REST_REASON_CONFIG['시즌 전환'];
 
 interface Props {
   data: WeeklyCardData;
+  // 상세 페이지 링크용 org slug — 없으면 링크 비활성(기존 placeholder 동작).
+  org?: string | null;
 }
 
-export default function WeeklyCardItem({ data }: Props) {
+export default function WeeklyCardItem({ data, org = null }: Props) {
+  // 상세 페이지 경로 — /weekly-ranking/[weekId]?org=. org 미상이면 org 쿼리 생략.
+  const detailHref = `/weekly-ranking/${encodeURIComponent(data.id)}${
+    org ? `?org=${encodeURIComponent(org)}` : ""
+  }`;
   // 썸네일 이미지 로드 실패(매칭된 경로가 디스크에 없음) → placeholder 폴백 유지.
   const [thumbError, setThumbError] = useState(false);
   const isOfficialRest =
@@ -166,17 +173,17 @@ export default function WeeklyCardItem({ data }: Props) {
       <div className="badge__single weekly-card">
         <div className="weekly-card__header">
           <div className="weekly-card__title">
-            {/* [상세 페이지 라우팅 자리] href/onClick 자리는 비워두고, 추후 상세 페이지 연결 시 추가. */}
-            <button
-              type="button"
+            {/* Weekly League 상세 페이지(/weekly-ranking/[weekId]) 로 이동. */}
+            <Link
+              href={detailHref}
               className="weekly-card__league-link"
-              aria-label="Weekly League 상세 페이지 준비 중"
+              aria-label={`${data.seasonName} 상세 보기`}
             >
               <span className="weekly-card__league-icon" aria-hidden="true">
                 <i className="ti ti-trophy" />
               </span>
               <span>Weekly League</span>
-            </button>
+            </Link>
             {/* 첨부 cluster-4-card 의 2026 표시 문자열을 그대로 출력.
                 연도/시즌명/주차명/기간 모두 재계산·재포맷·split 금지. */}
             <h4 className="weekly-card__season">
@@ -202,7 +209,7 @@ export default function WeeklyCardItem({ data }: Props) {
           </div>
         </div>
 
-        <div className="weekly-card__thumb">
+        <Link href={detailHref} className="weekly-card__thumb" aria-label={`${data.seasonName} 상세 보기`}>
           {data.imageUrl && !thumbError ? (
             <Image
               src={data.imageUrl}
@@ -217,7 +224,7 @@ export default function WeeklyCardItem({ data }: Props) {
               <span>주차 이미지</span>
             </div>
           )}
-        </div>
+        </Link>
 
         {isOfficialRest && restConfig ? (
           <div className="weekly-card__rest-notice">

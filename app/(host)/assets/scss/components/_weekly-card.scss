@@ -73,6 +73,7 @@
 
     border: 0;
     background: transparent;
+    text-decoration: none;
     // [조직×분기 테마] 카드 헤더 강조 링크 — 기본값은 기존 전역 토큰 유지.
     color: var(--wr-accent, var(--primary-color));
     font-family: "Pretendard", sans-serif;
@@ -229,6 +230,7 @@
     border-radius: 12px;
     overflow: hidden;
     transition: var(--transition);
+    text-decoration: none;
     display: flex;
     align-items: center;
     justify-content: center;

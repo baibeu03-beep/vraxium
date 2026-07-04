@@ -10,9 +10,11 @@ interface WeeklyCardListProps {
   cards: WeeklyCardData[];
   // 로딩/빈 상태 분리 — 상위(WeeklyRankingContent)가 API 응답 완료 여부를 내려준다.
   loading?: boolean;
+  // 상세 페이지(/weekly-ranking/[weekId]?org=) 링크 생성용 org slug.
+  org?: string | null;
 }
 
-export default function WeeklyCardList({ cards, loading = false }: WeeklyCardListProps) {
+export default function WeeklyCardList({ cards, loading = false, org = null }: WeeklyCardListProps) {
   const [currentPage, setCurrentPage] = useState(1);
 
   // 필터/정렬 변경으로 cards가 갱신되면 1페이지로 리셋
@@ -47,7 +49,7 @@ export default function WeeklyCardList({ cards, loading = false }: WeeklyCardLis
     <div className="weekly-card-list">
       <div className="row vertical-column-gap">
         {visibleCards.map((card) => (
-          <WeeklyCardItem key={card.id} data={card} />
+          <WeeklyCardItem key={card.id} data={card} org={org} />
         ))}
       </div>
 

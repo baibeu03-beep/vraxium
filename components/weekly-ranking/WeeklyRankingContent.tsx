@@ -311,7 +311,7 @@ const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
         </div>
       */}
 
-      <WeeklyCardList cards={filteredAndSortedCards} loading={loading} />
+      <WeeklyCardList cards={filteredAndSortedCards} loading={loading} org={org} />
     </section>
   );
 };

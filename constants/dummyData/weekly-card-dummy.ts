@@ -30,6 +30,13 @@ export type WeeklyCardData = {
   winningTeamImage: string | null;
   top3: WeeklyCardCrew[];
   restReason?: RestReason;
+  // ── 상세 페이지(/weekly-ranking/[weekId]) 전용 표시 필드(선택) ──
+  // 모두 optional — 집계(aggregateWeeklyLeague)/더미는 설정하지 않으므로 미설정 시
+  // 상세 페이지가 기본 이미지/플레이스홀더로 폴백한다(기존 동작 불변, non-breaking).
+  heroImage?: string | null;            // [1] 헤드 배경 이미지. 미설정 → /images/0/weekly-b.png
+  representativeImage?: string | null;  // [5] 주차 대표 이미지. 미설정 → /images/0/weekly-b-2.png
+  weeklyComment?: string | null;        // [6] Weekly Comment 본문(최대 200자). 미설정 → placeholder
+  cluvActivityFlow?: string | null;     // [7] Cluv Activity Flow 본문(최대 200자). 미설정 → placeholder
 };
 
 // TOP3 표시 규칙 검증용 — 이름(3/4/5+), 팀(3/5/6+), 파트(3/5/6+) 케이스를

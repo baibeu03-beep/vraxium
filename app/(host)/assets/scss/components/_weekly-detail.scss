@@ -1,0 +1,527 @@
+/* =========================================
+ * Weekly League — 주차 상세 페이지
+ * Route: /weekly-ranking/[weekId]
+ * Scope: .weekly-detail-page 하위로만 한정. 다른 페이지 영향 금지.
+ *
+ * 컨셉: "게임 리그 시즌 결과 페이지 + Apple 스타일 카드 UI".
+ * 색상은 lib/rankingTheme 가 주입한 --wr-* (조직×시즌) 변수를 소비하며,
+ * 변수 부재 시 기존 골드 톤으로 폴백(회귀 0).
+ * ========================================= */
+
+@keyframes wd-fadeup {
+  from { opacity: 0; transform: translateY(28px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes wd-hero-zoom {
+  from { transform: scale(1.08); }
+  to   { transform: scale(1); }
+}
+
+@keyframes wd-spin {
+  to { transform: rotate(360deg); }
+}
+
+.weekly-detail-page {
+  --wd-accent: var(--wr-accent, #f0c419);
+  --wd-accent-soft: var(--wr-accent-soft, #ffe16a);
+  --wd-glow: var(--wr-glow, rgba(240, 196, 25, 0.35));
+
+  position: relative;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px 0 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  box-sizing: border-box;
+
+  /* ---------- 진입 fade-up (data-fadeup) ---------- */
+  [data-fadeup] {
+    opacity: 0;
+    will-change: opacity, transform;
+    &.is-visible {
+      animation: wd-fadeup 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+  }
+
+  /* ---------- 상단 뒤로가기 ---------- */
+  .wd-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    align-self: flex-start;
+    padding: 6px 14px 6px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.75);
+    font-family: "Pretendard", sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-decoration: none;
+    transition: color 180ms ease, background-color 200ms ease, transform 180ms ease;
+
+    i { font-size: 15px; }
+
+    &:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+      transform: translateX(-2px);
+    }
+  }
+
+  /* ---------- [1] Hero ---------- */
+  .wd-hero {
+    position: relative;
+    width: 100%;
+    height: 360px;
+    border-radius: 22px;
+    overflow: hidden;
+    isolation: isolate;
+    background: #0e1720;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+      0 24px 60px rgba(0, 0, 0, 0.45),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+
+    &__bg {
+      position: absolute;
+      inset: 0;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      z-index: 0;
+      transform-origin: center;
+      animation: wd-hero-zoom 6s ease-out both;
+    }
+
+    &__overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(6, 10, 15, 0.35) 0%, rgba(6, 10, 15, 0.82) 100%),
+        radial-gradient(120% 90% at 50% 0%, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 0.45) 100%);
+    }
+
+    &__inner {
+      position: relative;
+      z-index: 2;
+      height: 100%;
+      padding: 40px 48px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 14px;
+    }
+
+    &__eyebrow {
+      position: absolute;
+      top: 26px;
+      right: 30px;
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 16px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--wd-accent);
+      color: var(--wd-accent-soft);
+      backdrop-filter: blur(6px);
+      font-family: "Khula", "Pretendard", sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    &__title {
+      margin: 0;
+      font-family: "Khula", "Pretendard", sans-serif;
+      font-weight: 800;
+      font-size: clamp(30px, 6vw, 66px);
+      line-height: 1.02;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: #fff;
+      text-shadow:
+        0 2px 18px rgba(0, 0, 0, 0.55),
+        0 0 34px var(--wd-glow);
+    }
+
+    &__season {
+      margin: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-family: "Pretendard", sans-serif;
+      font-size: clamp(13px, 2.2vw, 17px);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: rgba(255, 255, 255, 0.82);
+
+      &::before,
+      &::after {
+        content: "";
+        width: 26px;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--wd-accent));
+      }
+      &::after { transform: scaleX(-1); }
+    }
+  }
+
+  /* ---------- 구분선 ---------- */
+  .wd-divider {
+    width: min(240px, 60%);
+    height: 2px;
+    margin: 0 auto;
+    border-radius: 2px;
+    background: linear-gradient(90deg, transparent, var(--wd-accent), transparent);
+    opacity: 0.85;
+  }
+
+  /* ---------- 메인 그리드 ---------- */
+  .wd-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    gap: 26px;
+    align-items: start;
+  }
+
+  .wd-col {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    min-width: 0;
+  }
+
+  /* ---------- [5] 대표 이미지 카드 ---------- */
+  .wd-repr {
+    margin: 0;
+    border-radius: 22px;
+    overflow: hidden;
+    background: #0e1720;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.4);
+    transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.5s ease;
+
+    &:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 30px 66px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--wd-accent);
+
+      .wd-repr__img { transform: scale(1.05); }
+    }
+
+    &__imgwrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4 / 5;
+      overflow: hidden;
+    }
+
+    &__img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    &__scrim {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(
+        180deg,
+        rgba(6, 10, 15, 0.72) 0%,
+        rgba(6, 10, 15, 0.18) 32%,
+        rgba(6, 10, 15, 0) 55%
+      );
+    }
+
+    /* [2][3][4] 오버레이 — 이미지 위 상단 배치 */
+    &__overlays {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 2;
+      padding: 18px 18px 0;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    &__meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      min-width: 0;
+    }
+  }
+
+  /* [2] 주차명 / [3] 주차기간 glass chip */
+  .wd-chip {
+    margin: 0;
+    max-width: 100%;
+    border-radius: 12px;
+    background: rgba(10, 14, 20, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: #fff;
+    font-family: "Pretendard", sans-serif;
+
+    &--season {
+      padding: 8px 14px;
+      font-size: clamp(15px, 2.4vw, 20px);
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      line-height: 1.25;
+      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+    }
+
+    &--date {
+      padding: 5px 12px;
+      font-size: clamp(11px, 1.8vw, 13px);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: rgba(255, 255, 255, 0.9);
+    }
+  }
+
+  /* [4] 활동 여부 pill — 활동(초록) / 휴식(회색) */
+  .wd-activity {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 15px;
+    border-radius: 999px;
+    font-family: "Pretendard", sans-serif;
+    font-size: clamp(12px, 1.9vw, 14px);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+
+    i { font-size: 15px; }
+
+    &--active {
+      color: #eafff0;
+      background: linear-gradient(135deg, rgba(46, 160, 67, 0.92), rgba(35, 134, 54, 0.92));
+      border: 1px solid rgba(126, 231, 135, 0.7);
+    }
+
+    &--rest {
+      color: #e7ecf1;
+      background: linear-gradient(135deg, rgba(90, 100, 112, 0.9), rgba(64, 72, 82, 0.9));
+      border: 1px solid rgba(180, 190, 200, 0.45);
+    }
+  }
+
+  /* ---------- [5] 하단 격언 ---------- */
+  .wd-quote {
+    position: relative;
+    margin: 0;
+    padding: 26px 28px 22px;
+    border-radius: 20px;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+      rgba(14, 23, 32, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.32);
+    overflow: hidden;
+
+    &::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: linear-gradient(180deg, var(--wd-accent), transparent);
+    }
+
+    &__mark {
+      display: block;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 52px;
+      line-height: 0.6;
+      color: var(--wd-accent);
+      opacity: 0.55;
+      margin-bottom: 6px;
+    }
+
+    &__text {
+      margin: 0;
+      font-family: "HakgyoansimTuho", "Pretendard", sans-serif;
+      font-size: clamp(15px, 2.1vw, 19px);
+      font-style: italic;
+      line-height: 1.72;
+      color: rgba(255, 255, 255, 0.92);
+      word-break: keep-all;
+    }
+
+    &__author {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 16px;
+      font-family: "Pretendard", sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--wd-accent-soft);
+
+      &-emoji { font-size: 18px; }
+    }
+  }
+
+  /* ---------- [6][7] Glass 텍스트 카드 ---------- */
+  .wd-glass {
+    position: relative;
+    padding: 26px 28px;
+    border-radius: 20px;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+      rgba(14, 23, 32, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.32);
+    transition: transform 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease;
+
+    &:hover {
+      transform: translateY(-3px);
+      border-color: rgba(255, 255, 255, 0.16);
+      box-shadow: 0 24px 54px rgba(0, 0, 0, 0.42);
+    }
+
+    &__title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 16px;
+      font-family: "Pretendard", sans-serif;
+      font-size: clamp(16px, 2.3vw, 20px);
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      color: #fff;
+    }
+
+    &__mark {
+      width: 15px;
+      height: 15px;
+      flex-shrink: 0;
+      border-radius: 4px;
+      background: linear-gradient(135deg, var(--wd-accent), var(--wd-accent-soft));
+      box-shadow: 0 0 14px var(--wd-glow);
+    }
+
+    &__body {
+      margin: 0;
+      white-space: pre-line;
+      font-family: "Pretendard", sans-serif;
+      font-size: clamp(14px, 1.9vw, 16px);
+      font-weight: 400;
+      line-height: 1.85;
+      color: rgba(255, 255, 255, 0.85);
+      word-break: keep-all;
+    }
+  }
+
+  /* ---------- 로딩 / 미발견 상태 ---------- */
+  &.weekly-detail-page--status {
+    min-height: calc(100vh - 300px);
+    justify-content: center;
+    align-items: center;
+  }
+
+  .wd-status {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    color: rgba(255, 255, 255, 0.7);
+    font-family: "Pretendard", sans-serif;
+    text-align: center;
+
+    &__spinner {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 3px solid rgba(255, 255, 255, 0.12);
+      border-top-color: var(--wd-accent);
+      animation: wd-spin 0.8s linear infinite;
+    }
+
+    &__title {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 700;
+      color: #fff;
+    }
+  }
+
+  .wd-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: 999px;
+    background: var(--wd-accent);
+    color: #14181c;
+    font-size: 14px;
+    font-weight: 800;
+    text-decoration: none;
+    transition: opacity 180ms ease, transform 180ms ease;
+
+    &:hover { opacity: 0.9; transform: translateY(-1px); }
+  }
+}
+
+/* ---------- 반응형 — 모바일 1컬럼 ---------- */
+@media (max-width: 900px) {
+  .weekly-detail-page {
+    .wd-grid {
+      grid-template-columns: 1fr;
+      gap: 22px;
+    }
+    .wd-hero {
+      height: 280px;
+      &__inner { padding: 30px 24px; }
+      &__eyebrow { top: 16px; right: 16px; padding: 5px 12px; font-size: 11px; }
+    }
+    .wd-repr__imgwrap { aspect-ratio: 4 / 5; }
+  }
+}
+
+@media (max-width: 520px) {
+  .weekly-detail-page {
+    .wd-hero { height: 240px; }
+    .wd-repr__overlays { padding: 14px 14px 0; flex-direction: column; align-items: flex-start; }
+    .wd-glass, .wd-quote { padding: 22px 20px; }
+  }
+}
+
+/* 접근성 — reduced-motion 시 진입/무한 모션 비활성 */
+@media (prefers-reduced-motion: reduce) {
+  .weekly-detail-page {
+    [data-fadeup] { opacity: 1 !important; animation: none !important; }
+    .wd-hero__bg { animation: none !important; }
+    .wd-repr:hover { transform: none; }
+    .wd-repr:hover .wd-repr__img { transform: none; }
+  }
+}
