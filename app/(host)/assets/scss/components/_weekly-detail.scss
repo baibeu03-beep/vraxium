@@ -27,6 +27,17 @@
   --wd-accent-soft: var(--wr-accent-soft, #ffe16a);
   --wd-glow: var(--wr-glow, rgba(240, 196, 25, 0.35));
 
+  // ── 타이포그래피 시스템(프로젝트 전역 폰트 변수 활용) ──
+  //   챔피언십 리포트 위계: Display(esports) / Heading / Badge(stencil) / Sub-head(감성 한글) /
+  //   Quote(감성 한글) / Script(서명체) / Body(가독성 우선 Pretendard 유지).
+  --wd-font-display: var(--chakra-petch, "Khula", "Pretendard", sans-serif); // Hero 제목
+  --wd-font-heading: var(--rajdhani, "Khula", "Pretendard", sans-serif);     // 섹션 제목
+  --wd-font-badge: var(--black-ops-one, "Khula", sans-serif);                // Championship
+  --wd-font-subhead: "HakgyoansimTuho", "Pretendard", sans-serif;            // 주차명
+  --wd-font-quote: "HakgyoansimTuho", "Pretendard", serif;                   // 격언
+  --wd-font-script: var(--lobster, "HakgyoansimTuho", cursive);              // 저자 서명
+  --wd-font-body: "Pretendard", sans-serif;                                  // 본문(유지)
+
   position: relative;
   width: 100%;
   max-width: 1400px;
@@ -103,9 +114,24 @@
       inset: 0;
       z-index: 1;
       pointer-events: none;
+      // 방향은 기존과 동일(위가 밝고 → 아래로 갈수록 어두움) 유지, 강도만 대폭 낮춘다.
+      // 하단도 어두워지되 기존(≈0.82)보다 훨씬 옅게(≈0.30) → 이미지 디테일이 잘 보인다.
       background:
-        linear-gradient(180deg, rgba(6, 10, 15, 0.35) 0%, rgba(6, 10, 15, 0.82) 100%),
-        radial-gradient(120% 90% at 50% 0%, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 0.45) 100%);
+        linear-gradient(
+          180deg,
+          rgba(6, 10, 15, 0.05) 0%,
+          rgba(6, 10, 15, 0.09) 35%,
+          rgba(6, 10, 15, 0.18) 68%,
+          rgba(6, 10, 15, 0.3) 100%
+        ),
+        // 제목 뒤 소프트 스크림(가독성 전용) — 중앙에만 살짝, 하단 전에 사라져
+        // 하단 이미지 밝기에는 영향을 주지 않는다.
+        radial-gradient(
+          85% 46% at 50% 44%,
+          rgba(6, 10, 15, 0.26) 0%,
+          rgba(6, 10, 15, 0.08) 55%,
+          rgba(6, 10, 15, 0) 78%
+        );
     }
 
     &__inner {
@@ -133,46 +159,28 @@
       border: 1px solid var(--wd-accent);
       color: var(--wd-accent-soft);
       backdrop-filter: blur(6px);
-      font-family: "Khula", "Pretendard", sans-serif;
+      font-family: var(--wd-font-badge);
       font-size: 13px;
-      font-weight: 600;
-      letter-spacing: 0.16em;
+      font-weight: 400;
+      letter-spacing: 0.18em;
       text-transform: uppercase;
     }
 
     &__title {
       margin: 0;
-      font-family: "Khula", "Pretendard", sans-serif;
-      font-weight: 800;
-      font-size: clamp(30px, 6vw, 66px);
+      font-family: var(--wd-font-display);
+      font-weight: 700;
+      // 기존 대비 약 1.5배 확대(느낌·letter-spacing·weight 유지, 모바일 반응형 축소).
+      font-size: clamp(44px, 9vw, 96px);
       line-height: 1.02;
-      letter-spacing: 0.02em;
+      letter-spacing: 0.03em;
       text-transform: uppercase;
       color: #fff;
+      // 오버레이를 옅게 해도 제목 가독성이 유지되도록 텍스트 그림자를 조금 더 또렷하게.
       text-shadow:
-        0 2px 18px rgba(0, 0, 0, 0.55),
+        0 1px 3px rgba(0, 0, 0, 0.75),
+        0 2px 18px rgba(0, 0, 0, 0.6),
         0 0 34px var(--wd-glow);
-    }
-
-    &__season {
-      margin: 0;
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      font-family: "Pretendard", sans-serif;
-      font-size: clamp(13px, 2.2vw, 17px);
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      color: rgba(255, 255, 255, 0.82);
-
-      &::before,
-      &::after {
-        content: "";
-        width: 26px;
-        height: 1px;
-        background: linear-gradient(90deg, transparent, var(--wd-accent));
-      }
-      &::after { transform: scaleX(-1); }
     }
   }
 
@@ -189,9 +197,11 @@
   /* ---------- 메인 그리드 ---------- */
   .wd-grid {
     display: grid;
-    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
     gap: 26px;
-    align-items: start;
+    // 좌/우 컬럼을 동일 높이로 stretch — 좌측 이미지가 남는 공간을 채워
+    // (quote 끝 y) == (Cluv Activity Flow 끝 y) 가 되도록 한다.
+    align-items: stretch;
   }
 
   .wd-col {
@@ -199,6 +209,19 @@
     flex-direction: column;
     gap: 22px;
     min-width: 0;
+  }
+
+  // 좌측 컬럼 — 대표 이미지 카드가 flex-grow 로 남는 세로 공간을 흡수한다.
+  //   quote 는 고정 콘텐츠 높이 → 이미지가 늘어나 우측(2개 카드) 총높이와 하단 정렬.
+  .wd-col--left .wd-repr {
+    flex: 1 1 auto;
+  }
+
+  // 우측 컬럼 — 두 카드가 남는 세로 공간을 나눠 채워(=column 높이까지 stretch)
+  //   Cluv Activity Flow 카드의 끝 y 가 좌측 quote 끝 y 와 정렬되도록 한다.
+  //   (좌측 세로 이미지가 더 길어 우측이 짧을 때 카드 박스를 늘려 하단 정렬)
+  .wd-col--right .wd-glass {
+    flex: 1 1 auto;
   }
 
   /* ---------- [5] 대표 이미지 카드 ---------- */
@@ -221,7 +244,10 @@
     &__imgwrap {
       position: relative;
       width: 100%;
-      aspect-ratio: 4 / 5;
+      height: 100%;
+      // 기본 최소 높이 — 이미지를 적절히 줄여 좌측 총높이를 낮추면, 하단 정렬을 위해
+      // flex-grow 하는 우측 카드도 함께 낮아져 내부 빈 공간이 줄어든다(컴팩트 레이아웃).
+      min-height: 400px;
       overflow: hidden;
     }
 
@@ -279,23 +305,30 @@
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     color: #fff;
-    font-family: "Pretendard", sans-serif;
+    font-family: var(--wd-font-body);
 
+    // [주차명] 가장 먼저 눈에 들어오는 정보 — 프로젝트 한글 헤딩 폰트(HakgyoansimTuho)로
+    //   기존 대비 약 2배 확대해 존재감을 높인다. (Rajdhani 등 라틴 헤딩 폰트는 한글 미지원)
     &--season {
-      padding: 8px 14px;
-      font-size: clamp(15px, 2.4vw, 20px);
-      font-weight: 800;
+      padding: 8px 15px;
+      font-family: var(--wd-font-subhead);
+      font-size: clamp(32px, 3.4vw, 42px);
+      font-weight: 700;
       letter-spacing: 0.01em;
-      line-height: 1.25;
-      text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+      line-height: 1.2;
+      word-break: keep-all;
+      overflow-wrap: break-word;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
     }
 
+    // [주차기간] 주차명과 밸런스 맞도록 확대(≈15~16px).
     &--date {
-      padding: 5px 12px;
-      font-size: clamp(11px, 1.8vw, 13px);
+      padding: 5px 13px;
+      font-size: clamp(15px, 1.5vw, 16px);
       font-weight: 600;
-      letter-spacing: 0.02em;
-      color: rgba(255, 255, 255, 0.9);
+      letter-spacing: 0.01em;
+      color: rgba(255, 255, 255, 0.92);
+      white-space: nowrap;
     }
   }
 
@@ -366,12 +399,14 @@
 
     &__text {
       margin: 0;
-      font-family: "HakgyoansimTuho", "Pretendard", sans-serif;
+      font-family: var(--wd-font-quote);
       font-size: clamp(15px, 2.1vw, 19px);
       font-style: italic;
-      line-height: 1.72;
+      line-height: 1.75;
       color: rgba(255, 255, 255, 0.92);
       word-break: keep-all;
+      overflow-wrap: break-word;
+      text-wrap: pretty;
     }
 
     &__author {
@@ -379,10 +414,11 @@
       align-items: center;
       justify-content: flex-end;
       gap: 8px;
-      margin-top: 16px;
-      font-family: "Pretendard", sans-serif;
-      font-size: 15px;
-      font-weight: 700;
+      margin-top: 14px;
+      font-family: var(--wd-font-script);
+      font-size: clamp(19px, 2vw, 23px);
+      font-weight: 400;
+      letter-spacing: 0.01em;
       color: var(--wd-accent-soft);
 
       &-emoji { font-size: 18px; }
@@ -413,17 +449,18 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      margin: 0 0 16px;
-      font-family: "Pretendard", sans-serif;
-      font-size: clamp(16px, 2.3vw, 20px);
-      font-weight: 800;
-      letter-spacing: 0.01em;
+      margin: 0 0 15px;
+      font-family: var(--wd-font-heading);
+      font-size: clamp(17px, 1.7vw, 20px);
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
       color: #fff;
     }
 
     &__mark {
-      width: 15px;
-      height: 15px;
+      width: 14px;
+      height: 14px;
       flex-shrink: 0;
       border-radius: 4px;
       background: linear-gradient(135deg, var(--wd-accent), var(--wd-accent-soft));
@@ -433,12 +470,14 @@
     &__body {
       margin: 0;
       white-space: pre-line;
-      font-family: "Pretendard", sans-serif;
-      font-size: clamp(14px, 1.9vw, 16px);
+      font-family: var(--wd-font-body);
+      font-size: clamp(14.5px, 1.4vw, 16px);
       font-weight: 400;
-      line-height: 1.85;
+      line-height: 1.75;
       color: rgba(255, 255, 255, 0.85);
       word-break: keep-all;
+      overflow-wrap: break-word;
+      text-wrap: pretty;
     }
   }
 
@@ -504,7 +543,13 @@
       &__inner { padding: 30px 24px; }
       &__eyebrow { top: 16px; right: 16px; padding: 5px 12px; font-size: 11px; }
     }
-    .wd-repr__imgwrap { aspect-ratio: 4 / 5; }
+    // 단일 컬럼 — 높이 매칭 불필요. 데스크톱 fill(min-height 560 + flex) 해제, 4:5 고정.
+    .wd-col--left .wd-repr { flex: 0 0 auto; }
+    .wd-repr__imgwrap {
+      height: auto;
+      min-height: 0;
+      aspect-ratio: 4 / 5;
+    }
   }
 }
 

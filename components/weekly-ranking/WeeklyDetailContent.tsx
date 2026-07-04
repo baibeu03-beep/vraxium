@@ -180,7 +180,6 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
         <div className="wd-hero__inner">
           <span className="wd-hero__eyebrow">Championship</span>
           <h1 className="wd-hero__title">CREW WEEKLY LEAGUE</h1>
-          <p className="wd-hero__season">{card.seasonName}</p>
         </div>
       </header>
 

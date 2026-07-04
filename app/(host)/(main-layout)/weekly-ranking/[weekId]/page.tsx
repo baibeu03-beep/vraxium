@@ -43,8 +43,10 @@ function WeeklyDetailPageInner() {
     >
       <Animations />
       <Breadcrumb title={title} />
+      {/* trending/trending-nft 클래스는 제외 — .trending-nft h2 { font-size !important } 등
+          전역 규칙이 상세 카드 제목(h2)을 덮는다. 상세는 .weekly-detail-page 로 자기완결 스타일. */}
       <section
-        className="pb-120 trending trending-nft"
+        className="pb-120"
         style={{ paddingLeft: 0, paddingRight: 0, paddingTop: 30 }}
       >
         <div className="container-fluid" style={{ paddingLeft: 15, paddingRight: 15, maxWidth: "100%" }}>
