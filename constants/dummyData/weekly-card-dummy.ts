@@ -22,6 +22,7 @@ export type ChampionCrew = {
   part: string | null;             // ⑦ 파트
   pointA: number;                  // 포인트 A(성장 활동량=별/points) 수치
   pointB: number;                  // 포인트 B(성장 집중력=방패/advantages) 수치
+  growthRate: number;              // 주차 성장률(%)
   profileImage?: string | null;    // ① 프로필 이미지(없으면 이니셜 폴백)
 };
 
@@ -49,6 +50,7 @@ export type WeeklyCardData = {
   // Champion's Hall(선택) — 미설정 시 상세 페이지가 빈 상태 처리.
   top10?: ChampionCrew[];        // 성장 활동량(포인트 A) 기준
   top10Focus?: ChampionCrew[];   // 성장 집중력(포인트 B) 기준
+  top10Growth?: ChampionCrew[];  // 주차 성장률(%) 기준
   restReason?: RestReason;
   // ── 상세 페이지(/weekly-ranking/[weekId]) 전용 표시 필드(선택) ──
   // 모두 optional — 집계(aggregateWeeklyLeague)/더미는 설정하지 않으므로 미설정 시
@@ -269,9 +271,11 @@ const CH_MAJORS = ['헤어디자인', '시각디자인', '경영학', '컴퓨터
 const CH_TEAMS = ['라이프', '크리에이티브', '커머스', '데이터', '브랜드'];
 const CH_PARTS = ['교자만두', '백엔드', '프론트엔드', '콘텐츠', '마케팅', 'AI모델링'];
 
-// 크루 풀(14명) 생성 → pointA/pointB 각각 기준으로 정렬·상위10 슬라이스해
-// 활동량(top10)·집중력(top10Focus) 두 리스트를 만든다. 두 탭의 멤버십/순서가 자연히 달라진다.
-const buildChampionLists = (seed: number): { activity: ChampionCrew[]; focus: ChampionCrew[] } => {
+// 크루 풀(14명) 생성 → 기준별로 정렬·상위10 슬라이스해 세 리스트(활동량/집중력/성장률)를 만든다.
+// 세 탭의 멤버십/순서가 자연히 달라진다.
+const buildChampionLists = (
+  seed: number,
+): { activity: ChampionCrew[]; focus: ChampionCrew[]; growth: ChampionCrew[] } => {
   const pool = Array.from({ length: 14 }, (_, k) => {
     const s = seed * 100 + k;
     return {
@@ -283,20 +287,32 @@ const buildChampionLists = (seed: number): { activity: ChampionCrew[]; focus: Ch
       part: CH_PARTS[seededRandom(s + 6, CH_PARTS.length)],
       pointA: seededRandom(s + 7, 430, 90),
       pointB: seededRandom(s + 8, 340, 40),
-      pointC: seededRandom(s + 9, 30), // 동점 tie-break(낮은 순)
-      _uid: k,                          // 결정적 최종 tie-break
+      pointC: seededRandom(s + 9, 30),          // 동점 tie-break
+      growthRate: seededRandom(s + 10, 100, 40), // 주차 성장률(%)
+      enhanceSuccess: seededRandom(s + 11, 8),   // 강화 성공 라인 수(동률 tie-break ①)
+      availableWeeks: seededRandom(s + 12, 9, 1),// 활동 가능 주차(동률 tie-break ②)
+      _uid: k,                                    // 결정적 최종 tie-break
       profileImage: null as string | null,
     };
   });
   const rank = (arr: typeof pool): ChampionCrew[] =>
     arr.slice(0, 10).map((c, i) => ({
       rank: i + 1, name: c.name, className: c.className, school: c.school,
-      major: c.major, team: c.team, part: c.part, pointA: c.pointA, pointB: c.pointB,
+      major: c.major, team: c.team, part: c.part,
+      pointA: c.pointA, pointB: c.pointB, growthRate: c.growthRate,
       profileImage: c.profileImage,
     }));
   const activity = rank([...pool].sort((a, b) => b.pointA - a.pointA || b.pointB - a.pointB || a._uid - b._uid));
   const focus = rank([...pool].sort((a, b) => b.pointB - a.pointB || b.pointA - a.pointA || a.pointC - b.pointC || a._uid - b._uid));
-  return { activity, focus };
+  // 성장률: rate desc → 강화성공 desc → 활동주차 asc → pointA desc → pointC desc.
+  const growth = rank([...pool].sort((a, b) =>
+    b.growthRate - a.growthRate ||
+    b.enhanceSuccess - a.enhanceSuccess ||
+    a.availableWeeks - b.availableWeeks ||
+    b.pointA - a.pointA ||
+    b.pointC - a.pointC ||
+    a._uid - b._uid));
+  return { activity, focus, growth };
 };
 
 export const WEEKLY_CARD_DUMMY: WeeklyCardData[] = WEEKLY_RANKING_DISPLAY_MAP.map(
@@ -330,10 +346,10 @@ export const WEEKLY_CARD_DUMMY: WeeklyCardData[] = WEEKLY_RANKING_DISPLAY_MAP.ma
       winningTeamImage: null,
       top3: TOP3_TEMPLATES[i % TOP3_TEMPLATES.length],
       ...(isOfficialRest
-        ? { top10: [], top10Focus: [] }
+        ? { top10: [], top10Focus: [], top10Growth: [] }
         : (() => {
-            const { activity, focus } = buildChampionLists(i + 1);
-            return { top10: activity, top10Focus: focus };
+            const { activity, focus, growth } = buildChampionLists(i + 1);
+            return { top10: activity, top10Focus: focus, top10Growth: growth };
           })()),
     };
   }

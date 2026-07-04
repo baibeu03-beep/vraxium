@@ -697,7 +697,14 @@ export async function aggregateWeeklyLeague(
         };
       });
 
-      // Champion's Hall 크루 매퍼 — 포인트 엔트리 → 표시 카드(포인트 A/B 동시 보유).
+      // 주차 성장률(%) — ⚠️ 본 집계엔 per-user 주차 성장률 컬럼이 없어 **프록시**로 산출한다:
+      //   해당 주차 최대 포인트 대비 상대치(points/maxPoints*100). 진짜 성장률 지표가 생기면 여기만 교체.
+      const weekPts = pointsByWeek.get(week.startDate) || [];
+      const maxWeekPoints = weekPts.reduce((m, x) => Math.max(m, x.points), 0);
+      const growthRateOf = (p: { points: number }): number =>
+        maxWeekPoints > 0 ? Math.round((p.points / maxWeekPoints) * 100) : 0;
+
+      // Champion's Hall 크루 매퍼 — 포인트 엔트리 → 표시 카드(포인트 A/B + 주차 성장률 동시 보유).
       const championFor = (
         p: { user_id: string; points: number; advantages: number },
         rank: number,
@@ -720,6 +727,7 @@ export async function aggregateWeeklyLeague(
           part: part === "-" ? null : part,
           pointA: p.points,
           pointB: p.advantages,
+          growthRate: growthRateOf(p),
           profileImage: cp?.photo ?? null,
         };
       };
@@ -730,13 +738,27 @@ export async function aggregateWeeklyLeague(
       // ② 성장 집중력(포인트 B=advantages) Top 10.
       //    정렬: B desc → A desc → C(penalty) asc → user_id.
       //    (스펙의 4·5순위 '강화 성공 라인수'/'활동 가능 주차'는 본 집계 데이터에 없어 미적용 — user_id 로 결정성 보강.)
-      const top10Focus: ChampionCrew[] = (pointsByWeek.get(week.startDate) || [])
+      const top10Focus: ChampionCrew[] = weekPts
         .filter((p) => p.advantages > 0)
         .sort(
           (a, b) =>
             b.advantages - a.advantages ||
             b.points - a.points ||
             a.penalty - b.penalty ||
+            a.user_id.localeCompare(b.user_id),
+        )
+        .slice(0, 10)
+        .map((p, i) => championFor(p, i + 1));
+
+      // ③ 주차 성장률(%) Top 10.
+      //    정렬: 성장률 desc → (강화성공 desc·활동주차 asc = 데이터없음, 미적용) → A desc → C(penalty) desc → user_id.
+      const top10Growth: ChampionCrew[] = weekPts
+        .filter((p) => growthRateOf(p) > 0)
+        .sort(
+          (a, b) =>
+            growthRateOf(b) - growthRateOf(a) ||
+            b.points - a.points ||
+            b.penalty - a.penalty ||
             a.user_id.localeCompare(b.user_id),
         )
         .slice(0, 10)

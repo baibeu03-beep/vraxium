@@ -93,7 +93,7 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
     () => [
       { key: "activity", label: "성장 활동량 Top 10", icon: pointIcons.a, ready: true },
       { key: "focus", label: "성장 집중력 Top 10", icon: pointIcons.b, ready: true },
-      { key: "growth", label: "주차 성장률 Top 10", icon: GROWTH_RATE_ICON, ready: false },
+      { key: "growth", label: "주차 성장률 Top 10", icon: GROWTH_RATE_ICON, ready: true },
     ],
     [pointIcons],
   );
@@ -264,14 +264,14 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
 
   // Champion's Hall — DTO(card.top10 / card.top10Focus)에서 수신(하드코딩 없음).
   const activeTab = championTabs.find((t) => t.key === champTab) ?? championTabs[0];
-  // 탭별 표시 데이터: 리스트 / 포인트 아이콘 / 포인트 값 getter.
+  // 탭별 표시 데이터: 리스트 / 포인트 아이콘 / 값 getter / 단위. 카드 컴포넌트는 완전 공용.
   const champTabData: Record<
     ChampTabKey,
-    { list: ChampionCrew[]; pointIcon: string; pointOf: (c: ChampionCrew) => number }
+    { list: ChampionCrew[]; pointIcon: string; pointOf: (c: ChampionCrew) => number; unit: string }
   > = {
-    activity: { list: Array.isArray(card.top10) ? card.top10 : [], pointIcon: pointIcons.a, pointOf: (c) => c.pointA },
-    focus: { list: Array.isArray(card.top10Focus) ? card.top10Focus : [], pointIcon: pointIcons.b, pointOf: (c) => c.pointB },
-    growth: { list: [], pointIcon: GROWTH_RATE_ICON, pointOf: () => 0 },
+    activity: { list: Array.isArray(card.top10) ? card.top10 : [], pointIcon: pointIcons.a, pointOf: (c) => c.pointA, unit: "개" },
+    focus: { list: Array.isArray(card.top10Focus) ? card.top10Focus : [], pointIcon: pointIcons.b, pointOf: (c) => c.pointB, unit: "개" },
+    growth: { list: Array.isArray(card.top10Growth) ? card.top10Growth : [], pointIcon: GROWTH_RATE_ICON, pointOf: (c) => c.growthRate, unit: "%" },
   };
   const activeChamp = champTabData[champTab];
 
@@ -481,7 +481,7 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
                       <div className="wd-champ-card__point">
                         <img className="wd-champ-card__point-icon" src={activeChamp.pointIcon} alt="" aria-hidden="true" />
                         <strong className="wd-champ-card__point-value">{activeChamp.pointOf(c).toLocaleString()}</strong>
-                        <span className="wd-champ-card__point-unit">개</span>
+                        <span className="wd-champ-card__point-unit">{activeChamp.unit}</span>
                       </div>
                     </div>
                   );
