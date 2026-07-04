@@ -64,12 +64,11 @@ function QaModeGuardInner({ children }: { children: React.ReactNode }) {
   if (state === "operating") return <>{children}</>;
   if (state === "allowed") return <>{children}</>;
 
+  // QA 접근 판정 중 — 사용자 화면에는 어떤 문구도 렌더하지 않는다(빈 상태).
+  //   판정 로직(위 effect)은 그대로 유지되며, 판정 완료 시 allowed→children / blocked→안내로 전환된다.
+  //   운영 배포는 이 경로에 도달하지 않으므로(state=operating) 빈 화면 노출 없음.
   if (state === "loading") {
-    return (
-      <div style={overlayStyle}>
-        <div style={{ color: "#aaa", fontFamily: "Pretendard", fontSize: 14 }}>QA 모드 확인 중…</div>
-      </div>
-    );
+    return null;
   }
 
   // blocked — QA 배포는 테스트 계정 전용. 배포 스코프는 토글 불가이므로 로그인 CTA 만 제공.
