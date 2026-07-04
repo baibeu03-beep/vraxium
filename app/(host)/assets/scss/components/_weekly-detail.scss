@@ -38,6 +38,11 @@
   --wd-accent-soft: var(--wr-accent-soft, #ffe16a);
   --wd-glow: var(--wr-glow, rgba(240, 196, 25, 0.35));
 
+  // ── 섹션 간 세로 리듬(단일 SoT) ──
+  //   Hero / 대표이미지·코멘트 / 크루 종합 결과 / Champion's Hall 사이를 이 한 값으로 통일한다.
+  //   back-link·divider 는 이 값에 상대적으로 보정되어 리듬을 깨지 않는다(아래 참고).
+  --wd-section-gap: 72px;
+
   // ── 타이포그래피 시스템(프로젝트 전역 폰트 변수 활용) ──
   //   챔피언십 리포트 위계: Display(esports) / Heading / Badge(stencil) / Sub-head(감성 한글) /
   //   Quote(감성 한글) / Script(서명체) / Body(가독성 우선 Pretendard 유지).
@@ -62,7 +67,7 @@
   padding: 20px 0 64px;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: var(--wd-section-gap);
   box-sizing: border-box;
 
   /* ---------- 진입 fade-up (data-fadeup) ---------- */
@@ -80,6 +85,8 @@
     align-items: center;
     gap: 6px;
     align-self: flex-start;
+    // 뒤로가기 칩은 Hero 에 붙는 내비 요소 — 섹션 리듬(gap) 대신 ~28px 로 보정.
+    margin-bottom: calc(28px - var(--wd-section-gap));
     padding: 6px 14px 6px 10px;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.05);
@@ -205,7 +212,9 @@
   .wd-divider {
     width: min(240px, 60%);
     height: 2px;
-    margin: 0 auto;
+    // divider 는 Hero↔grid 사이 장식 요소 — 양쪽에 gap 이 두 번 붙지 않도록 절반만큼 당겨
+    // Hero→grid 전체 간격이 다른 섹션과 같은 리듬(=한 번의 section-gap)을 유지하게 한다.
+    margin: calc(var(--wd-section-gap) / -2) auto;
     border-radius: 2px;
     background: linear-gradient(90deg, transparent, var(--wd-accent), transparent);
     opacity: 0.85;
@@ -1148,6 +1157,8 @@
 /* ---------- 반응형 — 모바일 1컬럼 ---------- */
 @media (max-width: 900px) {
   .weekly-detail-page {
+    // 섹션 리듬 — 태블릿/모바일에서는 살짝 좁혀 화면 밀도 유지(back-link·divider 자동 보정).
+    --wd-section-gap: 52px;
     // Champion's Hall — 태블릿 하단: 3열
     .wd-champ__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .wd-champ__head { gap: 12px; }
