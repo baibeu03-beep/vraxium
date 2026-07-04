@@ -785,6 +785,7 @@ export async function aggregateWeeklyLeague(
         top3,
         top10,
         top10Focus,
+        top10Growth,
       };
     });
 

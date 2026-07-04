@@ -275,6 +275,18 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
   };
   const activeChamp = champTabData[champTab];
 
+  // Top10 비었을 때 상태별 fallback 문구.
+  //   · 공식 휴식 주차            → 랭킹 미제공
+  //   · 점수 미확정(대전 중/집계/공표, 검수 완료 아님) → 주차 종료 후 공개
+  //   · 완료(검수 완료)인데 데이터 없음 → 표시할 크루 없음
+  const isRestWeek = card.leagueResultStatus === "공식 휴식" || card.leagueRecordStatus === "대전 휴식";
+  const isFinalizedWeek = card.leagueRecordStatus === "검수 완료";
+  const champEmptyMessage = isRestWeek
+    ? "공식 휴식 주차에는 랭킹이 제공되지 않습니다."
+    : !isFinalizedWeek
+      ? "이번 주 랭킹은 주차 종료 후 공개됩니다."
+      : "표시할 크루가 없습니다.";
+
   return (
     <section className="weekly-detail-page" style={themeVars} ref={rootRef}>
       <Link href={backHref} className="wd-back-link">
@@ -489,7 +501,7 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
               </div>
             ) : (
               <div className="wd-champ__empty">
-                {activeTab.ready ? "표시할 크루가 없습니다." : "곧 공개됩니다."}
+                {activeTab.ready ? champEmptyMessage : "곧 공개됩니다."}
               </div>
             )}
           </div>
