@@ -813,77 +813,54 @@
   }
 
   /* =========================================
-   * Weekly League MVP — 팀 에이스 (Champion's Hall 아래 · Team Battle 위)
+   * Weekly League MVP — 팀 에이스 (Champion's Hall '내부' 하위 섹션)
    * 컨셉: Premium 수상 카드(Award). 은은한 Glow + Gold Accent Border + Hover Lift.
-   * 헤더는 Champion's Hall 과 동일 위계(데코 라인 + 글로우 타이틀).
+   * ⚠️ 헤더는 독립 섹션이 아니라 Champion's Hall(h2) 아래의 Sub Section Title(h3):
+   *    좌측 정렬 소제목 + 작은 accent bar. 데코 라인·글로우·디바이더 최소화(위계 한 단계 down).
    * ========================================= */
   .wd-mvp {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 14px;
+    // Champion's Hall 카드와 자연스럽게 이어지도록 상단에 약간의 리듬만(독립 섹션 gap 아님).
+    margin-top: 6px;
 
-    /* 장식 헤더 */
-    &__head {
+    /* 소제목 헤더 — 좌측 정렬 + 작은 accent bar(절제된 장식) */
+    &__subhead {
       display: flex;
       align-items: center;
-      justify-content: center;
-      gap: 22px;
+      gap: 10px;
     }
 
-    &__deco {
-      position: relative;
-      flex: 1 1 auto;
-      max-width: 220px;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, var(--wd-accent));
-
-      &::after {
-        content: "";
-        position: absolute;
-        top: 50%;
-        right: -3px;
-        width: 6px;
-        height: 6px;
-        transform: translateY(-50%) rotate(45deg);
-        background: var(--wd-accent);
-        box-shadow: 0 0 10px var(--wd-glow);
-      }
-      &:last-child {
-        background: linear-gradient(90deg, var(--wd-accent), transparent);
-        &::after { right: auto; left: -3px; }
-      }
+    &__mark {
+      flex-shrink: 0;
+      width: 4px;
+      height: 17px;
+      border-radius: 2px;
+      background: linear-gradient(180deg, var(--wd-accent), var(--wd-accent-soft));
+      box-shadow: 0 0 6px var(--wd-glow);
     }
 
     &__title {
-      position: relative;
       margin: 0;
-      font-family: var(--wd-font-display);
-      font-size: clamp(28px, 4.6vw, 52px);
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 8px;
+      // Champion's Hall(display, 28~52px) 보다 확실히 작은 heading 위계.
+      font-family: var(--wd-font-heading);
+      font-size: clamp(17px, 2.1vw, 22px);
       font-weight: 700;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.01em;
+      line-height: 1.2;
       color: #fff;
-      text-align: center;
-      white-space: nowrap;
-      text-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
-    }
-    &__title-glow {
-      position: absolute;
-      inset: 0;
-      z-index: -1;
-      color: var(--wd-accent);
-      filter: blur(18px);
-      opacity: 0.5;
-      pointer-events: none;
-      user-select: none;
     }
 
     &__subtitle {
-      margin: 2px 0 20px;
-      text-align: center;
-      font-family: var(--wd-font-subhead);
-      font-size: 16px;
+      font-family: var(--wd-font-body);
+      font-size: 13px;
       font-weight: 500;
-      letter-spacing: 0.02em;
+      letter-spacing: 0.01em;
       color: var(--wd-accent-soft);
     }
 
@@ -2144,9 +2121,6 @@
     //   헤더 데코만 축소해 좁은 폭에서 타이틀이 잘리지 않게 한다.
     .wd-tb__head { gap: 12px; }
     .wd-tb__deco { max-width: 90px; }
-    // Weekly League MVP — 헤더 데코 축소(좁은 폭 타이틀 보호).
-    .wd-mvp__head { gap: 12px; }
-    .wd-mvp__deco { max-width: 90px; }
   }
 }
 

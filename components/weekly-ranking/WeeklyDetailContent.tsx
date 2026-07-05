@@ -528,24 +528,22 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
             )}
           </div>
         </div>
-      </section>
 
-      {/* Weekly League MVP — 팀 에이스(Champion's Hall 아래 · Team Battle 위). 휴식/무팀 주차는 섹션 숨김 */}
-      {!isRestWeek && mvps.length > 0 && (
-        <section className="wd-mvp" data-fadeup aria-label="Weekly League MVP">
-          {/* 장식 헤더 — Champion's Hall 과 동일 Premium 위계(데코 라인 + 글로우 타이틀) */}
-          <header className="wd-mvp__head">
-            <span className="wd-mvp__deco" aria-hidden="true" />
-            <h2 className="wd-mvp__title">
-              Weekly League MVP
-              <span className="wd-mvp__title-glow" aria-hidden="true">Weekly League MVP</span>
-            </h2>
-            <span className="wd-mvp__deco" aria-hidden="true" />
-          </header>
-          <p className="wd-mvp__subtitle">(팀 에이스)</p>
+        {/* Weekly League MVP — Champion's Hall '내부' 하위 섹션(Sub Section Title). 독립 섹션 아님.
+            휴식/무팀 주차는 숨김. 위계: Champion's Hall(h2) > Weekly League MVP(h3). */}
+        {!isRestWeek && mvps.length > 0 && (
+          <div className="wd-mvp" data-fadeup aria-labelledby="wd-mvp-title">
+            {/* 소제목 — Champion's Hall 보다 한 단계 작은 h3(장식·글로우·디바이더 최소화) */}
+            <div className="wd-mvp__subhead">
+              <span className="wd-mvp__mark" aria-hidden="true" />
+              <h3 className="wd-mvp__title" id="wd-mvp-title">
+                Weekly League MVP
+                <span className="wd-mvp__subtitle">(팀 에이스)</span>
+              </h3>
+            </div>
 
-          {/* 카드 Grid — Desktop 3열 / Tablet 2열 / Mobile 1열. 팀 증가 시 아래로 자동 확장 */}
-          <div className="wd-mvp__grid">
+            {/* 카드 Grid — Desktop 3열 / Tablet 2열 / Mobile 1열. 팀 증가 시 아래로 자동 확장 */}
+            <div className="wd-mvp__grid">
             {mvps.map((m: WeeklyLeagueMvp) => (
               <article key={m.teamId ?? m.teamName} className="wd-mvp-card">
                 <div className="wd-mvp-card__body">
@@ -601,9 +599,10 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
                 </div>
               </article>
             ))}
+            </div>
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
       {/* [9] Team Battle — 팀별 주차 결과(Champion's Hall 아래). 휴식/무팀 주차는 섹션 숨김 */}
       {!isRestWeek && teams.length > 0 && (
