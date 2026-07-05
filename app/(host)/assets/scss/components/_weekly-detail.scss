@@ -1724,6 +1724,159 @@
     }
   }
 
+  /* =========================================
+   * [5] Weekly Rank Showcase — 크루 개별 활동 결과(Team Battle 아래 메인 섹션)
+   * 헤더: Champion's Hall · Team Battle 과 동일 메인 위계(데코 라인 + 글로우 타이틀).
+   * 이번 회차: Header + Filter Bar 까지. Filter = Premium Dashboard Glass Card,
+   *   드롭다운은 기존 nice-select(.tournaments cascade) 재사용.
+   * ========================================= */
+  .wd-wrs {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+
+    /* 장식 헤더 — Team Battle 과 동일 위계 */
+    &__head {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 22px;
+    }
+
+    &__deco {
+      position: relative;
+      flex: 1 1 auto;
+      max-width: 220px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--wd-accent));
+
+      &::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        right: -3px;
+        width: 6px;
+        height: 6px;
+        transform: translateY(-50%) rotate(45deg);
+        background: var(--wd-accent);
+        box-shadow: 0 0 10px var(--wd-glow);
+      }
+      &:last-child {
+        background: linear-gradient(90deg, var(--wd-accent), transparent);
+        &::after { right: auto; left: -3px; }
+      }
+    }
+
+    &__title {
+      position: relative;
+      margin: 0;
+      font-family: var(--wd-font-display);
+      font-size: clamp(28px, 4.6vw, 52px);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #fff;
+      text-align: center;
+      white-space: nowrap;
+      text-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+    }
+    &__title-glow {
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      color: var(--wd-accent);
+      filter: blur(18px);
+      opacity: 0.5;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    &__subtitle {
+      margin: -8px 0 4px;
+      text-align: center;
+      font-family: var(--wd-font-body);
+      font-size: 13px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.55);
+    }
+
+    /* Filter Bar — Premium Glass Card */
+    &__filter {
+      padding: 18px 22px;
+      border-radius: 20px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+        rgba(14, 23, 32, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.32);
+    }
+
+    /* Desktop 한 줄 / Mobile 줄바꿈 */
+    &__filter-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px 22px;
+    }
+
+    &__field {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      white-space: nowrap;
+    }
+
+    &__field-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+      font-family: var(--wd-font-body);
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.62);
+    }
+    &__dot { color: var(--wd-accent); font-size: 9px; line-height: 1; }
+
+    /* 초기화 버튼 — Premium(관리자 톤 회피). Desktop 우측 정렬. */
+    &__reset {
+      margin-left: auto;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 18px;
+      border-radius: 11px;
+      background: color-mix(in srgb, var(--wd-accent) 16%, transparent);
+      border: 1px solid color-mix(in srgb, var(--wd-accent) 50%, transparent);
+      color: var(--wd-accent-soft);
+      font-family: var(--wd-font-heading);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+      i { font-size: 15px; }
+      &:hover {
+        background: color-mix(in srgb, var(--wd-accent) 26%, transparent);
+        box-shadow: 0 0 16px var(--wd-glow);
+      }
+      &:active { transform: translateY(1px); }
+    }
+
+    /* 드롭다운(nice-select) — org accent 정합(list 페이지와 동일 처리). 3-클래스 선택자로 base cascade override. */
+    .nice-select::after { border-color: var(--wd-accent) !important; }
+    .nice-select::before { color: var(--wd-accent); }
+    .nice-select-dropdown .option.selected,
+    .nice-select-dropdown .option.focus,
+    .nice-select-dropdown .option:hover {
+      color: var(--wd-accent) !important;
+      &::before { color: var(--wd-accent); }
+    }
+  }
+
   /* ---------- 메인 그리드 ---------- */
   .wd-grid {
     display: grid;
@@ -2121,6 +2274,9 @@
     //   헤더 데코만 축소해 좁은 폭에서 타이틀이 잘리지 않게 한다.
     .wd-tb__head { gap: 12px; }
     .wd-tb__deco { max-width: 90px; }
+    // Weekly Rank Showcase — 헤더 데코 축소.
+    .wd-wrs__head { gap: 12px; }
+    .wd-wrs__deco { max-width: 90px; }
   }
 }
 
@@ -2143,6 +2299,11 @@
     .wd-tb-card { padding: 18px 16px 16px; }
     // Weekly League MVP — 소형 모바일 패딩 축소.
     .wd-mvp-card { padding: 18px 16px 16px; }
+
+    // Weekly Rank Showcase — 소형 모바일: 필드/버튼 세로 스택(라벨↔드롭다운 양끝 정렬).
+    .wd-wrs__filter { padding: 16px; }
+    .wd-wrs__field { width: 100%; justify-content: space-between; }
+    .wd-wrs__reset { margin-left: 0; width: 100%; justify-content: center; }
   }
 }
 

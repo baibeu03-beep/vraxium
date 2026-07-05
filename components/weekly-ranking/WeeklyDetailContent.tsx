@@ -5,6 +5,11 @@ import Link from "next/link";
 import { WEEKLY_CARD_DUMMY, type WeeklyCardData, type ChampionCrew, type WeeklyLeagueMvp } from "@/constants/dummyData/weekly-card-dummy";
 import { isDemoMode } from "@/utils/isDemoMode";
 import { getRankingThemeForSeason, getRankingThemeVars } from "@/lib/rankingTheme";
+import {
+  WeeklyFilterSelect,
+  getSelectWidthByLongestLabel,
+  type FilterOption,
+} from "@/components/weekly-ranking/WeeklyFilterBar";
 
 // ── 기본 이미지(요구사항 SoT) ── DTO 이미지 필드 미설정 시 폴백.
 const DEFAULT_HERO_IMAGE = "/images/0/weekly-b.png";
@@ -68,6 +73,26 @@ const resolveActivity = (card: WeeklyCardData) => {
   return { isRest, label: isRest ? "공식 휴식" : "공식 활동" };
 };
 
+// ── [5] Weekly Rank Showcase — 필터 옵션(모든 드롭다운에 Void '-' 존재, 기본 선택도 '-') ──
+//   ① 주차 진행 / ② 주차 결과는 고정 옵션. ③ 소속 팀은 DTO(card.teams)에서 구성(하드코딩 금지).
+const WRS_VOID = "-";
+const WRS_PROGRESS_OPTIONS: FilterOption[] = [
+  { value: WRS_VOID, label: "-" },
+  { value: "challenge", label: "성장 도전" },
+  { value: "rest", label: "성장 휴식" },
+];
+const WRS_RESULT_OPTIONS: FilterOption[] = [
+  { value: WRS_VOID, label: "-" },
+  { value: "success", label: "성장 성공" },
+  { value: "fail", label: "성장 실패" },
+];
+
+// 정렬 규칙 — 다음 작업(크루 목록)에서 소비할 키 시퀀스. 이번 회차는 구조만 선반영.
+//   · 필터 미적용(기본): 품계 desc → 주차 성장률 desc → 이름 가나다순
+//   · 필터 1개 이상 적용: 누적 주차 desc → 주차 성장률 desc → 팀 가나다순 → 파트 가나다순 → 이름 가나다순
+const WRS_SORT_KEYS_DEFAULT = ["품계", "주차성장률", "이름"] as const;
+const WRS_SORT_KEYS_FILTERED = ["누적주차", "주차성장률", "팀", "파트", "이름"] as const;
+
 interface WeeklyDetailContentProps {
   weekId: string;
   // 조직 slug(phalanx · encre · oranke). 상세 데이터 조회에 필요.
@@ -83,6 +108,10 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
   const [barsIn, setBarsIn] = useState(false);
   // Champion's Hall 활성 탭 — 기본 '성장 활동량 Top 10'.
   const [champTab, setChampTab] = useState<ChampTabKey>("activity");
+  // Weekly Rank Showcase 필터 — 3개 드롭다운 모두 Void('-') 기본값. 복합(AND) 조건으로 동작.
+  const [wrsProgress, setWrsProgress] = useState<string>(WRS_VOID);
+  const [wrsResult, setWrsResult] = useState<string>(WRS_VOID);
+  const [wrsTeam, setWrsTeam] = useState<string>(WRS_VOID);
   const rootRef = useRef<HTMLElement | null>(null);
 
   // 조직별 포인트 아이콘(포인트 A/B) — 탭·카드가 공유하는 단일 소스.
@@ -293,6 +322,27 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
   //   아래 요약(팀 수/파트 수/통합 전적)만 teams[] 의 단순 집계다(표시용 카운트, 비즈니스 로직 아님).
   const teams = Array.isArray(card.teams) ? card.teams : [];
   const teamCount = teams.length;
+
+  // ── [5] Weekly Rank Showcase 필터 ──
+  //   소속 팀 옵션 = DTO(card.teams)의 팀명(유니크·가나다순) + Void('-'). 하드코딩 없음.
+  const wrsTeamOptions: FilterOption[] = [
+    { value: WRS_VOID, label: "-" },
+    ...Array.from(new Set(teams.map((t) => t.teamName).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b, "ko"))
+      .map((name) => ({ value: name, label: `${name} 팀` })),
+  ];
+  const wrsProgressWidth = getSelectWidthByLongestLabel(WRS_PROGRESS_OPTIONS, 132);
+  const wrsResultWidth = getSelectWidthByLongestLabel(WRS_RESULT_OPTIONS, 132);
+  const wrsTeamWidth = getSelectWidthByLongestLabel(wrsTeamOptions, 150);
+  const resetWrsFilters = () => {
+    setWrsProgress(WRS_VOID);
+    setWrsResult(WRS_VOID);
+    setWrsTeam(WRS_VOID);
+  };
+  // 필터가 하나 이상 적용되었는지 → 정렬 규칙 전환(구조 선반영, 목록은 다음 작업).
+  const wrsHasActiveFilter =
+    wrsProgress !== WRS_VOID || wrsResult !== WRS_VOID || wrsTeam !== WRS_VOID;
+  const wrsSortKeys = wrsHasActiveFilter ? WRS_SORT_KEYS_FILTERED : WRS_SORT_KEYS_DEFAULT;
 
   // ── Weekly League MVP(팀 에이스) — 팀명 가나다순 고정 정렬(SoT: 렌더 시점 정렬).
   //   선정 크루가 바뀌어도 카드 위치는 팀명으로 결정 → 매주 동일 위치 유지.
@@ -811,6 +861,72 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
           </div>
         </section>
       )}
+
+      {/* [5] Weekly Rank Showcase — 크루 개별 활동 결과(Team Battle 아래 메인 섹션).
+          이번 회차는 Header + Filter Bar 까지만. 크루 카드 목록은 다음 작업에서 구현. */}
+      <section
+        className="wd-wrs"
+        data-fadeup
+        aria-label="Weekly Rank Showcase"
+        data-sort-rule={wrsSortKeys.join(" > ")}
+      >
+        {/* 장식 헤더 — Champion's Hall · Team Battle 과 동일 메인 위계(데코 라인 + 글로우 타이틀) */}
+        <header className="wd-wrs__head">
+          <span className="wd-wrs__deco" aria-hidden="true" />
+          <h2 className="wd-wrs__title">
+            Weekly Rank Showcase
+            <span className="wd-wrs__title-glow" aria-hidden="true">Weekly Rank Showcase</span>
+          </h2>
+          <span className="wd-wrs__deco" aria-hidden="true" />
+        </header>
+        <p className="wd-wrs__subtitle">{card.seasonName} · 이번 주 크루 개별 활동 결과</p>
+
+        {/* Filter Bar — Premium Glass Card. Desktop 한 줄 / Mobile 줄바꿈.
+            드롭다운은 기존 nice-select(.tournaments cascade) 재사용, 모든 옵션에 Void('-') 존재. */}
+        <div className="wd-wrs__filter tournaments">
+          <div className="wd-wrs__filter-row">
+            <div className="wd-wrs__field">
+              <span className="wd-wrs__field-label">
+                <span className="wd-wrs__dot" aria-hidden="true">●</span> 주차 진행
+              </span>
+              <WeeklyFilterSelect
+                options={WRS_PROGRESS_OPTIONS}
+                value={wrsProgress}
+                onChange={setWrsProgress}
+                width={wrsProgressWidth}
+              />
+            </div>
+
+            <div className="wd-wrs__field">
+              <span className="wd-wrs__field-label">
+                <span className="wd-wrs__dot" aria-hidden="true">●</span> 주차 결과
+              </span>
+              <WeeklyFilterSelect
+                options={WRS_RESULT_OPTIONS}
+                value={wrsResult}
+                onChange={setWrsResult}
+                width={wrsResultWidth}
+              />
+            </div>
+
+            <div className="wd-wrs__field">
+              <span className="wd-wrs__field-label">
+                <span className="wd-wrs__dot" aria-hidden="true">●</span> 소속 팀
+              </span>
+              <WeeklyFilterSelect
+                options={wrsTeamOptions}
+                value={wrsTeam}
+                onChange={setWrsTeam}
+                width={wrsTeamWidth}
+              />
+            </div>
+
+            <button type="button" className="wd-wrs__reset" onClick={resetWrsFilters}>
+              <i className="ti ti-refresh" aria-hidden="true" /> 초기화
+            </button>
+          </div>
+        </div>
+      </section>
     </section>
   );
 }

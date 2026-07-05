@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-interface FilterOption {
+export interface FilterOption {
   value: string;
   label: string;
 }
@@ -24,7 +24,7 @@ interface WeeklyFilterBarProps {
 
 // 한글 라벨이 잘리지 않도록 charWidth/extraPadding을 넉넉히.
 // select별 minWidth는 호출부에서 별도로 지정해 더 넉넉한 하한을 보장.
-const getSelectWidthByLongestLabel = (
+export const getSelectWidthByLongestLabel = (
   options: FilterOption[],
   minWidth = 128,
   charWidth = 15,
@@ -49,7 +49,7 @@ interface WeeklyFilterSelectProps {
 // Weekly 전용 React select.
 // 공용 nice-select2 라이브러리의 DOM 조작과 React state 충돌을 회피.
 // 시각 스타일은 `.nice-select` cosmetic 규칙(_all-sections.scss)을 그대로 cascade.
-const WeeklyFilterSelect = ({
+export const WeeklyFilterSelect = ({
   options,
   value,
   onChange,
