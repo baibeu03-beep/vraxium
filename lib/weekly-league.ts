@@ -36,6 +36,7 @@ import type {
   RestReason,
   WeeklyLeagueTeamBattle,
   WeeklyLeagueMvp,
+  CrewRankShowcase,
 } from "@/constants/dummyData/weekly-card-dummy";
 import {
   loadTeamBattleContext,
@@ -847,6 +848,58 @@ export async function aggregateWeeklyLeague(
           .filter((x): x is WeeklyLeagueMvp => x != null);
       }
 
+      // ── [5] Weekly Rank Showcase — 크루 개별 활동 결과(best-effort) ──
+      //   points/advantages 보유 크루 대상. championFor 재사용(프로필/포인트/팀·파트/성장률프록시),
+      //   결과는 per-user verdict(success/fail/rest)로 매핑.
+      //   ⚠️ 품계(user_grade_stats)·강화율 5종+전주 델타·누적 성공주차·위클리 리뷰는 본 집계에 미로드다.
+      //      백엔드 DTO 확장 필요 → 여기선 안전한 placeholder(기본품계/0/null)로 형태만 완결한다.
+      const crewBase = (weekPts as Array<{ user_id: string; points: number; advantages: number; penalty: number }>)
+        .filter((p) => p.points > 0 || p.advantages > 0)
+        .map((p) => {
+          const c = championFor(p, 0);
+          const v = verdicts.get(p.user_id) ?? null;
+          const weeklyResult: "success" | "fail" | null =
+            v === "success" ? "success" : v === "fail" ? "fail" : null;
+          return { p, c, weeklyProgress: (v === "rest" ? "rest" : "challenge") as "challenge" | "rest", weeklyResult };
+        });
+      // 기본 정렬(품계 미상 → 주차 성장률 desc → 이름 가나다순) 로 전체 등수 확정.
+      crewBase.sort(
+        (a, b) =>
+          b.c.growthRate - a.c.growthRate ||
+          a.c.name.localeCompare(b.c.name, "ko") ||
+          a.p.user_id.localeCompare(b.p.user_id),
+      );
+      const crewTotal = crewBase.length;
+      const crewRankShowcase: CrewRankShowcase[] = crewBase.map((x, i) => ({
+        userId: x.p.user_id,
+        weekId: week.id,
+        rank: i + 1,
+        totalRankCount: crewTotal,
+        gradeLevel: 10, // TODO(backend): user_grade_stats.grade
+        grade: "-",
+        profileImage: x.c.profileImage ?? null,
+        name: x.c.name,
+        className: x.c.className,
+        school: x.c.school,
+        major: x.c.major,
+        teamName: x.c.team,
+        partName: x.c.part,
+        pointA: x.p.points,
+        pointB: x.p.advantages,
+        pointC: x.p.penalty,
+        cumulativeSuccessWeeks: 0, // TODO(backend)
+        weeklySuccessDelta: x.weeklyResult === "success" ? 1 : 0,
+        weeklyProgress: x.weeklyProgress,
+        weeklyResult: x.weeklyResult,
+        weeklyGrowthRate: x.c.growthRate,
+        weeklyGrowthRateDelta: 0, // TODO(backend): 전주 대비
+        infoRate: 0, infoRateDelta: 0,
+        experienceRate: 0, experienceRateDelta: 0,
+        competencyRate: 0, competencyRateDelta: 0,
+        careerRate: 0, careerRateDelta: 0,
+        weeklyReview: null, // TODO(backend): cluster-4-card weekly review
+      }));
+
       return {
         id: week.id,
         seasonName: week.seasonName,
@@ -871,6 +924,7 @@ export async function aggregateWeeklyLeague(
         top10Growth,
         teams,
         weeklyLeagueMvp,
+        crewRankShowcase,
       };
     });
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { WEEKLY_CARD_DUMMY, type WeeklyCardData, type ChampionCrew, type WeeklyLeagueMvp } from "@/constants/dummyData/weekly-card-dummy";
+import { WEEKLY_CARD_DUMMY, type WeeklyCardData, type ChampionCrew, type WeeklyLeagueMvp, type CrewRankShowcase } from "@/constants/dummyData/weekly-card-dummy";
 import { isDemoMode } from "@/utils/isDemoMode";
 import { getRankingThemeForSeason, getRankingThemeVars } from "@/lib/rankingTheme";
 import {
@@ -20,22 +20,72 @@ const DEFAULT_REPRESENTATIVE_IMAGE = "/images/0/weekly-b-2.png";
 const GROWTH_RATE_ICON = "/images/0/cluster4/icon/icon - 시즌 성장률.png"; // 주차 성장률(공통)
 
 // 조직별 포인트 아이콘(웹 경로 = public 기준). 경로 대소문자·공백을 정확히 유지.
-const ORG_POINT_ICONS: Record<string, { a: string; b: string }> = {
-  encre: { a: "/images/0/Graphic10.png", b: "/images/0/Shield.png" },
-  oranke: { a: "/images/0/cluster 1/Ok01.png", b: "/images/0/cluster 1/OK02.png" },
-  phalanx: { a: "/images/0/cluster 1/PX01.png", b: "/images/0/cluster 1/pX02.png" },
+//   a=활동량(별) · b=집중력(방패) · c=번개/화살(penalty). Cluster4CardContent 헤더 맵과 동일 세트.
+const ORG_POINT_ICONS: Record<string, { a: string; b: string; c: string }> = {
+  encre: { a: "/images/0/Graphic10.png", b: "/images/0/Shield.png", c: "/images/0/Graphic13.png" },
+  oranke: { a: "/images/0/cluster 1/Ok01.png", b: "/images/0/cluster 1/OK02.png", c: "/images/0/cluster 1/Ok03.png" },
+  phalanx: { a: "/images/0/cluster 1/PX01.png", b: "/images/0/cluster 1/pX02.png", c: "/images/0/cluster 1/PX03.png" },
 };
 // 기본값(org 미지정/미매칭) — encre 세트로 폴백.
 const DEFAULT_POINT_ICONS = ORG_POINT_ICONS.encre;
 
-// org slug(phalanx·encre·oranke) 또는 한글 클럽명을 정규화해 포인트 아이콘 세트를 반환.
-function resolvePointIcons(org: string | null): { a: string; b: string } {
+// org slug(phalanx·encre·oranke) 또는 한글 클럽명을 정규화(공용 헬퍼).
+function normalizeOrgKey(org: string | null): "encre" | "oranke" | "phalanx" | null {
   const key = (org ?? "").trim().toLowerCase();
-  if (key === "encre" || key === "엥크레") return ORG_POINT_ICONS.encre;
-  if (key === "oranke" || key === "오랑캐") return ORG_POINT_ICONS.oranke;
-  if (key === "phalanx" || key === "팔랑크스") return ORG_POINT_ICONS.phalanx;
-  return DEFAULT_POINT_ICONS;
+  if (key === "encre" || key === "엥크레") return "encre";
+  if (key === "oranke" || key === "오랑캐") return "oranke";
+  if (key === "phalanx" || key === "팔랑크스") return "phalanx";
+  return null;
 }
+
+// org → 포인트 아이콘 세트(A/B/C). 미매칭 시 encre 폴백.
+function resolvePointIcons(org: string | null): { a: string; b: string; c: string } {
+  const k = normalizeOrgKey(org);
+  return k ? ORG_POINT_ICONS[k] : DEFAULT_POINT_ICONS;
+}
+
+// ── [5] Weekly Rank Showcase — 크루 리스트 상수/헬퍼 ──
+// 페이지당 크루 수(10개 초과 시 페이지네이션).
+const WRS_PER_PAGE = 10;
+// 상세 버튼 아이콘(시즌 평판) — 클릭 시 해당 크루의 cluster-4-card weekly 페이지로 이동.
+const WRS_DETAIL_ICON = "/images/0/cluster4/icon - 시즌 평판.png";
+// 이번 주 결과 아이콘.
+const WRS_RESULT_SUCCESS_ICON = "/images/0/cluster4/icon/icon - 성장(성공).png";
+const WRS_RESULT_FAIL_ICON = "/images/0/cluster4/icon/icon - 성장(실패).png";
+// 강화율 5지표 아이콘(주차 성장률은 GROWTH_RATE_ICON 재사용, 실무 4종은 Sheriff Badge).
+const WRS_RATE_ICONS = {
+  growth: GROWTH_RATE_ICON,
+  info: "/images/0/Sheriff Badge1 3.png",
+  experience: "/images/0/Sheriff Badge1.png",
+  competency: "/images/0/Sheriff Badge1 2.png",
+  career: "/images/0/Sheriff Badge1 4.png",
+};
+
+// org → cluster-3 품계 이미지 base(정 N 품.png). encre=ec · phalanx=px · oranke/기타=기본.
+function resolveGradeImageBase(org: string | null): string {
+  const k = normalizeOrgKey(org);
+  if (k === "encre") return "/images/0/cluster 3/image/ec";
+  if (k === "phalanx") return "/images/0/cluster 3/image/px";
+  return "/images/0/cluster 3/image";
+}
+const gradeMedalSrc = (level: number) => `/images/0/cluster 3/icon/medal ${level}.png`;
+const gradeImageSrc = (org: string | null, level: number) =>
+  `${resolveGradeImageBase(org)}/정 ${level} 품.png`;
+
+// org → cluster-4-card weekly 라우트 base(테마 라우트). userId 쿼리로 대상 크루 지정.
+function resolveCluster4Base(org: string | null): string {
+  const k = normalizeOrgKey(org);
+  if (k === "encre") return "/cluster-4-card-ec";
+  if (k === "phalanx") return "/cluster-4-card-px";
+  return "/cluster-4-card";
+}
+
+// 순위 → 티어(1=gold · 2~3=silver · 4~6=sky · 7+=base). 전체 등수(rank) 기준.
+const rankTier = (rank: number): "gold" | "silver" | "sky" | "base" =>
+  rank === 1 ? "gold" : rank <= 3 ? "silver" : rank <= 6 ? "sky" : "base";
+// 델타 표기: +N / -N / +0.
+const fmtDelta = (d: number) => (d >= 0 ? `+${d}` : `${d}`);
+const deltaTone = (d: number) => (d > 0 ? "up" : d < 0 ? "down" : "flat");
 
 type ChampTabKey = "activity" | "focus" | "growth";
 
@@ -112,6 +162,9 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
   const [wrsProgress, setWrsProgress] = useState<string>(WRS_VOID);
   const [wrsResult, setWrsResult] = useState<string>(WRS_VOID);
   const [wrsTeam, setWrsTeam] = useState<string>(WRS_VOID);
+  // Weekly Rank Showcase — 페이지네이션(1-base) + Weekly Review 읽기 전용 모달.
+  const [wrsPage, setWrsPage] = useState(1);
+  const [reviewModal, setReviewModal] = useState<{ name: string; body: string } | null>(null);
   const rootRef = useRef<HTMLElement | null>(null);
 
   // 조직별 포인트 아이콘(포인트 A/B) — 탭·카드가 공유하는 단일 소스.
@@ -223,6 +276,26 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
     const t = window.setTimeout(() => setBarsIn(true), 260);
     return () => window.clearTimeout(t);
   }, [state]);
+
+  // [5] 필터 변경 시 페이지를 1로 초기화(목록·페이지네이션 함께 갱신).
+  useEffect(() => {
+    setWrsPage(1);
+  }, [wrsProgress, wrsResult, wrsTeam]);
+
+  // [5] Weekly Review 모달 — ESC 닫기 + 배경 스크롤 잠금.
+  useEffect(() => {
+    if (!reviewModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setReviewModal(null);
+    };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [reviewModal]);
 
   // 조직 + 주차 시즌 → 테마 변수(--wr-*). 카드 부재 시에도 org 브랜드색으로 폴백.
   const themeVars = useMemo(
@@ -339,10 +412,44 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
     setWrsResult(WRS_VOID);
     setWrsTeam(WRS_VOID);
   };
-  // 필터가 하나 이상 적용되었는지 → 정렬 규칙 전환(구조 선반영, 목록은 다음 작업).
+  // 필터가 하나 이상 적용되었는지 → 정렬 규칙 전환.
   const wrsHasActiveFilter =
     wrsProgress !== WRS_VOID || wrsResult !== WRS_VOID || wrsTeam !== WRS_VOID;
   const wrsSortKeys = wrsHasActiveFilter ? WRS_SORT_KEYS_FILTERED : WRS_SORT_KEYS_DEFAULT;
+
+  // ── [5] 크루 목록: 필터(AND) → 정렬 → 페이지네이션 ──
+  const crewAll: CrewRankShowcase[] = Array.isArray(card.crewRankShowcase) ? card.crewRankShowcase : [];
+  const crewFiltered = crewAll.filter((c) => {
+    if (wrsProgress !== WRS_VOID && c.weeklyProgress !== wrsProgress) return false; // 성장 도전/휴식
+    if (wrsResult !== WRS_VOID && c.weeklyResult !== wrsResult) return false;       // 성장 성공/실패
+    if (wrsTeam !== WRS_VOID && c.teamName !== wrsTeam) return false;               // 소속 팀
+    return true;
+  });
+  // 정렬: 기본(품계↑·주차성장률↓·이름) / 필터 적용(누적성공주차↓·주차성장률↓·팀·파트·이름).
+  const crewSorted = [...crewFiltered].sort((a, b) => {
+    if (wrsHasActiveFilter) {
+      return (
+        b.cumulativeSuccessWeeks - a.cumulativeSuccessWeeks ||
+        b.weeklyGrowthRate - a.weeklyGrowthRate ||
+        (a.teamName ?? "").localeCompare(b.teamName ?? "", "ko") ||
+        (a.partName ?? "").localeCompare(b.partName ?? "", "ko") ||
+        a.name.localeCompare(b.name, "ko")
+      );
+    }
+    return (
+      a.gradeLevel - b.gradeLevel ||
+      b.weeklyGrowthRate - a.weeklyGrowthRate ||
+      a.name.localeCompare(b.name, "ko")
+    );
+  });
+  const crewPageCount = Math.max(1, Math.ceil(crewSorted.length / WRS_PER_PAGE));
+  const crewPageSafe = Math.min(Math.max(1, wrsPage), crewPageCount);
+  const crewPageItems = crewSorted.slice((crewPageSafe - 1) * WRS_PER_PAGE, crewPageSafe * WRS_PER_PAGE);
+  const cluster4Base = resolveCluster4Base(org);
+  const crewDetailHref = (c: CrewRankShowcase) =>
+    `${cluster4Base}/${encodeURIComponent(c.weekId)}?userId=${encodeURIComponent(c.userId)}${
+      org ? `&org=${encodeURIComponent(org)}` : ""
+    }`;
 
   // ── Weekly League MVP(팀 에이스) — 팀명 가나다순 고정 정렬(SoT: 렌더 시점 정렬).
   //   선정 크루가 바뀌어도 카드 위치는 팀명으로 결정 → 매주 동일 위치 유지.
@@ -863,7 +970,7 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
       )}
 
       {/* [5] Weekly Rank Showcase — 크루 개별 활동 결과(Team Battle 아래 메인 섹션).
-          이번 회차는 Header + Filter Bar 까지만. 크루 카드 목록은 다음 작업에서 구현. */}
+          Header → Filter Bar → 페이지네이션(리스트 위) → 크루 랭킹 리스트(1열). */}
       <section
         className="wd-wrs"
         data-fadeup
@@ -926,7 +1033,199 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
             </button>
           </div>
         </div>
+
+        {/* 페이지네이션 — 리스트 '위쪽'. 10개 초과 시에만 노출 */}
+        {crewPageCount > 1 && (
+          <nav className="wd-wrs__pager" aria-label="크루 목록 페이지">
+            {Array.from({ length: crewPageCount }, (_, i) => i + 1).map((p) => (
+              <button
+                key={p}
+                type="button"
+                className={`wd-wrs__page${p === crewPageSafe ? " is-active" : ""}`}
+                aria-current={p === crewPageSafe ? "page" : undefined}
+                onClick={() => setWrsPage(p)}
+              >
+                {p}
+              </button>
+            ))}
+          </nav>
+        )}
+
+        {/* 크루 랭킹 리스트 — 1열(위→아래 순위). PC 가로형 / 모바일 세로형 */}
+        <div className="wd-wrs__list">
+          {crewPageItems.length === 0 ? (
+            <div className="wd-wrs__empty">조건에 맞는 크루가 없습니다.</div>
+          ) : (
+            crewPageItems.map((c) => {
+              const tier = rankTier(c.rank);
+              const points = [
+                { key: "A", icon: pointIcons.a, value: c.pointA },
+                { key: "B", icon: pointIcons.b, value: c.pointB },
+                { key: "C", icon: pointIcons.c, value: c.pointC },
+              ];
+              const rates = [
+                { key: "growth", icon: WRS_RATE_ICONS.growth, label: "주차 성장률", value: c.weeklyGrowthRate, delta: c.weeklyGrowthRateDelta },
+                { key: "info", icon: WRS_RATE_ICONS.info, label: "실무 정보 강화율", value: c.infoRate, delta: c.infoRateDelta },
+                { key: "exp", icon: WRS_RATE_ICONS.experience, label: "실무 경험 강화율", value: c.experienceRate, delta: c.experienceRateDelta },
+                { key: "comp", icon: WRS_RATE_ICONS.competency, label: "실무 역량 강화율", value: c.competencyRate, delta: c.competencyRateDelta },
+                { key: "career", icon: WRS_RATE_ICONS.career, label: "실무 경력 강화율", value: c.careerRate, delta: c.careerRateDelta },
+              ];
+              const result =
+                c.weeklyProgress === "rest"
+                  ? { cls: "rest", label: "성장 휴식", icon: null }
+                  : c.weeklyResult === "success"
+                    ? { cls: "success", label: "성장 성공", icon: WRS_RESULT_SUCCESS_ICON }
+                    : { cls: "fail", label: "성장 실패", icon: WRS_RESULT_FAIL_ICON };
+              const reviewText = c.weeklyReview && c.weeklyReview.trim() ? c.weeklyReview.trim() : "";
+              return (
+                <article key={c.userId} className="wd-crew" data-tier={tier}>
+                  {/* 좌측 — 상세 / 전체 등수 / 품계 / 프로필 */}
+                  <div className="wd-crew__left">
+                    <div className="wd-crew__lead">
+                      <Link href={crewDetailHref(c)} className="wd-crew__detail" aria-label={`${c.name} 크루 상세 보기`}>
+                        <img src={WRS_DETAIL_ICON} alt="" aria-hidden="true" />
+                      </Link>
+                      <div className="wd-crew__rank">
+                        <span className="wd-crew__rank-total">총 {c.totalRankCount.toLocaleString()}명 중</span>
+                        <strong className="wd-crew__rank-num">{c.rank}등</strong>
+                      </div>
+                      <div className="wd-crew__grade" title={c.grade}>
+                        <span className="wd-crew__grade-imgs">
+                          <img className="wd-crew__grade-medal" src={gradeMedalSrc(c.gradeLevel)} alt="" aria-hidden="true" />
+                          <img className="wd-crew__grade-img" src={gradeImageSrc(org, c.gradeLevel)} alt="" aria-hidden="true" />
+                        </span>
+                        <span className="wd-crew__grade-label">{c.grade}</span>
+                      </div>
+                    </div>
+
+                    <div className="wd-crew__profile">
+                      <span className="wd-crew__avatar">
+                        {c.profileImage ? (
+                          <img src={c.profileImage} alt="" />
+                        ) : (
+                          <span className="wd-crew__avatar-ph">{initialOf(c.name)}</span>
+                        )}
+                      </span>
+                      <div className="wd-crew__id">
+                        <span className="wd-crew__name">
+                          {c.name} <em>크루</em>
+                        </span>
+                        {c.className ? <span className="wd-crew__class">{c.className}</span> : null}
+                      </div>
+                    </div>
+
+                    <div className="wd-crew__meta">
+                      <span className="wd-crew__meta-row">
+                        <span className="wd-crew__tag">{c.school ?? "-"}</span>
+                        <span className="wd-crew__tag">{c.major ?? "-"}</span>
+                      </span>
+                      <span className="wd-crew__meta-row">
+                        <span className="wd-crew__tag">{c.teamName ? `${c.teamName} 팀` : "-"}</span>
+                        <span className="wd-crew__tag">{c.partName ? `${c.partName} 파트` : "-"}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 중앙 — 포인트 A/B/C · 누적 성공 주차 · 이번 주 결과 */}
+                  <div className="wd-crew__center">
+                    <div className="wd-crew__points">
+                      {points.map((p) => (
+                        <div key={p.key} className="wd-crew__point">
+                          <img className="wd-crew__point-icon" src={p.icon} alt="" aria-hidden="true" />
+                          <strong className="wd-crew__point-value">{p.value.toLocaleString()}</strong>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="wd-crew__weeks">
+                      <img className="wd-crew__weeks-icon" src={WRS_RESULT_SUCCESS_ICON} alt="" aria-hidden="true" />
+                      <strong className="wd-crew__weeks-value">
+                        {c.cumulativeSuccessWeeks}
+                        <span>주</span>
+                      </strong>
+                      <span className={`wd-crew__weeks-delta wd-crew__delta--${c.weeklySuccessDelta > 0 ? "up" : "flat"}`}>
+                        (+{c.weeklySuccessDelta})
+                      </span>
+                    </div>
+                    <div className={`wd-crew__result wd-crew__result--${result.cls}`}>
+                      {result.icon ? (
+                        <img src={result.icon} alt="" aria-hidden="true" />
+                      ) : (
+                        <i className="ti ti-bed" aria-hidden="true" />
+                      )}
+                      <span>{result.label}</span>
+                    </div>
+                  </div>
+
+                  {/* 우측 — 강화율 5지표 · Weekly Review */}
+                  <div className="wd-crew__right">
+                    <div className="wd-crew__rates">
+                      {rates.map((r) => (
+                        <div key={r.key} className="wd-crew__rate">
+                          <img className="wd-crew__rate-icon" src={r.icon} alt="" aria-hidden="true" />
+                          <div className="wd-crew__rate-body">
+                            <span className="wd-crew__rate-value">
+                              {r.value}
+                              <span className="wd-crew__rate-unit">%</span>
+                              <em className={`wd-crew__delta--${deltaTone(r.delta)}`}>({fmtDelta(r.delta)})</em>
+                            </span>
+                            <span className="wd-crew__rate-label">{r.label}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="wd-crew__review">
+                      <div className="wd-crew__review-head">
+                        <span className="wd-crew__review-label">
+                          <i className="ti ti-clipboard-text" aria-hidden="true" /> Weekly Review
+                        </span>
+                        <button
+                          type="button"
+                          className="wd-crew__review-view"
+                          aria-label={`${c.name} 크루 위클리 리뷰 전체 보기`}
+                          disabled={!reviewText}
+                          onClick={() => reviewText && setReviewModal({ name: c.name, body: reviewText })}
+                        >
+                          <i className="ti ti-eye" aria-hidden="true" />
+                        </button>
+                      </div>
+                      <p className={`wd-crew__review-body${reviewText ? "" : " is-empty"}`}>
+                        {reviewText || "작성된 위클리 리뷰가 없습니다."}
+                      </p>
+                    </div>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </div>
       </section>
+
+      {/* [5] Weekly Review 읽기 전용 모달 — X 닫기만(작성/수정 없음) */}
+      {reviewModal && (
+        <div
+          className="wd-review-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${reviewModal.name} 위클리 리뷰`}
+          onClick={() => setReviewModal(null)}
+        >
+          <div className="wd-review-modal__panel" onClick={(e) => e.stopPropagation()}>
+            <div className="wd-review-modal__head">
+              <h3 className="wd-review-modal__title">{reviewModal.name} · Weekly Review</h3>
+              <button
+                type="button"
+                className="wd-review-modal__close"
+                aria-label="닫기"
+                onClick={() => setReviewModal(null)}
+              >
+                <i className="ti ti-x" aria-hidden="true" />
+              </button>
+            </div>
+            <p className="wd-review-modal__body">{reviewModal.body}</p>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

@@ -96,6 +96,40 @@ export type WeeklyLeagueMvp = {
   leaderComment: string | null;   // ⑪ Team Leader Comment(최대 100자)
 };
 
+// ── [5] Weekly Rank Showcase — 크루 개별 활동 결과(랭킹 리스트) ──
+//   전체 등수(rank)는 '필터 없는 기본 정렬(품계↑·주차성장률↓·이름 가나다순)' 기준으로 1회 확정되며,
+//   필터/재정렬로 표시 순서가 바뀌어도 카드의 rank/totalRankCount 는 불변(= "총 N명 중 M등").
+//   gradeLevel(1=정승 최상위~10) 만 실으면 프론트가 org 별 cluster-3 이미지 경로를 재구성한다
+//   (gradeImage/gradeMedalImage 는 org 종속이라 백엔드가 아닌 프론트에서 파생 — cluster-3 로직 재사용).
+export type CrewRankShowcase = {
+  userId: string;
+  weekId: string;
+  rank: number;                       // 전체 등수(기본 정렬 기준, 불변)
+  totalRankCount: number;             // 총 크루 수
+  gradeLevel: number;                 // 품계 1~10 (1=정승, 낮을수록 상위) — 정렬/이미지용
+  grade: string;                      // 품계 라벨(정승/정1품…)
+  profileImage: string | null;
+  name: string;
+  className: string | null;
+  school: string | null;
+  major: string | null;
+  teamName: string | null;
+  partName: string | null;
+  pointA: number;
+  pointB: number;
+  pointC: number;
+  cumulativeSuccessWeeks: number;     // 이 주차 결과까지 포함한 누적 성장 성공 주차
+  weeklySuccessDelta: 0 | 1;          // 이번 주 성공 → +1 / 실패·휴식 → +0
+  weeklyProgress: "challenge" | "rest"; // 주차 진행(성장 도전/성장 휴식) — 필터 축
+  weeklyResult: "success" | "fail" | null; // 주차 결과(휴식이면 null)
+  weeklyGrowthRate: number;           weeklyGrowthRateDelta: number;
+  infoRate: number;                   infoRateDelta: number;
+  experienceRate: number;             experienceRateDelta: number;
+  competencyRate: number;             competencyRateDelta: number;
+  careerRate: number;                 careerRateDelta: number;
+  weeklyReview: string | null;
+};
+
 export type WeeklyCardData = {
   id: string;
   seasonName: string;     // 예: "2026년, 봄 시즌, 3주차" — 그대로 출력
@@ -135,6 +169,8 @@ export type WeeklyCardData = {
   // Weekly League MVP(선택) — 팀별 에이스 1명(Champion's Hall 아래 · Team Battle 위).
   //   미설정/빈 배열 → 상세 페이지가 섹션을 숨긴다(non-breaking).
   weeklyLeagueMvp?: WeeklyLeagueMvp[];
+  // [5] Weekly Rank Showcase(선택) — 크루 개별 활동 결과 목록. 미설정 → 빈 상태 표시.
+  crewRankShowcase?: CrewRankShowcase[];
 };
 
 // TOP3 표시 규칙 검증용 — 이름(3/4/5+), 팀(3/5/6+), 파트(3/5/6+) 케이스를
@@ -480,6 +516,94 @@ const buildDummyMvps = (seed: number): WeeklyLeagueMvp[] =>
     };
   });
 
+// 데모 Weekly Rank Showcase — 크루 23명(페이지네이션 10/페이지 검증용) 생성.
+//   실제 API 는 aggregateWeeklyLeague 가 채우며, 강화율·누적주차·리뷰 등은 백엔드 소스 필요.
+const CREW_REVIEWS = [
+  "이번 주는 라인 오픈부터 마감까지 숨 가쁘게 달렸습니다. 특히 백엔드 파트와의 협업에서 배운 게 많았고, 다음 주엔 더 촘촘한 일정 관리로 산출물 완성도를 끌어올리겠습니다. 한 주 동안 함께 달려준 팀원들에게 감사드려요!",
+  "성장 성공까지 아슬아슬했지만 팀원들의 응원 덕에 끝까지 밀어붙였어요. 부족했던 부분은 회고에 정리해 두었고, 다음 주 개선 포인트를 세 가지로 압축했습니다.",
+  "이번 주 회고: 목표 대비 산출물 완성도는 만족스러웠으나 일정 신뢰도가 아쉬웠다. 다음 주는 초반 스퍼트로 버퍼를 확보하자.",
+  "", // 빈 리뷰(placeholder 노출 테스트)
+];
+
+const buildCrewShowcase = (seed: number, weekId: string): CrewRankShowcase[] => {
+  const N = 23; // 10/페이지 → 3페이지(10·10·3)
+  const clampPct = (v: number) => Math.max(0, Math.min(100, v));
+  const pool = Array.from({ length: N }, (_, k) => {
+    const s = seed * 1000 + k;
+    const isRest = seededRandom(s + 20, 100) < 12; // 약 12% 성장 휴식
+    const isSuccess = !isRest && seededRandom(s + 21, 100) < 62;
+    return {
+      _uid: k,
+      userId: `demo-crew-${seed}-${k}`,
+      name: CH_NAMES[seededRandom(s + 1, CH_NAMES.length)],
+      className: CH_CLASSES[seededRandom(s + 2, CH_CLASSES.length)],
+      school: CH_SCHOOLS[seededRandom(s + 3, CH_SCHOOLS.length)],
+      major: CH_MAJORS[seededRandom(s + 4, CH_MAJORS.length)],
+      teamName: CH_TEAMS[seededRandom(s + 5, CH_TEAMS.length)],
+      partName: CH_PARTS[seededRandom(s + 6, CH_PARTS.length)],
+      pointA: seededRandom(s + 7, 430, 90),
+      pointB: seededRandom(s + 8, 340, 40),
+      pointC: seededRandom(s + 9, 30),
+      gradeLevel: seededRandom(s + 10, 11, 1), // 1~10
+      weeklyGrowthRate: clampPct(seededRandom(s + 11, 100, 30)),
+      weeklyGrowthRateDelta: seededRandom(s + 12, 31) - 15,
+      infoRate: clampPct(seededRandom(s + 13, 101)),
+      infoRateDelta: seededRandom(s + 14, 31) - 15,
+      experienceRate: clampPct(seededRandom(s + 15, 101)),
+      experienceRateDelta: seededRandom(s + 16, 31) - 15,
+      competencyRate: clampPct(seededRandom(s + 17, 101)),
+      competencyRateDelta: seededRandom(s + 18, 31) - 15,
+      careerRate: clampPct(seededRandom(s + 19, 101)),
+      careerRateDelta: seededRandom(s + 29, 31) - 15,
+      cumulativeSuccessWeeks: seededRandom(s + 22, 30, 1),
+      weeklyReview: CREW_REVIEWS[seededRandom(s + 23, CREW_REVIEWS.length)],
+      isRest,
+      isSuccess,
+    };
+  });
+  // 기본 정렬(품계 높은순=gradeLevel↑ → 주차성장률↓ → 이름 가나다순) → 전체 등수 확정.
+  const sorted = [...pool].sort(
+    (a, b) =>
+      a.gradeLevel - b.gradeLevel ||
+      b.weeklyGrowthRate - a.weeklyGrowthRate ||
+      a.name.localeCompare(b.name, "ko") ||
+      a._uid - b._uid,
+  );
+  return sorted.map((c, i) => ({
+    userId: c.userId,
+    weekId,
+    rank: i + 1,
+    totalRankCount: N,
+    gradeLevel: c.gradeLevel,
+    grade: c.gradeLevel === 1 ? "정승" : `정${c.gradeLevel - 1}품`,
+    profileImage: null,
+    name: c.name,
+    className: c.className,
+    school: c.school,
+    major: c.major,
+    teamName: c.teamName,
+    partName: c.partName,
+    pointA: c.pointA,
+    pointB: c.pointB,
+    pointC: c.pointC,
+    cumulativeSuccessWeeks: c.cumulativeSuccessWeeks,
+    weeklySuccessDelta: c.isSuccess ? 1 : 0,
+    weeklyProgress: c.isRest ? "rest" : "challenge",
+    weeklyResult: c.isRest ? null : c.isSuccess ? "success" : "fail",
+    weeklyGrowthRate: c.weeklyGrowthRate,
+    weeklyGrowthRateDelta: c.weeklyGrowthRateDelta,
+    infoRate: c.infoRate,
+    infoRateDelta: c.infoRateDelta,
+    experienceRate: c.experienceRate,
+    experienceRateDelta: c.experienceRateDelta,
+    competencyRate: c.competencyRate,
+    competencyRateDelta: c.competencyRateDelta,
+    careerRate: c.careerRate,
+    careerRateDelta: c.careerRateDelta,
+    weeklyReview: c.weeklyReview,
+  }));
+};
+
 export const WEEKLY_CARD_DUMMY: WeeklyCardData[] = WEEKLY_RANKING_DISPLAY_MAP.map(
   (display, i) => {
     const isRest = i % 7 === 6;
@@ -511,7 +635,7 @@ export const WEEKLY_CARD_DUMMY: WeeklyCardData[] = WEEKLY_RANKING_DISPLAY_MAP.ma
       winningTeamImage: null,
       top3: TOP3_TEMPLATES[i % TOP3_TEMPLATES.length],
       ...(isOfficialRest
-        ? { top10: [], top10Focus: [], top10Growth: [], teams: [], weeklyLeagueMvp: [] }
+        ? { top10: [], top10Focus: [], top10Growth: [], teams: [], weeklyLeagueMvp: [], crewRankShowcase: [] }
         : (() => {
             const { activity, focus, growth } = buildChampionLists(i + 1);
             const success = seededRandom(i + 31, 700, 100);
@@ -524,6 +648,7 @@ export const WEEKLY_CARD_DUMMY: WeeklyCardData[] = WEEKLY_RANKING_DISPLAY_MAP.ma
               top10Growth: growth,
               teams: buildDummyTeams(i + 1, success, fail, personalRest, seasonRest),
               weeklyLeagueMvp: buildDummyMvps(i + 1),
+              crewRankShowcase: buildCrewShowcase(i + 1, `week-${i}`),
             };
           })()),
     };
