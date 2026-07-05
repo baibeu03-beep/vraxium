@@ -83,8 +83,6 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
   const [barsIn, setBarsIn] = useState(false);
   // Champion's Hall 활성 탭 — 기본 '성장 활동량 Top 10'.
   const [champTab, setChampTab] = useState<ChampTabKey>("activity");
-  // Team Battle 읽기 전용 모달(팀 목표 / 주차 플로우 / 크루 코멘트 전문). null = 닫힘.
-  const [teamNote, setTeamNote] = useState<{ title: string; body: string } | null>(null);
   const rootRef = useRef<HTMLElement | null>(null);
 
   // 조직별 포인트 아이콘(포인트 A/B) — 탭·카드가 공유하는 단일 소스.
@@ -196,21 +194,6 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
     const t = window.setTimeout(() => setBarsIn(true), 260);
     return () => window.clearTimeout(t);
   }, [state]);
-
-  // Team Battle 모달 — ESC 로 닫기 + 열려 있는 동안 배경 스크롤 잠금.
-  useEffect(() => {
-    if (!teamNote) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setTeamNote(null);
-    };
-    window.addEventListener("keydown", onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [teamNote]);
 
   // 조직 + 주차 시즌 → 테마 변수(--wr-*). 카드 부재 시에도 org 브랜드색으로 폴백.
   const themeVars = useMemo(
@@ -652,7 +635,7 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
                 <strong className="wd-tb-kpi__value">{partTotal}<span className="wd-tb-kpi__unit">파트</span></strong>
               </div>
             </div>
-            <div className="wd-tb-kpi wd-tb-kpi--green">
+            <div className="wd-tb-kpi wd-tb-kpi--accent">
               <span className="wd-tb-kpi__icon" aria-hidden="true"><i className="ti ti-swords" /></span>
               <div className="wd-tb-kpi__content">
                 <span className="wd-tb-kpi__label">통합 전적</span>
@@ -661,30 +644,41 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
             </div>
           </div>
 
-          {/* 팀 카드 Grid — Desktop 3열 / Tablet 2열 / Mobile 1열 */}
+          {/* 팀 카드 Grid — Desktop 3열 / Tablet 2열 / Mobile 1열.
+              모든 섹션을 항상 렌더(값 없으면 '-'/placeholder) → 카드마다 내부 y좌표 동일. */}
           <div className="wd-tb__grid">
             {teams.map((t) => {
-              // 텍스트 SoT(팀 목표/주차 플로우/크루 코멘트) — null/공백이면 행 자체를 숨긴다(빈 박스 금지).
-              const notes = [
-                { key: "goal", label: "팀 목표", icon: "ti ti-target-arrow", value: t.teamGoal },
-                { key: "flow", label: "주차 플로우", icon: "ti ti-route", value: t.weeklyFlow },
-                { key: "comment", label: "크루 코멘트", icon: "ti ti-message-2", value: t.crewComment },
-              ].filter((n) => n.value && n.value.trim());
+              // 파트명/파트 수 — 기본 노이즈 파트('일반') 제외. 수·명을 같은 집합으로 산출(불일치 방지).
+              const partNames = t.parts
+                .map((p) => p.partName)
+                .filter((n) => n && n.trim() && n.trim() !== "일반");
+              const partShownCount = partNames.length;
+              const partNameText = partNames.length > 0 ? partNames.join(", ") : "-";
 
-              // 크루 구성 7종 — 전부 DTO 원값(프론트 재계산 없음). Dashboard: 아이콘 + label + value.
-              const crewStats = [
-                { icon: "ti ti-users", label: "소속 크루", value: t.totalCrew, tone: "accent" },
-                { icon: "ti ti-flame", label: "성장 도전", value: t.challengeCrew, tone: "blue" },
-                { icon: "ti ti-trophy", label: "성장 성공", value: t.successCrew, tone: "green" },
-                { icon: "ti ti-circle-x", label: "성장 실패", value: t.failCrew, tone: "red" },
-                { icon: "ti ti-bed", label: "휴식 크루", value: t.restCrew, tone: "gray" },
-                { icon: "ti ti-stars", label: "심화 크루", value: t.advancedCrew, tone: "accent" },
-                { icon: "ti ti-user-check", label: "정규 크루", value: t.regularCrew, tone: "gray" },
+              // 대전 결과 마크(승/패/무). 승만 왕관, 그 외는 아이콘 자리(placeholder) 확보.
+              const resultMark = t.battleResult === "win" ? "승" : t.battleResult === "lose" ? "패" : "무";
+
+              // Crew Stat — 소속 크루(좌측 대형) + 6종(우측 3열×2행). '성장 도전' → '도전 크루'.
+              const crewGrid = [
+                { label: "도전 크루", value: t.challengeCrew, tone: "blue" },
+                { label: "심화 크루", value: t.advancedCrew, tone: "accent" },
+                { label: "성장 성공", value: t.successCrew, tone: "green" },
+                { label: "휴식 크루", value: t.restCrew, tone: "gray" },
+                { label: "정규 크루", value: t.regularCrew, tone: "gray" },
+                { label: "성장 실패", value: t.failCrew, tone: "red" },
               ];
+
+              // Team Goal / Team Flow / Crew Comment — 값 없어도 항상 노출(placeholder). DTO 연결 시 값만 주입.
+              const goalRaw = t.teamGoal && t.teamGoal.trim() ? t.teamGoal.trim() : "";
+              const flowRaw = t.weeklyFlow && t.weeklyFlow.trim() ? t.weeklyFlow.trim() : "";
+              const commentRaw = t.crewComment && t.crewComment.trim() ? t.crewComment.trim() : "";
+              const goalText = goalRaw || "등록된 팀 목표가 없습니다.";
+              const flowText = flowRaw || "등록된 주차 플로우가 없습니다.";
+              const commentText = commentRaw || "등록된 크루 코멘트가 없습니다.";
 
               return (
                 <article key={t.teamId ?? t.teamName} className="wd-tb-card" data-result={t.battleResult}>
-                  {/* 헤더 — 팀장 프로필 + 팀명/팀장 + 대전 결과 뱃지 */}
+                  {/* 헤더 — 팀 아바타 + 팀명 + 대전 결과 뱃지 */}
                   <div className="wd-tb-card__head">
                     <span className="wd-tb-card__avatar" aria-hidden="true">
                       {t.leader.profileImageUrl ? (
@@ -695,24 +689,77 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
                     </span>
                     <div className="wd-tb-card__id">
                       <strong className="wd-tb-card__name">{t.teamName} 팀</strong>
-                      <span className="wd-tb-card__leader">
-                        {t.leader.name ? `팀장 ${t.leader.name}` : "팀장 미지정"}
-                        {t.partCount > 0 ? ` · ${t.partCount}개 파트` : ""}
-                      </span>
+                      <span className="wd-tb-card__subhead">이번 주 성장 대전</span>
                     </div>
                     <span className="wd-tb-card__badge">{BATTLE_LABEL[t.battleResult] ?? "DRAW"}</span>
                   </div>
 
-                  {/* 리더 학교/전공(있을 때만) */}
-                  {(t.leader.school || t.leader.major) && (
-                    <div className="wd-tb-card__leadermeta">
-                      {t.leader.school ? <span className="wd-tb-card__tag">{t.leader.school}</span> : null}
-                      {t.leader.major ? <span className="wd-tb-card__tag">{t.leader.major}</span> : null}
-                    </div>
-                  )}
+                  {/* 팀장 프로필 — 팀장명/학교/학과를 항상 렌더(미지정도 '-') → 카드 높이 통일 */}
+                  <div className="wd-tb-card__leader">
+                    <span className="wd-tb-card__leader-row">
+                      <span className="wd-tb-card__leader-key">
+                        <i className="ti ti-user-star" aria-hidden="true" /> 팀장
+                      </span>
+                      <span className="wd-tb-card__leader-name">{t.leader.name?.trim() || "-"}</span>
+                    </span>
+                    <span className="wd-tb-card__leader-tags">
+                      <span className="wd-tb-card__tag">
+                        <i className="ti ti-school" aria-hidden="true" /> {t.leader.school?.trim() || "-"}
+                      </span>
+                      <span className="wd-tb-card__tag">
+                        <i className="ti ti-book-2" aria-hidden="true" /> {t.leader.major?.trim() || "-"}
+                      </span>
+                    </span>
+                  </div>
 
-                  {/* 대전 블록 — 승률 원형 게이지 + 전/승/패 */}
+                  {/* 파트 정보 — 파트 수 + 파트명(항상 노출) */}
+                  <div className="wd-tb-card__partinfo">
+                    <span className="wd-tb-card__partinfo-count">
+                      <i className="ti ti-layout-grid" aria-hidden="true" /> 파트 <b>{partShownCount}</b>개
+                    </span>
+                    <span className="wd-tb-card__partinfo-names" title={partNameText}>{partNameText}</span>
+                  </div>
+
+                  {/* Team Goal — 값 없으면 placeholder(구조 유지, DTO 연결 시 값만 주입) */}
+                  <div className="wd-tb-card__block">
+                    <span className="wd-tb-card__block-label">
+                      <i className="ti ti-target-arrow" aria-hidden="true" /> Team Goal
+                    </span>
+                    <p className={`wd-tb-card__block-body${goalRaw ? "" : " is-empty"}`} title={goalText}>
+                      {goalText}
+                    </p>
+                  </div>
+
+                  {/* Team Flow */}
+                  <div className="wd-tb-card__block">
+                    <span className="wd-tb-card__block-label">
+                      <i className="ti ti-route" aria-hidden="true" /> Team Flow
+                    </span>
+                    <p className={`wd-tb-card__block-body${flowRaw ? "" : " is-empty"}`} title={flowText}>
+                      {flowText}
+                    </p>
+                  </div>
+
+                  {/* Battle — [승/패] [전적] [승률 게이지] */}
                   <div className="wd-tb-card__battle">
+                    <div className="wd-tb-card__result" aria-label={`대전 결과 ${resultMark}`}>
+                      <span className="wd-tb-card__result-mark">{resultMark}</span>
+                      <span className="wd-tb-card__result-icon" aria-hidden="true">
+                        {t.battleResult === "win" ? <img src="/images/0/crown.png" alt="" /> : null}
+                      </span>
+                    </div>
+                    <div className="wd-tb-card__record">
+                      {[
+                        { k: "전", v: t.matchCount, tone: "gray" },
+                        { k: "승", v: t.winCount, tone: "green" },
+                        { k: "패", v: t.loseCount, tone: "red" },
+                      ].map((m) => (
+                        <div key={m.k} className={`wd-tb-card__record-item wd-tb-card__record-item--${m.tone}`}>
+                          <strong className="wd-tb-card__record-value">{m.v}</strong>
+                          <span className="wd-tb-card__record-label">{m.k}</span>
+                        </div>
+                      ))}
+                    </div>
                     <div className="wd-tb-card__gauge" role="img" aria-label={`승률 ${t.winRate}%`}>
                       <svg viewBox="0 0 72 72">
                         <circle className="wd-tb-card__gauge-track" cx="36" cy="36" r={GAUGE_R} />
@@ -730,90 +777,40 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
                         <span>승률</span>
                       </div>
                     </div>
-                    <div className="wd-tb-card__record">
-                      {[
-                        { k: "전", v: t.matchCount, tone: "gray" },
-                        { k: "승", v: t.winCount, tone: "green" },
-                        { k: "패", v: t.loseCount, tone: "red" },
-                      ].map((m) => (
-                        <div key={m.k} className={`wd-tb-card__record-item wd-tb-card__record-item--${m.tone}`}>
-                          <span className="wd-tb-card__record-label">{m.k}</span>
-                          <strong className="wd-tb-card__record-value">{m.v}</strong>
+                  </div>
+
+                  {/* Crew Stat — [소속 크루 대형] + [3열×2행] */}
+                  <div className="wd-tb-card__crew">
+                    <div className="wd-tb-card__crew-total">
+                      <span className="wd-tb-card__crew-total-label">
+                        <i className="ti ti-users" aria-hidden="true" /> 소속 크루
+                      </span>
+                      <strong className="wd-tb-card__crew-total-value">{t.totalCrew}</strong>
+                    </div>
+                    <div className="wd-tb-card__crew-grid">
+                      {crewGrid.map((s) => (
+                        <div key={s.label} className={`wd-tb-stat wd-tb-stat--${s.tone}`}>
+                          <strong className="wd-tb-stat__value">{s.value}</strong>
+                          <span className="wd-tb-stat__label">{s.label}</span>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  {/* 크루 구성 — Dashboard 스타일(아이콘 + label + value) */}
-                  <div className="wd-tb-card__crew">
-                    {crewStats.map((s) => (
-                      <div key={s.label} className={`wd-tb-stat wd-tb-stat--${s.tone}`}>
-                        <span className="wd-tb-stat__icon" aria-hidden="true"><i className={s.icon} /></span>
-                        <span className="wd-tb-stat__label">{s.label}</span>
-                        <strong className="wd-tb-stat__value">{s.value}</strong>
-                      </div>
-                    ))}
+                  {/* Crew Comment — 항상 노출(placeholder) */}
+                  <div className="wd-tb-card__block wd-tb-card__block--comment">
+                    <span className="wd-tb-card__block-label">
+                      <i className="ti ti-message-2" aria-hidden="true" /> Crew Comment
+                    </span>
+                    <p className={`wd-tb-card__block-body${commentRaw ? "" : " is-empty"}`} title={commentText}>
+                      {commentText}
+                    </p>
                   </div>
-
-                  {/* 파트명(있을 때만) — 칩 나열 */}
-                  {t.parts.length > 0 && (
-                    <div className="wd-tb-card__parts">
-                      {t.parts.map((p) => (
-                        <span key={p.partId} className="wd-tb-card__part-chip">{p.partName}</span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* 텍스트 SoT — null 이면 행 생략. 값이 있으면 한 줄 미리보기 + 클릭 시 읽기 전용 모달 */}
-                  {notes.length > 0 && (
-                    <div className="wd-tb-card__notes">
-                      {notes.map((n) => (
-                        <button
-                          key={n.key}
-                          type="button"
-                          className="wd-tb-note"
-                          onClick={() => setTeamNote({ title: `${t.teamName} 팀 · ${n.label}`, body: n.value as string })}
-                        >
-                          <span className="wd-tb-note__label">
-                            <i className={n.icon} aria-hidden="true" /> {n.label}
-                          </span>
-                          <span className="wd-tb-note__preview">{n.value}</span>
-                          <i className="ti ti-chevron-right wd-tb-note__caret" aria-hidden="true" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
                 </article>
               );
             })}
           </div>
         </section>
-      )}
-
-      {/* Team Battle 읽기 전용 모달 — 팀 목표/주차 플로우/크루 코멘트 전문 */}
-      {teamNote && (
-        <div
-          className="wd-tb-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-label={teamNote.title}
-          onClick={() => setTeamNote(null)}
-        >
-          <div className="wd-tb-modal__panel" onClick={(e) => e.stopPropagation()}>
-            <div className="wd-tb-modal__head">
-              <h3 className="wd-tb-modal__title">{teamNote.title}</h3>
-              <button
-                type="button"
-                className="wd-tb-modal__close"
-                aria-label="닫기"
-                onClick={() => setTeamNote(null)}
-              >
-                <i className="ti ti-x" aria-hidden="true" />
-              </button>
-            </div>
-            <p className="wd-tb-modal__body">{teamNote.body}</p>
-          </div>
-        </div>
       )}
     </section>
   );
