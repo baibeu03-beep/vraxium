@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { WEEKLY_CARD_DUMMY, type WeeklyCardData, type ChampionCrew } from "@/constants/dummyData/weekly-card-dummy";
+import { WEEKLY_CARD_DUMMY, type WeeklyCardData, type ChampionCrew, type WeeklyLeagueMvp } from "@/constants/dummyData/weekly-card-dummy";
 import { isDemoMode } from "@/utils/isDemoMode";
 import { getRankingThemeForSeason, getRankingThemeVars } from "@/lib/rankingTheme";
 
@@ -310,6 +310,12 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
   //   아래 요약(팀 수/파트 수/통합 전적)만 teams[] 의 단순 집계다(표시용 카운트, 비즈니스 로직 아님).
   const teams = Array.isArray(card.teams) ? card.teams : [];
   const teamCount = teams.length;
+
+  // ── Weekly League MVP(팀 에이스) — 팀명 가나다순 고정 정렬(SoT: 렌더 시점 정렬).
+  //   선정 크루가 바뀌어도 카드 위치는 팀명으로 결정 → 매주 동일 위치 유지.
+  const mvps = (Array.isArray(card.weeklyLeagueMvp) ? [...card.weeklyLeagueMvp] : []).sort(
+    (a, b) => a.teamName.localeCompare(b.teamName, "ko"),
+  );
   const partTotal = teams.reduce((s, t) => s + t.partCount, 0);
   const battleWins = teams.filter((t) => t.battleResult === "win").length;
   const battleLoses = teams.filter((t) => t.battleResult === "lose").length;
@@ -356,22 +362,22 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
                   {activityLabel}
                 </span>
               </div>
+
+              {/* [5] 격언 — 대표 이미지 하단에 Glass 오버레이로 겹침(이미지와 동일 폭) */}
+              <blockquote className="wd-quote" data-fadeup>
+                <span className="wd-quote__mark" aria-hidden="true">
+                  &ldquo;
+                </span>
+                <p className="wd-quote__text">{QUOTE_TEXT}</p>
+                <footer className="wd-quote__author">
+                  <span className="wd-quote__author-emoji" aria-hidden="true">
+                    👨‍🎨
+                  </span>
+                  {QUOTE_AUTHOR}
+                </footer>
+              </blockquote>
             </div>
           </figure>
-
-          {/* [5] 하단 격언 */}
-          <blockquote className="wd-quote" data-fadeup>
-            <span className="wd-quote__mark" aria-hidden="true">
-              &ldquo;
-            </span>
-            <p className="wd-quote__text">{QUOTE_TEXT}</p>
-            <footer className="wd-quote__author">
-              <span className="wd-quote__author-emoji" aria-hidden="true">
-                👨‍🎨
-              </span>
-              {QUOTE_AUTHOR}
-            </footer>
-          </blockquote>
         </div>
 
         {/* 우측 — [6] Weekly Comment / [7] Cluv Activity Flow */}
@@ -540,6 +546,81 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
           </div>
         </div>
       </section>
+
+      {/* Weekly League MVP — 팀 에이스(Champion's Hall 아래 · Team Battle 위). 휴식/무팀 주차는 섹션 숨김 */}
+      {!isRestWeek && mvps.length > 0 && (
+        <section className="wd-mvp" data-fadeup aria-label="Weekly League MVP">
+          {/* 장식 헤더 — Champion's Hall 과 동일 Premium 위계(데코 라인 + 글로우 타이틀) */}
+          <header className="wd-mvp__head">
+            <span className="wd-mvp__deco" aria-hidden="true" />
+            <h2 className="wd-mvp__title">
+              Weekly League MVP
+              <span className="wd-mvp__title-glow" aria-hidden="true">Weekly League MVP</span>
+            </h2>
+            <span className="wd-mvp__deco" aria-hidden="true" />
+          </header>
+          <p className="wd-mvp__subtitle">(팀 에이스)</p>
+
+          {/* 카드 Grid — Desktop 3열 / Tablet 2열 / Mobile 1열. 팀 증가 시 아래로 자동 확장 */}
+          <div className="wd-mvp__grid">
+            {mvps.map((m: WeeklyLeagueMvp) => (
+              <article key={m.teamId ?? m.teamName} className="wd-mvp-card">
+                <div className="wd-mvp-card__body">
+                  {/* 좌측 — ① 프로필 / ② 크루명 / ③ 클래스 */}
+                  <div className="wd-mvp-card__profile">
+                    <span className="wd-mvp-card__avatar">
+                      {m.profileImage ? (
+                        <img src={m.profileImage} alt="" />
+                      ) : (
+                        <span className="wd-mvp-card__avatar-ph">{initialOf(m.name)}</span>
+                      )}
+                    </span>
+                    <div className="wd-mvp-card__id">
+                      <span className="wd-mvp-card__name">{m.name}</span>
+                      {m.className ? <span className="wd-mvp-card__class">{m.className}</span> : null}
+                    </div>
+                  </div>
+
+                  {/* 우측 — ⑧ 팀 아이콘 → ⑨ 팀명 → ⑩ ACE (하나의 묶음) */}
+                  <div className="wd-mvp-card__ace">
+                    <span className="wd-mvp-card__team-icon" aria-hidden="true">
+                      {m.teamIcon ? <img src={m.teamIcon} alt="" /> : <i className="ti ti-crown" />}
+                    </span>
+                    <span className="wd-mvp-card__team-name">{m.teamName} 팀</span>
+                    <span className="wd-mvp-card__ace-label">ACE</span>
+                  </div>
+                </div>
+
+                {/* ④ 학교 / ⑤ 전공 / ⑥ 팀 / ⑦ 파트 */}
+                <div className="wd-mvp-card__meta">
+                  {(m.school || m.major) && (
+                    <span className="wd-mvp-card__meta-row">
+                      {m.school ? <span className="wd-mvp-card__tag">{m.school}</span> : null}
+                      {m.major ? <span className="wd-mvp-card__tag">{m.major}</span> : null}
+                    </span>
+                  )}
+                  <span className="wd-mvp-card__meta-row">
+                    <span className="wd-mvp-card__tag">{m.teamName} 팀</span>
+                    {m.part ? <span className="wd-mvp-card__tag">{m.part} 파트</span> : null}
+                  </span>
+                </div>
+
+                {/* ⑪ Team Leader Comment — 넓은 영역(3~4줄 기본, 최대 100자 대부분 노출) */}
+                <div className="wd-mvp-card__comment">
+                  <span className="wd-mvp-card__comment-label">
+                    <i className="ti ti-quote" aria-hidden="true" /> Team Leader Comment
+                  </span>
+                  <p className="wd-mvp-card__comment-body">
+                    {m.leaderComment && m.leaderComment.trim()
+                      ? m.leaderComment
+                      : "아직 팀장 코멘트가 등록되지 않았습니다."}
+                  </p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* [9] Team Battle — 팀별 주차 결과(Champion's Hall 아래). 휴식/무팀 주차는 섹션 숨김 */}
       {!isRestWeek && teams.length > 0 && (

@@ -813,6 +813,315 @@
   }
 
   /* =========================================
+   * Weekly League MVP — 팀 에이스 (Champion's Hall 아래 · Team Battle 위)
+   * 컨셉: Premium 수상 카드(Award). 은은한 Glow + Gold Accent Border + Hover Lift.
+   * 헤더는 Champion's Hall 과 동일 위계(데코 라인 + 글로우 타이틀).
+   * ========================================= */
+  .wd-mvp {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    /* 장식 헤더 */
+    &__head {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 22px;
+    }
+
+    &__deco {
+      position: relative;
+      flex: 1 1 auto;
+      max-width: 220px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--wd-accent));
+
+      &::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        right: -3px;
+        width: 6px;
+        height: 6px;
+        transform: translateY(-50%) rotate(45deg);
+        background: var(--wd-accent);
+        box-shadow: 0 0 10px var(--wd-glow);
+      }
+      &:last-child {
+        background: linear-gradient(90deg, var(--wd-accent), transparent);
+        &::after { right: auto; left: -3px; }
+      }
+    }
+
+    &__title {
+      position: relative;
+      margin: 0;
+      font-family: var(--wd-font-display);
+      font-size: clamp(28px, 4.6vw, 52px);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #fff;
+      text-align: center;
+      white-space: nowrap;
+      text-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+    }
+    &__title-glow {
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      color: var(--wd-accent);
+      filter: blur(18px);
+      opacity: 0.5;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    &__subtitle {
+      margin: 2px 0 20px;
+      text-align: center;
+      font-family: var(--wd-font-subhead);
+      font-size: 16px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      color: var(--wd-accent-soft);
+    }
+
+    /* 카드 Grid — Desktop 3열(3×2 기본). 팀 증가 시 행이 아래로 자동 확장. */
+    &__grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+  }
+
+  /* 수상 카드(Award) — Gold 톤 고정(랭킹 카드와 차별). */
+  .wd-mvp-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 20px 20px 18px;
+    border-radius: 20px;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--wd-accent) 9%, rgba(255, 255, 255, 0.04)), rgba(255, 255, 255, 0.015)),
+      rgba(14, 23, 32, 0.6);
+    border: 1px solid color-mix(in srgb, var(--wd-accent) 32%, rgba(255, 255, 255, 0.09));
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow:
+      0 16px 40px rgba(0, 0, 0, 0.34),
+      inset 0 0 34px color-mix(in srgb, var(--wd-accent) 8%, transparent);
+    overflow: hidden;
+    transition: transform 0.35s ease, box-shadow 0.35s ease, border-color 0.35s ease;
+
+    // 상단 골드 accent 라인
+    &::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--wd-accent), transparent);
+    }
+    // 우상단 코너 글로우(수상 느낌)
+    &::after {
+      content: "";
+      position: absolute;
+      top: -44px;
+      right: -44px;
+      width: 130px;
+      height: 130px;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--wd-glow), transparent 70%);
+      pointer-events: none;
+    }
+
+    &:hover {
+      transform: translateY(-5px);
+      border-color: color-mix(in srgb, var(--wd-accent) 60%, transparent);
+      box-shadow:
+        0 24px 54px rgba(0, 0, 0, 0.46),
+        0 0 0 1px color-mix(in srgb, var(--wd-accent) 50%, transparent),
+        inset 0 0 42px color-mix(in srgb, var(--wd-accent) 14%, transparent);
+    }
+
+    &__body {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    /* 좌측 — 프로필 + 크루명 + 클래스 */
+    &__profile {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    &__avatar {
+      flex-shrink: 0;
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      overflow: hidden;
+      border: 2px solid var(--wd-accent);
+      box-shadow: 0 0 16px var(--wd-glow);
+      img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    }
+    &__avatar-ph {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: color-mix(in srgb, var(--wd-accent) 22%, rgba(255, 255, 255, 0.04));
+      color: var(--wd-accent-soft);
+      font-family: var(--wd-font-heading);
+      font-weight: 800;
+      font-size: 22px;
+    }
+
+    &__id {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      min-width: 0;
+    }
+    &__name {
+      font-family: var(--wd-font-heading);
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    &__class {
+      align-self: flex-start;
+      max-width: 100%;
+      padding: 2px 9px;
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--wd-accent) 16%, transparent);
+      color: var(--wd-accent-soft);
+      font-family: var(--wd-font-body);
+      font-size: 11.5px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* 우측 — 팀 아이콘 → 팀명 → ACE 묶음 */
+    &__ace {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      text-align: center;
+    }
+    &__team-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--wd-accent) 14%, transparent);
+      border: 1px solid color-mix(in srgb, var(--wd-accent) 40%, transparent);
+      color: var(--wd-accent-soft);
+      font-size: 22px;
+      box-shadow: 0 0 16px var(--wd-glow);
+      img { width: 26px; height: 26px; object-fit: contain; }
+      i { line-height: 1; }
+    }
+    &__team-name {
+      font-family: var(--wd-font-body);
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.72);
+      white-space: nowrap;
+      max-width: 92px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    &__ace-label {
+      font-family: var(--wd-font-badge);
+      font-size: 21px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      line-height: 1;
+      color: var(--wd-accent);
+      text-shadow: 0 0 12px var(--wd-glow), 0 0 26px var(--wd-glow);
+    }
+
+    /* 메타 — 학교/전공/팀/파트 */
+    &__meta {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    &__meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    &__tag {
+      padding: 3px 9px;
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-family: var(--wd-font-body);
+      font-size: 11.5px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.72);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+
+    /* Team Leader Comment — 넓은 영역(3~4줄 기본, 100자 대부분 노출·펼치기 없음) */
+    &__comment {
+      margin-top: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 14px 15px;
+      border-radius: 14px;
+      background: linear-gradient(180deg, color-mix(in srgb, var(--wd-accent) 6%, rgba(255, 255, 255, 0.03)), rgba(255, 255, 255, 0.012));
+      border: 1px solid color-mix(in srgb, var(--wd-accent) 18%, rgba(255, 255, 255, 0.07));
+    }
+    &__comment-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--wd-font-heading);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--wd-accent-soft);
+      i { font-size: 14px; }
+    }
+    &__comment-body {
+      margin: 0;
+      // 3~4줄 기본 확보 — 100자 대부분이 접힘 없이 보이도록.
+      min-height: calc(1.65em * 3.5);
+      font-family: var(--wd-font-body);
+      font-size: 14px;
+      font-weight: 400;
+      line-height: 1.65;
+      color: rgba(255, 255, 255, 0.84);
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  /* =========================================
    * [9] Team Battle — 팀별 주차 결과 (Champion's Hall 아래)
    * 컨셉: Premium / Championship / Modern Dashboard / Game League.
    * 색상은 대전 결과(win/lose/draw)별 --tb-tone 토큰으로 카드 단위 결정.
@@ -1507,9 +1816,10 @@
       position: relative;
       width: 100%;
       height: 100%;
-      // 기본 최소 높이 — 이미지를 적절히 줄여 좌측 총높이를 낮추면, 하단 정렬을 위해
-      // flex-grow 하는 우측 카드도 함께 낮아져 내부 빈 공간이 줄어든다(컴팩트 레이아웃).
-      min-height: 400px;
+      // 기본 최소 높이 — 대표 이미지를 넉넉히 키워, flex-grow 로 채워지는 우측 카드 총높이와
+      //   하단 y 가 맞도록(대표 이미지 하단 ≈ Cluv Activity Flow 하단) 세로를 확보한다.
+      //   하단 격언(.wd-quote)은 이 imgwrap 안에 absolute 로 겹쳐 올라온다.
+      min-height: 560px;
       overflow: hidden;
     }
 
@@ -1626,17 +1936,25 @@
     }
   }
 
-  /* ---------- [5] 하단 격언 ---------- */
+  /* ---------- [5] 격언 — 대표 이미지 하단 Glass 오버레이 ---------- */
+  //   imgwrap(대표 이미지) 안에 absolute 로 배치 → 좌우 폭이 이미지와 100% 동일.
+  //   하단(bottom:0)에 밀착해 이미지 위로 겹쳐 올라오며, 반투명 + backdrop-blur 로
+  //   뒤 이미지가 은은히 비쳐 '이미지와 하나의 세트'처럼 이어진다. 하단 라운드는 카드 클립 처리.
   .wd-quote {
-    position: relative;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 3;
     margin: 0;
-    padding: 26px 28px 22px;
-    border-radius: 20px;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
-      rgba(14, 23, 32, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.09);
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.32);
+    padding: 22px 26px 20px;
+    border-radius: 18px 18px 0 0;
+    background: linear-gradient(180deg, rgba(10, 16, 23, 0.28), rgba(10, 16, 23, 0.54));
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-bottom: none;
+    backdrop-filter: blur(14px) saturate(125%);
+    -webkit-backdrop-filter: blur(14px) saturate(125%);
+    box-shadow: 0 -10px 34px rgba(0, 0, 0, 0.34);
     overflow: hidden;
 
     &::before {
@@ -1652,11 +1970,12 @@
     &__mark {
       display: block;
       font-family: Georgia, "Times New Roman", serif;
-      font-size: 52px;
+      font-size: 44px;
       line-height: 0.6;
       color: var(--wd-accent);
-      opacity: 0.55;
-      margin-bottom: 6px;
+      opacity: 0.6;
+      margin-bottom: 4px;
+      text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
     }
 
     &__text {
@@ -1664,8 +1983,9 @@
       font-family: var(--wd-font-quote);
       font-size: clamp(15px, 2.1vw, 19px);
       font-style: italic;
-      line-height: 1.75;
-      color: rgba(255, 255, 255, 0.92);
+      line-height: 1.65;
+      color: rgba(255, 255, 255, 0.95);
+      text-shadow: 0 1px 10px rgba(0, 0, 0, 0.5);
       word-break: keep-all;
       overflow-wrap: break-word;
       text-wrap: pretty;
@@ -1676,12 +1996,13 @@
       align-items: center;
       justify-content: flex-end;
       gap: 8px;
-      margin-top: 14px;
+      margin-top: 12px;
       font-family: var(--wd-font-script);
       font-size: clamp(19px, 2vw, 23px);
       font-weight: 400;
       letter-spacing: 0.01em;
       color: var(--wd-accent-soft);
+      text-shadow: 0 1px 10px rgba(0, 0, 0, 0.5);
 
       &-emoji { font-size: 18px; }
     }
@@ -1798,12 +2119,14 @@
   .weekly-detail-page .wd-champ__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
-/* Team Battle — Tablet 2열(≤1024px) → Mobile 1열(≤640px) */
+/* Team Battle · Weekly League MVP — Tablet 2열(≤1024px) → Mobile 1열(≤640px) */
 @media (max-width: 1024px) {
-  .weekly-detail-page .wd-tb__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .weekly-detail-page .wd-tb__grid,
+  .weekly-detail-page .wd-mvp__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
-  .weekly-detail-page .wd-tb__grid { grid-template-columns: 1fr; }
+  .weekly-detail-page .wd-tb__grid,
+  .weekly-detail-page .wd-mvp__grid { grid-template-columns: 1fr; }
 }
 
 /* ---------- 반응형 — 모바일 1컬럼 ---------- */
@@ -1839,6 +2162,9 @@
     //   헤더 데코만 축소해 좁은 폭에서 타이틀이 잘리지 않게 한다.
     .wd-tb__head { gap: 12px; }
     .wd-tb__deco { max-width: 90px; }
+    // Weekly League MVP — 헤더 데코 축소(좁은 폭 타이틀 보호).
+    .wd-mvp__head { gap: 12px; }
+    .wd-mvp__deco { max-width: 90px; }
   }
 }
 
@@ -1861,6 +2187,8 @@
     .wd-tb-card { padding: 18px 16px 16px; }
     .wd-tb-modal { padding: 16px; }
     .wd-tb-modal__body { font-size: 14.5px; }
+    // Weekly League MVP — 소형 모바일 패딩 축소.
+    .wd-mvp-card { padding: 18px 16px 16px; }
   }
 }
 
@@ -1874,6 +2202,7 @@
     .wd-prog__fill { transition: none !important; &::after { animation: none !important; } }
     .wd-champ__panel { animation: none !important; }
     .wd-champ-card:hover { transform: none; }
+    .wd-mvp-card:hover { transform: none; }
     .wd-tb-card__gauge-fill { transition: none !important; }
     .wd-tb-card:hover { transform: none; }
     .wd-tb-kpi:hover { transform: none; }

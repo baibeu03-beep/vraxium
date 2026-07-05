@@ -35,6 +35,7 @@ import type {
   ChampionCrew,
   RestReason,
   WeeklyLeagueTeamBattle,
+  WeeklyLeagueMvp,
 } from "@/constants/dummyData/weekly-card-dummy";
 import {
   loadTeamBattleContext,
@@ -812,6 +813,40 @@ export async function aggregateWeeklyLeague(
         .slice(0, 10)
         .map((p, i) => championFor(p, i + 1));
 
+      // ── Weekly League MVP(팀 에이스) — 팀별 최고 포인트(별점) 크루 1명 ──
+      //   각 팀에서 points DESC 최상위 크루를 ACE 로 선정(rankedByPoints 선점 순서 = 결정성).
+      //   teamIcon/leaderComment 는 입력 SoT 미구현 → null(Team Battle teamGoal 과 동일 패턴).
+      //   표시 정렬(팀명 가나다순)은 프론트가 렌더 시점에 수행 — 여기선 teams 순서 그대로 산출.
+      let weeklyLeagueMvp: WeeklyLeagueMvp[] | undefined;
+      if (teams && teams.length > 0) {
+        const bestByTeam = new Map<string, { user_id: string; points: number; advantages: number }>();
+        for (const p of rankedByPoints) {
+          const { team } = teamPartFor(p.user_id);
+          const teamName = !team || team === "-" ? "미배정" : team;
+          if (!bestByTeam.has(teamName)) bestByTeam.set(teamName, p);
+        }
+        weeklyLeagueMvp = teams
+          .map((t): WeeklyLeagueMvp | null => {
+            const best = bestByTeam.get(t.teamName);
+            if (!best) return null; // 포인트 보유 크루가 없는 팀 → MVP 미선정(카드 생략)
+            const c = championFor(best, 1);
+            return {
+              teamId: t.teamId,
+              teamName: t.teamName,
+              teamIcon: null,
+              memberId: best.user_id,
+              profileImage: c.profileImage ?? null,
+              name: c.name,
+              className: c.className,
+              school: c.school,
+              major: c.major,
+              part: c.part,
+              leaderComment: null,
+            };
+          })
+          .filter((x): x is WeeklyLeagueMvp => x != null);
+      }
+
       return {
         id: week.id,
         seasonName: week.seasonName,
@@ -835,6 +870,7 @@ export async function aggregateWeeklyLeague(
         top10Focus,
         top10Growth,
         teams,
+        weeklyLeagueMvp,
       };
     });
 

@@ -79,6 +79,23 @@ export type WeeklyLeagueTeamBattle = {
   failCrew: number;
 };
 
+// ── Weekly League MVP(팀 에이스) — 팀당 정확히 1명 ──
+//   이번 주 각 팀을 대표하는 "Team ACE". 카드 위치는 팀명 가나다순 고정(선정자가 바뀌어도 위치 불변).
+//   teamIcon/leaderComment 는 입력 SoT 미구현 시 null → 프론트가 폴백(엠블럼/안내 문구) 처리.
+export type WeeklyLeagueMvp = {
+  teamId: string | null;          // cluster4_team_halves.id (null = 카탈로그 미등록)
+  teamName: string;               // ⑥ 팀 / ⑨ 팀명
+  teamIcon: string | null;        // ⑧ 팀 아이콘(없으면 프론트 폴백 엠블럼)
+  memberId: string;               // 크루 식별자(user_id ?? 합성 키)
+  profileImage: string | null;    // ① 프로필 이미지(없으면 이니셜 폴백)
+  name: string;                   // ② 크루명
+  className: string | null;       // ③ 클래스
+  school: string | null;          // ④ 학교
+  major: string | null;           // ⑤ 전공
+  part: string | null;            // ⑦ 파트
+  leaderComment: string | null;   // ⑪ Team Leader Comment(최대 100자)
+};
+
 export type WeeklyCardData = {
   id: string;
   seasonName: string;     // 예: "2026년, 봄 시즌, 3주차" — 그대로 출력
@@ -115,6 +132,9 @@ export type WeeklyCardData = {
   // [9] Team Battle(선택) — 팀별 주차 결과. 집계(aggregateWeeklyLeague)가 채운다.
   //   미설정/빈 배열 → 상세 페이지가 섹션을 숨긴다(non-breaking).
   teams?: WeeklyLeagueTeamBattle[];
+  // Weekly League MVP(선택) — 팀별 에이스 1명(Champion's Hall 아래 · Team Battle 위).
+  //   미설정/빈 배열 → 상세 페이지가 섹션을 숨긴다(non-breaking).
+  weeklyLeagueMvp?: WeeklyLeagueMvp[];
 };
 
 // TOP3 표시 규칙 검증용 — 이름(3/4/5+), 팀(3/5/6+), 파트(3/5/6+) 케이스를
@@ -432,6 +452,34 @@ const buildDummyTeams = (
   });
 };
 
+// 데모 Weekly League MVP — 팀당 1명(팀명 가나다순 정렬은 렌더 시점에 수행).
+//   실제 API 는 aggregateWeeklyLeague 가 팀별 최고 포인트 크루로 채운다. leaderComment 는
+//   입력 기능 전이라 실제로는 null 이며, 데모는 공간 확인용 ~100자 샘플을 넣는다.
+const DUMMY_MVP_NAMES = ['서지안', '한도윤', '오세라', '문가온', '임하늬', '강태오'];
+const DUMMY_MVP_COMMENTS = [
+  '이번 주 팀 흐름을 끝까지 붙잡아 준 우리 팀의 진짜 에이스입니다. 마감 직전까지 파트원들을 챙기며 자기 라인도 완주했어요. 다음 주도 믿고 함께 달립니다. 정말 고생 많았어요!',
+  '누구보다 먼저 움직이고 가장 늦게까지 남아 팀을 지킨 한 주였습니다. 어려운 과제를 마다하지 않고 끝내 결과로 증명해 준 모습에 팀 전체가 자극받았어요. 이번 주 MVP로 손색이 없습니다!',
+  '묵묵히 자기 몫을 해내면서도 옆 파트까지 살뜰히 챙겨 준 든든한 에이스예요. 덕분에 팀 분위기가 한층 밝아졌고 성장 속도도 빨라졌습니다. 앞으로가 더 기대되는 크루, 진심으로 응원합니다.',
+];
+
+const buildDummyMvps = (seed: number): WeeklyLeagueMvp[] =>
+  DUMMY_TEAM_META.map((m, i) => {
+    const s = seed * 50 + i;
+    return {
+      teamId: `dummy-team-${i}`,
+      teamName: m.name,
+      teamIcon: null,
+      memberId: `dummy-mvp-${i}`,
+      profileImage: null,
+      name: DUMMY_MVP_NAMES[seededRandom(s + 1, DUMMY_MVP_NAMES.length)],
+      className: CH_CLASSES[seededRandom(s + 2, CH_CLASSES.length)],
+      school: CH_SCHOOLS[seededRandom(s + 3, CH_SCHOOLS.length)],
+      major: CH_MAJORS[seededRandom(s + 4, CH_MAJORS.length)],
+      part: m.parts[seededRandom(s + 5, m.parts.length)],
+      leaderComment: DUMMY_MVP_COMMENTS[seededRandom(s + 6, DUMMY_MVP_COMMENTS.length)],
+    };
+  });
+
 export const WEEKLY_CARD_DUMMY: WeeklyCardData[] = WEEKLY_RANKING_DISPLAY_MAP.map(
   (display, i) => {
     const isRest = i % 7 === 6;
@@ -463,7 +511,7 @@ export const WEEKLY_CARD_DUMMY: WeeklyCardData[] = WEEKLY_RANKING_DISPLAY_MAP.ma
       winningTeamImage: null,
       top3: TOP3_TEMPLATES[i % TOP3_TEMPLATES.length],
       ...(isOfficialRest
-        ? { top10: [], top10Focus: [], top10Growth: [], teams: [] }
+        ? { top10: [], top10Focus: [], top10Growth: [], teams: [], weeklyLeagueMvp: [] }
         : (() => {
             const { activity, focus, growth } = buildChampionLists(i + 1);
             const success = seededRandom(i + 31, 700, 100);
@@ -475,6 +523,7 @@ export const WEEKLY_CARD_DUMMY: WeeklyCardData[] = WEEKLY_RANKING_DISPLAY_MAP.ma
               top10Focus: focus,
               top10Growth: growth,
               teams: buildDummyTeams(i + 1, success, fail, personalRest, seasonRest),
+              weeklyLeagueMvp: buildDummyMvps(i + 1),
             };
           })()),
     };
