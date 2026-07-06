@@ -2740,6 +2740,324 @@
 
     &:hover { opacity: 0.9; transform: translateY(-1px); }
   }
+
+  /* ──────────────────────────────────────────────────────────────
+     [6] Administration Confirm — 한 주를 마무리하는 마지막 메인 섹션.
+     Glass/Premium 유지, 차분하고 신뢰감 있는 톤. 좌 이미지 / 우 안내 카드 2종,
+     하단 CTA + 마지막 멘트 + org 대표 캐릭터.
+     ────────────────────────────────────────────────────────────── */
+  .wd-ac {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+
+    /* [0] 헤드 — wd-tb · wd-champ · wd-wrs 와 동일(데코 라인 + 글로우 타이틀) */
+    &__head {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 22px;
+    }
+    &__deco {
+      position: relative;
+      flex: 1 1 auto;
+      max-width: 220px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--wd-accent));
+      &::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        right: -3px;
+        width: 6px;
+        height: 6px;
+        transform: translateY(-50%) rotate(45deg);
+        background: var(--wd-accent);
+        box-shadow: 0 0 10px var(--wd-glow);
+      }
+      &:last-child {
+        background: linear-gradient(90deg, var(--wd-accent), transparent);
+        &::after { right: auto; left: -3px; }
+      }
+    }
+    &__title {
+      position: relative;
+      margin: 0;
+      font-family: var(--wd-font-display);
+      font-size: clamp(28px, 4.6vw, 52px);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #fff;
+      text-align: center;
+      white-space: nowrap;
+      text-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+    }
+    &__title-glow {
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      color: var(--wd-accent);
+      filter: blur(18px);
+      opacity: 0.5;
+      pointer-events: none;
+      user-select: none;
+    }
+    &__subtitle {
+      margin: -8px 0 4px;
+      text-align: center;
+      font-family: var(--wd-font-body);
+      font-size: 13px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.55);
+    }
+
+    /* 본문 — 좌(이미지) / 우(안내 카드 2종) */
+    &__grid {
+      display: grid;
+      grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    /* [1] 좌측 대형 이미지 */
+    &__figure {
+      position: relative;
+      margin: 0;
+      min-height: 440px;
+      border-radius: 20px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.34);
+      // 은은한 상단 스크림 — 이미지 위/아래 톤 정돈(딱딱한 관리자 느낌 완화).
+      &::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(180deg, rgba(10, 16, 23, 0.12), transparent 30%, transparent 70%, rgba(10, 16, 23, 0.28));
+        pointer-events: none;
+      }
+    }
+    &__img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    &__cards {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      min-width: 0;
+    }
+
+    /* [2][3] Glass Card 공통 — wd-glass 레시피 */
+    &__card {
+      position: relative;
+      padding: 26px 28px;
+      border-radius: 20px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+        rgba(14, 23, 32, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.32);
+      transition: transform 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease;
+      &:hover {
+        transform: translateY(-2px);
+        border-color: rgba(255, 255, 255, 0.15);
+        box-shadow: 0 22px 50px rgba(0, 0, 0, 0.4);
+      }
+      // 카드 좌측 accent 바 — 신뢰감 있는 프리미엄 디테일.
+      &::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 18px;
+        bottom: 18px;
+        width: 3px;
+        border-radius: 0 3px 3px 0;
+        background: linear-gradient(180deg, var(--wd-accent), transparent);
+        opacity: 0.7;
+      }
+    }
+    &__card-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 16px;
+      font-family: var(--wd-font-heading);
+      font-size: clamp(17px, 1.7vw, 20px);
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      color: #fff;
+      &::before {
+        content: "";
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+        border-radius: 4px;
+        background: linear-gradient(135deg, var(--wd-accent), var(--wd-accent-soft));
+        box-shadow: 0 0 14px var(--wd-glow);
+      }
+    }
+
+    /* [2] 안내 메시지 본문 */
+    &__msg {
+      margin: 0;
+      white-space: pre-line;
+      font-family: var(--wd-font-body);
+      font-size: clamp(14.5px, 1.4vw, 16px);
+      font-weight: 400;
+      line-height: 1.8;
+      color: rgba(255, 255, 255, 0.85);
+      word-break: keep-all;
+      overflow-wrap: break-word;
+      text-wrap: pretty;
+      & + & { margin-top: 14px; }
+    }
+
+    /* 강조 — 복싱 챔피언 인용. 프로젝트 격언 폰트 + 3~4px 큰 글자 + 다른 색 + 은은한 글로우(형광펜 X). */
+    &__quote {
+      position: relative;
+      margin: 20px 0;
+      padding: 6px 0 6px 22px;
+      border-left: 2px solid color-mix(in srgb, var(--wd-accent) 55%, transparent);
+      white-space: pre-line;
+      font-family: var(--wd-font-quote);
+      font-size: clamp(18px, 1.95vw, 21px); // 본문(최대 16px) 대비 +3~5px
+      font-style: italic;
+      line-height: 1.68;
+      color: var(--wd-accent-soft);
+      text-shadow: 0 0 22px var(--wd-glow);
+      letter-spacing: 0.01em;
+    }
+
+    /* [3] 안내 사항 — 번호 배지 리스트 */
+    &__notice-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: wd-ac-notice;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    &__notice-item {
+      counter-increment: wd-ac-notice;
+      position: relative;
+      padding-left: 42px;
+      min-height: 26px;
+      font-family: var(--wd-font-body);
+      font-size: clamp(13.5px, 1.35vw, 15px);
+      line-height: 1.72;
+      color: rgba(255, 255, 255, 0.82);
+      word-break: keep-all;
+      overflow-wrap: break-word;
+      display: flex;
+      align-items: center;
+      &::before {
+        content: counter(wd-ac-notice);
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 26px;
+        height: 26px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--wd-accent) 16%, transparent);
+        border: 1px solid color-mix(in srgb, var(--wd-accent) 45%, transparent);
+        color: var(--wd-accent-soft);
+        font-family: var(--wd-font-heading);
+        font-size: 13px;
+        font-weight: 800;
+      }
+    }
+
+    /* [4][5] 하단 — CTA + 마지막 멘트 + org 캐릭터 */
+    &__footer {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      flex-wrap: wrap;
+      padding: 22px 28px;
+      border-radius: 20px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02)),
+        rgba(14, 23, 32, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.3);
+    }
+
+    /* [4] CTA — 큰 accent-fill 버튼(프리미엄) */
+    &__cta {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 18px 34px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, var(--wd-accent), color-mix(in srgb, var(--wd-accent-soft) 82%, #fff));
+      color: #14181c;
+      font-family: var(--wd-font-heading);
+      font-size: clamp(15px, 1.5vw, 18px);
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      text-decoration: none;
+      box-shadow:
+        0 10px 28px color-mix(in srgb, var(--wd-accent) 40%, transparent),
+        0 0 0 1px color-mix(in srgb, var(--wd-accent) 30%, transparent);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+      i { font-size: 20px; }
+      &:hover {
+        transform: translateY(-2px);
+        box-shadow:
+          0 16px 38px color-mix(in srgb, var(--wd-accent) 52%, transparent),
+          0 0 26px var(--wd-glow);
+        filter: brightness(1.04);
+      }
+      &:active { transform: translateY(0); }
+    }
+
+    /* [5] 마지막 멘트 + 캐릭터 */
+    &__closing {
+      flex: 1 1 340px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      min-width: 0;
+    }
+    &__closing-text {
+      margin: 0;
+      white-space: pre-line;
+      font-family: var(--wd-font-subhead);
+      font-size: clamp(15px, 1.55vw, 18px);
+      line-height: 1.7;
+      color: rgba(255, 255, 255, 0.9);
+      word-break: keep-all;
+      overflow-wrap: break-word;
+      em {
+        font-style: normal;
+        font-family: var(--wd-font-script);
+        font-size: 1.35em;
+        color: var(--wd-accent-soft);
+        text-shadow: 0 0 18px var(--wd-glow);
+      }
+    }
+    &__mascot {
+      flex-shrink: 0;
+      width: clamp(96px, 12vw, 140px);
+      height: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 8px 22px rgba(0, 0, 0, 0.45));
+    }
+  }
 }
 
 /* Champion's Hall 그리드 — Tablet 4열 */
@@ -2860,6 +3178,27 @@
     .wd-crew__info,
     .wd-crew__stats { flex-wrap: wrap; }
   }
+}
+
+/* [6] Administration Confirm — 반응형(Tablet 1열 스택 → Mobile 세로 정리) */
+@media (max-width: 1024px) {
+  .weekly-detail-page .wd-ac__grid { grid-template-columns: 1fr; }
+  .weekly-detail-page .wd-ac__figure { min-height: 300px; max-height: 500px; }
+}
+@media (max-width: 900px) {
+  .weekly-detail-page .wd-ac__deco { max-width: 90px; }
+}
+@media (max-width: 640px) {
+  .weekly-detail-page .wd-ac__footer { flex-direction: column; align-items: stretch; gap: 20px; }
+  .weekly-detail-page .wd-ac__cta { justify-content: center; }
+  .weekly-detail-page .wd-ac__closing {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 14px;
+  }
+  .weekly-detail-page .wd-ac__card { padding: 22px 20px; }
+  .weekly-detail-page .wd-ac__figure { min-height: 260px; }
 }
 
 /* 접근성 — reduced-motion 시 진입/무한 모션 비활성 */
