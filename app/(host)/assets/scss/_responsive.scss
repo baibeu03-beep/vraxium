@@ -909,6 +909,7 @@ body:has(.nftg-content-home-two) {
       visibility: visible;
       transform: translateY(0px);
       width: 100%;
+      min-width: 0;
       max-width: 100%;
       padding: 0px;
       display: none;
