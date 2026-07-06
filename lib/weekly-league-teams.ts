@@ -358,9 +358,22 @@ export function buildTeamBattles(params: {
     else b.regularCrew++;
   });
 
+  // 팀명 → 최신 half 카탈로그 인덱스(정확 halfKey 미스 시 폴백).
+  //   팀 배틀의 팀명은 현재 멤버십(최신 half)에서 오는데, 조회 주차의 halfKey 로만 카탈로그를 찾으면
+  //   과거 half(예: 봄=H1) 주차에서 현재팀(여름=H2 카탈로그)이 매칭 안 돼 팀장/파트가 전부 "-"/0 이 된다.
+  //   → 이름 기준으로 가장 최근 half 의 카탈로그를 폴백 매칭한다(정확 halfKey 우선, 없으면 최신 half).
+  const latestByName = new Map<string, { hk: string; entry: HalfTeamRow }>();
+  for (const [k, entry] of ctx.halfTeamByKey) {
+    const sep = k.indexOf("||");
+    const hk = sep >= 0 ? k.slice(0, sep) : "";
+    const prev = latestByName.get(entry.teamName);
+    if (!prev || hk > prev.hk) latestByName.set(entry.teamName, { hk, entry });
+  }
+
   // 카탈로그 정렬용 order 부여 + 재배분 대상 목록.
   const list = Array.from(buckets.values()).map((b) => {
-    const catalog = halfKey ? ctx.halfTeamByKey.get(`${halfKey}||${b.teamName}`) ?? null : null;
+    const exact = halfKey ? ctx.halfTeamByKey.get(`${halfKey}||${b.teamName}`) ?? null : null;
+    const catalog = exact ?? latestByName.get(b.teamName)?.entry ?? null;
     return { b, catalog, _order: catalog ? catalog.displayOrder : 9999 };
   });
 
