@@ -445,15 +445,16 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
   const crewPageSafe = Math.min(Math.max(1, wrsPage), crewPageCount);
   const crewPageItems = crewSorted.slice((crewPageSafe - 1) * WRS_PER_PAGE, crewPageSafe * WRS_PER_PAGE);
   const cluster4Base = resolveCluster4Base(org);
-  // [6] Administration Confirm — org 대표 캐릭터(아호). encre=사슴 / oranke=호랑이 / phalanx=고슴도치.
-  //   Cluster4Content 와 동일 파일 규약(-px / -ec / 기본). null·미매칭은 기본(호랑이) 폴백.
+  // [6] Administration Confirm — org 대표 캐릭터(cluster-2, 원형 아바타). encre=사슴 / oranke=호랑이 / phalanx=고슴도치.
+  //   원형 크롭 시 얼굴이 중심에 오도록 org별 object-position(캐릭터 프레이밍이 서로 달라 개별 지정).
+  //   null·미매칭은 기본(오랑캐 호랑이) 폴백.
   const orgKeyForCharacter = normalizeOrgKey(org);
-  const orgCharacterSrc =
+  const orgCharacter =
     orgKeyForCharacter === "phalanx"
-      ? "/images/0/cluster4/아호 캐릭터-px.png"
+      ? { src: "/images/0/cluster 2/px 01.png", pos: "42% 24%" }
       : orgKeyForCharacter === "encre"
-        ? "/images/0/cluster4/아호 캐릭터-ec.png"
-        : "/images/0/cluster4/아호 캐릭터.png";
+        ? { src: "/images/0/cluster 2/ec 01.png", pos: "47% 20%" }
+        : { src: "/images/0/cluster 2/ok 01.png", pos: "47% 22%" };
   const crewDetailHref = (c: CrewRankShowcase) =>
     `${cluster4Base}/${encodeURIComponent(c.weekId)}?userId=${encodeURIComponent(c.userId)}${
       org ? `&org=${encodeURIComponent(org)}` : ""
@@ -1227,17 +1228,17 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
           {/* [2] 안내 메시지(우측 상단) */}
           <div className="wd-ac__card wd-ac__card--message">
             <p className="wd-ac__msg">
-              {"지난 주의 성장 내역을 돌아보면,\n내가 가진 기회와 시간, 자원을 제대로 투여했는지를 스스로 점검할 수 있습니다."}
+              {"지난 주의 성장 내역을 돌아보면, 내가 가진 기회와 시간, 자원을 제대로 투여했는지를 스스로 점검할 수 있습니다."}
             </p>
             <p className="wd-ac__msg">
-              {"[성장 성공] 혹은 [성장 실패] 이든,\n개별 주차 결과와 별개로,\n‘도전’ 했다는 그 자체만으로도\n어려운 발걸음을 띄었다는 것을 의미해요!"}
+              {"[성장 성공] 혹은 [성장 실패] 이든, 개별 주차 결과와 별개로, ‘도전’ 했다는 그 자체만으로도 어려운 발걸음을 띄었다는 것을 의미해요!"}
             </p>
             <blockquote className="wd-ac__quote">
-              {"“가장 무서운 상대는,\n계속된 연패를 거듭하고도 링에 서있는 상대이다.\n\n그 연패가 비로소 끝나는 상대가\n바로 ‘내’ 가 될 수 있기 때문이다.”"}
+              {"“가장 무서운 상대는, 계속된 연패를 거듭하고도 링에 서있는 상대이다.\n그 연패가 비로소 끝나는 상대가 바로 ‘내’ 가 될 수 있기 때문이다.”"}
             </blockquote>
             <p className="wd-ac__msg">라는 복싱 챔피언의 말이 있습니다.</p>
             <p className="wd-ac__msg">
-              {"이번 주와 다음 주에\n한 걸음 더 나갈 수 있는 원동력으로 삼아보자구요! 😊"}
+              {"이번 주와 다음 주에 한 걸음 더 나갈 수 있는 원동력으로 삼아보자구요! 😊"}
             </p>
           </div>
 
@@ -1276,7 +1277,12 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
               <em>가즈아!</em>
               {"”"}
             </p>
-            <img className="wd-ac__mascot" src={orgCharacterSrc} alt="조직 대표 캐릭터" />
+            <img
+              className="wd-ac__mascot"
+              src={orgCharacter.src}
+              style={{ objectPosition: orgCharacter.pos }}
+              alt="조직 대표 캐릭터"
+            />
           </div>
         </div>
       </section>

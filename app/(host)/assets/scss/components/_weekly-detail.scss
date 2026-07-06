@@ -52,6 +52,7 @@
   --wd-font-subhead: "HakgyoansimTuho", "Pretendard", sans-serif;            // 주차명
   --wd-font-quote: "HakgyoansimTuho", "Pretendard", serif;                   // 격언
   --wd-font-script: var(--lobster, "HakgyoansimTuho", cursive);              // 저자 서명
+  --wd-font-cheer: "Cafe24Ohsquare", "HakgyoansimTuho", sans-serif;          // 가즈아! 등 힘있고 장난스러운 강조
   --wd-font-body: "Pretendard", sans-serif;                                  // 본문(유지)
 
   // ── 대시보드 시맨틱 컬러(성공=green / 실패=red / 도전=blue / 휴식=gray) ──
@@ -2981,10 +2982,11 @@
       }
     }
 
-    /* [4] CTA — 좌측 이미지 바로 아래(row3, image 컬럼 폭 채움). 큰 accent-fill 버튼(프리미엄) */
+    /* [4] CTA — 좌측 이미지 바로 아래(row3, image 컬럼 폭 채움). 큰 accent-fill 버튼(프리미엄).
+       closing 과 하단 y좌표를 맞추기 위해 둘 다 align-self:end(바닥선 정렬). */
     &__cta {
       grid-area: button;
-      align-self: start;
+      align-self: end;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -3016,7 +3018,7 @@
     /* [5] 마지막 멘트(길게) + 맨 우측 캐릭터 — row3 우측, 버튼 오른쪽 한 줄 */
     &__closing {
       grid-area: closing;
-      align-self: center;
+      align-self: end; // CTA 와 바닥선(하단 y) 일치
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -3034,19 +3036,27 @@
       word-break: keep-all;
       overflow-wrap: break-word;
       em {
+        // 힘있고 장난스러운 응원 강조 — 본문(subhead)과 확실히 구분되는 chunky 디자인 폰트.
         font-style: normal;
-        font-family: var(--wd-font-script);
-        font-size: 1.35em;
+        font-family: var(--wd-font-cheer);
+        font-size: 1.5em;
+        letter-spacing: 0.01em;
         color: var(--wd-accent-soft);
         text-shadow: 0 0 18px var(--wd-glow);
       }
     }
     &__mascot {
       flex-shrink: 0;
-      width: clamp(88px, 9vw, 118px);
+      // 원형 아바타 — 얼굴 중심 크롭(object-position 은 org별로 인라인 지정).
+      width: clamp(68px, 6.2vw, 82px);
+      aspect-ratio: 1 / 1;
       height: auto;
-      object-fit: contain;
-      filter: drop-shadow(0 8px 22px rgba(0, 0, 0, 0.45));
+      border-radius: 50%;
+      object-fit: cover;
+      object-position: 47% 22%; // 기본(오랑캐 호랑이) — 인라인 style 로 org별 override
+      border: 2px solid color-mix(in srgb, var(--wd-accent) 45%, rgba(255, 255, 255, 0.16));
+      background: rgba(255, 255, 255, 0.04);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.42);
     }
   }
 }
