@@ -2811,19 +2811,27 @@
       color: rgba(255, 255, 255, 0.55);
     }
 
-    /* 본문 — 좌(이미지) / 우(안내 카드 2종) */
+    /* 본문 — 좁은 좌(이미지 rows1-2 + 버튼 row3) / 넓은 우(메시지·안내·마무리).
+       이미지가 rows 1-2 를 span → 좌측 이미지 높이 = 우측 두 카드 전체 높이(균형).
+       row3 = 버튼(좌) + 마무리 문구·캐릭터(우). 첨부 레퍼런스 그리드 준수. */
     &__grid {
       display: grid;
-      grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
-      gap: 24px;
+      grid-template-columns: minmax(240px, 0.52fr) minmax(0, 1.45fr);
+      grid-template-areas:
+        "image   message"
+        "image   notice"
+        "button  closing";
+      grid-template-rows: auto auto auto;
+      gap: 22px 26px;
       align-items: stretch;
     }
 
-    /* [1] 좌측 대형 이미지 */
+    /* [1] 좌측 대형 이미지 — rows 1-2 span, 우측 카드 총높이에 맞춰 stretch */
     &__figure {
+      grid-area: image;
       position: relative;
       margin: 0;
-      min-height: 440px;
+      min-height: 360px;
       border-radius: 20px;
       overflow: hidden;
       border: 1px solid rgba(255, 255, 255, 0.1);
@@ -2844,16 +2852,10 @@
       display: block;
     }
 
-    &__cards {
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-      min-width: 0;
-    }
-
     /* [2][3] Glass Card 공통 — wd-glass 레시피 */
     &__card {
       position: relative;
+      min-width: 0;
       padding: 26px 28px;
       border-radius: 20px;
       background:
@@ -2882,6 +2884,8 @@
         opacity: 0.7;
       }
     }
+    &__card--message { grid-area: message; }
+    &__card--notice { grid-area: notice; }
     &__card-title {
       display: flex;
       align-items: center;
@@ -2977,30 +2981,15 @@
       }
     }
 
-    /* [4][5] 하단 — CTA + 마지막 멘트 + org 캐릭터 */
-    &__footer {
+    /* [4] CTA — 좌측 이미지 바로 아래(row3, image 컬럼 폭 채움). 큰 accent-fill 버튼(프리미엄) */
+    &__cta {
+      grid-area: button;
+      align-self: start;
       display: flex;
       align-items: center;
-      gap: 28px;
-      flex-wrap: wrap;
-      padding: 22px 28px;
-      border-radius: 20px;
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02)),
-        rgba(14, 23, 32, 0.5);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.3);
-    }
-
-    /* [4] CTA — 큰 accent-fill 버튼(프리미엄) */
-    &__cta {
-      flex-shrink: 0;
-      display: inline-flex;
-      align-items: center;
+      justify-content: center;
       gap: 10px;
-      padding: 18px 34px;
+      padding: 18px 28px;
       border-radius: 14px;
       background: linear-gradient(135deg, var(--wd-accent), color-mix(in srgb, var(--wd-accent-soft) 82%, #fff));
       color: #14181c;
@@ -3024,21 +3013,23 @@
       &:active { transform: translateY(0); }
     }
 
-    /* [5] 마지막 멘트 + 캐릭터 */
+    /* [5] 마지막 멘트(길게) + 맨 우측 캐릭터 — row3 우측, 버튼 오른쪽 한 줄 */
     &__closing {
-      flex: 1 1 340px;
+      grid-area: closing;
+      align-self: center;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 20px;
+      gap: 22px;
       min-width: 0;
     }
     &__closing-text {
       margin: 0;
-      white-space: pre-line;
+      flex: 1 1 auto;
+      min-width: 0;
       font-family: var(--wd-font-subhead);
-      font-size: clamp(15px, 1.55vw, 18px);
-      line-height: 1.7;
+      font-size: clamp(15px, 1.5vw, 18px);
+      line-height: 1.65;
       color: rgba(255, 255, 255, 0.9);
       word-break: keep-all;
       overflow-wrap: break-word;
@@ -3052,7 +3043,7 @@
     }
     &__mascot {
       flex-shrink: 0;
-      width: clamp(96px, 12vw, 140px);
+      width: clamp(88px, 9vw, 118px);
       height: auto;
       object-fit: contain;
       filter: drop-shadow(0 8px 22px rgba(0, 0, 0, 0.45));
@@ -3182,15 +3173,23 @@
 
 /* [6] Administration Confirm — 반응형(Tablet 1열 스택 → Mobile 세로 정리) */
 @media (max-width: 1024px) {
-  .weekly-detail-page .wd-ac__grid { grid-template-columns: 1fr; }
-  .weekly-detail-page .wd-ac__figure { min-height: 300px; max-height: 500px; }
+  /* 1열 세로 스택: 이미지 → 메시지 → 안내 → 버튼 → 마무리 */
+  .weekly-detail-page .wd-ac__grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "image"
+      "message"
+      "notice"
+      "button"
+      "closing";
+  }
+  .weekly-detail-page .wd-ac__figure { min-height: 300px; max-height: 520px; }
+  .weekly-detail-page .wd-ac__cta { justify-self: stretch; }
 }
 @media (max-width: 900px) {
   .weekly-detail-page .wd-ac__deco { max-width: 90px; }
 }
 @media (max-width: 640px) {
-  .weekly-detail-page .wd-ac__footer { flex-direction: column; align-items: stretch; gap: 20px; }
-  .weekly-detail-page .wd-ac__cta { justify-content: center; }
   .weekly-detail-page .wd-ac__closing {
     flex-direction: column;
     align-items: center;

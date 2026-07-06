@@ -1216,66 +1216,63 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
         </header>
         <p className="wd-ac__subtitle">{card.seasonName} · 한 주의 성장 내역 확정</p>
 
+        {/* 본문 그리드 — 좌: 이미지(rows 1-2 span)+버튼(row3) / 우: 메시지(row1)·안내(row2)·마무리(row3).
+            좌측 이미지 높이 = 우측 두 카드 전체 높이(rows 1-2 stretch)로 균형. */}
         <div className="wd-ac__grid">
-          {/* [1] 좌측 대형 이미지(더미) — object-fit: cover */}
+          {/* [1] 좌측 대형 이미지(더미) — object-fit: cover, rows 1-2 span */}
           <figure className="wd-ac__figure">
             <img className="wd-ac__img" src="/images/0/weekly-wizard.png" alt="한 주의 성장을 지켜보는 마법사" />
           </figure>
 
-          {/* 우측 — [2] 안내 메시지 · [3] 안내 사항 */}
-          <div className="wd-ac__cards">
-            {/* [2] 안내 메시지 */}
-            <div className="wd-ac__card wd-ac__card--message">
-              <p className="wd-ac__msg">
-                {"지난 주의 성장 내역을 돌아보면,\n내가 가진 기회와 시간, 자원을 제대로 투여했는지를 스스로 점검할 수 있습니다."}
-              </p>
-              <p className="wd-ac__msg">
-                {"[성장 성공] 혹은 [성장 실패] 이든,\n개별 주차 결과와 별개로,\n‘도전’ 했다는 그 자체만으로도\n어려운 발걸음을 띄었다는 것을 의미해요!"}
-              </p>
-              <blockquote className="wd-ac__quote">
-                {"“가장 무서운 상대는,\n계속된 연패를 거듭하고도 링에 서있는 상대이다.\n\n그 연패가 비로소 끝나는 상대가\n바로 ‘내’ 가 될 수 있기 때문이다.”"}
-              </blockquote>
-              <p className="wd-ac__msg">라는 복싱 챔피언의 말이 있습니다.</p>
-              <p className="wd-ac__msg">
-                {"이번 주와 다음 주에\n한 걸음 더 나갈 수 있는 원동력으로 삼아보자구요! 😊"}
-              </p>
-            </div>
-
-            {/* [3] 안내 사항 */}
-            <div className="wd-ac__card wd-ac__card--notice">
-              <h3 className="wd-ac__card-title">안내 사항</h3>
-              <ol className="wd-ac__notice-list">
-                <li className="wd-ac__notice-item">
-                  지난 주 자신의 활동 내역에서 이상사항이 있는 경우, 하단의 버튼을 이용하여 수정/요청을 진행해주세요.
-                </li>
-                <li className="wd-ac__notice-item">
-                  별다른 이상 사항이 없는 크루의 경우, 별도의 후속 절차 없이 위에 공표된 해당 주차의 성장 내역이 확정됩니다.
-                </li>
-                <li className="wd-ac__notice-item">
-                  주차 내역 수정/요청은 위클리 리그 발표 후 24시간 이내 신청 가능하며, N+2주 월요일 이후에는 모든 데이터가 최종 확정되어 수정되지 않습니다. (N주가 활동 주차인 경우)
-                </li>
-                <li className="wd-ac__notice-item">
-                  주차 내역 수정/요청은 하단 버튼을 눌러 안내되는 가이드를 기준으로 진행됩니다.
-                </li>
-                <li className="wd-ac__notice-item">
-                  정규 일정이 아닌 별도 주차 과정은 클럽 공지를 참고해주세요. 😊
-                </li>
-              </ol>
-            </div>
+          {/* [2] 안내 메시지(우측 상단) */}
+          <div className="wd-ac__card wd-ac__card--message">
+            <p className="wd-ac__msg">
+              {"지난 주의 성장 내역을 돌아보면,\n내가 가진 기회와 시간, 자원을 제대로 투여했는지를 스스로 점검할 수 있습니다."}
+            </p>
+            <p className="wd-ac__msg">
+              {"[성장 성공] 혹은 [성장 실패] 이든,\n개별 주차 결과와 별개로,\n‘도전’ 했다는 그 자체만으로도\n어려운 발걸음을 띄었다는 것을 의미해요!"}
+            </p>
+            <blockquote className="wd-ac__quote">
+              {"“가장 무서운 상대는,\n계속된 연패를 거듭하고도 링에 서있는 상대이다.\n\n그 연패가 비로소 끝나는 상대가\n바로 ‘내’ 가 될 수 있기 때문이다.”"}
+            </blockquote>
+            <p className="wd-ac__msg">라는 복싱 챔피언의 말이 있습니다.</p>
+            <p className="wd-ac__msg">
+              {"이번 주와 다음 주에\n한 걸음 더 나갈 수 있는 원동력으로 삼아보자구요! 😊"}
+            </p>
           </div>
-        </div>
 
-        {/* [4] CTA + [5] 마지막 멘트 + 우측 org 캐릭터 */}
-        <div className="wd-ac__footer">
-          {/* [4] 주차 내역 수정/요청 — 현재 임시 링크(추후 URL 연결 예정) */}
+          {/* [3] 안내 사항(우측 하단) */}
+          <div className="wd-ac__card wd-ac__card--notice">
+            <h3 className="wd-ac__card-title">안내 사항</h3>
+            <ol className="wd-ac__notice-list">
+              <li className="wd-ac__notice-item">
+                지난 주 자신의 활동 내역에서 이상사항이 있는 경우, 하단의 버튼을 이용하여 수정/요청을 진행해주세요.
+              </li>
+              <li className="wd-ac__notice-item">
+                별다른 이상 사항이 없는 크루의 경우, 별도의 후속 절차 없이 위에 공표된 해당 주차의 성장 내역이 확정됩니다.
+              </li>
+              <li className="wd-ac__notice-item">
+                주차 내역 수정/요청은 위클리 리그 발표 후 24시간 이내 신청 가능하며, N+2주 월요일 이후에는 모든 데이터가 최종 확정되어 수정되지 않습니다. (N주가 활동 주차인 경우)
+              </li>
+              <li className="wd-ac__notice-item">
+                주차 내역 수정/요청은 하단 버튼을 눌러 안내되는 가이드를 기준으로 진행됩니다.
+              </li>
+              <li className="wd-ac__notice-item">
+                정규 일정이 아닌 별도 주차 과정은 클럽 공지를 참고해주세요. 😊
+              </li>
+            </ol>
+          </div>
+
+          {/* [4] CTA — 좌측 이미지 바로 아래(같은 컬럼). 현재 임시 링크(추후 URL 연결 예정) */}
           <a className="wd-ac__cta" href="#" aria-label="주차 내역 수정/요청">
             <i className="ti ti-clipboard-check" aria-hidden="true" />
             주차 내역 수정/요청
           </a>
-          {/* [5] 마지막 멘트 + org 대표 캐릭터(자동 변경) */}
+
+          {/* [5] 마지막 멘트(길게) + 맨 우측 org 대표 캐릭터(자동 변경) — 버튼 오른쪽 한 줄 */}
           <div className="wd-ac__closing">
             <p className="wd-ac__closing-text">
-              {"“한 주의 성장,\n모두 수고 많으셨습니다. 😊\n\n우리가 흘린 땀이,\n\n우리의 미래와 세상에\n더 도움이 되도록!\n\n"}
+              {"“한 주의 성장, 모두 수고 많으셨습니다. 😊  우리가 흘린 땀이, 우리의 미래와 세상에 더 도움이 되도록! "}
               <em>가즈아!</em>
               {"”"}
             </p>
