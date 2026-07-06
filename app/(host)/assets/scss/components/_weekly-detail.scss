@@ -1876,9 +1876,30 @@
     /* 드롭다운(nice-select) — org accent 정합(list 페이지와 동일 처리). 3-클래스 선택자로 base cascade override. */
     .nice-select::after { border-color: var(--wd-accent) !important; }
     .nice-select::before { color: var(--wd-accent); }
+
+    /* [불투명 배경 + 최상단] nice-select2 base 는 dropdown 흰색·list 무배경 + z-index:9 →
+       다크 테마에서 옵션 목록이 반투명하게 보이고, 뒤따르는 크루 카드(glass) 밑으로 깔림.
+       완전 불투명 배경 강제 + z-index 승격으로 뒤 배경/카드가 비치지 않고 항상 위에 뜬다.
+       (컨테이너 backdrop-filter stacking 갇힘은 .wd-wrs__filter z-index 로 별도 해소.) */
+    .nice-select-dropdown {
+      background-color: var(--black) !important;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 8px;
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.6);
+      z-index: 9999 !important;
+    }
+    .nice-select-dropdown .list {
+      background-color: var(--black) !important;
+    }
+    /* [가독성] 기본 옵션 텍스트 — 어두운 배경 위 밝은 색으로 대비 확보. */
+    .nice-select-dropdown .option {
+      color: rgba(255, 255, 255, 0.88);
+    }
+    /* hover/selected/focus — 조직 강조색 텍스트 + 반투명 하이라이트 배경으로 상태 가시화. */
     .nice-select-dropdown .option.selected,
     .nice-select-dropdown .option.focus,
     .nice-select-dropdown .option:hover {
+      background-color: rgba(255, 255, 255, 0.08) !important;
       color: var(--wd-accent) !important;
       &::before { color: var(--wd-accent); }
     }
@@ -1891,6 +1912,10 @@
       gap: 8px;
     }
     &__page {
+      /* 숫자를 사각형 정중앙에 배치 — flex 중앙 정렬로 좌우/상하 대칭. */
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       min-width: 40px;
       height: 40px;
       padding: 0 12px;
