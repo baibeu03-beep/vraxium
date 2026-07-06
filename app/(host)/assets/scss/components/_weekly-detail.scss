@@ -2576,7 +2576,8 @@
     bottom: 0;
     z-index: 3;
     margin: 0;
-    padding: 22px 26px 20px;
+    // 세로 높이 축소(배경 이미지 노출↑) — 상하 패딩만 축소(좌우 26px=폭/정렬 불변).
+    padding: 15px 26px 13px;
     border-radius: 18px 18px 0 0;
     background: linear-gradient(180deg, rgba(10, 16, 23, 0.28), rgba(10, 16, 23, 0.54));
     border: 1px solid rgba(255, 255, 255, 0.15);
@@ -2599,20 +2600,22 @@
     &__mark {
       display: block;
       font-family: Georgia, "Times New Roman", serif;
-      font-size: 44px;
+      // 장식용 따옴표 글리프 축소(본문 폰트 크기와 무관) — 높이 절감.
+      font-size: 32px;
       line-height: 0.6;
       color: var(--wd-accent);
       opacity: 0.6;
-      margin-bottom: 4px;
+      margin-bottom: 2px;
       text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
     }
 
     &__text {
       margin: 0;
       font-family: var(--wd-font-quote);
-      font-size: clamp(15px, 2.1vw, 19px);
+      font-size: clamp(15px, 2.1vw, 19px); // 폰트 크기 불변
       font-style: italic;
-      line-height: 1.65;
+      // 줄간격만 소폭 축소(가독성 유지 범위) — 다행 인용문 높이 절감.
+      line-height: 1.55;
       color: rgba(255, 255, 255, 0.95);
       text-shadow: 0 1px 10px rgba(0, 0, 0, 0.5);
       word-break: keep-all;
@@ -2625,7 +2628,8 @@
       align-items: center;
       justify-content: flex-end;
       gap: 8px;
-      margin-top: 12px;
+      // 문장↔작가명 간격 축소.
+      margin-top: 6px;
       font-family: var(--wd-font-script);
       font-size: clamp(19px, 2vw, 23px);
       font-weight: 400;
@@ -3156,7 +3160,8 @@
   .weekly-detail-page {
     .wd-hero { height: 240px; }
     .wd-repr__overlays { padding: 14px 14px 0; flex-direction: column; align-items: flex-start; }
-    .wd-glass, .wd-quote { padding: 22px 20px; }
+    .wd-glass { padding: 22px 20px; }
+    .wd-quote { padding: 15px 20px; } // 격언 카드 세로 축소(배경 노출↑)
     .wd-dash { padding: 20px 18px 22px; }
     .wd-kpi { padding: 14px 13px; }
     .wd-kpi__icon { width: 36px; height: 36px; font-size: 19px; }
