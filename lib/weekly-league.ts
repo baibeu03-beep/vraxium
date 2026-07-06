@@ -487,6 +487,28 @@ export async function aggregateWeeklyLeague(
       console.warn("[weekly-league] champion educations 조회 실패", (err as Error)?.message ?? String(err));
     }
 
+    // 5-2) 품계(user_grade_stats) — Weekly Rank Showcase 크루 카드 좌하단 품계 이미지+명 SoT.
+    //   grade=숫자 레벨(정 N 품 이미지, 1~10), grade_label=품계명(예: 정승/정1품). /api/profile 과 동일 소스.
+    //   best-effort: 실패해도 카드 형태는 유지(폴백 gradeLevel=10 / grade='-'). org 로스터 한정(1행/유저).
+    const gradeByUser = new Map<string, { level: number; label: string }>();
+    try {
+      const { data: gs } = await db
+        .from("user_grade_stats")
+        .select("user_id, grade, grade_label")
+        .in("user_id", orgUserIds);
+      for (const g of gs || []) {
+        const uid = (g as { user_id: string }).user_id;
+        const lvlRaw = Number((g as { grade?: number | string | null }).grade);
+        const label = (g as { grade_label?: string | null }).grade_label ?? null;
+        gradeByUser.set(uid, {
+          level: Number.isFinite(lvlRaw) && lvlRaw >= 1 && lvlRaw <= 10 ? lvlRaw : 10,
+          label: label && label.trim() ? label.trim() : "-",
+        });
+      }
+    } catch (err) {
+      console.warn("[weekly-league] 품계(user_grade_stats) 조회 실패", (err as Error)?.message ?? String(err));
+    }
+
     // week_start_date 별 인덱싱.
     const statusByWeek = new Map<string, Array<{ user_id: string; status: string }>>();
     for (const r of statusRows) {
@@ -870,13 +892,16 @@ export async function aggregateWeeklyLeague(
           a.p.user_id.localeCompare(b.p.user_id),
       );
       const crewTotal = crewBase.length;
-      const crewRankShowcase: CrewRankShowcase[] = crewBase.map((x, i) => ({
+      const crewRankShowcase: CrewRankShowcase[] = crewBase.map((x, i) => {
+        // 품계 — user_grade_stats(위 gradeByUser) 소스. 없으면 안전 폴백(10/'-').
+        const g = gradeByUser.get(x.p.user_id);
+        return {
         userId: x.p.user_id,
         weekId: week.id,
         rank: i + 1,
         totalRankCount: crewTotal,
-        gradeLevel: 10, // TODO(backend): user_grade_stats.grade
-        grade: "-",
+        gradeLevel: g?.level ?? 10, // user_grade_stats.grade(숫자 레벨)
+        grade: g?.label ?? "-",     // user_grade_stats.grade_label(품계명)
         profileImage: x.c.profileImage ?? null,
         name: x.c.name,
         className: x.c.className,
@@ -898,7 +923,8 @@ export async function aggregateWeeklyLeague(
         competencyRate: 0, competencyRateDelta: 0,
         careerRate: 0, careerRateDelta: 0,
         weeklyReview: null, // TODO(backend): cluster-4-card weekly review
-      }));
+        };
+      });
 
       return {
         id: week.id,
