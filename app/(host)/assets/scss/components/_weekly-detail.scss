@@ -1874,7 +1874,25 @@
     }
 
     /* 드롭다운(nice-select) — org accent 정합(list 페이지와 동일 처리). 3-클래스 선택자로 base cascade override. */
-    .nice-select::after { border-color: var(--wd-accent) !important; }
+    /* [화살표 우측 정렬] base(_all-sections)는 ::after 가 position:static + margin-left:4px 라
+       화살표가 current 텍스트("-")에 바로 붙는다. select 박스 우측 끝으로 절대 정렬하고,
+       current 는 폭 100% + padding-right 로 텍스트와 화살표가 겹치지 않게 한다. → [-        ▼] */
+    .nice-select .current {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      padding-right: 28px;
+    }
+    .nice-select::after {
+      position: absolute !important;
+      top: 50% !important;
+      right: 16px !important;
+      left: auto !important;
+      margin: 0 !important;
+      transform: translateY(-50%) rotate(45deg) !important;
+      transform-origin: center center !important;
+      border-color: var(--wd-accent) !important;
+    }
     .nice-select::before { color: var(--wd-accent); }
 
     /* [불투명 배경 + 최상단] nice-select2 base 는 dropdown 흰색·list 무배경 + z-index:9 →
@@ -1901,7 +1919,9 @@
     .nice-select-dropdown .option:hover {
       background-color: rgba(255, 255, 255, 0.08) !important;
       color: var(--wd-accent) !important;
-      &::before { color: var(--wd-accent); }
+      // 체크 아이콘(::before)도 org 대표색. base '.option.selected.focus::before'(고정 초록,
+      //   3-클래스라 더 구체적)를 이기려면 !important 필요. --wd-accent = org --wr-accent 재사용.
+      &::before { color: var(--wd-accent) !important; }
     }
 
     /* 페이지네이션 — 리스트 위쪽 */
