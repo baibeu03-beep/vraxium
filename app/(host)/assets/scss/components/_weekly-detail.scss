@@ -3029,6 +3029,9 @@
       margin: 0;
       flex: 1 1 auto;
       min-width: 0;
+      // 응원 문구만 시각적으로 ~0.3cm(≈11px) 아래로 — relative 오프셋이라 레이아웃 흐름/형제(캐릭터·CTA) 불변.
+      position: relative;
+      top: 11px;
       font-family: var(--wd-font-subhead);
       // 가독성 강화 — 본문 문장만 ~3~4px 확대(가즈아 제외). 줄간격도 함께 완화.
       font-size: clamp(18px, 1.8vw, 22px);
