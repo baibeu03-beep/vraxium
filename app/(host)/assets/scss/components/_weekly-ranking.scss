@@ -541,6 +541,22 @@
       min-width: 100%;
     }
 
+    // [불투명 배경 + 최상단] 옵션 목록이 뒤 배경/크루 카드에 비치지 않도록
+    // solid background 강제(nice-select2 base 는 dropdown 흰색·list 는 배경 없음 →
+    // 다크 테마에서 반투명하게 보였음). 완전 불투명 --black + 자체 z-index 승격.
+    // (부모 backdrop-filter stacking 갇힘은 필터 컨테이너 z-index 로 별도 해소.)
+    .nice-select-dropdown {
+      background-color: var(--black) !important;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 8px;
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.6);
+      z-index: 9999 !important;
+    }
+
+    .nice-select-dropdown .list {
+      background-color: var(--black) !important;
+    }
+
     .nice-select-dropdown .option {
       width: auto !important;
       min-width: 100%;
@@ -549,15 +565,19 @@
       white-space: nowrap !important;
       word-break: keep-all !important;
       overflow: visible;
+      // [가독성] 어두운 배경 위 밝은 옵션 텍스트로 대비 확보.
+      color: rgba(255, 255, 255, 0.88);
     }
 
-    // [조직×분기 테마] 드롭다운 선택/hover 옵션 — 전역 네온 그린(--quaternary-color)
-    // 대신 조직 강조색을 따른다(기본값은 기존 전역 토큰 유지).
+    // [조직×분기 테마] 드롭다운 선택/hover/focus 옵션 — 전역 네온 그린(--quaternary-color)
+    // 대신 조직 강조색을 따른다(--wr-accent 미설정 시 상세 페이지 --wd-accent → 전역 토큰).
+    // 반투명 하이라이트 배경으로 hover/selected/focus 상태 가시성 확보.
     .nice-select-dropdown .option.selected,
     .nice-select-dropdown .option.focus,
     .nice-select-dropdown .option:hover {
-      color: var(--wr-accent, var(--quaternary-color)) !important;
-      &::before { color: var(--wr-accent, var(--quaternary-color)); }
+      background-color: rgba(255, 255, 255, 0.08) !important;
+      color: var(--wr-accent, var(--wd-accent, var(--quaternary-color))) !important;
+      &::before { color: var(--wr-accent, var(--wd-accent, var(--quaternary-color))); }
     }
   }
 

@@ -1801,6 +1801,13 @@
 
     /* Filter Bar — Premium Glass Card */
     &__filter {
+      /* [드롭다운 stacking] backdrop-filter 가 새 stacking context 를 만들어
+         내부 nice-select-dropdown 의 z-index 가 이 컨테이너에 갇힘. position:relative
+         + 높은 z-index 로 컨테이너 자체를 뒤따르는 크루 카드(glass) 위로 승격시켜야
+         열린 옵션 목록이 카드에 가려지거나 카드 너머로 비쳐 보이지 않음. overflow 는
+         visible 유지(옵션 목록이 카드 경계 아래로 자연 확장). */
+      position: relative;
+      z-index: 30;
       padding: 18px 22px;
       border-radius: 20px;
       background:
