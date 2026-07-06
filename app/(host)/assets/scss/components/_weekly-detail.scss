@@ -1451,11 +1451,12 @@
       i { flex-shrink: 0; font-size: 13px; opacity: 0.8; }
     }
 
-    /* 파트 정보 — 파트 수 + 파트명(항상 노출) */
+    /* 파트 정보 — 파트 수(상단) + 파트명 Tag 목록(하단, 자동 wrap) */
     &__partinfo {
       display: flex;
-      align-items: center;
-      gap: 10px;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 7px;
       min-width: 0;
       padding: 0 2px;
     }
@@ -1471,17 +1472,15 @@
       i { font-size: 15px; color: var(--tb-tone-soft); } // 파트 아이콘 = org accent(장식 강조)
       b { color: #fff; font-weight: 800; font-family: var(--wd-font-heading); }
     }
-    &__partinfo-names {
-      flex: 1 1 auto;
+    /* 파트명 Tag — 학교/전공(&__tag)과 동일 스타일 재사용. leader 태그의 flex:1 균등분할 대신
+       내용 크기(flex:0 0 auto)로 두어 개수만큼 자연스럽게 줄바꿈된다. */
+    &__partinfo-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      width: 100%;
       min-width: 0;
-      font-family: var(--wd-font-body);
-      font-size: 12px;
-      font-weight: 500;
-      color: rgba(255, 255, 255, 0.55);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      text-align: right;
+      .wd-tb-card__tag { flex: 0 0 auto; max-width: 100%; }
     }
 
     /* 텍스트 블록(Team Goal / Team Flow / Crew Comment) — 항상 노출, 2줄 고정(y좌표 통일) */

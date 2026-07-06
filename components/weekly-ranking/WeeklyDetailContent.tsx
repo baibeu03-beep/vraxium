@@ -813,12 +813,11 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
               모든 섹션을 항상 렌더(값 없으면 '-'/placeholder) → 카드마다 내부 y좌표 동일. */}
           <div className="wd-tb__grid">
             {teams.map((t) => {
-              // 파트명/파트 수 — 기본 노이즈 파트('일반') 제외. 수·명을 같은 집합으로 산출(불일치 방지).
+              // 파트명/파트 수 — 기본 노이즈 파트('일반') 제외. 수·명(Tag)을 같은 집합으로 산출(불일치 방지).
               const partNames = t.parts
                 .map((p) => p.partName)
                 .filter((n) => n && n.trim() && n.trim() !== "일반");
               const partShownCount = partNames.length;
-              const partNameText = partNames.length > 0 ? partNames.join(", ") : "-";
 
               // 대전 결과 마크(승/패/무). 승만 왕관, 그 외는 아이콘 자리(placeholder) 확보.
               const resultMark = t.battleResult === "win" ? "승" : t.battleResult === "lose" ? "패" : "무";
@@ -877,12 +876,22 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
                     </span>
                   </div>
 
-                  {/* 파트 정보 — 파트 수 + 파트명(항상 노출) */}
+                  {/* 파트 정보 — 파트 수 + 파트명 Tag 목록(학교/전공과 동일 wd-tb-card__tag 재사용) */}
                   <div className="wd-tb-card__partinfo">
                     <span className="wd-tb-card__partinfo-count">
                       <i className="ti ti-layout-grid" aria-hidden="true" /> 파트 <b>{partShownCount}</b>개
                     </span>
-                    <span className="wd-tb-card__partinfo-names" title={partNameText}>{partNameText}</span>
+                    <div className="wd-tb-card__partinfo-tags">
+                      {partNames.length > 0 ? (
+                        partNames.map((name, i) => (
+                          <span key={`${name}-${i}`} className="wd-tb-card__tag">
+                            <i className="ti ti-layout-grid" aria-hidden="true" /> {name}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="wd-tb-card__tag">-</span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Team Goal — 값 없으면 placeholder(구조 유지, DTO 연결 시 값만 주입) */}
