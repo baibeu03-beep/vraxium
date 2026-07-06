@@ -44,6 +44,16 @@ function resolvePointIcons(org: string | null): { a: string; b: string; c: strin
   return k ? ORG_POINT_ICONS[k] : DEFAULT_POINT_ICONS;
 }
 
+// org → cluster-3 품계 이미지 base(정 N 품.png). encre=ec · phalanx=px · oranke/기타=기본.
+function resolveGradeImageBase(org: string | null): string {
+  const k = normalizeOrgKey(org);
+  if (k === "encre") return "/images/0/cluster 3/image/ec";
+  if (k === "phalanx") return "/images/0/cluster 3/image/px";
+  return "/images/0/cluster 3/image";
+}
+const gradeImageSrc = (org: string | null, level: number) =>
+  `${resolveGradeImageBase(org)}/정 ${level} 품.png`;
+
 // ── [5] Weekly Rank Showcase — 크루 리스트 상수/헬퍼 ──
 // 페이지당 크루 수(10개 초과 시 페이지네이션).
 const WRS_PER_PAGE = 10;
@@ -1134,7 +1144,13 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
                     </div>
                   </div>
 
-                  {/* 하단 좌측 — 강화율 5지표 */}
+                  {/* 하단 좌측(좁은 컬럼) — 상세 버튼 아래 품계 이미지 + 품계명 */}
+                  <div className="wd-crew__grade" title={c.grade}>
+                    <img className="wd-crew__grade-img" src={gradeImageSrc(org, c.gradeLevel)} alt="" aria-hidden="true" />
+                    <span className="wd-crew__grade-label">{c.grade}</span>
+                  </div>
+
+                  {/* 하단 가운데 — 강화율 5지표 */}
                   <div className="wd-crew__rates">
                     {rates.map((r) => (
                       <div key={r.key} className="wd-crew__rate">

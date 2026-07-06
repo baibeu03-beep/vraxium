@@ -49,10 +49,14 @@ const tierOk = tiers[0] === "gold" && tiers[1] === "silver" && tiers[2] === "sil
 const c0 = q(".wd-crew").first();
 const detailHref = await c0.locator(".wd-crew__detail").getAttribute("href");
 const detailHrefOk = /^\/cluster-4-card\/week-1\/?\?userId=demo-crew-.+&org=oranke$/.test(detailHref ?? "");
-// 품계 영역 제거 → 프로필 아바타가 그 자리를 대신한다.
+// 품계 영역(하단 좌측) — 이미지 + 품계명 세로 배치. 프로필 아바타도 상단에 유지.
 const hasGrade = await c0.locator(".wd-crew__grade").count();
 const hasAvatar = await c0.locator(".wd-crew__avatar").count();
-const gradeRemovedOk = hasGrade === 0 && hasAvatar === 1;
+const gradeImgSrc = await c0.locator(".wd-crew__grade-img").getAttribute("src");
+const gradeLabel = (await c0.locator(".wd-crew__grade-label").textContent())?.trim();
+// oranke 매핑: /images/0/cluster 3/image/정 N 품.png (encre=/ec, phalanx=/px)
+const gradeImgOk = /\/cluster 3\/image\/정 \d+ 품\.png$/.test(gradeImgSrc ?? "");
+const gradeOk = hasGrade === 1 && hasAvatar === 1 && gradeImgOk && !!gradeLabel;
 const rankTotal = (await c0.locator(".wd-crew__rank-total").textContent())?.trim();
 const pointCount = await c0.locator(".wd-crew__point").count();
 const pointIcons = await c0.locator(".wd-crew__point-icon").evaluateAll((els) => els.map((e) => e.getAttribute("src")));
@@ -64,30 +68,32 @@ const rateValues = await c0.locator(".wd-crew__rate-value").allTextContents();
 // Weekly Review — 한 줄 말줄임(computed).
 const reviewWS = await c0.locator(".wd-crew__review-body").evaluate((el) => getComputedStyle(el).whiteSpace);
 
-// 좌우 대시보드 레이아웃(2×2) — 데스크톱 geometry 검증.
-//  · info(등수/프로필/학교전공팀파트) 와 stats(포인트/누적성공/결과) 가 같은 행(상단)
-//  · rates(강화율) 는 info 아래 행(하단 좌측)
-//  · review(Weekly Review) 는 stats 아래 · rates 우측(하단 우측)
+// 대시보드 레이아웃(상단 2열 / 하단 3열) — 데스크톱 geometry 검증.
+//  · 상단: info(등수/프로필/학교전공팀파트) 좌 · stats(포인트/누적성공/결과) 우
+//  · 하단: grade(품계) 좌 → rates(강화율) 가운데 → review(Weekly Review) 우 (좌→우 순)
+//  · review(우측)·stats(우측)는 종전 위치 유지: review.left ≈ stats.left
 const dash = await c0.evaluate((card) => {
   const box = (sel) => { const el = card.querySelector(sel); if (!el) return null; const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right }; };
-  const info = box(".wd-crew__info"), stats = box(".wd-crew__stats"), rates = box(".wd-crew__rates"), review = box(".wd-crew__review");
-  if (!info || !stats || !rates || !review) return { ok: false };
+  const info = box(".wd-crew__info"), stats = box(".wd-crew__stats"), grade = box(".wd-crew__grade"), rates = box(".wd-crew__rates"), review = box(".wd-crew__review");
+  if (!info || !stats || !grade || !rates || !review) return { ok: false };
   const near = (a, b, tol = 6) => Math.abs(a - b) <= tol;
   return {
     ok: true,
     // 상단 행: info 와 stats 의 top 이 (거의) 같다 → 같은 행
     infoStatsSameRow: near(info.top, stats.top, 10),
-    // stats 가 info 우측
     statsRightOfInfo: stats.left > info.left,
-    // rates 가 info 아래 행
-    ratesBelowInfo: rates.top >= info.bottom - 2,
-    // review 가 rates 우측 + stats 아래 행
+    // 하단 행: grade → rates → review 좌→우 순
+    gradeBelowInfo: grade.top >= info.bottom - 2,
+    ratesRightOfGrade: rates.left > grade.left,
     reviewRightOfRates: review.left > rates.left,
     reviewBelowStats: review.top >= stats.bottom - 2,
+    // 우측 컬럼 불변: review 가 stats 와 같은 좌측 경계(±14px)
+    reviewAlignedWithStats: near(review.left, stats.left, 14),
   };
 });
 const dashOk = dash.ok && dash.infoStatsSameRow && dash.statsRightOfInfo &&
-  dash.ratesBelowInfo && dash.reviewRightOfRates && dash.reviewBelowStats;
+  dash.gradeBelowInfo && dash.ratesRightOfGrade && dash.reviewRightOfRates &&
+  dash.reviewBelowStats && dash.reviewAlignedWithStats;
 // 카드 높이 — 세로로 과도하게 길지 않아야(대시보드형). 참고용 측정.
 const cardHeight = await c0.evaluate((el) => Math.round(el.getBoundingClientRect().height));
 
@@ -137,8 +143,8 @@ console.log("카드 수(page1):", cardCount, "| 페이지 버튼:", pageBtns, "(
 console.log("기본 정렬 page1 rank=1..10:", JSON.stringify(ranksP1), defaultOrdered ? "✓" : "✗");
 console.log("티어:", JSON.stringify(tiers.slice(0, 8)), tierOk ? "✓" : "✗");
 console.log("상세 href:", detailHref, detailHrefOk ? "✓" : "✗");
-console.log("품계 제거 + 아바타 유지:", gradeRemovedOk ? "✓" : "✗", `(grade=${hasGrade}, avatar=${hasAvatar})`);
-console.log("좌우 대시보드 2×2:", dashOk ? "✓" : "✗", JSON.stringify(dash), "| 카드높이:", cardHeight + "px");
+console.log("품계 영역(하단 좌측) img+명:", gradeOk ? "✓" : "✗", `(img=${gradeImgSrc}, 품계명=${JSON.stringify(gradeLabel)}, avatar=${hasAvatar})`);
+console.log("대시보드 상단2열/하단3열:", dashOk ? "✓" : "✗", JSON.stringify(dash), "| 카드높이:", cardHeight + "px");
 console.log("전체 등수:", JSON.stringify(rankTotal), "| 포인트 수:", pointCount, "| 아이콘:", JSON.stringify(pointIcons));
 console.log("결과 class:", resultCls);
 console.log("강화율 수:", rateCount, "| 라벨:", JSON.stringify(rateLabels), "| 값:", JSON.stringify(rateValues.map((s) => s.replace(/\s+/g, " ").trim())));
@@ -154,7 +160,7 @@ const rateLabelsOk = JSON.stringify(rateLabels) === JSON.stringify(["주차 성�
 const ok =
   layout.filterBeforeList && layout.pagerBeforeList && layout.listDisplay === "column" &&
   cardCount === 10 && pageBtns === 3 && defaultOrdered && tierOk &&
-  detailHrefOk && gradeRemovedOk && dashOk && /명 중$/.test(rankTotal ?? "") &&
+  detailHrefOk && gradeOk && dashOk && /명 중$/.test(rankTotal ?? "") &&
   pointCount === 3 && pointIcons.every(Boolean) && /wd-crew__result--(success|fail|rest)/.test(resultCls ?? "") &&
   rateCount === 5 && rateLabelsOk &&
   reviewWS === "nowrap" && modalOpened && modalClosed &&

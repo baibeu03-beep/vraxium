@@ -1927,14 +1927,15 @@
     --crew-accent: rgba(255, 255, 255, 0.14);
     --crew-glow: rgba(255, 255, 255, 0.08);
     position: relative;
-    // 좌우 대시보드 — 2×2 그리드.
-    //  ┌ info  ┬ stats  ┐   상단: 등수·프로필·학교/전공/팀/파트 | 포인트·누적성공·결과
-    //  └ rates ┴ review ┘   하단: 강화율 5 KPI               | Weekly Review
+    // 좌우 대시보드 — 상단 2열 / 하단 3열 그리드.
+    //  ┌ info ───────┬ stats  ┐  상단: 등수·프로필·학교/전공/팀/파트   | 포인트·누적성공·결과
+    //  └ grade┬ rates┴ review ┘  하단: 품계이미지+품계명 | 강화율 5 KPI | Weekly Review
+    //  col2/col3 경계(=1.4fr/2.4fr=58.3%)는 종전 좌/우 분할선 위치와 동일 → stats·review 불변.
     display: grid;
-    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    grid-template-columns: minmax(80px, 0.2fr) minmax(0, 1.2fr) minmax(0, 1fr);
     grid-template-areas:
-      "info  stats"
-      "rates review";
+      "info  info  stats"
+      "grade rates review";
     gap: 14px 28px;
     align-items: stretch;
     padding: 18px 22px;
@@ -2159,7 +2160,32 @@
     &__delta--down { color: var(--wd-c-red-soft); }
     &__delta--flat { color: rgba(255, 255, 255, 0.45); }
 
-    /* ── 하단 좌측 — 강화율 5 KPI ── */
+    /* ── 하단 좌측(좁은 컬럼) — 상세 버튼 아래 품계 이미지 + 품계명 ── */
+    &__grade {
+      grid-area: grade;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-width: 0;
+      text-align: center;
+      &-img {
+        width: 54px;
+        height: 54px;
+        object-fit: contain;
+        filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
+      }
+      &-label {
+        font-family: var(--wd-font-heading);
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--wd-accent-soft);
+        white-space: nowrap;
+      }
+    }
+
+    /* ── 하단 가운데 — 강화율 5 KPI ── */
     &__rates {
       grid-area: rates;
       display: grid;
@@ -2690,13 +2716,14 @@
   .weekly-detail-page .wd-tb__grid,
   .weekly-detail-page .wd-mvp__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
-  /* 크루 카드 — Tablet: 2×2 좌우 대시보드 → 1열 세로 스택(info→stats→rates→review).
+  /* 크루 카드 — Tablet: 좌우 대시보드 → 1열 세로 스택(info→stats→grade→rates→review).
      열 경계선(우측)은 제거하고 행 경계선(하단)만 남겨 섹션을 구분한다. */
   .weekly-detail-page .wd-crew {
     grid-template-columns: 1fr;
     grid-template-areas:
       "info"
       "stats"
+      "grade"
       "rates"
       "review";
     gap: 14px;
@@ -2707,6 +2734,12 @@
     }
     &__stats {
       padding: 0 0 14px;
+    }
+    // 품계 — 스택 모드에선 이미지+품계명을 가로로 붙여 한 줄로.
+    &__grade {
+      flex-direction: row;
+      justify-content: flex-start;
+      gap: 10px;
     }
     &__rates {
       grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
