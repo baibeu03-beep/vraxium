@@ -882,26 +882,34 @@ export async function aggregateWeeklyLeague(
           const v = verdicts.get(p.user_id) ?? null;
           const weeklyResult: "success" | "fail" | null =
             v === "success" ? "success" : v === "fail" ? "fail" : null;
-          return { p, c, weeklyProgress: (v === "rest" ? "rest" : "challenge") as "challenge" | "rest", weeklyResult };
+          const g = gradeByUser.get(p.user_id);
+          return {
+            p,
+            c,
+            gradeLevel: g?.level ?? 10, // 품계 레벨(1=정승 … 10=정9품, 미상=10)
+            gradeLabel: g?.label ?? "-",
+            weeklyProgress: (v === "rest" ? "rest" : "challenge") as "challenge" | "rest",
+            weeklyResult,
+          };
         });
-      // 기본 정렬(품계 미상 → 주차 성장률 desc → 이름 가나다순) 로 전체 등수 확정.
+      // 전체 등수 확정 정렬 — ① 품계(레벨 오름차=정승 먼저) ② 주차 성장률 desc ③ 이름 가나다
+      //   ④ user_id(안정 tie-break). WeeklyDetailContent 기본 정렬과 동일 키 → rank 번호와 표시 순서 일치.
       crewBase.sort(
         (a, b) =>
+          a.gradeLevel - b.gradeLevel ||
           b.c.growthRate - a.c.growthRate ||
           a.c.name.localeCompare(b.c.name, "ko") ||
           a.p.user_id.localeCompare(b.p.user_id),
       );
       const crewTotal = crewBase.length;
       const crewRankShowcase: CrewRankShowcase[] = crewBase.map((x, i) => {
-        // 품계 — user_grade_stats(위 gradeByUser) 소스. 없으면 안전 폴백(10/'-').
-        const g = gradeByUser.get(x.p.user_id);
         return {
         userId: x.p.user_id,
         weekId: week.id,
         rank: i + 1,
         totalRankCount: crewTotal,
-        gradeLevel: g?.level ?? 10, // user_grade_stats.grade(숫자 레벨)
-        grade: g?.label ?? "-",     // user_grade_stats.grade_label(품계명)
+        gradeLevel: x.gradeLevel, // user_grade_stats.grade(숫자 레벨) — 정렬 키와 동일 소스
+        grade: x.gradeLabel,      // user_grade_stats.grade_label(품계명)
         profileImage: x.c.profileImage ?? null,
         name: x.c.name,
         className: x.c.className,
