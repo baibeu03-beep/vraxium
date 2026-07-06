@@ -522,6 +522,13 @@
     box-sizing: border-box;
     cursor: pointer;
     white-space: nowrap;
+
+    // 키보드 포커스 링도 org 색으로(브라우저 기본 focus-visible 링이 초록/시스템색으로 보이는 것 방지).
+    &:focus-visible {
+      outline: 2px solid var(--wr-accent, var(--quaternary-color));
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
   }
 
   .tournaments__filter .nice-select {
@@ -551,6 +558,18 @@
       // [화살표 색상만] caret border-color 만 조직 강조색으로(기본값 흰색 유지).
       // 크기/위치/여백/border-width/transform/배경/hover·focus 는 일절 미변경.
       border-color: var(--wr-accent, var(--white)) !important;
+    }
+
+    // [좌측 아이콘 ::before(↕)] base(_all-sections)의 고정 초록(--quaternary-color) → org 대표색.
+    //   WRS 상세 필터(.nice-select::before)와 동일 처리. base 가 더 구체적일 수 있어 !important.
+    &::before {
+      color: var(--wr-accent, var(--quaternary-color)) !important;
+    }
+
+    // [열림/포커스 상태] base '.open .current'/'.open::after' 의 고정 초록 → org 대표색으로 유지.
+    &.open {
+      .current { color: var(--wr-accent, var(--quaternary-color)) !important; }
+      &::after { border-color: var(--wr-accent, var(--quaternary-color)) !important; }
     }
   }
 
