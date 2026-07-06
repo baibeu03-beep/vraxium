@@ -2339,7 +2339,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           for (const part of ["information", "competency", "experience", "career"]) {
             if (hasRealLine(weekId, part)) continue; // 현재 주차에 실제 라인/개설 content 존재 → 직전 주차 끌어오지 않음
             const carried = allLines.filter(
-              (l) => (l.weekId ?? null) === prevWeekId && !!l.lineTargetId && normPart(l.partType) === part,
+              (l) =>
+                (l.weekId ?? null) === prevWeekId &&
+                !!l.lineTargetId &&
+                normPart(l.partType) === part &&
+                // ⚠️ 이미 평가 확정된(강화 성공/실패) N-1 라인은 그 주차 소유이므로 현재 주차로 끌어오지 않는다.
+                //   carry-forward 의 대상은 "N-1 에 개설됐지만 아직 미평가(look-ahead)"인 라인뿐.
+                //   (버그: v33 로 과거 주차 experience 가 내용 없는 not_applicable 이 되자, 직전 주차의
+                //    fail 라인이 빈 현재 주차로 잘못 carry 되어 '강화 실패'로 오표시됐다. 백엔드 DTO 는 정상.)
+                !["fail", "failed", "success"].includes(String(l.enhancementStatus ?? "").toLowerCase()),
             );
             if (carried.length === 0) continue;
             // 현재 주차의 빈 placeholder(lineTargetId 없음 + content 없음)는 제거한다.
