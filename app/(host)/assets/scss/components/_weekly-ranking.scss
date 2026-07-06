@@ -472,17 +472,39 @@
     flex-flow: row nowrap !important;
     align-items: center !important;
     justify-content: flex-start !important;
-    gap: 72px !important;
-    column-gap: 72px !important;
-    row-gap: 0 !important;
-    padding: 18px 20px !important;
+    gap: 40px !important;
+    column-gap: 40px !important;
+    row-gap: 14px !important;
+    padding: 18px 22px !important;
     flex-wrap: nowrap !important;
+
+    /* [Glass Card] WRS 상세 필터(.wd-wrs__filter)와 동일 디자인 언어 — glass 배경/보더/블러/그림자.
+       position:relative + z-index 로 열린 드롭다운이 뒤 카드 위로 뜨도록 stacking 승격. */
+    position: relative !important;
+    z-index: 30 !important;
+    border-radius: 20px !important;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+      rgba(14, 23, 32, 0.55) !important;
+    border: 1px solid rgba(255, 255, 255, 0.09) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.32) !important;
 
     > * {
       flex: 0 0 auto !important;
       margin-left: 0 !important;
       margin-right: 0 !important;
       white-space: nowrap;
+    }
+
+    // 모바일/태블릿 — 한 줄이 안 들어가면 여러 줄로 자연 줄바꿈(WRS 상세 필터와 동일 wrap 거동, 가로 오버플로 방지).
+    @media (max-width: 900px) {
+      flex-flow: row wrap !important;
+      flex-wrap: wrap !important;
+      column-gap: 24px !important;
+      row-gap: 14px !important;
+      justify-content: flex-start !important;
     }
 
     .nice-select {
@@ -577,26 +599,35 @@
     .nice-select-dropdown .option:hover {
       background-color: rgba(255, 255, 255, 0.08) !important;
       color: var(--wr-accent, var(--wd-accent, var(--quaternary-color))) !important;
-      &::before { color: var(--wr-accent, var(--wd-accent, var(--quaternary-color))); }
+      // 체크 아이콘(::before)도 org 색. base '.option.selected.focus::before'(고정 초록, 3-클래스라
+      //   더 구체적)를 이기려면 !important 필요(WRS 상세와 동일 처리).
+      &::before { color: var(--wr-accent, var(--wd-accent, var(--quaternary-color))) !important; }
     }
   }
 
+  // RESET — WRS 상세 필터의 초기화 버튼(.wd-wrs__reset)과 통일: accent-tint 배경 + accent 텍스트.
+  //   org 색은 기존 --wr-accent 재사용(하드코딩 금지). 문구는 기존 RESET 유지.
   .weekly-filter-reset-btn {
     flex: 0 0 auto !important;
-    padding: 8px 18px;
-    // [조직×분기 테마] — 기본값은 기존 전역 토큰(--quaternary-color) 유지.
-    background: var(--wr-accent, var(--quaternary-color));
-    border: none;
-    border-radius: 6px;
-    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 18px;
+    border-radius: 11px;
+    background: color-mix(in srgb, var(--wr-accent, var(--quaternary-color)) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--wr-accent, var(--quaternary-color)) 50%, transparent);
+    color: var(--wr-accent-soft, var(--wr-accent, var(--quaternary-color)));
+    font-weight: 700;
     font-size: 13px;
-    color: #1a1a1a;
-    cursor: pointer;
     letter-spacing: 0.05em;
+    cursor: pointer;
     white-space: nowrap !important;
-    transition: var(--transition);
+    transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
 
-    &:hover { opacity: 0.9; }
+    &:hover {
+      background: color-mix(in srgb, var(--wr-accent, var(--quaternary-color)) 26%, transparent);
+      box-shadow: 0 0 16px var(--wr-glow, rgba(255, 255, 255, 0.15));
+    }
     &:active { transform: translateY(1px); }
   }
 
@@ -607,55 +638,64 @@
     white-space: nowrap;
   }
 
+  // 라벨 — WRS 상세 필터(.wd-wrs__field-label)와 톤 통일: accent dot + rgba(0.62) 라벨.
   .weekly-filter-group-label {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     margin-right: 8px;
     flex: 0 0 auto;
-    color: #fff;
-    font-size: 14px;
+    font-family: var(--wd-font-body, "Pretendard", sans-serif);
+    font-size: 13px;
     white-space: nowrap;
 
     .weekly-filter-dot {
       color: var(--wr-accent, var(--quaternary-color));
-      font-size: 10px;
+      font-size: 9px;
       line-height: 1;
     }
 
     .weekly-filter-group-text {
-      color: #999;
-      font-weight: 500;
+      color: rgba(255, 255, 255, 0.62);
+      font-weight: 600;
     }
   }
 
+  // readonly(전체 수 / 검색 결과) — 단순 텍스트가 아니라 필터 그룹과 같은 디자인 언어.
+  //   dot + 라벨 + 값 chip(select 박스 톤의 미니 필드)으로 통일.
   .weekly-filter-readonly {
     flex: 0 0 auto !important;
     display: inline-flex !important;
     align-items: center;
-    gap: 4px !important;
+    gap: 5px !important;
     margin: 0 !important;
     padding: 0 !important;
-    color: #fff;
-    font-size: 14px;
+    font-family: var(--wd-font-body, "Pretendard", sans-serif);
+    font-size: 13px;
     white-space: nowrap !important;
 
     .weekly-filter-dot {
       color: var(--wr-accent, var(--quaternary-color));
-      font-size: 10px;
+      font-size: 9px;
       line-height: 1;
     }
     .weekly-filter-label {
-      color: #999;
-      font-weight: 500;
-      margin-right: 8px;       // [미세조정] 라벨↔숫자 사이 한 칸 정도 더 띄움 (4 → 8)
+      color: rgba(255, 255, 255, 0.62);
+      font-weight: 600;
+      margin-right: 8px;
     }
     .weekly-filter-value {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 11px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       color: var(--wr-accent, var(--quaternary-color));
-      font-weight: 700;
+      font-weight: 800;
       font-variant-numeric: tabular-nums;
-      font-size: 18px;          // [미세조정] +2 (16 → 18) — 숫자 강조
-      line-height: 1;           // 행 높이 영향 없도록 기존 유지
+      font-size: 14px;
+      line-height: 1.5;
     }
   }
 
