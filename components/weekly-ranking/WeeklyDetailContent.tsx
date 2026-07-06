@@ -61,17 +61,6 @@ const WRS_RATE_ICONS = {
   career: "/images/0/Sheriff Badge1 4.png",
 };
 
-// org → cluster-3 품계 이미지 base(정 N 품.png). encre=ec · phalanx=px · oranke/기타=기본.
-function resolveGradeImageBase(org: string | null): string {
-  const k = normalizeOrgKey(org);
-  if (k === "encre") return "/images/0/cluster 3/image/ec";
-  if (k === "phalanx") return "/images/0/cluster 3/image/px";
-  return "/images/0/cluster 3/image";
-}
-const gradeMedalSrc = (level: number) => `/images/0/cluster 3/icon/medal ${level}.png`;
-const gradeImageSrc = (org: string | null, level: number) =>
-  `${resolveGradeImageBase(org)}/정 ${level} 품.png`;
-
 // org → cluster-4-card weekly 라우트 base(테마 라우트). userId 쿼리로 대상 크루 지정.
 function resolveCluster4Base(org: string | null): string {
   const k = normalizeOrgKey(org);
@@ -1079,25 +1068,15 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
               const reviewText = c.weeklyReview && c.weeklyReview.trim() ? c.weeklyReview.trim() : "";
               return (
                 <article key={c.userId} className="wd-crew" data-tier={tier}>
-                  {/* 좌측 — 상세 / 전체 등수 / 품계 / 프로필 */}
-                  <div className="wd-crew__left">
-                    <div className="wd-crew__lead">
-                      <Link href={crewDetailHref(c)} className="wd-crew__detail" aria-label={`${c.name} 크루 상세 보기`}>
-                        <img src={WRS_DETAIL_ICON} alt="" aria-hidden="true" />
-                      </Link>
-                      <div className="wd-crew__rank">
-                        <span className="wd-crew__rank-total">총 {c.totalRankCount.toLocaleString()}명 중</span>
-                        <strong className="wd-crew__rank-num">{c.rank}등</strong>
-                      </div>
-                      <div className="wd-crew__grade" title={c.grade}>
-                        <span className="wd-crew__grade-imgs">
-                          <img className="wd-crew__grade-medal" src={gradeMedalSrc(c.gradeLevel)} alt="" aria-hidden="true" />
-                          <img className="wd-crew__grade-img" src={gradeImageSrc(org, c.gradeLevel)} alt="" aria-hidden="true" />
-                        </span>
-                        <span className="wd-crew__grade-label">{c.grade}</span>
-                      </div>
+                  {/* 상단 좌측 — 상세 · 등수 · 프로필 · 학교/전공/팀/파트 (한 행) */}
+                  <div className="wd-crew__info">
+                    <Link href={crewDetailHref(c)} className="wd-crew__detail" aria-label={`${c.name} 크루 상세 보기`}>
+                      <img src={WRS_DETAIL_ICON} alt="" aria-hidden="true" />
+                    </Link>
+                    <div className="wd-crew__rank">
+                      <span className="wd-crew__rank-total">총 {c.totalRankCount.toLocaleString()}명 중</span>
+                      <strong className="wd-crew__rank-num">{c.rank}등</strong>
                     </div>
-
                     <div className="wd-crew__profile">
                       <span className="wd-crew__avatar">
                         {c.profileImage ? (
@@ -1113,7 +1092,6 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
                         {c.className ? <span className="wd-crew__class">{c.className}</span> : null}
                       </div>
                     </div>
-
                     <div className="wd-crew__meta">
                       <span className="wd-crew__meta-row">
                         <span className="wd-crew__tag">{c.school ?? "-"}</span>
@@ -1126,8 +1104,8 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
                     </div>
                   </div>
 
-                  {/* 중앙 — 포인트 A/B/C · 누적 성공 주차 · 이번 주 결과 */}
-                  <div className="wd-crew__center">
+                  {/* 상단 우측 — 포인트 A/B/C · 누적 성공 주차 · 이번 주 결과 (한 행) */}
+                  <div className="wd-crew__stats">
                     <div className="wd-crew__points">
                       {points.map((p) => (
                         <div key={p.key} className="wd-crew__point">
@@ -1156,43 +1134,42 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
                     </div>
                   </div>
 
-                  {/* 우측 — 강화율 5지표 · Weekly Review */}
-                  <div className="wd-crew__right">
-                    <div className="wd-crew__rates">
-                      {rates.map((r) => (
-                        <div key={r.key} className="wd-crew__rate">
-                          <img className="wd-crew__rate-icon" src={r.icon} alt="" aria-hidden="true" />
-                          <div className="wd-crew__rate-body">
-                            <span className="wd-crew__rate-value">
-                              {r.value}
-                              <span className="wd-crew__rate-unit">%</span>
-                              <em className={`wd-crew__delta--${deltaTone(r.delta)}`}>({fmtDelta(r.delta)})</em>
-                            </span>
-                            <span className="wd-crew__rate-label">{r.label}</span>
-                          </div>
+                  {/* 하단 좌측 — 강화율 5지표 */}
+                  <div className="wd-crew__rates">
+                    {rates.map((r) => (
+                      <div key={r.key} className="wd-crew__rate">
+                        <img className="wd-crew__rate-icon" src={r.icon} alt="" aria-hidden="true" />
+                        <div className="wd-crew__rate-body">
+                          <span className="wd-crew__rate-value">
+                            {r.value}
+                            <span className="wd-crew__rate-unit">%</span>
+                            <em className={`wd-crew__delta--${deltaTone(r.delta)}`}>({fmtDelta(r.delta)})</em>
+                          </span>
+                          <span className="wd-crew__rate-label">{r.label}</span>
                         </div>
-                      ))}
-                    </div>
-
-                    <div className="wd-crew__review">
-                      <div className="wd-crew__review-head">
-                        <span className="wd-crew__review-label">
-                          <i className="ti ti-clipboard-text" aria-hidden="true" /> Weekly Review
-                        </span>
-                        <button
-                          type="button"
-                          className="wd-crew__review-view"
-                          aria-label={`${c.name} 크루 위클리 리뷰 전체 보기`}
-                          disabled={!reviewText}
-                          onClick={() => reviewText && setReviewModal({ name: c.name, body: reviewText })}
-                        >
-                          <i className="ti ti-eye" aria-hidden="true" />
-                        </button>
                       </div>
-                      <p className={`wd-crew__review-body${reviewText ? "" : " is-empty"}`}>
-                        {reviewText || "작성된 위클리 리뷰가 없습니다."}
-                      </p>
+                    ))}
+                  </div>
+
+                  {/* 하단 우측 — Weekly Review */}
+                  <div className="wd-crew__review">
+                    <div className="wd-crew__review-head">
+                      <span className="wd-crew__review-label">
+                        <i className="ti ti-clipboard-text" aria-hidden="true" /> Weekly Review
+                      </span>
+                      <button
+                        type="button"
+                        className="wd-crew__review-view"
+                        aria-label={`${c.name} 크루 위클리 리뷰 전체 보기`}
+                        disabled={!reviewText}
+                        onClick={() => reviewText && setReviewModal({ name: c.name, body: reviewText })}
+                      >
+                        <i className="ti ti-eye" aria-hidden="true" />
+                      </button>
                     </div>
+                    <p className={`wd-crew__review-body${reviewText ? "" : " is-empty"}`}>
+                      {reviewText || "작성된 위클리 리뷰가 없습니다."}
+                    </p>
                   </div>
                 </article>
               );

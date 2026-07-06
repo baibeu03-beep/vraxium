@@ -1927,10 +1927,17 @@
     --crew-accent: rgba(255, 255, 255, 0.14);
     --crew-glow: rgba(255, 255, 255, 0.08);
     position: relative;
+    // 좌우 대시보드 — 2×2 그리드.
+    //  ┌ info  ┬ stats  ┐   상단: 등수·프로필·학교/전공/팀/파트 | 포인트·누적성공·결과
+    //  └ rates ┴ review ┘   하단: 강화율 5 KPI               | Weekly Review
     display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.8fr) minmax(0, 1.55fr);
-    gap: 18px;
-    padding: 18px 20px;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    grid-template-areas:
+      "info  stats"
+      "rates review";
+    gap: 14px 28px;
+    align-items: stretch;
+    padding: 18px 22px;
     border-radius: 18px;
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02)),
@@ -1969,9 +1976,19 @@
       box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42), 0 0 26px var(--crew-glow);
     }
 
-    /* ── 좌측 ── */
-    &__left { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-    &__lead { display: flex; align-items: center; gap: 10px; }
+    /* ── 상단 좌측 — 등수 · 프로필 · 학교/전공/팀/파트 (한 행) ── */
+    &__info {
+      grid-area: info;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      min-width: 0;
+      // 세로/가로 대시보드 구분선(우측·하단). rates 와 함께 열 경계선, stats 와 함께 행 경계선을 이룬다.
+      padding: 0 28px 14px 0;
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
 
     &__detail {
       flex-shrink: 0;
@@ -2006,24 +2023,6 @@
         line-height: 1;
         color: var(--crew-accent);
         text-shadow: 0 0 12px var(--crew-glow);
-      }
-    }
-
-    &__grade {
-      flex-shrink: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 3px;
-      &-imgs { display: inline-flex; align-items: center; gap: 3px; }
-      &-medal { width: 34px; height: 34px; object-fit: contain; }
-      &-img { width: 34px; height: 34px; object-fit: contain; filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.4)); }
-      &-label {
-        font-family: var(--wd-font-heading);
-        font-size: 11.5px;
-        font-weight: 700;
-        color: var(--wd-accent-soft);
-        white-space: nowrap;
       }
     }
 
@@ -2093,19 +2092,20 @@
       max-width: 100%;
     }
 
-    /* ── 중앙 ── */
-    &__center {
+    /* ── 상단 우측 — 포인트 · 누적 성공 · 이번 주 결과 (한 행) ── */
+    &__stats {
+      grid-area: stats;
       display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px 16px;
       min-width: 0;
-      padding: 0 16px;
-      border-left: 1px solid rgba(255, 255, 255, 0.07);
-      border-right: 1px solid rgba(255, 255, 255, 0.07);
+      // info 와 같은 행 경계선(하단)으로 상/하단 대시보드를 나눈다.
+      padding: 0 0 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     }
-    &__points { display: flex; flex-direction: column; gap: 5px; }
-    &__point { display: flex; align-items: center; gap: 8px; }
+    &__points { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+    &__point { display: flex; align-items: center; gap: 6px; }
     &__point-icon { width: 22px; height: 22px; object-fit: contain; flex-shrink: 0; }
     &__point-value {
       font-family: var(--wd-font-heading);
@@ -2116,7 +2116,7 @@
     }
 
     &__weeks {
-      align-self: flex-start;
+      align-self: center;
       display: inline-flex;
       align-items: center;
       gap: 6px;
@@ -2138,7 +2138,7 @@
     }
 
     &__result {
-      align-self: flex-start;
+      align-self: center;
       display: inline-flex;
       align-items: center;
       gap: 6px;
@@ -2159,9 +2159,18 @@
     &__delta--down { color: var(--wd-c-red-soft); }
     &__delta--flat { color: rgba(255, 255, 255, 0.45); }
 
-    /* ── 우측 ── */
-    &__right { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-    &__rates { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+    /* ── 하단 좌측 — 강화율 5 KPI ── */
+    &__rates {
+      grid-area: rates;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      align-content: center;
+      min-width: 0;
+      // info 와 같은 열 경계선(우측)으로 좌/우 대시보드를 나눈다.
+      padding-right: 28px;
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+    }
     &__rate {
       display: flex;
       align-items: center;
@@ -2192,9 +2201,12 @@
       word-break: keep-all;
     }
 
+    /* ── 하단 우측 — Weekly Review ── */
     &__review {
+      grid-area: review;
       display: flex;
       flex-direction: column;
+      justify-content: center;
       gap: 6px;
       padding: 10px 12px;
       border-radius: 12px;
@@ -2678,23 +2690,29 @@
   .weekly-detail-page .wd-tb__grid,
   .weekly-detail-page .wd-mvp__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
-  /* 크루 카드 — PC 가로형 → 세로형(3영역 스택). 중앙 구분선을 상/하 라인으로 전환. */
+  /* 크루 카드 — Tablet: 2×2 좌우 대시보드 → 1열 세로 스택(info→stats→rates→review).
+     열 경계선(우측)은 제거하고 행 경계선(하단)만 남겨 섹션을 구분한다. */
   .weekly-detail-page .wd-crew {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "info"
+      "stats"
+      "rates"
+      "review";
     gap: 14px;
-    &__center {
-      flex-direction: row;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 12px 18px;
-      padding: 12px 0;
-      border-left: none;
+    &__info {
+      padding: 0 0 14px;
       border-right: none;
-      border-top: 1px solid rgba(255, 255, 255, 0.07);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+      // 하단 경계선은 유지(info↔stats 구분)
     }
-    &__points { flex-direction: row; flex-wrap: wrap; gap: 6px 16px; }
-    &__rates { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); }
+    &__stats {
+      padding: 0 0 14px;
+    }
+    &__rates {
+      grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+      padding-right: 0;
+      border-right: none;
+    }
   }
 }
 @media (max-width: 640px) {
@@ -2769,7 +2787,9 @@
     // 크루 카드 — 소형 모바일: 패딩·강화율 2열.
     .wd-crew { padding: 16px; }
     .wd-crew__rates { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .wd-crew__lead { flex-wrap: wrap; }
+    // 소형 모바일 — 상단 정보/포인트 행이 자연스럽게 여러 줄로 감긴다.
+    .wd-crew__info,
+    .wd-crew__stats { flex-wrap: wrap; }
   }
 }
 
