@@ -2791,9 +2791,10 @@ const Sidebar = () => {
               <div className="stat-item">
                 <div className="stat-row">
                   <span className="stat-label">
-                    {/* 누적(전체 성장기간) 일정 신뢰도 = /api/profile reliabilityRate(admin scheduleReliability.rate).
-                        cluster4 area-6 의 "시즌 일정 신뢰도"(선택 시즌 스냅샷)와 스코프가 달라 라벨로 구분한다. */}
-                    <span className="stat-dot">·</span> 누적 일정 신뢰도
+                    {/* 값은 누적(전체 성장기간) 일정 신뢰도 = /api/profile reliabilityRate(admin scheduleReliability.rate).
+                        cluster4 area-6 원형은 선택 시즌 스냅샷으로 스코프가 다르지만, 제품 정책(2026-07-07)상
+                        고객 노출 라벨은 양쪽 모두 "일정 신뢰도"로 통일한다(값·계산 로직 불변, 라벨 문구만). */}
+                    <span className="stat-dot">·</span> 일정 신뢰도
                   </span>
                   <span className="stat-value">
                     {hasReliabilityData ? reliabilityRate : "-"}
