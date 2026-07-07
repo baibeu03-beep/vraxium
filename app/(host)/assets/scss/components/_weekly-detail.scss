@@ -94,13 +94,13 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: rgba(255, 255, 255, 0.75);
     font-family: "Pretendard", sans-serif;
-    font-size: 14.3px;
+    font-size: 17.16px;
     font-weight: 600;
     letter-spacing: 0.03em;
     text-decoration: none;
     transition: color 180ms ease, background-color 200ms ease, transform 180ms ease;
 
-    i { font-size: 16.5px; }
+    i { font-size: 18.65px; }
 
     &:hover {
       color: #fff;
@@ -185,7 +185,7 @@
       color: var(--wd-accent-soft);
       backdrop-filter: blur(6px);
       font-family: var(--wd-font-badge);
-      font-size: 14.3px;
+      font-size: 17.16px;
       font-weight: 400;
       letter-spacing: 0.18em;
       text-transform: uppercase;
@@ -196,7 +196,7 @@
       font-family: var(--wd-font-display);
       font-weight: 700;
       // 기존 대비 약 1.5배 확대(느낌·letter-spacing·weight 유지, 모바일 반응형 축소).
-      font-size: clamp(48.4px, 9vw, 105.6px);
+      font-size: clamp(52.27px, 9vw, 114.05px);
       line-height: 1.02;
       letter-spacing: 0.03em;
       text-transform: uppercase;
@@ -261,7 +261,7 @@
       gap: 10px;
       margin: 0;
       font-family: var(--wd-font-heading);
-      font-size: clamp(18.7px, 1.7vw, 22px);
+      font-size: clamp(21.13px, 1.7vw, 23.76px);
       font-weight: 700;
       letter-spacing: 0.03em;
       text-transform: uppercase;
@@ -280,7 +280,7 @@
     &__caption {
       margin: 0;
       font-family: var(--wd-font-body);
-      font-size: 14.3px;
+      font-size: 17.16px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.55);
     }
@@ -354,7 +354,7 @@
       background: var(--tone-bg);
       border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent);
       color: var(--tone-soft);
-      font-size: 23.1px;
+      font-size: 24.95px;
       box-shadow: 0 0 18px var(--tone-glow);
 
       i { line-height: 1; }
@@ -369,7 +369,7 @@
 
     &__label {
       font-family: var(--wd-font-body);
-      font-size: 13.75px;
+      font-size: 16.5px;
       font-weight: 600;
       letter-spacing: 0.01em;
       color: rgba(255, 255, 255, 0.6);
@@ -381,7 +381,7 @@
       align-items: baseline;
       gap: 3px;
       font-family: var(--wd-font-heading);
-      font-size: clamp(25.3px, 2.3vw, 30.8px);
+      font-size: clamp(27.32px, 2.3vw, 33.26px);
       font-weight: 700;
       line-height: 1.1;
       letter-spacing: 0.01em;
@@ -391,7 +391,7 @@
 
     &__unit {
       font-family: var(--wd-font-body);
-      font-size: 13.2px;
+      font-size: 15.84px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.5);
     }
@@ -433,7 +433,7 @@
 
     &__label {
       font-family: var(--wd-font-heading);
-      font-size: clamp(15.4px, 1.5vw, 17.6px);
+      font-size: clamp(17.4px, 1.5vw, 19.89px);
       font-weight: 700;
       letter-spacing: 0.02em;
       text-transform: uppercase;
@@ -444,7 +444,7 @@
       display: inline-flex;
       align-items: baseline;
       font-family: var(--wd-font-display);
-      font-size: clamp(33px, 3.4vw, 44px);
+      font-size: clamp(35.64px, 3.4vw, 47.52px);
       font-weight: 700;
       line-height: 1;
       color: var(--tone-soft);
@@ -540,7 +540,7 @@
       position: relative;
       margin: 0;
       font-family: var(--wd-font-display);
-      font-size: clamp(30.8px, 4.6vw, 57.2px);
+      font-size: clamp(33.26px, 4.6vw, 61.78px);
       font-weight: 700;
       letter-spacing: 0.04em;
       color: #fff;
@@ -587,13 +587,13 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 11px 18px;
+      padding: 12px 20px;
       border-radius: 12px;
       background: transparent;
       border: 1px solid transparent;
       color: rgba(255, 255, 255, 0.5);
       font-family: var(--wd-font-heading);
-      font-size: 15.4px;
+      font-size: 17.4px;
       font-weight: 700;
       letter-spacing: 0.01em;
       cursor: pointer;
@@ -637,7 +637,7 @@
       justify-content: center;
       color: rgba(255, 255, 255, 0.42);
       font-family: var(--wd-font-body);
-      font-size: 15.4px;
+      font-size: 17.4px;
     }
   }
 
@@ -676,10 +676,10 @@
       position: absolute;
       top: 10px;
       right: 10px;
-      padding: 4px 11px;
+      padding: 5px 13px;
       border-radius: 999px;
       font-family: var(--wd-font-heading);
-      font-size: 12.1px;
+      font-size: 14.52px;
       font-weight: 800;
       letter-spacing: 0.04em;
       color: #10141a;
@@ -717,7 +717,7 @@
       color: var(--card-accent);
       font-family: var(--wd-font-heading);
       font-weight: 800;
-      font-size: 19.8px;
+      font-size: 22.37px;
     }
 
     &__id {
@@ -729,7 +729,7 @@
 
     &__name {
       font-family: var(--wd-font-heading);
-      font-size: 16.5px;
+      font-size: 18.65px;
       font-weight: 700;
       color: #fff;
       white-space: nowrap;
@@ -740,12 +740,12 @@
     &__class {
       align-self: flex-start;
       max-width: 100%;
-      padding: 3px 10px;
+      padding: 4px 12px;
       border-radius: 6px;
       background: color-mix(in srgb, var(--card-accent) 16%, transparent);
       color: var(--card-accent);
       font-family: var(--wd-font-body);
-      font-size: 12.1px;
+      font-size: 14.52px;
       font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
@@ -765,12 +765,12 @@
     }
 
     &__tag {
-      padding: 4px 10px;
+      padding: 5px 12px;
       border-radius: 6px;
       background: rgba(255, 255, 255, 0.055);
       border: 1px solid rgba(255, 255, 255, 0.07);
       font-family: var(--wd-font-body);
-      font-size: 12.1px;
+      font-size: 14.52px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.7);
       white-space: nowrap;
@@ -797,7 +797,7 @@
 
       &-value {
         font-family: var(--wd-font-display);
-        font-size: 28.6px;
+        font-size: 30.89px;
         font-weight: 700;
         line-height: 1;
         color: var(--card-accent);
@@ -806,7 +806,7 @@
 
       &-unit {
         font-family: var(--wd-font-body);
-        font-size: 13.2px;
+        font-size: 15.84px;
         font-weight: 600;
         color: rgba(255, 255, 255, 0.5);
       }
@@ -850,7 +850,7 @@
       gap: 8px;
       // Champion's Hall(display, 28~52px) 보다 확실히 작은 heading 위계.
       font-family: var(--wd-font-heading);
-      font-size: clamp(18.7px, 2.1vw, 24.2px);
+      font-size: clamp(21.13px, 2.1vw, 26.14px);
       font-weight: 700;
       letter-spacing: 0.01em;
       line-height: 1.2;
@@ -859,7 +859,7 @@
 
     &__subtitle {
       font-family: var(--wd-font-body);
-      font-size: 14.3px;
+      font-size: 17.16px;
       font-weight: 500;
       letter-spacing: 0.01em;
       color: var(--wd-accent-soft);
@@ -958,7 +958,7 @@
       color: var(--wd-accent-soft);
       font-family: var(--wd-font-heading);
       font-weight: 800;
-      font-size: 24.2px;
+      font-size: 26.14px;
     }
 
     &__id {
@@ -969,7 +969,7 @@
     }
     &__name {
       font-family: var(--wd-font-heading);
-      font-size: 19.8px;
+      font-size: 22.37px;
       font-weight: 700;
       color: #fff;
       white-space: nowrap;
@@ -979,12 +979,12 @@
     &__class {
       align-self: flex-start;
       max-width: 100%;
-      padding: 3px 11px;
+      padding: 4px 13px;
       border-radius: 6px;
       background: color-mix(in srgb, var(--wd-accent) 16%, transparent);
       color: var(--wd-accent-soft);
       font-family: var(--wd-font-body);
-      font-size: 12.65px;
+      font-size: 15.18px;
       font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
@@ -1010,14 +1010,14 @@
       background: color-mix(in srgb, var(--wd-accent) 14%, transparent);
       border: 1px solid color-mix(in srgb, var(--wd-accent) 40%, transparent);
       color: var(--wd-accent-soft);
-      font-size: 24.2px;
+      font-size: 26.14px;
       box-shadow: 0 0 16px var(--wd-glow);
       img { width: 26px; height: 26px; object-fit: contain; }
       i { line-height: 1; }
     }
     &__team-name {
       font-family: var(--wd-font-body);
-      font-size: 13.2px;
+      font-size: 15.84px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.72);
       white-space: nowrap;
@@ -1027,7 +1027,7 @@
     }
     &__ace-label {
       font-family: var(--wd-font-badge);
-      font-size: 23.1px;
+      font-size: 24.95px;
       font-weight: 800;
       letter-spacing: 0.14em;
       line-height: 1;
@@ -1047,12 +1047,12 @@
       gap: 6px;
     }
     &__tag {
-      padding: 4px 11px;
+      padding: 5px 13px;
       border-radius: 7px;
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid rgba(255, 255, 255, 0.08);
       font-family: var(--wd-font-body);
-      font-size: 12.65px;
+      font-size: 15.18px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.72);
       white-space: nowrap;
@@ -1077,19 +1077,19 @@
       align-items: center;
       gap: 6px;
       font-family: var(--wd-font-heading);
-      font-size: 13.2px;
+      font-size: 15.84px;
       font-weight: 700;
       letter-spacing: 0.04em;
       text-transform: uppercase;
       color: var(--wd-accent-soft);
-      i { font-size: 15.4px; }
+      i { font-size: 17.4px; }
     }
     &__comment-body {
       margin: 0;
       // 3~4줄 기본 확보 — 100자 대부분이 접힘 없이 보이도록.
       min-height: calc(1.65em * 3.5);
       font-family: var(--wd-font-body);
-      font-size: 15.4px;
+      font-size: 17.4px;
       font-weight: 400;
       line-height: 1.65;
       color: rgba(255, 255, 255, 0.84);
@@ -1145,7 +1145,7 @@
       position: relative;
       margin: 0;
       font-family: var(--wd-font-display);
-      font-size: clamp(30.8px, 4.6vw, 57.2px);
+      font-size: clamp(33.26px, 4.6vw, 61.78px);
       font-weight: 700;
       letter-spacing: 0.04em;
       color: #fff;
@@ -1168,7 +1168,7 @@
       margin: -8px 0 0;
       text-align: center;
       font-family: var(--wd-font-body);
-      font-size: 14.3px;
+      font-size: 17.16px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.55);
     }
@@ -1234,7 +1234,7 @@
       background: var(--tone-bg);
       border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent);
       color: var(--tone-soft);
-      font-size: 25.3px;
+      font-size: 27.32px;
       box-shadow: 0 0 18px var(--tone-glow);
       i { line-height: 1; }
     }
@@ -1243,7 +1243,7 @@
 
     &__label {
       font-family: var(--wd-font-body);
-      font-size: 14.3px;
+      font-size: 17.16px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.6);
       white-space: nowrap;
@@ -1254,18 +1254,18 @@
       align-items: baseline;
       gap: 3px;
       font-family: var(--wd-font-heading);
-      font-size: clamp(28.6px, 2.6vw, 35.2px);
+      font-size: clamp(30.89px, 2.6vw, 38.02px);
       font-weight: 700;
       line-height: 1.05;
       color: var(--tone-soft);
       font-variant-numeric: tabular-nums;
 
-      &--record { font-size: clamp(22px, 2.2vw, 28.6px); letter-spacing: 0.01em; }
+      &--record { font-size: clamp(23.76px, 2.2vw, 30.89px); letter-spacing: 0.01em; }
     }
 
     &__unit {
       font-family: var(--wd-font-body);
-      font-size: 13.75px;
+      font-size: 16.5px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.5);
     }
@@ -1288,8 +1288,8 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 15px;
-    padding: 22px 22px 20px;
+    gap: 16px;
+    padding: 24px 24px 22px;
     border-radius: 20px;
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
@@ -1346,14 +1346,14 @@
       color: var(--tb-tone-soft);
       font-family: var(--wd-font-heading);
       font-weight: 800;
-      font-size: 20.9px;
+      font-size: 22.57px;
     }
 
     &__id { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
 
     &__name {
       font-family: var(--wd-font-heading);
-      font-size: 18.7px;
+      font-size: 21.13px;
       font-weight: 700;
       color: #fff;
       white-space: nowrap;
@@ -1361,9 +1361,21 @@
       text-overflow: ellipsis;
     }
 
+    /* 부제("이번 주 성장 대전") — 팀명 아래 subtitle. 무스타일 상속 상태였던 것을 명시 지정. */
+    &__subhead {
+      font-family: var(--wd-font-body);
+      font-size: 13.5px;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+      color: rgba(255, 255, 255, 0.55);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     &__leader {
       font-family: var(--wd-font-body);
-      font-size: 13.2px;
+      font-size: 15.84px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.6);
       white-space: nowrap;
@@ -1374,10 +1386,10 @@
     &__badge {
       flex-shrink: 0;
       align-self: flex-start;
-      padding: 6px 15px;
+      padding: 7px 17px;
       border-radius: 999px;
       font-family: var(--wd-font-badge);
-      font-size: 13.2px;
+      font-size: 15.84px;
       font-weight: 400;
       letter-spacing: 0.08em;
       color: var(--tb-tone-soft);
@@ -1391,7 +1403,7 @@
       display: flex;
       flex-direction: column;
       gap: 7px;
-      padding: 11px 13px;
+      padding: 13px 15px;
       border-radius: 12px;
       background: rgba(255, 255, 255, 0.035);
       border: 1px solid rgba(255, 255, 255, 0.07);
@@ -1408,16 +1420,16 @@
       align-items: center;
       gap: 4px;
       font-family: var(--wd-font-body);
-      font-size: 12.65px;
+      font-size: 15.18px;
       font-weight: 700;
       color: var(--tb-tone-soft);
-      i { font-size: 15.4px; }
+      i { font-size: 17.4px; }
     }
     &__leader-name {
       flex: 1 1 auto;
       min-width: 0;
       font-family: var(--wd-font-heading);
-      font-size: 15.95px;
+      font-size: 18.02px;
       font-weight: 700;
       color: #fff;
       white-space: nowrap;
@@ -1437,18 +1449,18 @@
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      padding: 4px 11px;
+      padding: 5px 13px;
       border-radius: 7px;
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid rgba(255, 255, 255, 0.07);
       font-family: var(--wd-font-body);
-      font-size: 12.65px;
+      font-size: 15.18px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.72);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      i { flex-shrink: 0; font-size: 14.3px; opacity: 0.8; }
+      i { flex-shrink: 0; font-size: 17.16px; opacity: 0.8; }
     }
 
     /* 파트 정보 — 파트 수(상단) + 파트명 Tag 목록(하단, 자동 wrap) */
@@ -1466,10 +1478,10 @@
       align-items: center;
       gap: 5px;
       font-family: var(--wd-font-body);
-      font-size: 13.2px;
+      font-size: 15.84px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.68);
-      i { font-size: 16.5px; color: var(--tb-tone-soft); } // 파트 아이콘 = org accent(장식 강조)
+      i { font-size: 18.65px; color: var(--tb-tone-soft); } // 파트 아이콘 = org accent(장식 강조)
       b { color: #fff; font-weight: 800; font-family: var(--wd-font-heading); }
     }
     /* 파트명 Tag — 학교/전공(&__tag)과 동일 스타일 재사용. leader 태그의 flex:1 균등분할 대신
@@ -1488,7 +1500,7 @@
       display: flex;
       flex-direction: column;
       gap: 6px;
-      padding: 11px 13px;
+      padding: 13px 15px;
       border-radius: 12px;
       background: rgba(255, 255, 255, 0.03);
       border: 1px solid rgba(255, 255, 255, 0.06);
@@ -1500,21 +1512,21 @@
       align-items: center;
       gap: 6px;
       font-family: var(--wd-font-heading);
-      font-size: 12.65px;
+      font-size: 15.18px;
       font-weight: 700;
       letter-spacing: 0.03em;
       text-transform: uppercase;
       color: var(--tb-tone-soft);
-      i { font-size: 15.4px; }
+      i { font-size: 17.4px; }
     }
     &__block-body {
       margin: 0;
       // 2줄 고정 높이 — 카드 간 y좌표 통일. 넘치면 말줄임(전문은 title 툴팁 · DTO 연결 시 값만 주입).
-      min-height: calc(1.55em * 2);
+      min-height: calc(1.62em * 2);
       font-family: var(--wd-font-body);
-      font-size: 13.75px;
+      font-size: 16.5px;
       font-weight: 400;
-      line-height: 1.55;
+      line-height: 1.62;
       color: rgba(255, 255, 255, 0.82);
       display: -webkit-box;
       -webkit-line-clamp: 2;
@@ -1532,7 +1544,7 @@
       grid-template-columns: auto 1fr auto;
       align-items: center;
       gap: 12px;
-      padding: 12px 14px;
+      padding: 13px 16px;
       border-radius: 14px;
       background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
       border: 1px solid rgba(255, 255, 255, 0.07);
@@ -1547,7 +1559,7 @@
     }
     &__result-mark {
       font-family: var(--wd-font-display);
-      font-size: 37.4px;
+      font-size: 40.39px;
       font-weight: 800;
       line-height: 1;
       color: var(--tb-tone-soft);
@@ -1590,7 +1602,7 @@
       gap: 1px;
       strong {
         font-family: var(--wd-font-display);
-        font-size: 22px;
+        font-size: 23.76px;
         font-weight: 700;
         line-height: 1;
         color: var(--tb-tone-soft);
@@ -1599,7 +1611,7 @@
       }
       > span {
         font-family: var(--wd-font-body);
-        font-size: 10.45px;
+        font-size: 12.54px;
         font-weight: 600;
         color: rgba(255, 255, 255, 0.5);
       }
@@ -1618,7 +1630,7 @@
       flex-direction: column;
       align-items: center;
       gap: 2px;
-      padding: 7px 4px;
+      padding: 9px 6px;
       border-radius: 10px;
       background: rgba(255, 255, 255, 0.04);
       &--green { --rt: var(--wd-c-green-soft); }
@@ -1627,7 +1639,7 @@
     }
     &__record-value {
       font-family: var(--wd-font-heading);
-      font-size: 19.8px;
+      font-size: 22.37px;
       font-weight: 700;
       line-height: 1;
       color: var(--rt);
@@ -1635,7 +1647,7 @@
     }
     &__record-label {
       font-family: var(--wd-font-body);
-      font-size: 11.55px;
+      font-size: 13.86px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.5);
     }
@@ -1653,7 +1665,7 @@
       align-items: center;
       justify-content: center;
       gap: 6px;
-      padding: 10px 8px;
+      padding: 12px 10px;
       border-radius: 13px;
       background: linear-gradient(160deg, color-mix(in srgb, var(--tb-tone) 20%, rgba(255, 255, 255, 0.05)), rgba(255, 255, 255, 0.015));
       border: 1px solid color-mix(in srgb, var(--tb-tone) 32%, rgba(255, 255, 255, 0.07));
@@ -1663,15 +1675,15 @@
       align-items: center;
       gap: 5px;
       font-family: var(--wd-font-body);
-      font-size: 13.2px;
+      font-size: 15.84px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.72);
       white-space: nowrap;
-      i { font-size: 16.5px; color: var(--tb-tone-soft); }
+      i { font-size: 18.65px; color: var(--tb-tone-soft); }
     }
     &__crew-total-value {
       font-family: var(--wd-font-display);
-      font-size: 37.4px;
+      font-size: 40.39px;
       font-weight: 800;
       line-height: 1;
       color: var(--tb-tone-soft);
@@ -1708,7 +1720,7 @@
 
     &__value {
       font-family: var(--wd-font-heading);
-      font-size: 17.6px;
+      font-size: 19.89px;
       font-weight: 700;
       line-height: 1;
       color: var(--st-soft);
@@ -1717,7 +1729,7 @@
 
     &__label {
       font-family: var(--wd-font-body);
-      font-size: 11.55px;
+      font-size: 13.86px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.55);
       white-space: nowrap;
@@ -1771,7 +1783,7 @@
       position: relative;
       margin: 0;
       font-family: var(--wd-font-display);
-      font-size: clamp(30.8px, 4.6vw, 57.2px);
+      font-size: clamp(33.26px, 4.6vw, 61.78px);
       font-weight: 700;
       letter-spacing: 0.04em;
       color: #fff;
@@ -1794,7 +1806,7 @@
       margin: -8px 0 4px;
       text-align: center;
       font-family: var(--wd-font-body);
-      font-size: 14.3px;
+      font-size: 17.16px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.55);
     }
@@ -1841,11 +1853,11 @@
       gap: 5px;
       flex-shrink: 0;
       font-family: var(--wd-font-body);
-      font-size: 14.3px;
+      font-size: 17.16px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.62);
     }
-    &__dot { color: var(--wd-accent); font-size: 9.9px; line-height: 1; }
+    &__dot { color: var(--wd-accent); font-size: 11.88px; line-height: 1; }
 
     /* 초기화 버튼 — Premium(관리자 톤 회피). Desktop 우측 정렬. */
     &__reset {
@@ -1854,18 +1866,18 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 9px 18px;
+      padding: 10px 20px;
       border-radius: 11px;
       background: color-mix(in srgb, var(--wd-accent) 16%, transparent);
       border: 1px solid color-mix(in srgb, var(--wd-accent) 50%, transparent);
       color: var(--wd-accent-soft);
       font-family: var(--wd-font-heading);
-      font-size: 14.3px;
+      font-size: 17.16px;
       font-weight: 700;
       letter-spacing: 0.03em;
       cursor: pointer;
       transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
-      i { font-size: 16.5px; }
+      i { font-size: 18.65px; }
       &:hover {
         background: color-mix(in srgb, var(--wd-accent) 26%, transparent);
         box-shadow: 0 0 16px var(--wd-glow);
@@ -1944,7 +1956,7 @@
       border: 1px solid rgba(255, 255, 255, 0.09);
       color: rgba(255, 255, 255, 0.62);
       font-family: var(--wd-font-heading);
-      font-size: 15.4px;
+      font-size: 17.4px;
       font-weight: 700;
       font-variant-numeric: tabular-nums;
       cursor: pointer;
@@ -1967,7 +1979,7 @@
       border-radius: 16px;
       color: rgba(255, 255, 255, 0.45);
       font-family: var(--wd-font-body);
-      font-size: 15.4px;
+      font-size: 17.4px;
     }
   }
 
@@ -2068,10 +2080,10 @@
       border-radius: 10px;
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid rgba(255, 255, 255, 0.08);
-      &-total { font-family: var(--wd-font-body); font-size: 12.1px; color: rgba(255, 255, 255, 0.55); white-space: nowrap; }
+      &-total { font-family: var(--wd-font-body); font-size: 14.52px; color: rgba(255, 255, 255, 0.55); white-space: nowrap; }
       &-num {
         font-family: var(--wd-font-display);
-        font-size: 22px;
+        font-size: 23.76px;
         font-weight: 800;
         line-height: 1;
         color: var(--crew-accent);
@@ -2100,28 +2112,28 @@
       color: #fff;
       font-family: var(--wd-font-heading);
       font-weight: 800;
-      font-size: 20.9px;
+      font-size: 22.57px;
     }
     &__id { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
     &__name {
       font-family: var(--wd-font-heading);
-      font-size: 17.6px;
+      font-size: 19.89px;
       font-weight: 700;
       color: #fff;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      em { font-style: normal; font-size: 13.2px; font-weight: 500; color: rgba(255, 255, 255, 0.5); margin-left: 2px; }
+      em { font-style: normal; font-size: 15.84px; font-weight: 500; color: rgba(255, 255, 255, 0.5); margin-left: 2px; }
     }
     &__class {
       align-self: flex-start;
       max-width: 100%;
-      padding: 3px 10px;
+      padding: 4px 12px;
       border-radius: 6px;
       background: color-mix(in srgb, var(--wd-accent) 16%, transparent);
       color: var(--wd-accent-soft);
       font-family: var(--wd-font-body);
-      font-size: 12.1px;
+      font-size: 14.52px;
       font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
@@ -2131,12 +2143,12 @@
     &__meta { display: flex; flex-direction: column; gap: 5px; }
     &__meta-row { display: flex; flex-wrap: wrap; gap: 5px; }
     &__tag {
-      padding: 4px 10px;
+      padding: 5px 12px;
       border-radius: 6px;
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid rgba(255, 255, 255, 0.07);
       font-family: var(--wd-font-body);
-      font-size: 12.1px;
+      font-size: 14.52px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.7);
       white-space: nowrap;
@@ -2162,7 +2174,7 @@
     &__point-icon { width: 22px; height: 22px; object-fit: contain; flex-shrink: 0; }
     &__point-value {
       font-family: var(--wd-font-heading);
-      font-size: 17.6px;
+      font-size: 19.89px;
       font-weight: 700;
       color: #fff;
       font-variant-numeric: tabular-nums;
@@ -2173,21 +2185,21 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 8px 14px;
+      padding: 9px 16px;
       border-radius: 10px;
       background: color-mix(in srgb, var(--wd-c-green) 13%, rgba(255, 255, 255, 0.03));
       border: 1px solid color-mix(in srgb, var(--wd-c-green) 30%, transparent);
       &-icon { width: 20px; height: 20px; object-fit: contain; }
       &-value {
         font-family: var(--wd-font-heading);
-        font-size: 19.8px;
+        font-size: 22.37px;
         font-weight: 800;
         line-height: 1;
         color: var(--wd-c-green-soft);
         font-variant-numeric: tabular-nums;
         span { font-size: 0.6em; margin-left: 1px; color: rgba(255, 255, 255, 0.6); }
       }
-      &-delta { font-family: var(--wd-font-body); font-size: 13.2px; font-weight: 700; }
+      &-delta { font-family: var(--wd-font-body); font-size: 15.84px; font-weight: 700; }
     }
 
     &__result {
@@ -2195,13 +2207,13 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 8px 14px;
+      padding: 9px 16px;
       border-radius: 10px;
       font-family: var(--wd-font-heading);
-      font-size: 14.3px;
+      font-size: 17.16px;
       font-weight: 700;
       img { width: 20px; height: 20px; object-fit: contain; }
-      i { font-size: 17.6px; }
+      i { font-size: 19.89px; }
       &--success { color: var(--wd-c-green-soft); background: color-mix(in srgb, var(--wd-c-green) 16%, transparent); border: 1px solid color-mix(in srgb, var(--wd-c-green) 45%, transparent); }
       &--fail    { color: var(--wd-c-red-soft);   background: color-mix(in srgb, var(--wd-c-red) 16%, transparent);   border: 1px solid color-mix(in srgb, var(--wd-c-red) 45%, transparent); }
       &--rest    { color: var(--wd-c-gray-soft);  background: color-mix(in srgb, var(--wd-c-gray) 16%, transparent);  border: 1px solid color-mix(in srgb, var(--wd-c-gray) 45%, transparent); }
@@ -2234,7 +2246,7 @@
       }
       &-label {
         font-family: var(--wd-font-heading);
-        font-size: 13.2px;
+        font-size: 15.84px;
         font-weight: 700;
         color: var(--wd-accent-soft);
         white-space: nowrap;
@@ -2257,7 +2269,7 @@
       display: flex;
       align-items: center;
       gap: 7px;
-      padding: 8px 9px;
+      padding: 9px 11px;
       border-radius: 11px;
       background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
       border: 1px solid rgba(255, 255, 255, 0.07);
@@ -2267,16 +2279,16 @@
     &__rate-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     &__rate-value {
       font-family: var(--wd-font-heading);
-      font-size: 14.85px;
+      font-size: 16.78px;
       font-weight: 700;
       color: #fff;
       white-space: nowrap;
       .wd-crew__rate-unit { font-size: 0.8em; color: rgba(255, 255, 255, 0.6); margin-left: 1px; }
-      em { font-style: normal; font-size: 11.55px; font-weight: 700; margin-left: 2px; }
+      em { font-style: normal; font-size: 13.86px; font-weight: 700; margin-left: 2px; }
     }
     &__rate-label {
       font-family: var(--wd-font-body);
-      font-size: 11px;
+      font-size: 13.2px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.5);
       line-height: 1.25;
@@ -2301,12 +2313,12 @@
       align-items: center;
       gap: 5px;
       font-family: var(--wd-font-heading);
-      font-size: 12.65px;
+      font-size: 15.18px;
       font-weight: 700;
       letter-spacing: 0.03em;
       text-transform: uppercase;
       color: var(--wd-accent-soft);
-      i { font-size: 15.4px; }
+      i { font-size: 17.4px; }
     }
     &__review-view {
       flex-shrink: 0;
@@ -2321,14 +2333,14 @@
       color: rgba(255, 255, 255, 0.7);
       cursor: pointer;
       transition: color 0.2s ease, background-color 0.2s ease;
-      i { font-size: 16.5px; }
+      i { font-size: 18.65px; }
       &:hover:not(:disabled) { color: #fff; background: color-mix(in srgb, var(--wd-accent) 20%, transparent); }
       &:disabled { opacity: 0.4; cursor: default; }
     }
     &__review-body {
       margin: 0;
       font-family: var(--wd-font-body);
-      font-size: 13.75px;
+      font-size: 16.5px;
       line-height: 1.5;
       color: rgba(255, 255, 255, 0.75);
       // 한 줄 말줄임
@@ -2382,7 +2394,7 @@
       padding: 20px 22px 14px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     }
-    &__title { margin: 0; font-family: var(--wd-font-heading); font-size: 18.7px; font-weight: 700; color: #fff; }
+    &__title { margin: 0; font-family: var(--wd-font-heading); font-size: 21.13px; font-weight: 700; color: #fff; }
     &__close {
       flex-shrink: 0;
       display: inline-flex;
@@ -2394,7 +2406,7 @@
       background: rgba(255, 255, 255, 0.06);
       border: 1px solid rgba(255, 255, 255, 0.1);
       color: rgba(255, 255, 255, 0.7);
-      font-size: 19.8px;
+      font-size: 22.37px;
       cursor: pointer;
       transition: color 0.2s ease, background-color 0.2s ease;
       &:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
@@ -2405,7 +2417,7 @@
       overflow-y: auto;
       white-space: pre-line;
       font-family: var(--wd-font-body);
-      font-size: 16.5px;
+      font-size: 18.65px;
       line-height: 1.75;
       color: rgba(255, 255, 255, 0.88);
       word-break: keep-all;
@@ -2530,9 +2542,9 @@
     // [주차명] 가장 먼저 눈에 들어오는 정보 — 프로젝트 한글 헤딩 폰트(HakgyoansimTuho)로
     //   기존 대비 약 2배 확대해 존재감을 높인다. (Rajdhani 등 라틴 헤딩 폰트는 한글 미지원)
     &--season {
-      padding: 9px 18px;
+      padding: 10px 20px;
       font-family: var(--wd-font-subhead);
-      font-size: clamp(35.2px, 3.4vw, 46.2px);
+      font-size: clamp(38.02px, 3.4vw, 49.9px);
       font-weight: 700;
       letter-spacing: 0.01em;
       line-height: 1.2;
@@ -2543,8 +2555,8 @@
 
     // [주차기간] 주차명과 밸런스 맞도록 확대(≈15~16px).
     &--date {
-      padding: 6px 15px;
-      font-size: clamp(16.5px, 1.5vw, 17.6px);
+      padding: 7px 16px;
+      font-size: clamp(18.65px, 1.5vw, 19.89px);
       font-weight: 600;
       letter-spacing: 0.01em;
       color: rgba(255, 255, 255, 0.92);
@@ -2558,10 +2570,10 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 9px 18px;
+    padding: 10px 20px;
     border-radius: 999px;
     font-family: "Pretendard", sans-serif;
-    font-size: clamp(13.2px, 1.9vw, 15.4px);
+    font-size: clamp(15.84px, 1.9vw, 17.4px);
     font-weight: 700;
     letter-spacing: 0.02em;
     white-space: nowrap;
@@ -2569,7 +2581,7 @@
     -webkit-backdrop-filter: blur(8px);
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
 
-    i { font-size: 16.5px; }
+    i { font-size: 18.65px; }
 
     &--active {
       color: #eafff0;
@@ -2620,7 +2632,7 @@
       display: block;
       font-family: Georgia, "Times New Roman", serif;
       // 장식용 따옴표 글리프 축소(본문 폰트 크기와 무관) — 높이 절감.
-      font-size: 35.2px;
+      font-size: 38.02px;
       line-height: 0.6;
       color: var(--wd-accent);
       opacity: 0.6;
@@ -2631,10 +2643,10 @@
     &__text {
       margin: 0;
       font-family: var(--wd-font-quote);
-      font-size: clamp(16.5px, 2.1vw, 20.9px); // 폰트 크기 불변
+      font-size: clamp(18.65px, 2.1vw, 22.57px); // 폰트 크기 불변
       font-style: italic;
       // 줄간격만 소폭 축소(가독성 유지 범위) — 다행 인용문 높이 절감.
-      line-height: 1.55;
+      line-height: 1.62;
       color: rgba(255, 255, 255, 0.95);
       text-shadow: 0 1px 10px rgba(0, 0, 0, 0.5);
       word-break: keep-all;
@@ -2650,13 +2662,13 @@
       // 문장↔작가명 간격 축소.
       margin-top: 6px;
       font-family: var(--wd-font-script);
-      font-size: clamp(20.9px, 2vw, 25.3px);
+      font-size: clamp(22.57px, 2vw, 27.32px);
       font-weight: 400;
       letter-spacing: 0.01em;
       color: var(--wd-accent-soft);
       text-shadow: 0 1px 10px rgba(0, 0, 0, 0.5);
 
-      &-emoji { font-size: 19.8px; }
+      &-emoji { font-size: 22.37px; }
     }
   }
 
@@ -2686,7 +2698,7 @@
       gap: 10px;
       margin: 0 0 15px;
       font-family: var(--wd-font-heading);
-      font-size: clamp(18.7px, 1.7vw, 22px);
+      font-size: clamp(21.13px, 1.7vw, 23.76px);
       font-weight: 700;
       letter-spacing: 0.03em;
       text-transform: uppercase;
@@ -2706,7 +2718,7 @@
       margin: 0;
       white-space: pre-line;
       font-family: var(--wd-font-body);
-      font-size: clamp(15.95px, 1.4vw, 17.6px);
+      font-size: clamp(18.02px, 1.4vw, 19.89px);
       font-weight: 400;
       line-height: 1.75;
       color: rgba(255, 255, 255, 0.85);
@@ -2743,7 +2755,7 @@
 
     &__title {
       margin: 0;
-      font-size: 18.7px;
+      font-size: 21.13px;
       font-weight: 700;
       color: #fff;
     }
@@ -2757,7 +2769,7 @@
     border-radius: 999px;
     background: var(--wd-accent);
     color: #14181c;
-    font-size: 15.4px;
+    font-size: 17.4px;
     font-weight: 800;
     text-decoration: none;
     transition: opacity 180ms ease, transform 180ms ease;
@@ -2808,7 +2820,7 @@
       position: relative;
       margin: 0;
       font-family: var(--wd-font-display);
-      font-size: clamp(30.8px, 4.6vw, 57.2px);
+      font-size: clamp(33.26px, 4.6vw, 61.78px);
       font-weight: 700;
       letter-spacing: 0.04em;
       color: #fff;
@@ -2830,7 +2842,7 @@
       margin: -8px 0 4px;
       text-align: center;
       font-family: var(--wd-font-body);
-      font-size: 14.3px;
+      font-size: 17.16px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.55);
     }
@@ -2916,7 +2928,7 @@
       gap: 10px;
       margin: 0 0 16px;
       font-family: var(--wd-font-heading);
-      font-size: clamp(18.7px, 1.7vw, 22px);
+      font-size: clamp(21.13px, 1.7vw, 23.76px);
       font-weight: 700;
       letter-spacing: 0.03em;
       color: #fff;
@@ -2936,7 +2948,7 @@
       margin: 0;
       white-space: pre-line;
       font-family: var(--wd-font-body);
-      font-size: clamp(15.95px, 1.4vw, 17.6px);
+      font-size: clamp(18.02px, 1.4vw, 19.89px);
       font-weight: 400;
       line-height: 1.8;
       color: rgba(255, 255, 255, 0.85);
@@ -2954,7 +2966,7 @@
       border-left: 2px solid color-mix(in srgb, var(--wd-accent) 55%, transparent);
       white-space: pre-line;
       font-family: var(--wd-font-quote);
-      font-size: clamp(19.8px, 1.95vw, 23.1px); // 본문(최대 16px) 대비 +3~5px
+      font-size: clamp(22.37px, 1.95vw, 24.95px); // 본문(최대 16px) 대비 +3~5px
       font-style: italic;
       line-height: 1.68;
       color: var(--wd-accent-soft);
@@ -2978,7 +2990,7 @@
       padding-left: 42px;
       min-height: 26px;
       font-family: var(--wd-font-body);
-      font-size: clamp(14.85px, 1.35vw, 16.5px);
+      font-size: clamp(16.78px, 1.35vw, 18.65px);
       line-height: 1.72;
       color: rgba(255, 255, 255, 0.82);
       word-break: keep-all;
@@ -3000,7 +3012,7 @@
         border: 1px solid color-mix(in srgb, var(--wd-accent) 45%, transparent);
         color: var(--wd-accent-soft);
         font-family: var(--wd-font-heading);
-        font-size: 14.3px;
+        font-size: 17.16px;
         font-weight: 800;
       }
     }
@@ -3019,7 +3031,7 @@
       background: linear-gradient(135deg, var(--wd-accent), color-mix(in srgb, var(--wd-accent-soft) 82%, #fff));
       color: #14181c;
       font-family: var(--wd-font-heading);
-      font-size: clamp(16.5px, 1.5vw, 19.8px);
+      font-size: clamp(18.65px, 1.5vw, 22.37px);
       font-weight: 800;
       letter-spacing: 0.02em;
       text-decoration: none;
@@ -3027,7 +3039,7 @@
         0 10px 28px color-mix(in srgb, var(--wd-accent) 40%, transparent),
         0 0 0 1px color-mix(in srgb, var(--wd-accent) 30%, transparent);
       transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
-      i { font-size: 22px; }
+      i { font-size: 23.76px; }
       &:hover {
         transform: translateY(-2px);
         box-shadow:
@@ -3057,7 +3069,7 @@
       top: 11px;
       font-family: var(--wd-font-subhead);
       // 가독성 강화 — 본문 문장만 ~3~4px 확대(가즈아 제외). 줄간격도 함께 완화.
-      font-size: clamp(19.8px, 1.8vw, 24.2px);
+      font-size: clamp(22.37px, 1.8vw, 26.14px);
       line-height: 1.78;
       color: rgba(255, 255, 255, 0.9);
       word-break: keep-all;
@@ -3067,7 +3079,7 @@
         // ⚠️ 본문 확대와 무관하게 기존 크기 유지 — 상대 1.5em(=이전 base×1.5) 대신 절대 clamp 로 고정.
         font-style: normal;
         font-family: var(--wd-font-cheer);
-        font-size: clamp(24.75px, 2.25vw, 29.7px);
+        font-size: clamp(26.73px, 2.25vw, 32.08px);
         letter-spacing: 0.01em;
         color: var(--wd-accent-soft);
         text-shadow: 0 0 18px var(--wd-glow);
@@ -3152,7 +3164,7 @@
     .wd-hero {
       height: 280px;
       &__inner { padding: 30px 24px; }
-      &__eyebrow { top: 16px; right: 16px; padding: 5px 12px; font-size: 12.1px; }
+      &__eyebrow { top: 16px; right: 16px; padding: 5px 12px; font-size: 14.52px; }
     }
     // 단일 컬럼 — 높이 매칭 불필요. 데스크톱 fill(min-height 560 + flex) 해제, 4:5 고정.
     .wd-col--left .wd-repr { flex: 0 0 auto; }
@@ -3183,11 +3195,11 @@
     .wd-quote { padding: 15px 20px; } // 격언 카드 세로 축소(배경 노출↑)
     .wd-dash { padding: 20px 18px 22px; }
     .wd-kpi { padding: 14px 13px; }
-    .wd-kpi__icon { width: 36px; height: 36px; font-size: 20.9px; }
+    .wd-kpi__icon { width: 36px; height: 36px; font-size: 22.57px; }
     // Champion's Hall — 모바일: 2열
     .wd-champ__card { padding: 18px 16px 20px; }
     .wd-champ__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
-    .wd-champ__tab { font-size: 13.75px; padding: 8px 12px; }
+    .wd-champ__tab { font-size: 16.5px; padding: 8px 12px; }
     .wd-champ__tab-icon { width: 18px; height: 18px; }
 
     // Team Battle — 소형 모바일: 요약 KPI 1열, 패딩 축소.
