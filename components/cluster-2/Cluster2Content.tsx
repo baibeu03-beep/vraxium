@@ -2412,7 +2412,7 @@ const Cluster2Content = () => {
                             ),
                           )}
                         </h3>
-                        <span className="video-author">{video.author}</span>
+                        <span className="video-author">{mask.crewName(video.author)}</span>
                       </div>
                       <div className="video-info-right">
                         <span className="dot-separator">●</span>

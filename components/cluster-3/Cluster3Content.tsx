@@ -2754,7 +2754,7 @@ const Cluster3Content = () => {
                         {card.platform && PLATFORM_ICONS[card.platform] && <img src={PLATFORM_ICONS[card.platform]} alt={card.platform} className={`sns-icon`} />}
                         <div className="author-text">
                           <span className="info-label">Created by:</span>
-                          <span className="author-name">{engName || "Unknown"}</span>
+                          <span className="author-name">{engName ? mask.crewName(engName) : "Unknown"}</span>
                         </div>
                       </div>
                     </div>
@@ -2870,7 +2870,7 @@ const Cluster3Content = () => {
                       )}
                       <div className="author-text">
                         <span className="info-label">Posted by :</span>
-                        <span className="author-name">{engName || "Unknown"}</span>
+                        <span className="author-name">{engName ? mask.crewName(engName) : "Unknown"}</span>
                       </div>
                     </div>
                   </div>
@@ -2957,7 +2957,7 @@ const Cluster3Content = () => {
                       )}
                       <div className="item-info">
                         <span className="item-tags">#Detail, #Micro</span>
-                        <span className="item-author">@{engName || "Unknown"}</span>
+                        <span className="item-author">@{engName ? mask.crewName(engName) : "Unknown"}</span>
                       </div>
                     </div>
                   </div>
