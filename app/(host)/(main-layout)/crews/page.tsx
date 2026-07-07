@@ -122,8 +122,8 @@ function CrewsContent() {
     // 조직별 cluster route suffix 분기 — phalanx → /cluster-4-px,
     // encre → /cluster-4-ec, 그 외(예: oranke) 는 default /cluster-4.
     // 매핑 source : lib/cluster-route 의 SUFFIX_TO_ORG (단일 정의소).
-    // 카드 이미지 / crew-club-badge / author-meta / "보기" 버튼 4 군데가
-    // 모두 본 함수를 사용하므로 분기 일관성 보장.
+    // 카드 이미지 / author-meta / "보기" 버튼 3 군데가 본 함수를 사용하므로 분기 일관성 보장.
+    // (팀명 배지는 클릭 불가 span 으로 전환되어 더 이상 링크 이동에 사용하지 않음.)
     const base = getOrgClusterRouteBase(org);
     const target =
       demoMode && (DEMO_CREW_MEMBERS as readonly string[]).includes(crew.name)
@@ -853,12 +853,11 @@ function CrewsContent() {
                               {/* 팀명 배지 + 클래스명 배지를 같은 행에 나란히(줄바꿈 없이). */}
                               {/* .info p 는 space-between 이므로 두 배지를 한 wrapper 로 묶어 왼쪽 정렬·간격만 부여. */}
                               <span style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "nowrap", minWidth: 0 }}>
-                                <Link
-                                  href={resolveHref(crew)}
-                                  className="crew-club-badge"
-                                >
+                                {/* 팀명 배지는 클릭 불가(비링크 span). 개인 카드 이동은 아래 '보기' 버튼 전용.
+                                    org/mode/권한 분기 무관하게 동일 적용. 클래스명 배지와 동일 디자인 유지. */}
+                                <span className="crew-club-badge">
                                   {[crew.team, crew.club].find((v) => v && v !== "-") ?? "-"}
-                                </Link>
+                                </span>
                                 {/* 클래스명 배지 — 값이 있을 때만. 팀명 배지와 동일 디자인(.crew-club-badge). */}
                                 {crew.className && (
                                   <span className="crew-club-badge">{crew.className}</span>
