@@ -70,18 +70,24 @@ const Banner = ({ heroThumbSrc, bannerSlideSrcs }: BannerProps) => {
         <div className="row vertical-column-gap">
           <div className="col-12 col-lg-8 col-xxl-9">
             <div className="banner__content">
-              <div className="banner__content-inner">
-                <ol className="breadcrumb mt-8">
-                  <li className="breadcrumb-item active">Explore</li>
-                  <li className="breadcrumb-item active">Play</li>
-                  <li className="breadcrumb-item active">Win</li>
+              <div className="banner__content-inner hero-kr">
+                <ol className="breadcrumb mt-8 hero-breadcrumb">
+                  <li className="breadcrumb-item active">
+                    전국청춘성장 클럽s 에 오신 것을 환영해요! 얏호!{" "}
+                    <span className="line-through italic">(우리 춤추는 클럽 아니야!..)</span>
+                  </li>
                 </ol>
-                <h1 className="title-animation title-xxl stroked-text fw-8 transform-none mt-8">Play & Earn</h1>
-                <p className="text-xl mt-6">Elevate Your Gaming Experience with our NFTG and Level Up Nexus.</p>
+                <h1 className="title-animation title-xxl stroked-text fw-8 transform-none mt-8 hero-title hero-title-korean">
+                  그대여, <span className="youth-highlight">청춘</span>은<br />
+                  단 한번 뿐이라더군
+                </h1>
+                <p className="text-xl mt-6 hero-desc">
+                  “놀만큼 놀았잖아..<span className="line-through">(따흑ㅠ)</span> 이제 우리의 꿈과 커리어를 향해 달려보자구?”
+                </p>
                 <div className="section__cta mt-40">
                   <div className="btn-wrapper">
                     <Link href="/games" className="btn--secondary">
-                      Play Now
+                      Cluv Now
                     </Link>
                     <svg viewBox="0 0 100 102" xmlns="http://www.w3.org/2000/svg" fill="none" preserveAspectRatio="none" className="shape">
                       <path d="M0 1  L100 1  L100 55 L80 101 L0 101 Z" />
