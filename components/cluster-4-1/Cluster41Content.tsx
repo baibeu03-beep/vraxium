@@ -1477,14 +1477,17 @@ const Cluster41Content = () => {
                 partType: (typeof PART_LINE_ORDER)[number],
                 cardRateObj: unknown,
               ): RateTriple => readRateObject(cardRateObj) ?? lineTriple(linesByPart.get(partType));
-              // ── 실무 역량 empty-zero 정책 — 상세 카드(Cluster4CardContent competencyStatsAdmin)와 동일 기준 ──
-              // 실제 개설된 역량 라인 = lineTargetId 보유. lineTargetId 없는 placeholder(미배정/folded pending,
-              // na)는 '실제 라인'이 아니므로, 하나도 없으면 competencyRate/placeholder 라인을 무시하고 0/0 을 쓴다.
-              // (구버그) 목록 카드는 이 게이트 없이 week.competencyRate 또는 placeholder 라인(denominator=1)을
-              // 그대로 읽어 "0/1" 로 표시 → 상세 카드는 0/0 → 불일치. 상세 카드는 이미 realCompetencyLines
-              // 게이트를 적용하므로, 목록도 동일 게이트를 적용해 양쪽 값을 일치시킨다.
+              // ── 실무 역량 집계 게이트 — 상세 카드(Cluster4CardContent realCompetencyLines)와 동일 SoT ──
+              // (2026-07 수정) enhancementStatus 기준: not_applicable 이 아닌 역량 라인(success/pending/fail,
+              //   den>0)이 있으면 집계에 포함한다. 기존엔 lineTargetId 보유만 셌는데, 그러면 라인은 개설됐지만
+              //   내가 대상이 아닌 비대상 synthetic fail(enhancementStatus="fail", lineTargetId=null,
+              //   denominator=1)이 빠져 목록 요약이 "0/0"이 됐다(상세는 강화 실패 표시). 어드민 breakdownFromLines
+              //   분모 A(na 제외)와 동일 기준으로 통일해, 강화 실패 카드가 있으면 목록도 0/1 로 잡히게 한다.
+              //   not_applicable(그 주차 미개설)만 0/0. → 표시축(강화 상태)과 집계축(총/중)이 같은 SoT.
               const realCompetencyLines = (week.lines || []).filter(
-                (l) => normalizePartType(l.partType) === 'competency' && !!l.lineTargetId,
+                (l) =>
+                  normalizePartType(l.partType) === 'competency' &&
+                  (l.enhancementStatus ?? 'not_applicable') !== 'not_applicable',
               );
               const competencyRate: RateTriple =
                 realCompetencyLines.length === 0
