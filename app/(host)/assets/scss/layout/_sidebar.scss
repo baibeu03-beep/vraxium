@@ -172,8 +172,11 @@
           fill: none;
           stroke-width: 3px;
           // 조직 테두리 색 — 현재 org(쿼리>slug)에 따라 Sidebar 가 주입하는 CSS 변수.
-          // org 미검출 시 기본 회색(#505d6a) 유지. SoT = getHeaderThemeAccent.
-          stroke: var(--sidebar-org-hex-border, #505d6a);
+          // org 미검출(공용 랜딩)이면 --quaternary-color 로 폴백 → 라우트 테마 SoT를
+          // 그대로 따라감(공용 grape=#e1c2f8 보라 / org 라우트는 위 변수가 우선).
+          // 활성 슬라이드(swiper-slide-active)와 동일 폴백 → 3개 육각형 색 통일.
+          // SoT = getHeaderThemeAccent(org색) · RouteThemeShell grape(공용 보라).
+          stroke: var(--sidebar-org-hex-border, var(--quaternary-color));
           transition: all 1s ease-out 1s;
         }
       }
@@ -186,15 +189,22 @@
         text-align: center;
       }
 
+      // 활성(중앙) 슬라이드도 base rule 과 완전히 동일한 org 색 하나만 쓰도록 강제.
+      // ⚠️ 공용 @keyframes animate-stroke 는 0%/100% 에 stroke:var(--quaternary-color)
+      //    를 갖고 forwards 로 고정하므로, 그 애니메이션을 쓰면 CSS animation 이
+      //    polygon 의 stroke 규칙(!important 포함)을 이겨 중앙 육각형만 route-theme
+      //    색(테마 없는 고객앱 org 페이지에선 기본 초록 #45f882)으로 남았다.
+      //    → 색을 애니메이트하지 않는 전용 keyframe(animate-stroke-org-hex)으로 교체:
+      //      draw-on(dashoffset)만 그리고 색상은 아래 stroke 규칙이 100% 소유.
       .swiper-slide-active {
         a {
           .hexagon-border {
             polygon {
               stroke-dasharray: 400px;
               stroke-dashoffset: -400px;
-              animation: animate-stroke 1s linear forwards;
+              animation: animate-stroke-org-hex 1s linear forwards;
               animation-delay: 1s;
-              // 활성 슬라이드도 org 색 우선 — 미검출 시 기존 --quaternary-color 폴백.
+              // 전 슬라이드(inactive/prev/next/duplicate) 와 동일 변수 → 색 통일.
               stroke: var(--sidebar-org-hex-border, var(--quaternary-color));
             }
           }
@@ -220,6 +230,21 @@
   100% {
     stroke-dashoffset: 0;
     stroke: var(--quaternary-color);
+  }
+}
+
+// 조직 슬라이더 활성 육각형 전용 draw-on 애니메이션.
+// 공용 animate-stroke 와 달리 stroke(색)를 애니메이트하지 않는다 — 색상은 오롯이
+// .hexagon-border polygon 의 stroke 규칙(var(--sidebar-org-hex-border, --quaternary-color))이
+// 결정하게 하여 활성/비활성/prev/next/duplicate 가 모두 현재 org 색 하나로 통일된다.
+@keyframes animate-stroke-org-hex {
+  0% {
+    stroke-dasharray: 400px;
+    stroke-dashoffset: 400px;
+  }
+
+  100% {
+    stroke-dashoffset: 0;
   }
 }
 
