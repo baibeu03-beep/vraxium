@@ -85,18 +85,19 @@ export async function GET(request: Request) {
       userId = profile.user_id;
     }
 
-    // author-name 출처: user_profiles.english_name (정규 컬럼).
+    // author-name 출처(SoT): user_profiles.display_name (한글 이름, 프로필 정본).
+    // 영문명(english_name)이 아니라 프로필 한글 이름을 작성자 이름으로 사용한다.
     // 일반/타유저보기(?userId=)/데모(?demoUserId=) 모드 모두 동일.
     const { data: nameRow, error: nameErr } = await supabaseAdmin
       .from("user_profiles")
-      .select("english_name")
+      .select("display_name")
       .eq("user_id", userId)
       .maybeSingle();
     if (nameErr) {
       // 컬럼/조회 실패가 조용히 null 로 묻히지 않도록 로깅 (응답은 막지 않음).
-      console.warn(TAG, "GET english_name lookup failed", { userId, error: nameErr.message });
+      console.warn(TAG, "GET display_name lookup failed", { userId, error: nameErr.message });
     }
-    const engName = (nameRow?.english_name as string | null) ?? null;
+    const authorName = (nameRow?.display_name as string | null) ?? null;
 
     const { data: cluster, error: clusterError } = await supabaseAdmin
       .from("user_cluster2")
@@ -118,7 +119,8 @@ export async function GET(request: Request) {
         videoUrl1: cluster?.video_url_1 ?? null,
         videoUrl2: cluster?.video_url_2 ?? null,
         videoUrl3: cluster?.video_url_3 ?? null,
-        engName,
+        // 하위호환: 소비처가 참조하는 필드명은 engName 유지하되 값은 한글 이름(display_name).
+        engName: authorName,
       },
     });
   } catch (error) {

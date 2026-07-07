@@ -780,7 +780,8 @@ const Cluster2Content = () => {
       };
       setSloganData(newSloganData);
       setEditingSloganData(newSloganData);
-      setSloganAuthorName(userData.slogans.engName);
+      // 작성자 이름 = 프로필 한글 이름. 데모의 한글 이름 SoT 는 더미 key(demoUser).
+      setSloganAuthorName(demoUser);
       return;
     }
     const epoch = loadEpochRef.current;
@@ -927,7 +928,8 @@ const Cluster2Content = () => {
       setVideoData((prev) => {
         const newData = [...prev];
         newData.forEach((video) => {
-          video.author = userData.slogans.engName;
+          // 작성자 이름 = 프로필 한글 이름. 데모의 한글 이름 SoT 는 더미 key(demoUser).
+          video.author = demoUser;
         });
         if (userData.videos.videoUrl1) {
           newData[0].videoUrl = userData.videos.videoUrl1;
