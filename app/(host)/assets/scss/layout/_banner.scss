@@ -87,6 +87,23 @@
       word-break: keep-all;
       line-height: 1.05;
 
+      // 메인 히어로 타이틀만 title-xxl 대비 약 90% 축소(우측 캐릭터 여백·하단 문구 대비 확보).
+      // transform:scale 이 아니라 font-size 자체를 각 브레이크포인트 title-xxl 값의 0.9배로 조정 —
+      // line-height 는 위 1.05(단위 없음)라 자동 비례. 2줄 배치·줄바꿈 위치·강조색·stroke/그림자 불변.
+      font-size: 108px; // title-xxl 120px × 0.9
+      @media only screen and (max-width: 1399.98px) {
+        font-size: 72px; // 80px × 0.9
+      }
+      @media only screen and (max-width: 1199.98px) {
+        font-size: 50px; // 56px × 0.9
+      }
+      @media only screen and (max-width: 991.98px) {
+        font-size: 36px; // 40px × 0.9
+      }
+      @media only screen and (max-width: 575.98px) {
+        font-size: 31px; // 34px × 0.9
+      }
+
       // ── 외곽선/그림자 균일화 ──────────────────────────────
       // 기존 .stroked-text::after(=attr(data-text)) 는 data-text 미설정이라 빈 레이어 →
       // 글자별로 stroke/그림자가 누락돼 보였다. 여기서 h1 자체 + SplitType .char 양쪽에
