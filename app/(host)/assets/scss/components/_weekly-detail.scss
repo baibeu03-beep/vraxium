@@ -41,7 +41,7 @@
   // ── 섹션 간 세로 리듬(단일 SoT) ──
   //   Hero / 대표이미지·코멘트 / 크루 종합 결과 / Champion's Hall 사이를 이 한 값으로 통일한다.
   //   back-link·divider 는 이 값에 상대적으로 보정되어 리듬을 깨지 않는다(아래 참고).
-  --wd-section-gap: 78px;
+  --wd-section-gap: 88px;
 
   // ── 타이포그래피 시스템(프로젝트 전역 폰트 변수 활용) ──
   //   챔피언십 리포트 위계: Display(esports) / Heading / Badge(stencil) / Sub-head(감성 한글) /
@@ -94,13 +94,13 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: rgba(255, 255, 255, 0.75);
     font-family: "Pretendard", sans-serif;
-    font-size: 17.16px;
+    font-size: 18.88px;
     font-weight: 600;
     letter-spacing: 0.03em;
     text-decoration: none;
     transition: color 180ms ease, background-color 200ms ease, transform 180ms ease;
 
-    i { font-size: 18.65px; }
+    i { font-size: 20.52px; }
 
     &:hover {
       color: #fff;
@@ -185,7 +185,7 @@
       color: var(--wd-accent-soft);
       backdrop-filter: blur(6px);
       font-family: var(--wd-font-badge);
-      font-size: 17.16px;
+      font-size: 18.88px;
       font-weight: 400;
       letter-spacing: 0.18em;
       text-transform: uppercase;
@@ -224,7 +224,7 @@
   /* ---------- [2] 활동 Dashboard ---------- */
   .wd-dash {
     position: relative;
-    padding: 30px 32px 32px;
+    padding: 36px 38px 38px;
     border-radius: 22px;
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
@@ -261,7 +261,7 @@
       gap: 10px;
       margin: 0;
       font-family: var(--wd-font-heading);
-      font-size: clamp(21.13px, 1.7vw, 23.76px);
+      font-size: clamp(23.24px, 1.7vw, 26.14px);
       font-weight: 700;
       letter-spacing: 0.03em;
       text-transform: uppercase;
@@ -280,7 +280,7 @@
     &__caption {
       margin: 0;
       font-family: var(--wd-font-body);
-      font-size: 17.16px;
+      font-size: 18.88px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.55);
     }
@@ -319,7 +319,7 @@
     flex-direction: row;
     align-items: center;
     gap: 13px;
-    padding: 14px 16px;
+    padding: 16px 19px;
     border-radius: 14px;
     background: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015));
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -354,7 +354,7 @@
       background: var(--tone-bg);
       border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent);
       color: var(--tone-soft);
-      font-size: 24.95px;
+      font-size: 27.45px;
       box-shadow: 0 0 18px var(--tone-glow);
 
       i { line-height: 1; }
@@ -369,7 +369,7 @@
 
     &__label {
       font-family: var(--wd-font-body);
-      font-size: 16.5px;
+      font-size: 18.15px;
       font-weight: 600;
       letter-spacing: 0.01em;
       color: rgba(255, 255, 255, 0.6);
@@ -381,7 +381,7 @@
       align-items: baseline;
       gap: 3px;
       font-family: var(--wd-font-heading);
-      font-size: clamp(27.32px, 2.3vw, 33.26px);
+      font-size: clamp(30.05px, 2.3vw, 33.26px);
       font-weight: 700;
       line-height: 1.1;
       letter-spacing: 0.01em;
@@ -391,7 +391,7 @@
 
     &__unit {
       font-family: var(--wd-font-body);
-      font-size: 15.84px;
+      font-size: 17.42px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.5);
     }
@@ -433,7 +433,7 @@
 
     &__label {
       font-family: var(--wd-font-heading);
-      font-size: clamp(17.4px, 1.5vw, 19.89px);
+      font-size: clamp(19.14px, 1.5vw, 21.88px);
       font-weight: 700;
       letter-spacing: 0.02em;
       text-transform: uppercase;
@@ -562,7 +562,7 @@
 
     /* 큰 카드(탭 컨테이너) */
     &__card {
-      padding: 24px 24px 26px;
+      padding: 28px 28px 30px;
       border-radius: 22px;
       background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
@@ -593,7 +593,7 @@
       border: 1px solid transparent;
       color: rgba(255, 255, 255, 0.5);
       font-family: var(--wd-font-heading);
-      font-size: 17.4px;
+      font-size: 19.14px;
       font-weight: 700;
       letter-spacing: 0.01em;
       cursor: pointer;
@@ -637,7 +637,7 @@
       justify-content: center;
       color: rgba(255, 255, 255, 0.42);
       font-family: var(--wd-font-body);
-      font-size: 17.4px;
+      font-size: 19.14px;
     }
   }
 
@@ -679,7 +679,7 @@
       padding: 5px 13px;
       border-radius: 999px;
       font-family: var(--wd-font-heading);
-      font-size: 14.52px;
+      font-size: 15.97px;
       font-weight: 800;
       letter-spacing: 0.04em;
       color: #10141a;
@@ -717,7 +717,7 @@
       color: var(--card-accent);
       font-family: var(--wd-font-heading);
       font-weight: 800;
-      font-size: 22.37px;
+      font-size: 24.61px;
     }
 
     &__id {
@@ -729,7 +729,7 @@
 
     &__name {
       font-family: var(--wd-font-heading);
-      font-size: 18.65px;
+      font-size: 20.52px;
       font-weight: 700;
       color: #fff;
       white-space: nowrap;
@@ -745,7 +745,7 @@
       background: color-mix(in srgb, var(--card-accent) 16%, transparent);
       color: var(--card-accent);
       font-family: var(--wd-font-body);
-      font-size: 14.52px;
+      font-size: 15.97px;
       font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
@@ -770,7 +770,7 @@
       background: rgba(255, 255, 255, 0.055);
       border: 1px solid rgba(255, 255, 255, 0.07);
       font-family: var(--wd-font-body);
-      font-size: 14.52px;
+      font-size: 15.97px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.7);
       white-space: nowrap;
@@ -806,7 +806,7 @@
 
       &-unit {
         font-family: var(--wd-font-body);
-        font-size: 15.84px;
+        font-size: 17.42px;
         font-weight: 600;
         color: rgba(255, 255, 255, 0.5);
       }
@@ -850,7 +850,7 @@
       gap: 8px;
       // Champion's Hall(display, 28~52px) 보다 확실히 작은 heading 위계.
       font-family: var(--wd-font-heading);
-      font-size: clamp(21.13px, 2.1vw, 26.14px);
+      font-size: clamp(23.24px, 2.1vw, 28.75px);
       font-weight: 700;
       letter-spacing: 0.01em;
       line-height: 1.2;
@@ -859,7 +859,7 @@
 
     &__subtitle {
       font-family: var(--wd-font-body);
-      font-size: 17.16px;
+      font-size: 18.88px;
       font-weight: 500;
       letter-spacing: 0.01em;
       color: var(--wd-accent-soft);
@@ -869,7 +869,7 @@
     &__grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 18px;
+      gap: 22px;
     }
   }
 
@@ -879,7 +879,7 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
-    padding: 22px 22px 20px;
+    padding: 26px 26px 24px;
     border-radius: 20px;
     background:
       linear-gradient(180deg, color-mix(in srgb, var(--wd-accent) 9%, rgba(255, 255, 255, 0.04)), rgba(255, 255, 255, 0.015)),
@@ -958,7 +958,7 @@
       color: var(--wd-accent-soft);
       font-family: var(--wd-font-heading);
       font-weight: 800;
-      font-size: 26.14px;
+      font-size: 28.75px;
     }
 
     &__id {
@@ -969,7 +969,7 @@
     }
     &__name {
       font-family: var(--wd-font-heading);
-      font-size: 22.37px;
+      font-size: 24.61px;
       font-weight: 700;
       color: #fff;
       white-space: nowrap;
@@ -984,7 +984,7 @@
       background: color-mix(in srgb, var(--wd-accent) 16%, transparent);
       color: var(--wd-accent-soft);
       font-family: var(--wd-font-body);
-      font-size: 15.18px;
+      font-size: 16.7px;
       font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
@@ -1010,14 +1010,14 @@
       background: color-mix(in srgb, var(--wd-accent) 14%, transparent);
       border: 1px solid color-mix(in srgb, var(--wd-accent) 40%, transparent);
       color: var(--wd-accent-soft);
-      font-size: 26.14px;
+      font-size: 28.75px;
       box-shadow: 0 0 16px var(--wd-glow);
       img { width: 26px; height: 26px; object-fit: contain; }
       i { line-height: 1; }
     }
     &__team-name {
       font-family: var(--wd-font-body);
-      font-size: 15.84px;
+      font-size: 17.42px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.72);
       white-space: nowrap;
@@ -1027,7 +1027,7 @@
     }
     &__ace-label {
       font-family: var(--wd-font-badge);
-      font-size: 24.95px;
+      font-size: 27.45px;
       font-weight: 800;
       letter-spacing: 0.14em;
       line-height: 1;
@@ -1052,7 +1052,7 @@
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid rgba(255, 255, 255, 0.08);
       font-family: var(--wd-font-body);
-      font-size: 15.18px;
+      font-size: 16.7px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.72);
       white-space: nowrap;
@@ -1077,19 +1077,19 @@
       align-items: center;
       gap: 6px;
       font-family: var(--wd-font-heading);
-      font-size: 15.84px;
+      font-size: 17.42px;
       font-weight: 700;
       letter-spacing: 0.04em;
       text-transform: uppercase;
       color: var(--wd-accent-soft);
-      i { font-size: 17.4px; }
+      i { font-size: 19.14px; }
     }
     &__comment-body {
       margin: 0;
       // 3~4줄 기본 확보 — 100자 대부분이 접힘 없이 보이도록.
       min-height: calc(1.65em * 3.5);
       font-family: var(--wd-font-body);
-      font-size: 17.4px;
+      font-size: 19.14px;
       font-weight: 400;
       line-height: 1.65;
       color: rgba(255, 255, 255, 0.84);
@@ -1168,7 +1168,7 @@
       margin: -8px 0 0;
       text-align: center;
       font-family: var(--wd-font-body);
-      font-size: 17.16px;
+      font-size: 18.88px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.55);
     }
@@ -1185,7 +1185,7 @@
     &__grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 18px;
+      gap: 22px;
     }
   }
 
@@ -1200,7 +1200,7 @@
     display: flex;
     align-items: center;
     gap: 14px;
-    padding: 18px 20px;
+    padding: 20px 23px;
     border-radius: 16px;
     background:
       linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
@@ -1234,7 +1234,7 @@
       background: var(--tone-bg);
       border: 1px solid color-mix(in srgb, var(--tone) 35%, transparent);
       color: var(--tone-soft);
-      font-size: 27.32px;
+      font-size: 30.05px;
       box-shadow: 0 0 18px var(--tone-glow);
       i { line-height: 1; }
     }
@@ -1243,7 +1243,7 @@
 
     &__label {
       font-family: var(--wd-font-body);
-      font-size: 17.16px;
+      font-size: 18.88px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.6);
       white-space: nowrap;
@@ -1260,12 +1260,12 @@
       color: var(--tone-soft);
       font-variant-numeric: tabular-nums;
 
-      &--record { font-size: clamp(23.76px, 2.2vw, 30.89px); letter-spacing: 0.01em; }
+      &--record { font-size: clamp(26.14px, 2.2vw, 30.89px); letter-spacing: 0.01em; }
     }
 
     &__unit {
       font-family: var(--wd-font-body);
-      font-size: 16.5px;
+      font-size: 18.15px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.5);
     }
@@ -1289,7 +1289,7 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
-    padding: 24px 24px 22px;
+    padding: 28px 28px 26px;
     border-radius: 20px;
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
@@ -1346,14 +1346,14 @@
       color: var(--tb-tone-soft);
       font-family: var(--wd-font-heading);
       font-weight: 800;
-      font-size: 22.57px;
+      font-size: 24.83px;
     }
 
     &__id { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
 
     &__name {
       font-family: var(--wd-font-heading);
-      font-size: 21.13px;
+      font-size: 23.24px;
       font-weight: 700;
       color: #fff;
       white-space: nowrap;
@@ -1364,7 +1364,7 @@
     /* 부제("이번 주 성장 대전") — 팀명 아래 subtitle. 무스타일 상속 상태였던 것을 명시 지정. */
     &__subhead {
       font-family: var(--wd-font-body);
-      font-size: 13.5px;
+      font-size: 15px;
       font-weight: 500;
       letter-spacing: 0.01em;
       color: rgba(255, 255, 255, 0.55);
@@ -1375,7 +1375,7 @@
 
     &__leader {
       font-family: var(--wd-font-body);
-      font-size: 15.84px;
+      font-size: 17.42px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.6);
       white-space: nowrap;
@@ -1389,7 +1389,7 @@
       padding: 7px 17px;
       border-radius: 999px;
       font-family: var(--wd-font-badge);
-      font-size: 15.84px;
+      font-size: 17.42px;
       font-weight: 400;
       letter-spacing: 0.08em;
       color: var(--tb-tone-soft);
@@ -1420,16 +1420,16 @@
       align-items: center;
       gap: 4px;
       font-family: var(--wd-font-body);
-      font-size: 15.18px;
+      font-size: 16.7px;
       font-weight: 700;
       color: var(--tb-tone-soft);
-      i { font-size: 17.4px; }
+      i { font-size: 19.14px; }
     }
     &__leader-name {
       flex: 1 1 auto;
       min-width: 0;
       font-family: var(--wd-font-heading);
-      font-size: 18.02px;
+      font-size: 19.82px;
       font-weight: 700;
       color: #fff;
       white-space: nowrap;
@@ -1454,13 +1454,13 @@
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid rgba(255, 255, 255, 0.07);
       font-family: var(--wd-font-body);
-      font-size: 15.18px;
+      font-size: 16.7px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.72);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      i { flex-shrink: 0; font-size: 17.16px; opacity: 0.8; }
+      i { flex-shrink: 0; font-size: 18.88px; opacity: 0.8; }
     }
 
     /* 파트 정보 — 파트 수(상단) + 파트명 Tag 목록(하단, 자동 wrap) */
@@ -1478,10 +1478,10 @@
       align-items: center;
       gap: 5px;
       font-family: var(--wd-font-body);
-      font-size: 15.84px;
+      font-size: 17.42px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.68);
-      i { font-size: 18.65px; color: var(--tb-tone-soft); } // 파트 아이콘 = org accent(장식 강조)
+      i { font-size: 20.52px; color: var(--tb-tone-soft); } // 파트 아이콘 = org accent(장식 강조)
       b { color: #fff; font-weight: 800; font-family: var(--wd-font-heading); }
     }
     /* 파트명 Tag — 학교/전공(&__tag)과 동일 스타일 재사용. leader 태그의 flex:1 균등분할 대신
@@ -1512,21 +1512,21 @@
       align-items: center;
       gap: 6px;
       font-family: var(--wd-font-heading);
-      font-size: 15.18px;
+      font-size: 16.7px;
       font-weight: 700;
       letter-spacing: 0.03em;
       text-transform: uppercase;
       color: var(--tb-tone-soft);
-      i { font-size: 17.4px; }
+      i { font-size: 19.14px; }
     }
     &__block-body {
       margin: 0;
       // 2줄 고정 높이 — 카드 간 y좌표 통일. 넘치면 말줄임(전문은 title 툴팁 · DTO 연결 시 값만 주입).
-      min-height: calc(1.62em * 2);
+      min-height: calc(1.7em * 2);
       font-family: var(--wd-font-body);
-      font-size: 16.5px;
+      font-size: 18.15px;
       font-weight: 400;
-      line-height: 1.62;
+      line-height: 1.7;
       color: rgba(255, 255, 255, 0.82);
       display: -webkit-box;
       -webkit-line-clamp: 2;
@@ -1602,7 +1602,7 @@
       gap: 1px;
       strong {
         font-family: var(--wd-font-display);
-        font-size: 23.76px;
+        font-size: 26.14px;
         font-weight: 700;
         line-height: 1;
         color: var(--tb-tone-soft);
@@ -1611,7 +1611,7 @@
       }
       > span {
         font-family: var(--wd-font-body);
-        font-size: 12.54px;
+        font-size: 15px;
         font-weight: 600;
         color: rgba(255, 255, 255, 0.5);
       }
@@ -1639,7 +1639,7 @@
     }
     &__record-value {
       font-family: var(--wd-font-heading);
-      font-size: 22.37px;
+      font-size: 24.61px;
       font-weight: 700;
       line-height: 1;
       color: var(--rt);
@@ -1647,7 +1647,7 @@
     }
     &__record-label {
       font-family: var(--wd-font-body);
-      font-size: 13.86px;
+      font-size: 15.25px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.5);
     }
@@ -1675,11 +1675,11 @@
       align-items: center;
       gap: 5px;
       font-family: var(--wd-font-body);
-      font-size: 15.84px;
+      font-size: 17.42px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.72);
       white-space: nowrap;
-      i { font-size: 18.65px; color: var(--tb-tone-soft); }
+      i { font-size: 20.52px; color: var(--tb-tone-soft); }
     }
     &__crew-total-value {
       font-family: var(--wd-font-display);
@@ -1720,7 +1720,7 @@
 
     &__value {
       font-family: var(--wd-font-heading);
-      font-size: 19.89px;
+      font-size: 21.88px;
       font-weight: 700;
       line-height: 1;
       color: var(--st-soft);
@@ -1729,7 +1729,7 @@
 
     &__label {
       font-family: var(--wd-font-body);
-      font-size: 13.86px;
+      font-size: 15.25px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.55);
       white-space: nowrap;
@@ -1806,7 +1806,7 @@
       margin: -8px 0 4px;
       text-align: center;
       font-family: var(--wd-font-body);
-      font-size: 17.16px;
+      font-size: 18.88px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.55);
     }
@@ -1820,7 +1820,7 @@
          visible 유지(옵션 목록이 카드 경계 아래로 자연 확장). */
       position: relative;
       z-index: 30;
-      padding: 18px 22px;
+      padding: 22px 26px;
       border-radius: 20px;
       background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
@@ -1853,11 +1853,11 @@
       gap: 5px;
       flex-shrink: 0;
       font-family: var(--wd-font-body);
-      font-size: 17.16px;
+      font-size: 18.88px;
       font-weight: 600;
       color: rgba(255, 255, 255, 0.62);
     }
-    &__dot { color: var(--wd-accent); font-size: 11.88px; line-height: 1; }
+    &__dot { color: var(--wd-accent); font-size: 13.07px; line-height: 1; }
 
     /* 초기화 버튼 — Premium(관리자 톤 회피). Desktop 우측 정렬. */
     &__reset {
@@ -1872,12 +1872,12 @@
       border: 1px solid color-mix(in srgb, var(--wd-accent) 50%, transparent);
       color: var(--wd-accent-soft);
       font-family: var(--wd-font-heading);
-      font-size: 17.16px;
+      font-size: 18.88px;
       font-weight: 700;
       letter-spacing: 0.03em;
       cursor: pointer;
       transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
-      i { font-size: 18.65px; }
+      i { font-size: 20.52px; }
       &:hover {
         background: color-mix(in srgb, var(--wd-accent) 26%, transparent);
         box-shadow: 0 0 16px var(--wd-glow);
@@ -1956,7 +1956,7 @@
       border: 1px solid rgba(255, 255, 255, 0.09);
       color: rgba(255, 255, 255, 0.62);
       font-family: var(--wd-font-heading);
-      font-size: 17.4px;
+      font-size: 19.14px;
       font-weight: 700;
       font-variant-numeric: tabular-nums;
       cursor: pointer;
@@ -1979,7 +1979,7 @@
       border-radius: 16px;
       color: rgba(255, 255, 255, 0.45);
       font-family: var(--wd-font-body);
-      font-size: 17.4px;
+      font-size: 19.14px;
     }
   }
 
@@ -2002,7 +2002,7 @@
       "grade rates review";
     gap: 14px 28px;
     align-items: stretch;
-    padding: 22px 26px;
+    padding: 26px 30px;
     border-radius: 18px;
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02)),
@@ -2080,10 +2080,10 @@
       border-radius: 10px;
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid rgba(255, 255, 255, 0.08);
-      &-total { font-family: var(--wd-font-body); font-size: 14.52px; color: rgba(255, 255, 255, 0.55); white-space: nowrap; }
+      &-total { font-family: var(--wd-font-body); font-size: 15.97px; color: rgba(255, 255, 255, 0.55); white-space: nowrap; }
       &-num {
         font-family: var(--wd-font-display);
-        font-size: 23.76px;
+        font-size: 26.14px;
         font-weight: 800;
         line-height: 1;
         color: var(--crew-accent);
@@ -2112,18 +2112,18 @@
       color: #fff;
       font-family: var(--wd-font-heading);
       font-weight: 800;
-      font-size: 22.57px;
+      font-size: 24.83px;
     }
     &__id { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
     &__name {
       font-family: var(--wd-font-heading);
-      font-size: 19.89px;
+      font-size: 21.88px;
       font-weight: 700;
       color: #fff;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      em { font-style: normal; font-size: 15.84px; font-weight: 500; color: rgba(255, 255, 255, 0.5); margin-left: 2px; }
+      em { font-style: normal; font-size: 17.42px; font-weight: 500; color: rgba(255, 255, 255, 0.5); margin-left: 2px; }
     }
     &__class {
       align-self: flex-start;
@@ -2133,7 +2133,7 @@
       background: color-mix(in srgb, var(--wd-accent) 16%, transparent);
       color: var(--wd-accent-soft);
       font-family: var(--wd-font-body);
-      font-size: 14.52px;
+      font-size: 15.97px;
       font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
@@ -2148,7 +2148,7 @@
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid rgba(255, 255, 255, 0.07);
       font-family: var(--wd-font-body);
-      font-size: 14.52px;
+      font-size: 15.97px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.7);
       white-space: nowrap;
@@ -2174,7 +2174,7 @@
     &__point-icon { width: 22px; height: 22px; object-fit: contain; flex-shrink: 0; }
     &__point-value {
       font-family: var(--wd-font-heading);
-      font-size: 19.89px;
+      font-size: 21.88px;
       font-weight: 700;
       color: #fff;
       font-variant-numeric: tabular-nums;
@@ -2192,14 +2192,14 @@
       &-icon { width: 20px; height: 20px; object-fit: contain; }
       &-value {
         font-family: var(--wd-font-heading);
-        font-size: 22.37px;
+        font-size: 24.61px;
         font-weight: 800;
         line-height: 1;
         color: var(--wd-c-green-soft);
         font-variant-numeric: tabular-nums;
         span { font-size: 0.6em; margin-left: 1px; color: rgba(255, 255, 255, 0.6); }
       }
-      &-delta { font-family: var(--wd-font-body); font-size: 15.84px; font-weight: 700; }
+      &-delta { font-family: var(--wd-font-body); font-size: 17.42px; font-weight: 700; }
     }
 
     &__result {
@@ -2210,10 +2210,10 @@
       padding: 9px 16px;
       border-radius: 10px;
       font-family: var(--wd-font-heading);
-      font-size: 17.16px;
+      font-size: 18.88px;
       font-weight: 700;
       img { width: 20px; height: 20px; object-fit: contain; }
-      i { font-size: 19.89px; }
+      i { font-size: 21.88px; }
       &--success { color: var(--wd-c-green-soft); background: color-mix(in srgb, var(--wd-c-green) 16%, transparent); border: 1px solid color-mix(in srgb, var(--wd-c-green) 45%, transparent); }
       &--fail    { color: var(--wd-c-red-soft);   background: color-mix(in srgb, var(--wd-c-red) 16%, transparent);   border: 1px solid color-mix(in srgb, var(--wd-c-red) 45%, transparent); }
       &--rest    { color: var(--wd-c-gray-soft);  background: color-mix(in srgb, var(--wd-c-gray) 16%, transparent);  border: 1px solid color-mix(in srgb, var(--wd-c-gray) 45%, transparent); }
@@ -2246,7 +2246,7 @@
       }
       &-label {
         font-family: var(--wd-font-heading);
-        font-size: 15.84px;
+        font-size: 17.42px;
         font-weight: 700;
         color: var(--wd-accent-soft);
         white-space: nowrap;
@@ -2279,16 +2279,16 @@
     &__rate-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
     &__rate-value {
       font-family: var(--wd-font-heading);
-      font-size: 16.78px;
+      font-size: 18.46px;
       font-weight: 700;
       color: #fff;
       white-space: nowrap;
       .wd-crew__rate-unit { font-size: 0.8em; color: rgba(255, 255, 255, 0.6); margin-left: 1px; }
-      em { font-style: normal; font-size: 13.86px; font-weight: 700; margin-left: 2px; }
+      em { font-style: normal; font-size: 15.25px; font-weight: 700; margin-left: 2px; }
     }
     &__rate-label {
       font-family: var(--wd-font-body);
-      font-size: 13.2px;
+      font-size: 15px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.5);
       line-height: 1.25;
@@ -2313,12 +2313,12 @@
       align-items: center;
       gap: 5px;
       font-family: var(--wd-font-heading);
-      font-size: 15.18px;
+      font-size: 16.7px;
       font-weight: 700;
       letter-spacing: 0.03em;
       text-transform: uppercase;
       color: var(--wd-accent-soft);
-      i { font-size: 17.4px; }
+      i { font-size: 19.14px; }
     }
     &__review-view {
       flex-shrink: 0;
@@ -2333,14 +2333,14 @@
       color: rgba(255, 255, 255, 0.7);
       cursor: pointer;
       transition: color 0.2s ease, background-color 0.2s ease;
-      i { font-size: 18.65px; }
+      i { font-size: 20.52px; }
       &:hover:not(:disabled) { color: #fff; background: color-mix(in srgb, var(--wd-accent) 20%, transparent); }
       &:disabled { opacity: 0.4; cursor: default; }
     }
     &__review-body {
       margin: 0;
       font-family: var(--wd-font-body);
-      font-size: 16.5px;
+      font-size: 18.15px;
       line-height: 1.5;
       color: rgba(255, 255, 255, 0.75);
       // 한 줄 말줄임
@@ -2394,7 +2394,7 @@
       padding: 20px 22px 14px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     }
-    &__title { margin: 0; font-family: var(--wd-font-heading); font-size: 21.13px; font-weight: 700; color: #fff; }
+    &__title { margin: 0; font-family: var(--wd-font-heading); font-size: 23.24px; font-weight: 700; color: #fff; }
     &__close {
       flex-shrink: 0;
       display: inline-flex;
@@ -2406,7 +2406,7 @@
       background: rgba(255, 255, 255, 0.06);
       border: 1px solid rgba(255, 255, 255, 0.1);
       color: rgba(255, 255, 255, 0.7);
-      font-size: 22.37px;
+      font-size: 24.61px;
       cursor: pointer;
       transition: color 0.2s ease, background-color 0.2s ease;
       &:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
@@ -2417,7 +2417,7 @@
       overflow-y: auto;
       white-space: pre-line;
       font-family: var(--wd-font-body);
-      font-size: 18.65px;
+      font-size: 20.52px;
       line-height: 1.75;
       color: rgba(255, 255, 255, 0.88);
       word-break: keep-all;
@@ -2429,7 +2429,7 @@
   .wd-grid {
     display: grid;
     grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-    gap: 26px;
+    gap: 30px;
     // 좌/우 컬럼을 동일 높이로 stretch — 좌측 이미지가 남는 공간을 채워
     // (quote 끝 y) == (Cluv Activity Flow 끝 y) 가 되도록 한다.
     align-items: stretch;
@@ -2438,7 +2438,7 @@
   .wd-col {
     display: flex;
     flex-direction: column;
-    gap: 22px;
+    gap: 26px;
     min-width: 0;
   }
 
@@ -2556,7 +2556,7 @@
     // [주차기간] 주차명과 밸런스 맞도록 확대(≈15~16px).
     &--date {
       padding: 7px 16px;
-      font-size: clamp(18.65px, 1.5vw, 19.89px);
+      font-size: clamp(20.52px, 1.5vw, 21.88px);
       font-weight: 600;
       letter-spacing: 0.01em;
       color: rgba(255, 255, 255, 0.92);
@@ -2573,7 +2573,7 @@
     padding: 10px 20px;
     border-radius: 999px;
     font-family: "Pretendard", sans-serif;
-    font-size: clamp(15.84px, 1.9vw, 17.4px);
+    font-size: clamp(17.42px, 1.9vw, 19.14px);
     font-weight: 700;
     letter-spacing: 0.02em;
     white-space: nowrap;
@@ -2581,7 +2581,7 @@
     -webkit-backdrop-filter: blur(8px);
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
 
-    i { font-size: 18.65px; }
+    i { font-size: 20.52px; }
 
     &--active {
       color: #eafff0;
@@ -2643,10 +2643,10 @@
     &__text {
       margin: 0;
       font-family: var(--wd-font-quote);
-      font-size: clamp(18.65px, 2.1vw, 22.57px); // 폰트 크기 불변
+      font-size: clamp(20.52px, 2.1vw, 24.83px); // 폰트 크기 불변
       font-style: italic;
       // 줄간격만 소폭 축소(가독성 유지 범위) — 다행 인용문 높이 절감.
-      line-height: 1.62;
+      line-height: 1.7;
       color: rgba(255, 255, 255, 0.95);
       text-shadow: 0 1px 10px rgba(0, 0, 0, 0.5);
       word-break: keep-all;
@@ -2662,20 +2662,20 @@
       // 문장↔작가명 간격 축소.
       margin-top: 6px;
       font-family: var(--wd-font-script);
-      font-size: clamp(22.57px, 2vw, 27.32px);
+      font-size: clamp(24.83px, 2vw, 30.05px);
       font-weight: 400;
       letter-spacing: 0.01em;
       color: var(--wd-accent-soft);
       text-shadow: 0 1px 10px rgba(0, 0, 0, 0.5);
 
-      &-emoji { font-size: 22.37px; }
+      &-emoji { font-size: 24.61px; }
     }
   }
 
   /* ---------- [6][7] Glass 텍스트 카드 ---------- */
   .wd-glass {
     position: relative;
-    padding: 30px 32px;
+    padding: 34px 38px;
     border-radius: 20px;
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
@@ -2696,9 +2696,9 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      margin: 0 0 15px;
+      margin: 0 0 20px;
       font-family: var(--wd-font-heading);
-      font-size: clamp(21.13px, 1.7vw, 23.76px);
+      font-size: clamp(23.24px, 1.7vw, 26.14px);
       font-weight: 700;
       letter-spacing: 0.03em;
       text-transform: uppercase;
@@ -2718,7 +2718,7 @@
       margin: 0;
       white-space: pre-line;
       font-family: var(--wd-font-body);
-      font-size: clamp(18.02px, 1.4vw, 19.89px);
+      font-size: clamp(19.82px, 1.4vw, 21.88px);
       font-weight: 400;
       line-height: 1.75;
       color: rgba(255, 255, 255, 0.85);
@@ -2755,7 +2755,7 @@
 
     &__title {
       margin: 0;
-      font-size: 21.13px;
+      font-size: 23.24px;
       font-weight: 700;
       color: #fff;
     }
@@ -2769,7 +2769,7 @@
     border-radius: 999px;
     background: var(--wd-accent);
     color: #14181c;
-    font-size: 17.4px;
+    font-size: 19.14px;
     font-weight: 800;
     text-decoration: none;
     transition: opacity 180ms ease, transform 180ms ease;
@@ -2842,7 +2842,7 @@
       margin: -8px 0 4px;
       text-align: center;
       font-family: var(--wd-font-body);
-      font-size: 17.16px;
+      font-size: 18.88px;
       font-weight: 500;
       color: rgba(255, 255, 255, 0.55);
     }
@@ -2892,7 +2892,7 @@
     &__card {
       position: relative;
       min-width: 0;
-      padding: 30px 32px;
+      padding: 34px 38px;
       border-radius: 20px;
       background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
@@ -2928,7 +2928,7 @@
       gap: 10px;
       margin: 0 0 16px;
       font-family: var(--wd-font-heading);
-      font-size: clamp(21.13px, 1.7vw, 23.76px);
+      font-size: clamp(23.24px, 1.7vw, 26.14px);
       font-weight: 700;
       letter-spacing: 0.03em;
       color: #fff;
@@ -2948,9 +2948,9 @@
       margin: 0;
       white-space: pre-line;
       font-family: var(--wd-font-body);
-      font-size: clamp(18.02px, 1.4vw, 19.89px);
+      font-size: clamp(19.82px, 1.4vw, 21.88px);
       font-weight: 400;
-      line-height: 1.8;
+      line-height: 1.72;
       color: rgba(255, 255, 255, 0.85);
       word-break: keep-all;
       overflow-wrap: break-word;
@@ -2966,7 +2966,7 @@
       border-left: 2px solid color-mix(in srgb, var(--wd-accent) 55%, transparent);
       white-space: pre-line;
       font-family: var(--wd-font-quote);
-      font-size: clamp(22.37px, 1.95vw, 24.95px); // 본문(최대 16px) 대비 +3~5px
+      font-size: clamp(24.61px, 1.95vw, 27.45px); // 본문(최대 16px) 대비 +3~5px
       font-style: italic;
       line-height: 1.68;
       color: var(--wd-accent-soft);
@@ -2990,7 +2990,7 @@
       padding-left: 42px;
       min-height: 26px;
       font-family: var(--wd-font-body);
-      font-size: clamp(16.78px, 1.35vw, 18.65px);
+      font-size: clamp(18.46px, 1.35vw, 20.52px);
       line-height: 1.72;
       color: rgba(255, 255, 255, 0.82);
       word-break: keep-all;
@@ -3012,7 +3012,7 @@
         border: 1px solid color-mix(in srgb, var(--wd-accent) 45%, transparent);
         color: var(--wd-accent-soft);
         font-family: var(--wd-font-heading);
-        font-size: 17.16px;
+        font-size: 18.88px;
         font-weight: 800;
       }
     }
@@ -3031,7 +3031,7 @@
       background: linear-gradient(135deg, var(--wd-accent), color-mix(in srgb, var(--wd-accent-soft) 82%, #fff));
       color: #14181c;
       font-family: var(--wd-font-heading);
-      font-size: clamp(18.65px, 1.5vw, 22.37px);
+      font-size: clamp(20.52px, 1.5vw, 24.61px);
       font-weight: 800;
       letter-spacing: 0.02em;
       text-decoration: none;
@@ -3039,7 +3039,7 @@
         0 10px 28px color-mix(in srgb, var(--wd-accent) 40%, transparent),
         0 0 0 1px color-mix(in srgb, var(--wd-accent) 30%, transparent);
       transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
-      i { font-size: 23.76px; }
+      i { font-size: 26.14px; }
       &:hover {
         transform: translateY(-2px);
         box-shadow:
@@ -3069,7 +3069,7 @@
       top: 11px;
       font-family: var(--wd-font-subhead);
       // 가독성 강화 — 본문 문장만 ~3~4px 확대(가즈아 제외). 줄간격도 함께 완화.
-      font-size: clamp(22.37px, 1.8vw, 26.14px);
+      font-size: clamp(24.61px, 1.8vw, 28.75px);
       line-height: 1.78;
       color: rgba(255, 255, 255, 0.9);
       word-break: keep-all;
@@ -3079,7 +3079,7 @@
         // ⚠️ 본문 확대와 무관하게 기존 크기 유지 — 상대 1.5em(=이전 base×1.5) 대신 절대 clamp 로 고정.
         font-style: normal;
         font-family: var(--wd-font-cheer);
-        font-size: clamp(26.73px, 2.25vw, 32.08px);
+        font-size: clamp(29.4px, 2.25vw, 32.08px);
         letter-spacing: 0.01em;
         color: var(--wd-accent-soft);
         text-shadow: 0 0 18px var(--wd-glow);
@@ -3152,7 +3152,7 @@
 @media (max-width: 900px) {
   .weekly-detail-page {
     // 섹션 리듬 — 태블릿/모바일에서는 살짝 좁혀 화면 밀도 유지(back-link·divider 자동 보정).
-    --wd-section-gap: 58px;
+    --wd-section-gap: 64px;
     // Champion's Hall — 태블릿 하단: 3열
     .wd-champ__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .wd-champ__head { gap: 12px; }
@@ -3164,7 +3164,7 @@
     .wd-hero {
       height: 280px;
       &__inner { padding: 30px 24px; }
-      &__eyebrow { top: 16px; right: 16px; padding: 5px 12px; font-size: 14.52px; }
+      &__eyebrow { top: 16px; right: 16px; padding: 5px 12px; font-size: 15.97px; }
     }
     // 단일 컬럼 — 높이 매칭 불필요. 데스크톱 fill(min-height 560 + flex) 해제, 4:5 고정.
     .wd-col--left .wd-repr { flex: 0 0 auto; }
@@ -3195,11 +3195,11 @@
     .wd-quote { padding: 15px 20px; } // 격언 카드 세로 축소(배경 노출↑)
     .wd-dash { padding: 20px 18px 22px; }
     .wd-kpi { padding: 14px 13px; }
-    .wd-kpi__icon { width: 36px; height: 36px; font-size: 22.57px; }
+    .wd-kpi__icon { width: 36px; height: 36px; font-size: 24.83px; }
     // Champion's Hall — 모바일: 2열
     .wd-champ__card { padding: 18px 16px 20px; }
     .wd-champ__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
-    .wd-champ__tab { font-size: 16.5px; padding: 8px 12px; }
+    .wd-champ__tab { font-size: 18.15px; padding: 8px 12px; }
     .wd-champ__tab-icon { width: 18px; height: 18px; }
 
     // Team Battle — 소형 모바일: 요약 KPI 1열, 패딩 축소.
