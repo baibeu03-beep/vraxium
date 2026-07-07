@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
 import { resolveWriteUserId } from "@/lib/api-auth";
 import { enforceQaMode } from "@/lib/qaModeGate";
+import { CLUSTER2_DEFAULT_VIDEO_1_URL, CLUSTER2_DEFAULT_VIDEO_1_THUMBNAIL } from "@/lib/cluster2-defaults";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -121,6 +122,9 @@ export async function GET(request: Request) {
         videoUrl3: cluster?.video_url_3 ?? null,
         // 하위호환: 소비처가 참조하는 필드명은 engName 유지하되 값은 한글 이름(display_name).
         engName: authorName,
+        // 1번 비디오 기본 영상(모든 org 공통, 사용자 저장 전 노출값). SoT=lib/cluster2-defaults.
+        defaultVideoUrl1: CLUSTER2_DEFAULT_VIDEO_1_URL,
+        defaultVideoThumbnail1: CLUSTER2_DEFAULT_VIDEO_1_THUMBNAIL,
       },
     });
   } catch (error) {

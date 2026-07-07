@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
 import { resolveWriteUserId } from "@/lib/api-auth";
 import { enforceQaMode } from "@/lib/qaModeGate";
+import { getCluster2DefaultPhotosForOrgSlug } from "@/lib/cluster2-defaults";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -46,6 +47,9 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const targetUserId = searchParams.get("userId");
+    // org별 기본 이미지 6장(사용자 저장 전 노출값) — 클라이언트/데모/테스트 모드 공통 SoT.
+    const orgSlug = searchParams.get("org");
+    const defaultPhotos = getCluster2DefaultPhotosForOrgSlug(orgSlug);
 
     const qaBlock = await enforceQaMode(request, { targetUserId });
     if (qaBlock) return qaBlock;
@@ -135,6 +139,8 @@ export async function GET(request: NextRequest) {
           cluster?.sub_photo_3_url ?? null,
           cluster?.sub_photo_4_url ?? null,
         ],
+        // 사용자 값이 없을 때 노출할 org별 기본 이미지(저장 안 됨). 6-slot: [sidebar, main, sub1~4].
+        defaultPhotos,
       },
     });
   } catch (error) {

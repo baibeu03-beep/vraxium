@@ -19,7 +19,7 @@ import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
 import LoadingPanel from "@/components/ui/loading/LoadingPanel";
 import { logEvent } from "@/utils/blackScreenDiagnostics";
 import { CLUSTER2_DUMMY_PHOTOS, CLUSTER2_DUMMY_SLOGANS, CLUSTER2_DUMMY_VIDEOS, CLUSTER2_DUMMY_EDUCATIONS, CLUSTER2_DUMMY_REVIEWS, CLUSTER2_DUMMY_INTRO, CLUSTER2_DUMMY_BY_USER, DEFAULT_DEMO_USER } from "@/constants/dummyData";
-import { SECTION1_PHOTO_DEFAULTS } from "@/constants/dummyData/cluster2-section1-default";
+import { getCluster2DefaultPhotos, CLUSTER2_DEFAULT_VIDEO_1_URL, CLUSTER2_DEFAULT_VIDEO_1_THUMBNAIL } from "@/lib/cluster2-defaults";
 import { SECTION2_SLOGAN_DEFAULTS } from "@/constants/dummyData/cluster2-section2-default";
 // admin 레포 (vraxium-admin) 의 lib/cluster2SloganOptions.ts 와 mirror.
 import { CLUSTER2_SLOGAN_OPTIONS as sloganOptions } from "@/lib/cluster2SloganOptions";
@@ -118,15 +118,17 @@ const createEmptySloganData = () => ({
 });
 
 // 영상 섹션 초기 상태 팩토리 — useState 초기값과 사용자 전환 리셋이 공유.
+// 1번 비디오는 사용자가 저장하기 전까지 org 공통 기본 영상을 노출한다(SoT: lib/cluster2-defaults).
+// DB(user_cluster2.video_url_1)에 사용자 값이 있으면 fetchVideos 에서 항상 덮어써 우선한다.
 const createInitialVideoData = () => [
   {
     id: 1,
     title: "Eclipse Journey",
     author: "Eng Name",
     viewers: "9.9k Viewers",
-    thumbnail: "/images/0/cluster 2/영상 01.jpeg",
+    thumbnail: CLUSTER2_DEFAULT_VIDEO_1_THUMBNAIL,
     isBookmarked: true,
-    videoUrl: "",
+    videoUrl: CLUSTER2_DEFAULT_VIDEO_1_URL,
   },
   {
     id: 2,
@@ -174,6 +176,9 @@ const Cluster2Content = () => {
   // 라우트별 인라인 강조색 — ORGANIZATION_CONFIG(단일 정의소)에서 가져온다.
   // marketing #FAAB07 / entertainment #FF4B70 / planning #1E9503.
   const accentInline = getOrgConfigFromPathname(pathname).themeColor;
+  // cluster-2 상단 프로필 기본 이미지 6장(org별) — 사용자 저장 전까지 노출.
+  // [sidebar, main, sub1, sub2, sub3, sub4]. SoT=lib/cluster2-defaults (API DTO 와 동일 함수).
+  const cluster2DefaultPhotos = getCluster2DefaultPhotos(pathname);
   const { alert: showAlert, confirm: popupConfirm } = usePopup();
   const showConfirm = useCallback(
     async (message: string, onConfirm: () => void | Promise<void>) => {
@@ -249,7 +254,7 @@ const Cluster2Content = () => {
     setSidebarPhoto(null);
     setMainPhoto(null);
     setSubPhotos([null, null, null, null]);
-    setPhotos([...SECTION1_PHOTO_DEFAULTS.photos]);
+    setPhotos([...cluster2DefaultPhotos]);
     // 섹션 2 — 슬로건
     const emptySlogans = createEmptySloganData();
     setSloganData(emptySlogans);
@@ -313,7 +318,7 @@ const Cluster2Content = () => {
 
   // 섹션 1 모달 (프로필 사진 수정)
   const [section1ModalOpen, setSection1ModalOpen] = useState(false);
-  const [photos, setPhotos] = useState<(string | null)[]>([...SECTION1_PHOTO_DEFAULTS.photos]);
+  const [photos, setPhotos] = useState<(string | null)[]>([...cluster2DefaultPhotos]);
   const [sidebarPhoto, setSidebarPhoto] = useState<string | null>(null);
   const [mainPhoto, setMainPhoto] = useState<string | null>(null);
   const [subPhotos, setSubPhotos] = useState<(string | null)[]>([null, null, null, null]);
@@ -509,7 +514,9 @@ const Cluster2Content = () => {
     const epoch = loadEpochRef.current;
     try {
       // 비소유자인 경우 userId 쿼리 파라미터로 조회 (URL=캐시 키 — userId/demoUserId 포함)
-      const url = urlUserId ? `/api/photos?userId=${urlUserId}` : "/api/photos";
+      // org=<slug> 전달 → GET DTO 가 org별 기본 이미지(data.defaultPhotos)를 동일 SoT 로 반환.
+      const orgSlug = getOrgConfigFromPathname(pathname).orgSlug;
+      const url = urlUserId ? `/api/photos?userId=${urlUserId}&org=${orgSlug}` : `/api/photos?org=${orgSlug}`;
       const result = await dedupedJson<any>(url);
 
       // 사용자 전환 후 도착한 이전 대상 응답은 폐기 (stale overwrite 방지)
@@ -2193,6 +2200,11 @@ const Cluster2Content = () => {
     );
   }
 
+  // 화면 노출용 유효값 — 사용자 저장값이 있으면 그 값, 없으면 org 기본 이미지.
+  // (raw state 는 null 유지 → 모달/저장/dirty 판정은 "실제 사용자 값" 기준으로 동작.)
+  const effectiveMainPhoto = mainPhoto || cluster2DefaultPhotos[1];
+  const effectiveSubPhotos = [0, 1, 2, 3].map((i) => (subPhotos[i] || cluster2DefaultPhotos[i + 2]));
+
   return (
     <div className="cluster2-content">
       {isDemo ? <TestUserBanner /> : null}
@@ -2240,7 +2252,7 @@ const Cluster2Content = () => {
                         // 6-slot: [sidebar, main, sub1, sub2, sub3, sub4]
                         const raw: (string | null)[] = [sidebarPhoto, mainPhoto, ...(subPhotos || [null, null, null, null])];
                         const hasAny = raw.some((p) => p);
-                        const openPhotos = hasAny ? (raw.slice(0, 6).concat(Array(Math.max(0, 6 - raw.length)).fill(null)) as (string | null)[]) : [...SECTION1_PHOTO_DEFAULTS.photos];
+                        const openPhotos = hasAny ? (raw.slice(0, 6).concat(Array(Math.max(0, 6 - raw.length)).fill(null)) as (string | null)[]) : [...cluster2DefaultPhotos];
                         setPhotos(openPhotos);
                         setPhotosSnapshot([...openPhotos]);
                         setSection1ModalOpen(true);
@@ -2265,20 +2277,20 @@ const Cluster2Content = () => {
 
           {/* 큰 육각형 이미지 4개 */}
           <div className="hexagon-large-row">
-            <div className={`hexagon-large-item ${!subPhotos[0] ? "empty" : ""}`} onClick={() => handleSetStarred(0)} style={{ cursor: subPhotos[0] ? "pointer" : "default" }}>
-              <div className="hex-large">{subPhotos[0] && <img src={subPhotos[0]} alt="Joy" fetchPriority="high" decoding="async" />}</div>
+            <div className={`hexagon-large-item ${!effectiveSubPhotos[0] ? "empty" : ""}`} onClick={() => handleSetStarred(0)} style={{ cursor: effectiveSubPhotos[0] ? "pointer" : "default" }}>
+              <div className="hex-large">{effectiveSubPhotos[0] && <img src={effectiveSubPhotos[0]} alt="Joy" fetchPriority="high" decoding="async" />}</div>
               <span className="hex-label">Joy</span>
             </div>
-            <div className={`hexagon-large-item ${!subPhotos[1] ? "empty" : ""}`} onClick={() => handleSetStarred(1)} style={{ cursor: subPhotos[1] ? "pointer" : "default" }}>
-              <div className="hex-large">{subPhotos[1] && <img src={subPhotos[1]} alt="Blue" fetchPriority="high" decoding="async" />}</div>
+            <div className={`hexagon-large-item ${!effectiveSubPhotos[1] ? "empty" : ""}`} onClick={() => handleSetStarred(1)} style={{ cursor: effectiveSubPhotos[1] ? "pointer" : "default" }}>
+              <div className="hex-large">{effectiveSubPhotos[1] && <img src={effectiveSubPhotos[1]} alt="Blue" fetchPriority="high" decoding="async" />}</div>
               <span className="hex-label">Blue</span>
             </div>
-            <div className={`hexagon-large-item ${!subPhotos[2] ? "empty" : ""}`} onClick={() => handleSetStarred(2)} style={{ cursor: subPhotos[2] ? "pointer" : "default" }}>
-              <div className="hex-large">{subPhotos[2] && <img src={subPhotos[2]} alt="Passion" fetchPriority="high" decoding="async" />}</div>
+            <div className={`hexagon-large-item ${!effectiveSubPhotos[2] ? "empty" : ""}`} onClick={() => handleSetStarred(2)} style={{ cursor: effectiveSubPhotos[2] ? "pointer" : "default" }}>
+              <div className="hex-large">{effectiveSubPhotos[2] && <img src={effectiveSubPhotos[2]} alt="Passion" fetchPriority="high" decoding="async" />}</div>
               <span className="hex-label">Passion</span>
             </div>
-            <div className={`hexagon-large-item ${!subPhotos[3] ? "empty" : ""}`} onClick={() => handleSetStarred(3)} style={{ cursor: subPhotos[3] ? "pointer" : "default" }}>
-              <div className="hex-large">{subPhotos[3] && <img src={subPhotos[3]} alt="Moments" fetchPriority="high" decoding="async" />}</div>
+            <div className={`hexagon-large-item ${!effectiveSubPhotos[3] ? "empty" : ""}`} onClick={() => handleSetStarred(3)} style={{ cursor: effectiveSubPhotos[3] ? "pointer" : "default" }}>
+              <div className="hex-large">{effectiveSubPhotos[3] && <img src={effectiveSubPhotos[3]} alt="Moments" fetchPriority="high" decoding="async" />}</div>
               <span className="hex-label">Moments</span>
             </div>
           </div>
@@ -2306,8 +2318,8 @@ const Cluster2Content = () => {
         </div>
 
         {/* 중앙 프로필 사진 */}
-        <div className={`frame-center ${!mainPhoto ? "empty" : ""}`}>
-          {mainPhoto && <img src={mainPhoto} alt="Profile" />}
+        <div className={`frame-center ${!effectiveMainPhoto ? "empty" : ""}`}>
+          {effectiveMainPhoto && <img src={effectiveMainPhoto} alt="Profile" />}
         </div>
 
         {/* 오른쪽 카드 */}
@@ -3229,7 +3241,7 @@ const Cluster2Content = () => {
                       className="modal-reset-btn"
                       onClick={async () => {
                         await showConfirm("입력한 내용을 초기화하시겠습니까?", () => {
-                          setPhotos([...SECTION1_PHOTO_DEFAULTS.photos]);
+                          setPhotos([...cluster2DefaultPhotos]);
                           setFooterNotice("default");
                         });
                       }}
@@ -3827,7 +3839,14 @@ const Cluster2Content = () => {
                       className="modal-reset-btn"
                       onClick={async () => {
                         await showConfirm("입력한 내용을 초기화하시겠습니까?", () => {
-                          setEditingVideoData(editingVideoData.map((v) => ({ ...v, videoUrl: "", thumbnail: "" })));
+                          // 1번 비디오는 기본 영상으로 복원, 2·3번은 기존과 동일하게 비운다.
+                          setEditingVideoData(
+                            editingVideoData.map((v, i) =>
+                              i === 0
+                                ? { ...v, videoUrl: CLUSTER2_DEFAULT_VIDEO_1_URL, thumbnail: CLUSTER2_DEFAULT_VIDEO_1_THUMBNAIL }
+                                : { ...v, videoUrl: "", thumbnail: "" },
+                            ),
+                          );
                         });
                       }}
                     >
