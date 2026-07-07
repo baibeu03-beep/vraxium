@@ -87,7 +87,7 @@ const Sidebar = () => {
               <div className="sidebar__widget">
                 <Link href="/" className="sidebar__logo not-cursor" aria-label="home page" title="logo">
                   <Image src="/images/logo_blacksmith.png" alt="Blacksmith Logo"
-                    className="w-14 h-14 left-0 top-[4px] absolute"
+                    className="w-14 h-14 -translate-x-[4px] -translate-y-[9px]"
                     width={56} height={56} />
                 </Link>
               </div>
