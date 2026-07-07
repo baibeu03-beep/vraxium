@@ -2733,11 +2733,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const competencyLinesForStats: Cluster4WeeklyLineDto[] = weekId
     ? cluster4Lines.filter((l) => (l.weekId ?? null) === weekId && normalizePartType(l.partType) === "competency")
     : [];
-  // 실제 개설된 역량 라인 = lineTargetId 보유 (competency 의 isContentLine 정의와 동일).
-  // lineTargetId 없는 빈 placeholder(미배정/folded pending)는 '실제 라인'이 아니므로
-  // 집계·표시 기준에서 제외한다. (2026-06-09 정책: snapshot DTO 실제 line 목록만 집계 기준 →
-  // 0개면 총 0개·강화 대기 아님·빈 상태. demo/일반 모드가 동일 DTO 규칙을 공유한다.)
-  const realCompetencyLines = competencyLinesForStats.filter((l) => !!l.lineTargetId);
+  // 실제 개설된 역량 라인 = 어드민 DTO 의 enhancementStatus 가 not_applicable 이 아닌 라인
+  //   (= breakdownFromLines 분모 A: success/pending/fail. den>0). 어드민 강화 집계와 동일 SoT.
+  // ⚠ (2026-07 수정) 기존엔 lineTargetId 보유로 걸렀는데, 그러면 "라인은 개설됐지만 내가 대상이 아닌"
+  //   비대상 synthetic fail(enhancementStatus="fail", lineTargetId=null, denominator=1)이 집계에서
+  //   빠져 "강화 실패(표시) + 총 0개(집계)" 모순이 났다. 실무 역량은 그 주차에 라인이 누군가에게 개설됐으면
+  //   비대상자도 분모에 포함(총 1개 중 0개)해야 한다 — enhancementStatus 기준으로 통일해 표시축(강화 상태)과
+  //   집계축(총/중)이 항상 같은 SoT 를 쓰게 한다. not_applicable(그 주차 미개설)만 제외 → 총 0개.
+  const realCompetencyLines = competencyLinesForStats.filter(
+    (l) => (l.enhancementStatus ?? "not_applicable") !== "not_applicable",
+  );
   const competencyStatsAdmin = (() => {
     // 실제 개설된 역량 라인이 0개면 집계도 0 — 빈 placeholder/legacy 하드코딩(competencyStats=1) 미포함.
     if (realCompetencyLines.length === 0) {
@@ -8191,11 +8196,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // '강화 대기'가 아니라 빈 상태('empty') — empty 는 뱃지/아이콘 미렌더(강화 대기 표시 안 함),
   // 카운트도 0 (competencyStatsAdmin 와 동일 realCompetencyLines 기준). (2026-06-09 정책:
   //  구 v14 "미수행=강화 대기 placeholder" 폐기 — 실제 라인 0개 = 빈 상태 안내만 표시.)
-  // (2026-06-26 정책 D — 프론트 전용 표시) 역량 '미진행 확정 주차' = 보이드 유지 + '강화 실패' 표시.
-  //   확정 = 주차 결과 공표(상태 라벨이 '성장(성공)/성장(실패)'). 집계 중·진행 중·중립 상태는
-  //   아직 미확정이므로 기존대로 보이드 no-badge('empty') 유지(섣부른 실패 표시 금지).
-  //   휴식/온보딩 분기(not_applicable)는 건드리지 않는다. 백엔드 DTO·snapshot 무변경 —
-  //   displayedAbilityCard 폴백의 표시 상태만 'empty'→'failed' 로 승격(내용은 보이드 그대로).
+  // (2026-07 정책 정정 — 기존 2026-06-26 정책 D 철회) 역량 라인이 그 주차에 하나도 개설되지 않은
+  //   (realCompetencyLines=0 → 집계 총 0) 확정 주차를 '강화 실패'로 표시하던 것을 '해당 없음'으로 바꾼다.
+  //   기존 policy D 는 "강화 실패(표시) + 총 0개(집계)" 모순을 만들었다(집계·표시 SoT 불일치). '강화 실패'는
+  //   반드시 분모에 잡히는(총≥1) 경우에만 쓴다 — 비대상 synthetic fail 은 어드민 DTO 에
+  //   enhancementStatus="fail"·den=1 로 내려오므로 realCompetencyLines>0 → 위 matchedAbilityCard 로 정상
+  //   표시·집계된다. 라인 자체가 없는(총 0) 폴백은 '해당 없음(not_applicable)' — not_applicable 만 집계
+  //   제외(총 0)라는 규칙과 정합해 "강화 실패 + 총 0" 조합을 제거한다. 미확정 주차는 기존대로 빈 상태('empty',
+  //   뱃지 없음) 유지(섣부른 상태 표시 금지). 휴식/온보딩(not_applicable) 불변.
   const abilityWeekResultClass = cardBadgeClassFromLabel(
     weeklyCardMeta?.statusLabel ?? "",
     cardStatusToneClass(weeklyCardMeta?.statusTone),
@@ -8206,8 +8214,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     isRestMode || isOnboardingWeek
       ? "not_applicable"
       : isAbilityWeekResultConfirmed
-        ? "failed"
-        : "empty";
+        ? "not_applicable" // 확정 무-라인(총 0) → '해당 없음'(기존 'failed' 철회 — 강화 실패+총0 모순 제거)
+        : "empty"; // 미확정 무-라인 → 빈 상태(뱃지 없음) 유지
   const displayedAbilityCard: WorkAbilityCard = matchedAbilityCard ?? {
     id: 0,
     lineTargetId: null,
@@ -8228,7 +8236,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     status: abilityVoidFallbackStatus,
     statusIcon: enhancementStatusIcons[abilityVoidFallbackStatus],
     enhancementStatus: abilityVoidFallbackStatus,
-    // 폴백 상태: 휴식/온보딩=해당없음, 미확정=빈 상태('empty'), 확정 미진행='failed'(보이드+강화 실패, 2026-06-26 D).
+    // 폴백 상태: 휴식/온보딩·확정 무-라인=해당없음(not_applicable), 미확정 무-라인=빈 상태('empty').
+    //   (2026-07: 확정 무-라인 'failed' 철회 — 강화 실패+총0 모순 제거. 폴백은 더 이상 'failed' 가 아니다.)
     isFailed: abilityVoidFallbackStatus === "failed",
     isEmpty: true,
     hasActivity: false,
