@@ -1,14 +1,11 @@
 "use client";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { useMemo, useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
-import { dedupedJson } from "@/lib/fetch-dedupe";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useMemo } from "react";
 import { Autoplay } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
-import { usePopup } from "@/components/ui/popup";
-import { getOrgClusterRouteBase, getHeaderThemeAccent } from "@/lib/cluster-route";
+import { getHeaderThemeAccent } from "@/lib/cluster-route";
 import { appendDemoQuery } from "@/lib/appendDemoQuery";
 // Define the type for the game object
 interface Game {
@@ -55,12 +52,8 @@ const resolveCurrentOrg = (pathname: string | null, orgParam: string | null): Or
 };
 
 const Sidebar = () => {
-  const { data: session } = useSession();
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const popup = usePopup();
-  const [myProfileId, setMyProfileId] = useState<string | null>(null);
 
   const currentOrg = useMemo(
     () => resolveCurrentOrg(pathname ?? null, searchParams?.get("org") ?? null),
@@ -76,45 +69,11 @@ const Sidebar = () => {
   // 테스트 유저(데모) 모드 컨텍스트(demoUserId/admin=true/demoUserName/org)를 사이드바
   // 네비게이션 전 구간에 유지한다(공통 헬퍼 lib/appendDemoQuery). 진입 후 중간 페이지를
   // 거치며 demoUserId 가 끊기면 타 크루 카드에서 평판 작성이 "로그인이 필요합니다" 로 막힌다.
+  // 상단/하단 원형 아이콘(주간 랭킹·크루·졸업 절차·커리어 레쥬메·지갑·설정·로그아웃)은
+  // 클릭 시 페이지 이동을 하지 않는다(모두 onClick preventDefault). href/aria 는 유지해 hover 효과와
+  // 접근성 라벨만 남긴다. crews/weekly-ranking href 는 org 컨텍스트 표기를 위해 그대로 계산해 둔다.
   const crewsHref = appendDemoQuery(currentOrg ? `/crews?org=${currentOrg}` : "/crews", searchParams);
   const weeklyRankingHref = appendDemoQuery(currentOrg ? `/weekly-ranking?org=${currentOrg}` : "/weekly-ranking", searchParams);
-
-  // 로그인 시 user_profiles ID를 미리 가져옴
-  // 어드민(마더 계정)은 user_profiles에 없어 404 — skip
-  useEffect(() => {
-    if (!session?.user) return;
-    if (session.user.isAdmin) return;
-    dedupedJson<any>('/api/profile/')
-      .then(result => {
-        if (result?.success && result.data?.id) {
-          setMyProfileId(result.data.id);
-        }
-      })
-      .catch(() => {});
-  }, [session]);
-
-  const handleCareerResumeClick = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (session?.user) {
-      // 어드민(마더 계정)은 본인 프로필이 없어 /cluster-4 가 무의미 — 바로 크루 목록으로
-      if (session.user.isAdmin) {
-        router.push(appendDemoQuery("/crews", searchParams));
-        return;
-      }
-      // 현재 조직 컨텍스트(랜딩 org)를 canonical cluster URL 로 보존.
-      // currentOrg 없으면 marketing 기본. (crewsHref 와 동일한 org 분기 규칙.)
-      // 테스트 모드면 demoUserId 등 컨텍스트도 유지 — 세션이 없어 myProfileId 가 null 이라도
-      // demoUserId 본인 카드로 진입한다(appendDemoQuery 가 demoUserId 부착).
-      const clusterBase = getOrgClusterRouteBase(currentOrg);
-      if (myProfileId) {
-        router.push(appendDemoQuery(`${clusterBase}/?userId=${myProfileId}`, searchParams));
-      } else {
-        router.push(appendDemoQuery(clusterBase, searchParams));
-      }
-    } else {
-      await popup.alert("현재 활동 중이거나 졸업한 크루여야 합니다");
-    }
-  };
 
   return (
     <aside
@@ -128,23 +87,23 @@ const Sidebar = () => {
               <div className="sidebar__widget">
                 <Link href="/" className="sidebar__logo not-cursor" aria-label="home page" title="logo">
                   <Image src="/images/logo_blacksmith.png" alt="Blacksmith Logo"
-                    className="w-16 h-16 left-0 top-[4px] absolute"
-                    width={64} height={64} />
+                    className="w-14 h-14 left-0 top-[4px] absolute"
+                    width={56} height={56} />
                 </Link>
               </div>
               <div className="sidebar__widget sidebar--links">
                 <ul>
                   <li>
-                    <Link href={weeklyRankingHref} aria-label="주간 랭킹" title="주간 랭킹">
-                      <i className="ti ti-layout-grid-add"></i>
+                    <Link href={weeklyRankingHref} onClick={(e) => e.preventDefault()} aria-label="주간 랭킹" title="주간 랭킹" style={{ cursor: "default" }}>
+                      <i className="ti ti-tag"></i>
                       <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
                         <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
                       </svg>
                     </Link>
                   </li>
                   <li>
-                    <Link href={crewsHref} aria-label="크루" title="크루">
-                      <i className="ti ti-chart-bar"></i>
+                    <Link href={crewsHref} onClick={(e) => e.preventDefault()} aria-label="크루" title="크루" style={{ cursor: "default" }}>
+                      <i className="ti ti-tag"></i>
                       <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
                         <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
                       </svg>
@@ -159,8 +118,8 @@ const Sidebar = () => {
                     </a>
                   </li>
                   <li>
-                    <a href="#" onClick={handleCareerResumeClick} aria-label="커리어 레쥬메" title="커리어 레쥬메">
-                      <i className="ti ti-coin"></i>
+                    <a href="#" onClick={(e) => e.preventDefault()} aria-label="커리어 레쥬메" title="커리어 레쥬메" style={{ cursor: "default" }}>
+                      <i className="ti ti-tag"></i>
                       <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
                         <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
                       </svg>
@@ -207,28 +166,28 @@ const Sidebar = () => {
               <div className="sidebar__widget sidebar--links">
                 <ul>
                   <li>
-                    <Link href="/profile" aria-label="add wallet" title="add wallet">
+                    <a href="#" onClick={(e) => e.preventDefault()} aria-label="add wallet" title="add wallet" style={{ cursor: "default" }}>
                       <i className="ti ti-circle-plus"></i>
                       <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
                         <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
                       </svg>
-                    </Link>
+                    </a>
                   </li>
                   <li>
-                    <Link href="/profile" aria-label="view settings" title="view settings">
+                    <a href="#" onClick={(e) => e.preventDefault()} aria-label="view settings" title="view settings" style={{ cursor: "default" }}>
                       <i className="ti ti-settings"></i>
                       <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
                         <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
                       </svg>
-                    </Link>
+                    </a>
                   </li>
                   <li>
-                    <Link href="/" aria-label="log out" title="log out">
+                    <a href="#" onClick={(e) => e.preventDefault()} aria-label="log out" title="log out" style={{ cursor: "default" }}>
                       <i className="ti ti-logout"></i>
                       <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
                         <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
                       </svg>
-                    </Link>
+                    </a>
                   </li>
                 </ul>
               </div>

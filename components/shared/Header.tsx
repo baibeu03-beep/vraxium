@@ -14,22 +14,7 @@ import MouseCursor from "./MouseCursor";
 // import FontSizeControl from "@/components/shared/FontSizeControl";
 
 const menu = [
-  {
-    id: "1",
-    title: "Home",
-    submenus: [
-      {
-        id: "1.1",
-        title: "Home",
-        url: "/",
-      },
-      {
-        id: "1.2",
-        title: "Home 2",
-        url: "/index-two",
-      },
-    ],
-  },
+  // Home 드롭다운은 로고 클릭(→ "/")과 중복이라 네비게이션에서 제거.
   {
     id: "2",
     title: "Cluv", // 기존 About Us → Cluv (조직별 /crews)
@@ -57,17 +42,17 @@ const menu = [
     submenus: [
       {
         id: "3.1",
-        title: "엔터테인먼트/미디어 클럽, 엥크레",
+        title: "[엥크레] Weekly League",
         url: "/weekly-ranking/?org=encre",
       },
       {
         id: "3.2",
-        title: "마케팅/퍼포먼스 클럽, 오랑캐",
+        title: "[오랑캐] Weekly League",
         url: "/weekly-ranking/?org=oranke",
       },
       {
         id: "3.3",
-        title: "기획/컨설팅 클럽, 팔랑크스",
+        title: "[팔랑크스] Weekly League",
         url: "/weekly-ranking/?org=phalanx",
       },
     ],
