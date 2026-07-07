@@ -1165,7 +1165,9 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
 
                   {/* 하단 좌측(좁은 컬럼) — 상세 버튼 아래 품계 이미지 + 품계명 */}
                   <div className="wd-crew__grade" title={c.grade}>
-                    <img className="wd-crew__grade-img" src={gradeImageSrc(org, c.gradeLevel)} alt="" aria-hidden="true" />
+                    <span className="wd-crew__grade-avatar">
+                      <img className="wd-crew__grade-img" src={gradeImageSrc(org, c.gradeLevel)} alt="" aria-hidden="true" />
+                    </span>
                     <span className="wd-crew__grade-label">{c.grade}</span>
                   </div>
 
