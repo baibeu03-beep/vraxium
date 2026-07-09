@@ -69,11 +69,40 @@ const Sidebar = () => {
   // 테스트 유저(데모) 모드 컨텍스트(demoUserId/admin=true/demoUserName/org)를 사이드바
   // 네비게이션 전 구간에 유지한다(공통 헬퍼 lib/appendDemoQuery). 진입 후 중간 페이지를
   // 거치며 demoUserId 가 끊기면 타 크루 카드에서 평판 작성이 "로그인이 필요합니다" 로 막힌다.
-  // 상단/하단 원형 아이콘(주간 랭킹·크루·졸업 절차·커리어 레쥬메·지갑·설정·로그아웃)은
-  // 클릭 시 페이지 이동을 하지 않는다(모두 onClick preventDefault). href/aria 는 유지해 hover 효과와
-  // 접근성 라벨만 남긴다. crews/weekly-ranking href 는 org 컨텍스트 표기를 위해 그대로 계산해 둔다.
+  // 기본(/ · /home 등)에서는 상단/하단 원형 아이콘(주간 랭킹·크루·졸업 절차·커리어 레쥬메·
+  // 지갑·설정·로그아웃)이 클릭 시 페이지 이동을 하지 않는다(모두 onClick preventDefault).
+  // href/aria 는 유지해 hover 효과와 접근성 라벨만 남긴다.
   const crewsHref = appendDemoQuery(currentOrg ? `/crews?org=${currentOrg}` : "/crews", searchParams);
   const weeklyRankingHref = appendDemoQuery(currentOrg ? `/weekly-ranking?org=${currentOrg}` : "/weekly-ranking", searchParams);
+
+  // 첫 진입 화면(/ · /home)을 제외한 모든 고객 앱 페이지에서 상단 4개 링크 아이콘을 원본
+  // 템플릿 아이콘으로 복원하고 1·2번째만 실제 이동을 허용한다. / · /home 에서는 기존 동작
+  // (4×ti-tag, 전부 이동 차단)을 그대로 유지한다.
+  //   · 1번째(주간 랭킹 라벨) → /crews/?org={org}
+  //   · 2번째(크루 라벨)      → /weekly-ranking/?org={org}
+  //   · 3·4번째              → 이동 없음(hover 만, preventDefault 유지)
+  // trailingSlash:true 라 pathname 이 "/home/" 로 올 수 있어 후행 슬래시를 정규화해 비교한다.
+  const normalizedPath = (pathname ?? "/").replace(/\/+$/, "");
+  const isFirstEntryHome = normalizedPath === "" || normalizedPath === "/home";
+  const applyCustomNav = !isFirstEntryHome;
+
+  // 링크 생성 유틸 — 일반/테스트 모드가 갈라지지 않도록 두 아이콘이 동일 함수를 쓴다.
+  //   · org : 경로(index-two-*)로만 결정되는 페이지도 있어 currentOrg 를 명시로 싣는다(?org= 미존재 시).
+  //   · mode / actAsTestUserId : URL 에 있을 때만 그대로 이어붙인다(운영/일반 모드면 no-op).
+  //   · demoUserId/admin/demoUserName : 공통 헬퍼 appendDemoQuery 가 유지(테스트 유저 컨텍스트).
+  const TEST_PASSTHROUGH_KEYS = ["mode", "actAsTestUserId"] as const;
+  const buildNavHref = (base: string) => {
+    const params = new URLSearchParams();
+    if (currentOrg) params.set("org", currentOrg);
+    for (const key of TEST_PASSTHROUGH_KEYS) {
+      const value = searchParams?.get(key);
+      if (value) params.set(key, value);
+    }
+    const qs = params.toString();
+    return appendDemoQuery(qs ? `${base}?${qs}` : base, searchParams);
+  };
+  const crewsNavHref = buildNavHref("/crews/");
+  const weeklyRankingNavHref = buildNavHref("/weekly-ranking/");
 
   return (
     <aside
@@ -94,22 +123,38 @@ const Sidebar = () => {
               <div className="sidebar__widget sidebar--links">
                 <ul>
                   <li>
-                    <Link href={weeklyRankingHref} onClick={(e) => e.preventDefault()} aria-label="주간 랭킹" title="주간 랭킹" style={{ cursor: "default" }}>
-                      <i className="ti ti-tag"></i>
+                    {/* 1번째: 주간 랭킹 라벨 → 첫 진입 화면 외 모든 페이지에서 /crews/?org= 로 이동
+                        (원본 아이콘 layout-grid-add). / · /home 에서는 기존대로 이동 차단(ti-tag). */}
+                    <Link
+                      href={applyCustomNav ? crewsNavHref : weeklyRankingHref}
+                      onClick={applyCustomNav ? undefined : (e) => e.preventDefault()}
+                      aria-label="주간 랭킹"
+                      title="주간 랭킹"
+                      style={applyCustomNav ? undefined : { cursor: "default" }}
+                    >
+                      <i className={applyCustomNav ? "ti ti-layout-grid-add" : "ti ti-tag"}></i>
                       <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
                         <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
                       </svg>
                     </Link>
                   </li>
                   <li>
-                    <Link href={crewsHref} onClick={(e) => e.preventDefault()} aria-label="크루" title="크루" style={{ cursor: "default" }}>
-                      <i className="ti ti-tag"></i>
+                    {/* 2번째: 크루 라벨 → 첫 진입 화면 외 모든 페이지에서 /weekly-ranking/?org= 로 이동(원본 아이콘 chart-bar). */}
+                    <Link
+                      href={applyCustomNav ? weeklyRankingNavHref : crewsHref}
+                      onClick={applyCustomNav ? undefined : (e) => e.preventDefault()}
+                      aria-label="크루"
+                      title="크루"
+                      style={applyCustomNav ? undefined : { cursor: "default" }}
+                    >
+                      <i className={applyCustomNav ? "ti ti-chart-bar" : "ti ti-tag"}></i>
                       <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
                         <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
                       </svg>
                     </Link>
                   </li>
                   <li>
+                    {/* 3번째: 원본 아이콘 tag. 이동 없음(hover 만). */}
                     <a href="#" onClick={(e) => e.preventDefault()} aria-label="졸업 절차" title="졸업 절차" style={{ cursor: "default" }}>
                       <i className="ti ti-tag"></i>
                       <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
@@ -118,8 +163,9 @@ const Sidebar = () => {
                     </a>
                   </li>
                   <li>
+                    {/* 4번째: 첫 진입 화면 외 모든 페이지에서 원본 아이콘 coin 으로 복원. 이동 없음(hover 만). */}
                     <a href="#" onClick={(e) => e.preventDefault()} aria-label="커리어 레쥬메" title="커리어 레쥬메" style={{ cursor: "default" }}>
-                      <i className="ti ti-tag"></i>
+                      <i className={applyCustomNav ? "ti ti-coin" : "ti ti-tag"}></i>
                       <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
                         <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
                       </svg>
