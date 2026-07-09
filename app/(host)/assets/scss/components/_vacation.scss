@@ -1,0 +1,434 @@
+// =============================================================
+// /vacation — 클럽 주차 휴식 신청 페이지 (와이어프레임 2단 레이아웃)
+// =============================================================
+// 레이아웃: [1] 상단 배너 → [좌: 이미지 | 우: 폼] → [MY 휴식 주차 전체 폭].
+// 대표색은 org 테마 클래스(.vacation-encre / -phalanx / -oranke)로 스코프한
+// CSS 변수(--vac-accent …)로 결정 → org 가 바뀌면 포인트색도 자동 변경.
+// org 분기·mode=test 무관하게 동일 마크업/스타일을 탄다.
+// =============================================================
+.vacation-page {
+  // 기본(오랑캐/무지정) = amber.
+  --vac-accent: #faab07;
+  --vac-accent-contrast: #111;
+  --vac-accent-soft: rgba(250, 171, 7, 0.14);
+  --vac-accent-glow: rgba(250, 171, 7, 0.28);
+
+  --vac-surface: rgba(255, 255, 255, 0.045);
+  --vac-surface-2: rgba(255, 255, 255, 0.06);
+  --vac-border: rgba(255, 255, 255, 0.09);
+  --vac-border-strong: rgba(255, 255, 255, 0.16);
+  // 입력 필드(드롭다운/사유) — 반투명 화이트는 near-black 테마에서 뭉개져
+  // 안 보이므로 불투명 slate 로 채워 "입력 가능" 어포던스를 확실히 준다.
+  --vac-field-bg: #1d212b;
+  --vac-field-border: rgba(255, 255, 255, 0.28);
+  --vac-text: #eef0f3;
+  --vac-text-muted: #99a0ab;
+
+  &.vacation-encre {
+    --vac-accent: #ff4b70;
+    --vac-accent-contrast: #ffffff;
+    --vac-accent-soft: rgba(255, 75, 112, 0.14);
+    --vac-accent-glow: rgba(255, 75, 112, 0.30);
+  }
+  &.vacation-phalanx {
+    --vac-accent: #1e9503;
+    --vac-accent-contrast: #ffffff;
+    --vac-accent-soft: rgba(30, 149, 3, 0.16);
+    --vac-accent-glow: rgba(30, 149, 3, 0.30);
+  }
+  &.vacation-oranke {
+    --vac-accent: #faab07;
+    --vac-accent-contrast: #111;
+    --vac-accent-soft: rgba(250, 171, 7, 0.14);
+    --vac-accent-glow: rgba(250, 171, 7, 0.28);
+  }
+
+  color: var(--vac-text);
+
+  // 컨테이너 폭 완화(좌우 공간 더 활용). 너무 넓지 않게 가독선에서 제한.
+  .container { max-width: 1320px; }
+
+  // breadcrumb active = org 대표색(--vac-accent). _banner.scss 의
+  // `.breadcrumb .active{color:var(--white)!important}` 를 상위 특이도(4 class)로 덮는다.
+  // org 분기·mode=test 무관하게 동일 적용(변수 스코프가 org 테마 클래스에 붙어 있음).
+  .breadcrumb .breadcrumb-item.active {
+    color: var(--vac-accent) !important;
+  }
+
+  // ── 2단 그리드 레이아웃 ──
+  .vacation-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+    grid-template-areas:
+      "banner banner"
+      "figure form"
+      "my     my";
+    gap: 24px 28px;
+    align-items: stretch;
+  }
+
+  // [1] 배너 (히어로형 제목)
+  .vacation-banner {
+    grid-area: banner;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 42px 24px;
+    border-radius: 20px;
+    background:
+      radial-gradient(120% 140% at 50% -10%, var(--vac-accent-soft), transparent 60%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+    border: 1px solid var(--vac-border-strong);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+  .vacation-banner__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 13px;
+    border-radius: 999px;
+    background: var(--vac-accent-soft);
+    border: 1px solid var(--vac-accent);
+    color: var(--vac-accent);
+    font-family: "Pretendard", sans-serif;
+    font-size: 12.5px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    i { font-size: 15px; }
+  }
+  .vacation-banner__title {
+    margin: 0;
+    font-family: "Pretendard", sans-serif;
+    font-size: 46px;
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    line-height: 1.12;
+    text-align: center;
+    // 화이트→대표색 그라데이션 텍스트(과하지 않게).
+    background: linear-gradient(112deg, #ffffff 38%, var(--vac-accent) 108%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+  .vacation-banner__bar {
+    width: 68px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--vac-accent);
+    box-shadow: 0 0 14px var(--vac-accent-glow);
+  }
+  .vacation-banner__subtitle {
+    margin: 0;
+    font-family: "Pretendard", sans-serif;
+    font-size: 15.5px;
+    font-weight: 500;
+    color: var(--vac-text-muted);
+    text-align: center;
+  }
+
+  // [2] 좌측 이미지 — 우측 폼 높이에 맞춰 늘어남(cover).
+  .vacation-figure {
+    grid-area: figure;
+    margin: 0;
+    min-height: 320px;
+    border-radius: 18px;
+    overflow: hidden;
+    background: var(--vac-surface);
+    border: 1px solid var(--vac-border);
+    box-shadow: 0 0 0 4px var(--vac-accent-soft);
+  }
+  .vacation-figure__img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+  }
+
+  // [3]~[7] 우측 폼
+  .vacation-form {
+    grid-area: form;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    background: var(--vac-surface);
+    border: 1px solid var(--vac-border);
+    border-radius: 18px;
+    padding: 26px 26px 28px;
+  }
+
+  .vacation-field { display: flex; flex-direction: column; }
+  .vacation-field__label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: "Pretendard", sans-serif;
+    font-size: 17.5px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    i { color: var(--vac-accent); font-size: 18px; }
+    &--sub { justify-content: flex-start; gap: 10px; }
+  }
+  .vacation-count {
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--vac-accent-contrast);
+    background: var(--vac-accent);
+    border-radius: 999px;
+    padding: 4px 10px;
+  }
+
+  // ── 드롭다운 + 선택 버튼 ──
+  .vacation-select-row {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+  }
+  .vacation-select-wrap {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  // ⚠ layout.css 의 전역 `select{display:none}` 을 이 클래스로 되살린다(상위 특이도).
+  .vacation-select {
+    display: block;
+    width: 100%;
+    height: 54px;
+    padding: 0 44px 0 17px;
+    border-radius: 12px;
+    border: 1px solid var(--vac-field-border);
+    background: var(--vac-field-bg);
+    color: var(--vac-text);
+    font-family: "Pretendard", sans-serif;
+    font-size: 15.5px;
+    font-weight: 600;
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    &:hover:not(:disabled) { border-color: var(--vac-accent); }
+    &:focus { outline: none; border-color: var(--vac-accent); box-shadow: 0 0 0 3px var(--vac-accent-soft); }
+    &:disabled { opacity: 0.55; cursor: not-allowed; }
+    option { color: #111; background: #fff; }
+  }
+  .vacation-select__chevron {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 20px;
+    color: var(--vac-accent);
+    pointer-events: none;
+  }
+
+  // ── 버튼 공통 ──
+  .vacation-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-family: "Pretendard", sans-serif;
+    font-weight: 700;
+    white-space: nowrap;
+    border-radius: 12px;
+    border: 1px solid var(--vac-accent);
+    background: var(--vac-accent);
+    color: var(--vac-accent-contrast);
+    cursor: pointer;
+    transition: filter 0.15s ease, opacity 0.15s ease, transform 0.05s ease;
+    i { font-size: 16px; }
+    &:hover:not(:disabled) { filter: brightness(1.07); }
+    &:active:not(:disabled) { transform: translateY(1px); }
+    &:disabled { opacity: 0.42; cursor: not-allowed; }
+  }
+  .vacation-btn--select {
+    flex: 0 0 auto;
+    height: 54px;
+    min-width: 96px;
+    padding: 0 24px;
+    font-size: 15.5px;
+  }
+  .vacation-btn--submit {
+    width: 100%;
+    height: 58px;
+    font-size: 18px;
+    margin-top: 4px;
+    box-shadow: 0 10px 24px -6px var(--vac-accent-glow);
+  }
+
+  // ── 날짜 범위 표시 ──
+  .vacation-daterange {
+    margin-top: 11px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--vac-text-muted);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    &--total { text-align: left; margin-top: 13px; color: var(--vac-text); }
+  }
+
+  // ── [5] 선택 주차 트레이 (가로 칩) ──
+  .vacation-tray {
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--vac-accent-soft);
+    border: 1px solid var(--vac-accent);
+  }
+  .vacation-tray__empty {
+    margin: 0;
+    font-size: 14.5px;
+    color: var(--vac-text-muted);
+  }
+  .vacation-chips {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+  }
+  .vacation-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 9px 9px 15px;
+    border-radius: 10px;
+    background: var(--vac-field-bg);
+    border: 1px solid var(--vac-border-strong);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--vac-text);
+  }
+  .vacation-chip__label { white-space: nowrap; }
+  .vacation-chip__remove {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--vac-text);
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s ease;
+    &:hover { background: var(--vac-accent); color: var(--vac-accent-contrast); }
+  }
+
+  // ── 사유 ──
+  .vacation-reason {
+    width: 100%;
+    resize: vertical;
+    min-height: 116px;
+    padding: 15px 17px;
+    border-radius: 12px;
+    border: 1px solid var(--vac-field-border);
+    background: var(--vac-field-bg);
+    color: var(--vac-text);
+    font-family: "Pretendard", sans-serif;
+    font-size: 15.5px;
+    line-height: 1.6;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    &::placeholder { color: var(--vac-text-muted); }
+    &:focus { outline: none; border-color: var(--vac-accent); box-shadow: 0 0 0 3px var(--vac-accent-soft); }
+  }
+  .vacation-reason__count {
+    margin-top: 8px;
+    text-align: right;
+    font-size: 13px;
+    color: var(--vac-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  // ── MY 휴식 주차 (하단 전체 폭) ──
+  .vacation-my {
+    grid-area: my;
+    background: var(--vac-surface);
+    border: 1px solid var(--vac-border);
+    border-radius: 18px;
+    padding: 22px 26px 24px;
+  }
+  .vacation-my__area { min-height: 60px; }
+  .vacation-my__list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .vacation-my__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: var(--vac-surface-2);
+    border: 1px solid var(--vac-border);
+    font-size: 15.5px;
+  }
+  .vacation-my__range { font-weight: 600; color: var(--vac-text); font-variant-numeric: tabular-nums; }
+  .vacation-my__status {
+    flex: 0 0 auto;
+    font-size: 13px;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 5px 12px;
+    line-height: 1;
+    &.is-pending { background: var(--vac-accent-soft); color: var(--vac-accent); border: 1px solid var(--vac-accent); }
+    &.is-approved { background: rgba(46, 160, 67, 0.15); color: #45cf5a; border: 1px solid rgba(69, 207, 90, 0.7); }
+    &.is-rejected { background: rgba(224, 91, 91, 0.15); color: #e97070; border: 1px solid rgba(233, 112, 112, 0.7); }
+  }
+
+  .vacation-empty-text {
+    font-size: 14.5px;
+    color: var(--vac-text-muted);
+    margin: 0;
+    padding: 4px 0;
+  }
+
+  // ── org 미지정 안내 ──
+  .vacation-empty-org {
+    text-align: center;
+    padding: 60px 16px;
+    .vacation-title { font-size: 22px; }
+    p { color: var(--vac-text-muted); line-height: 1.7; margin-top: 14px; font-size: 14px; }
+  }
+}
+
+// ── 태블릿/모바일: 단일 컬럼 (배너 → 이미지 → 폼 → MY) ──
+@media (max-width: 860px) {
+  .vacation-page {
+    .container { max-width: 100%; padding-left: 16px; padding-right: 16px; }
+    .vacation-layout {
+      grid-template-columns: 1fr;
+      grid-template-areas:
+        "banner"
+        "figure"
+        "form"
+        "my";
+      gap: 16px;
+    }
+    .vacation-banner { padding: 30px 18px; gap: 12px; }
+    .vacation-banner__title { font-size: 31px; }
+    .vacation-banner__subtitle { font-size: 14px; }
+    .vacation-field__label { font-size: 16.5px; }
+    // 모바일은 고정 높이 배너형 이미지(자연 높이로 늘어나지 않도록).
+    .vacation-figure { min-height: 0; height: 210px; box-shadow: 0 0 0 3px var(--vac-accent-soft); }
+    .vacation-form { padding: 20px 18px 22px; gap: 18px; }
+    // 드롭다운 위 / 선택 버튼 아래 세로 배치.
+    .vacation-select-row { flex-direction: column; }
+    .vacation-btn--select { width: 100%; }
+  }
+}

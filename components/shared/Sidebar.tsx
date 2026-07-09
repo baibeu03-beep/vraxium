@@ -49,6 +49,11 @@ const Sidebar = () => {
   // (모두 onClick preventDefault). href/aria 는 유지해 hover 효과와 접근성 라벨만 남긴다.
   const crewsNavHref = buildOrgNavHref("/crews/", pathname, searchParams);
   const weeklyRankingNavHref = buildOrgNavHref("/weekly-ranking/", pathname, searchParams);
+  // 4번째 아이콘(휴식 신청) → /vacation. /crews·/weekly-ranking 와 동일하게 공통 헬퍼를
+  // 거쳐 현재 org(?org= > cluster suffix)와 mode/actAsTestUserId, demoUserId 등 테스트
+  // 컨텍스트를 전 구간 유지한다(일반/테스트 모드 동일 로직). 첫 진입 화면(/ · /home)에서는
+  // 아래 applyCustomNav 분기로 이동을 막고 기존 디자인(ti-tag)을 그대로 둔다.
+  const vacationNavHref = buildOrgNavHref("/vacation/", pathname, searchParams);
   // 첫 진입 화면(/ · /home)에서 preventDefault 로 이동을 막는 1·2번 아이콘의 표시용 href.
   // 값은 cosmetic(클릭 시 이동 안 함)이라 nav href 를 그대로 재사용한다.
   const crewsHref = crewsNavHref;
@@ -124,13 +129,24 @@ const Sidebar = () => {
                     </a>
                   </li>
                   <li>
-                    {/* 4번째: 첫 진입 화면 외 모든 페이지에서 원본 아이콘 coin 으로 복원. 이동 없음(hover 만). */}
-                    <a href="#" onClick={(e) => e.preventDefault()} aria-label="커리어 레쥬메" title="커리어 레쥬메" style={{ cursor: "default" }}>
-                      <i className={applyCustomNav ? "ti ti-coin" : "ti ti-tag"}></i>
-                      <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
-                        <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
-                      </svg>
-                    </a>
+                    {/* 4번째: 휴식 신청. 첫 진입 화면(/ · /home) 외 모든 페이지에서 아이콘을
+                        calendar-pause 로 바꾸고 /vacation?org=…&mode=… 로 이동(org/mode/actAs/demo
+                        유지). / · /home 에서는 기존 동작(ti-tag, 이동 차단)을 그대로 유지한다. */}
+                    {applyCustomNav ? (
+                      <Link href={vacationNavHref} aria-label="휴식 신청" title="휴식 신청">
+                        <i className="ti ti-calendar-pause"></i>
+                        <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
+                          <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
+                        </svg>
+                      </Link>
+                    ) : (
+                      <a href="#" onClick={(e) => e.preventDefault()} aria-label="휴식 신청" title="휴식 신청" style={{ cursor: "default" }}>
+                        <i className="ti ti-tag"></i>
+                        <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
+                          <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />
+                        </svg>
+                      </a>
+                    )}
                   </li>
                 </ul>
               </div>

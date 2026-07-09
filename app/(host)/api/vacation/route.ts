@@ -1,0 +1,293 @@
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase-server";
+import { resolveWriteActor } from "@/lib/api-auth";
+import { getUserProfile } from "@/lib/get-user-profile";
+import { DemoModeError, resolveDemoProfileUserIdFromRequest } from "@/lib/demoMode";
+import { enforceQaMode } from "@/lib/qaModeGate";
+import {
+  areWeeksAdjacent,
+  isBeforeVacationDeadline,
+  isTransitionWeekNumber,
+  MAX_VACATION_WEEKS,
+  seasonWeekCount,
+  VACATION_REASON_MAX,
+  kstMsToIso,
+  nowKstMs,
+} from "@/lib/vacationWeeks";
+
+export const dynamic = "force-dynamic";
+// Next Data Cache 가 supabase GET 을 캐시하지 않도록(테스트/실시간 주차 판정 stale 방지).
+export const revalidate = 0;
+
+const ORG_SLUGS = ["encre", "oranke", "phalanx"] as const;
+type OrgSlug = (typeof ORG_SLUGS)[number];
+const isOrgSlug = (v: unknown): v is OrgSlug =>
+  typeof v === "string" && (ORG_SLUGS as readonly string[]).includes(v);
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const isIsoDate = (v: unknown): v is string => typeof v === "string" && ISO_DATE_RE.test(v);
+
+type SupabaseClient = ReturnType<typeof createAdminClient>;
+
+type SeasonDef = { season_type?: string | null; year?: number | null };
+type WeekRow = {
+  id: string;
+  week_number: number;
+  start_date: string;
+  end_date: string;
+  season_key: string;
+  is_official_rest: boolean | null;
+  season_definitions?: SeasonDef | SeasonDef[] | null;
+};
+
+function seasonTypeOf(row: WeekRow): string | null {
+  const sd = row.season_definitions;
+  const one = Array.isArray(sd) ? sd[0] : sd;
+  return one?.season_type ?? null;
+}
+
+export interface EligibleWeek {
+  weekId: string;
+  weekNumber: number;
+  seasonKey: string;
+  seasonType: string | null;
+  startDate: string;
+  endDate: string;
+}
+
+const WEEK_SELECT =
+  "id, week_number, start_date, end_date, season_key, is_official_rest, season_definitions!inner(season_type, year)";
+
+/**
+ * 현재 시즌 + 신청 가능(eligible) 주차를 계산한다. 서버가 유일한 권위(authoritative).
+ * 조건:
+ *   · 이번 시즌(오늘이 속한 주차의 season_key)만 — 다음 시즌 제외
+ *   · 전환 주차(정규 주수+1) 제외
+ *   · 공식 휴식(weeks.is_official_rest) 제외
+ *   · 마감 전(= N-1주 토요일 14:00 KST 이전) — 과거/현재 주차 자동 배제
+ *   · 이미 본인이 신청한 주차(vacation_requests, rejected 제외) 제외
+ */
+async function computeEligibleWeeks(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<{ eligible: EligibleWeek[]; currentSeasonKey: string | null; appliedStartDates: Set<string> }> {
+  const today = kstMsToIso(nowKstMs());
+
+  // 오늘이 속한 주차 → 현재 시즌 키.
+  const { data: currentWeek } = await supabase
+    .from("weeks")
+    .select(WEEK_SELECT)
+    .lte("start_date", today)
+    .gte("end_date", today)
+    .maybeSingle();
+
+  const currentSeasonKey = (currentWeek as WeekRow | null)?.season_key ?? null;
+
+  // 본인이 이미 신청한 주차(취소/거절 제외)의 시작일 집합 — 옵션에서 제외.
+  const { data: appliedRows } = await supabase
+    .from("vacation_requests")
+    .select("week_start_date, status")
+    .eq("user_id", userId)
+    .neq("status", "rejected");
+  const appliedStartDates = new Set<string>(
+    ((appliedRows as { week_start_date: string }[] | null) ?? []).map((r) => r.week_start_date),
+  );
+
+  if (!currentSeasonKey) {
+    return { eligible: [], currentSeasonKey: null, appliedStartDates };
+  }
+
+  // 이번 시즌 전체 주차.
+  const { data: seasonWeeks } = await supabase
+    .from("weeks")
+    .select(WEEK_SELECT)
+    .eq("season_key", currentSeasonKey)
+    .order("week_number", { ascending: true });
+
+  const now = nowKstMs();
+  const eligible: EligibleWeek[] = [];
+  for (const w of (seasonWeeks as WeekRow[] | null) ?? []) {
+    const seasonType = seasonTypeOf(w);
+    // 전환 주차 제외(정규 주수 판별 가능 시).
+    const count = seasonWeekCount(seasonType);
+    if (count != null && w.week_number > count) continue;
+    if (isTransitionWeekNumber(seasonType, w.week_number)) continue;
+    // 공식 휴식 제외.
+    if (w.is_official_rest) continue;
+    // 마감 전만(과거/현재 주차 자동 배제).
+    if (!isBeforeVacationDeadline(w.start_date, now)) continue;
+    // 이미 신청한 주차 제외.
+    if (appliedStartDates.has(w.start_date)) continue;
+    eligible.push({
+      weekId: w.id,
+      weekNumber: w.week_number,
+      seasonKey: w.season_key,
+      seasonType,
+      startDate: w.start_date,
+      endDate: w.end_date,
+    });
+  }
+  return { eligible, currentSeasonKey, appliedStartDates };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET: 신청 가능 주차 목록 + 내 휴식 신청 목록.
+//   읽기 권한 = 로그인(또는 유효한 테스트 유저 demoUserId). 본인 데이터만 반환.
+export async function GET(request: Request) {
+  try {
+    // 로그인 또는 유효한 테스트 유저(demoUserId) 확인 → 본인 user_id 확정.
+    let demoBypass: string | null = null;
+    try {
+      demoBypass = await resolveDemoProfileUserIdFromRequest(request);
+    } catch (e) {
+      if (e instanceof DemoModeError) return NextResponse.json({ error: e.message }, { status: e.status });
+      throw e;
+    }
+
+    let userId = demoBypass;
+    if (!userId) {
+      const session = await getServerSession(authOptions);
+      if (!session?.user?.email) {
+        return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+      }
+      const { profile, error } = await getUserProfile<{ user_id: string }>("user_id", null);
+      if (error) return NextResponse.json({ error: error.message }, { status: error.status });
+      userId = profile.user_id;
+    }
+
+    const qaBlock = await enforceQaMode(request, { targetUserId: userId });
+    if (qaBlock) return qaBlock;
+
+    const supabase = createAdminClient();
+    const { eligible, currentSeasonKey } = await computeEligibleWeeks(supabase, userId);
+
+    // 내 휴식 신청 목록(MY 휴식 주차 섹션용) — 최신순.
+    const { data: myRows } = await supabase
+      .from("vacation_requests")
+      .select("id, org, season_key, week_id, week_start_date, reason, status, created_at")
+      .eq("user_id", userId)
+      .order("week_start_date", { ascending: true });
+
+    const myRequests = ((myRows as Record<string, unknown>[] | null) ?? []).map((r) => ({
+      id: r.id,
+      org: r.org,
+      seasonKey: r.season_key,
+      weekId: r.week_id,
+      weekStartDate: r.week_start_date,
+      reason: r.reason,
+      status: r.status,
+      createdAt: r.created_at,
+    }));
+
+    return NextResponse.json({ success: true, currentSeasonKey, eligibleWeeks: eligible, myRequests });
+  } catch (err) {
+    console.error("[vacation] GET 오류:", err);
+    return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST: 휴식 신청. 연속 최대 3주, 이번 시즌·마감 전·공식휴식/중복 제외를 서버가 재검증.
+//   쓰기 권한 = owner 본인 또는 유효한 테스트 유저(demoUserId). (resolveWriteActor)
+export async function POST(request: Request) {
+  try {
+    const body = await request.json().catch(() => null);
+    const actor = await resolveWriteActor(request, body);
+    if (!actor.ok) return actor.response;
+    const userId = actor.userId;
+
+    const org = body?.org;
+    const rawWeeks = body?.weekStartDates;
+    const rawReason = body?.reason;
+
+    if (!isOrgSlug(org)) {
+      return NextResponse.json({ error: "유효한 org 가 필요합니다." }, { status: 400 });
+    }
+    if (!Array.isArray(rawWeeks) || rawWeeks.length === 0 || rawWeeks.length > MAX_VACATION_WEEKS) {
+      return NextResponse.json(
+        { error: `휴식 주차는 1~${MAX_VACATION_WEEKS}개까지 신청할 수 있습니다.` },
+        { status: 400 },
+      );
+    }
+    const weekStartDates = Array.from(new Set(rawWeeks));
+    if (weekStartDates.length !== rawWeeks.length || !weekStartDates.every(isIsoDate)) {
+      return NextResponse.json({ error: "유효한 주차 정보가 아닙니다." }, { status: 400 });
+    }
+
+    let reason: string | null = null;
+    if (rawReason != null) {
+      if (typeof rawReason !== "string") {
+        return NextResponse.json({ error: "사유 형식이 올바르지 않습니다." }, { status: 400 });
+      }
+      const trimmed = rawReason.trim();
+      if (trimmed.length > VACATION_REASON_MAX) {
+        return NextResponse.json(
+          { error: `사유는 ${VACATION_REASON_MAX}자 이내로 입력해주세요.` },
+          { status: 400 },
+        );
+      }
+      reason = trimmed.length > 0 ? trimmed : null;
+    }
+
+    // 연속 주차 검증(정렬 후 인접 7일).
+    const sorted = [...weekStartDates].sort();
+    for (let i = 1; i < sorted.length; i++) {
+      if (!areWeeksAdjacent(sorted[i - 1], sorted[i])) {
+        return NextResponse.json(
+          { error: "연속된 주차만 신청할 수 있습니다." },
+          { status: 400 },
+        );
+      }
+    }
+
+    const supabase = createAdminClient();
+
+    // 서버 권위 재검증 — 요청된 모든 주차가 eligible 집합에 있어야 함.
+    const { eligible } = await computeEligibleWeeks(supabase, userId);
+    const eligibleByStart = new Map(eligible.map((w) => [w.startDate, w]));
+    const resolved = sorted.map((d) => eligibleByStart.get(d));
+    if (resolved.some((w) => !w)) {
+      return NextResponse.json(
+        { error: "신청할 수 없는 주차가 포함되어 있습니다. 목록을 새로고침해주세요." },
+        { status: 409 },
+      );
+    }
+
+    const now = new Date().toISOString();
+    const rows = resolved.map((w) => ({
+      user_id: userId,
+      org,
+      season_key: w!.seasonKey,
+      week_id: w!.weekId,
+      week_start_date: w!.startDate,
+      reason,
+      status: "pending",
+      created_at: now,
+      updated_at: now,
+    }));
+
+    const { data: inserted, error: insertError } = await supabase
+      .from("vacation_requests")
+      .insert(rows)
+      .select("id, org, season_key, week_id, week_start_date, reason, status, created_at");
+
+    if (insertError) {
+      // 중복(UNIQUE user_id+week_id) → 이미 신청됨.
+      if ((insertError as { code?: string }).code === "23505") {
+        return NextResponse.json(
+          { error: "이미 신청한 주차가 포함되어 있습니다." },
+          { status: 409 },
+        );
+      }
+      console.error("[vacation] POST insert 오류:", insertError);
+      return NextResponse.json({ error: "휴식 신청 저장에 실패했습니다." }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, created: inserted ?? [] });
+  } catch (err) {
+    console.error("[vacation] POST 오류:", err);
+    return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
+  }
+}
