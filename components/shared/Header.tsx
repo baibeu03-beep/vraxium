@@ -6,6 +6,7 @@ import { Fragment, Suspense, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { appSignOut } from "@/lib/auth-logout";
 import { getHeaderThemeAccent } from "@/lib/cluster-route";
+import { buildOrgNavHref, type OrgSlug } from "@/lib/orgNav";
 import Cart from "./Cart";
 import Message from "./header/Message";
 import Notification from "./header/Notification";
@@ -217,6 +218,20 @@ const Header = () => {
     }
   }, [search, cartIsOpen]);
   const pathName = usePathname();
+  const searchParams = useSearchParams();
+
+  // 메뉴 링크 href 생성 — org 스코프 페이지(/crews · /weekly-ranking)는 공통 헬퍼
+  // buildOrgNavHref 를 거쳐 항상 ?org= + 현재 mode/actAsTestUserId + 테스트 유저
+  // 컨텍스트(demoUserId/admin/demoUserName)를 유지한다. 드롭다운은 조직 선택 메뉴라
+  // 각 항목의 org(메뉴 url 의 ?org= 값)를 명시로 넘겨 해당 조직으로 이동시키되, 현재
+  // URL 의 나머지 쿼리는 그대로 보존한다. 쿼리 없는 메뉴(비-org)는 원본 url 을 유지한다.
+  const buildMenuHref = (url: string) => {
+    const qIdx = url.indexOf("?");
+    if (qIdx === -1) return url;
+    const base = url.slice(0, qIdx);
+    const org = new URLSearchParams(url.slice(qIdx + 1)).get("org") as OrgSlug | null;
+    return buildOrgNavHref(base, pathName, searchParams, { org });
+  };
 
   // 현재 경로와 메뉴 URL 비교 함수
   const isActiveUrl = (url: string) => {
@@ -254,7 +269,7 @@ const Header = () => {
                       <Fragment key={id}>
                         {url ? (
                           <li className={`navbar__item nav-fade ${isActiveUrl(url) ? "active" : ""}`}>
-                            <Link href={url}>{title}</Link>
+                            <Link href={buildMenuHref(url)}>{title}</Link>
                           </li>
                         ) : (
                           <li className={`navbar__item navbar__item--has-children nav-fade ${activeParent === id ? "active" : ""}`}>
@@ -266,7 +281,7 @@ const Header = () => {
                                 <Fragment key={id}>
                                   {url ? (
                                     <li className={`${isActiveUrl(url) ? "active" : ""}`}>
-                                      <Link href={url}>{title}</Link>
+                                      <Link href={buildMenuHref(url)}>{title}</Link>
                                     </li>
                                   ) : (
                                     <li className="navbar__item navbar__item--has-children">
@@ -276,7 +291,7 @@ const Header = () => {
                                       <ul className="navbar__sub-menu navbar__sub-menu__nested">
                                         {submenus?.map(({ id, title, url }) => (
                                           <li key={id} className={`${isActiveUrl(url) ? "active" : ""}`}>
-                                            <Link href={url}>{title}</Link>
+                                            <Link href={buildMenuHref(url)}>{title}</Link>
                                           </li>
                                         ))}
                                       </ul>
@@ -375,7 +390,7 @@ const Header = () => {
                   <Fragment key={id}>
                     {url ? (
                       <li className={`navbar__item nav-fade ${isActiveUrl(url) ? "active" : ""}`}>
-                        <Link href={url}>{title}</Link>
+                        <Link href={buildMenuHref(url)}>{title}</Link>
                       </li>
                     ) : (
                       <li className="navbar__item navbar__item--has-children nav-fade">
@@ -388,7 +403,7 @@ const Header = () => {
                               <Fragment key={id}>
                                 {url ? (
                                   <li className={`${isActiveUrl(url) ? "active" : ""}`}>
-                                    <Link href={url}>{title}</Link>
+                                    <Link href={buildMenuHref(url)}>{title}</Link>
                                   </li>
                                 ) : (
                                   <li className="navbar__item navbar__item--has-children">
@@ -399,7 +414,7 @@ const Header = () => {
                                       <ul className="navbar__sub-menu navbar__sub-menu__nested">
                                         {submenus?.map(({ id, title, url }) => (
                                           <li key={id}>
-                                            <Link href={url}>{title}</Link>
+                                            <Link href={buildMenuHref(url)}>{title}</Link>
                                           </li>
                                         ))}
                                       </ul>

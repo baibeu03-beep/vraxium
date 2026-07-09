@@ -7,6 +7,7 @@ import { Autoplay } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { getHeaderThemeAccent } from "@/lib/cluster-route";
 import { appendDemoQuery } from "@/lib/appendDemoQuery";
+import { buildOrgNavHref } from "@/lib/orgNav";
 // Define the type for the game object
 interface Game {
   id: number;
@@ -28,37 +29,10 @@ const games: Game[] = [
   { id: 8, image: "/images/0/side_OK.png", href: "/index-two-ok" },
   { id: 9, image: "/images/0/side_PX.png", href: "/index-two-px" },
 ];
-// 동물별 organization slug 매핑.
-// 고슴도치(/index-two-px) → phalanx · 사슴(/index-two-ec) → encre · 호랑이(/index-two-ok) → oranke
-const KNOWN_ORG_SLUGS = ["phalanx", "encre", "oranke"] as const;
-type OrgSlug = typeof KNOWN_ORG_SLUGS[number];
-
-const PATH_TO_ORG: Record<string, OrgSlug> = {
-  "index-two-px": "phalanx",
-  "index-two-ec": "encre",
-  "index-two-ok": "oranke",
-};
-
-const isOrgSlug = (v: string | null | undefined): v is OrgSlug =>
-  !!v && (KNOWN_ORG_SLUGS as readonly string[]).includes(v);
-
-const resolveCurrentOrg = (pathname: string | null, orgParam: string | null): OrgSlug | null => {
-  if (isOrgSlug(orgParam)) return orgParam;
-  if (!pathname) return null;
-  for (const [seg, slug] of Object.entries(PATH_TO_ORG)) {
-    if (pathname.includes(`/${seg}`)) return slug;
-  }
-  return null;
-};
-
 const Sidebar = () => {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const currentOrg = useMemo(
-    () => resolveCurrentOrg(pathname ?? null, searchParams?.get("org") ?? null),
-    [pathname, searchParams]
-  );
   // 조직 선택 슬라이더 육각형 테두리 색 — 현재 org(쿼리>cluster slug>없음)에 따라 결정.
   // SoT = 헤더 포인트 컬러와 동일한 공용 getHeaderThemeAccent(EC #FF4B70 / OK #FAAB07 /
   // PX #1E9503). org 미검출이면 null → CSS 변수 미주입 → 기본 회색 테두리 유지.
@@ -66,14 +40,19 @@ const Sidebar = () => {
     () => getHeaderThemeAccent(pathname ?? null, searchParams?.get("org") ?? null),
     [pathname, searchParams]
   );
-  // 테스트 유저(데모) 모드 컨텍스트(demoUserId/admin=true/demoUserName/org)를 사이드바
-  // 네비게이션 전 구간에 유지한다(공통 헬퍼 lib/appendDemoQuery). 진입 후 중간 페이지를
-  // 거치며 demoUserId 가 끊기면 타 크루 카드에서 평판 작성이 "로그인이 필요합니다" 로 막힌다.
-  // 기본(/ · /home 등)에서는 상단/하단 원형 아이콘(주간 랭킹·크루·졸업 절차·커리어 레쥬메·
-  // 지갑·설정·로그아웃)이 클릭 시 페이지 이동을 하지 않는다(모두 onClick preventDefault).
-  // href/aria 는 유지해 hover 효과와 접근성 라벨만 남긴다.
-  const crewsHref = appendDemoQuery(currentOrg ? `/crews?org=${currentOrg}` : "/crews", searchParams);
-  const weeklyRankingHref = appendDemoQuery(currentOrg ? `/weekly-ranking?org=${currentOrg}` : "/weekly-ranking", searchParams);
+  // /crews · /weekly-ranking 로 향하는 사이드바 링크는 모두 공통 헬퍼(buildOrgNavHref)를
+  // 거친다 — 현재 org(?org= > cluster/랜딩 path suffix)와 mode/actAsTestUserId, 그리고
+  // 테스트 유저 컨텍스트(demoUserId/admin/demoUserName, appendDemoQuery)를 전 구간 유지한다.
+  // 진입 후 중간 페이지에서 org/demoUserId 가 끊기면 org 없는 안내 화면으로 떨어지거나
+  // 타 크루 카드 평판 작성이 "로그인이 필요합니다" 로 막힌다. 일반/테스트 모드가 동일 로직.
+  // 기본(/ · /home 등)에서는 상단/하단 원형 아이콘이 클릭 시 이동을 하지 않는다
+  // (모두 onClick preventDefault). href/aria 는 유지해 hover 효과와 접근성 라벨만 남긴다.
+  const crewsNavHref = buildOrgNavHref("/crews/", pathname, searchParams);
+  const weeklyRankingNavHref = buildOrgNavHref("/weekly-ranking/", pathname, searchParams);
+  // 첫 진입 화면(/ · /home)에서 preventDefault 로 이동을 막는 1·2번 아이콘의 표시용 href.
+  // 값은 cosmetic(클릭 시 이동 안 함)이라 nav href 를 그대로 재사용한다.
+  const crewsHref = crewsNavHref;
+  const weeklyRankingHref = weeklyRankingNavHref;
 
   // 첫 진입 화면(/ · /home)을 제외한 모든 고객 앱 페이지에서 상단 4개 링크 아이콘을 원본
   // 템플릿 아이콘으로 복원하고 1·2번째만 실제 이동을 허용한다. / · /home 에서는 기존 동작
@@ -85,24 +64,6 @@ const Sidebar = () => {
   const normalizedPath = (pathname ?? "/").replace(/\/+$/, "");
   const isFirstEntryHome = normalizedPath === "" || normalizedPath === "/home";
   const applyCustomNav = !isFirstEntryHome;
-
-  // 링크 생성 유틸 — 일반/테스트 모드가 갈라지지 않도록 두 아이콘이 동일 함수를 쓴다.
-  //   · org : 경로(index-two-*)로만 결정되는 페이지도 있어 currentOrg 를 명시로 싣는다(?org= 미존재 시).
-  //   · mode / actAsTestUserId : URL 에 있을 때만 그대로 이어붙인다(운영/일반 모드면 no-op).
-  //   · demoUserId/admin/demoUserName : 공통 헬퍼 appendDemoQuery 가 유지(테스트 유저 컨텍스트).
-  const TEST_PASSTHROUGH_KEYS = ["mode", "actAsTestUserId"] as const;
-  const buildNavHref = (base: string) => {
-    const params = new URLSearchParams();
-    if (currentOrg) params.set("org", currentOrg);
-    for (const key of TEST_PASSTHROUGH_KEYS) {
-      const value = searchParams?.get(key);
-      if (value) params.set(key, value);
-    }
-    const qs = params.toString();
-    return appendDemoQuery(qs ? `${base}?${qs}` : base, searchParams);
-  };
-  const crewsNavHref = buildNavHref("/crews/");
-  const weeklyRankingNavHref = buildNavHref("/weekly-ranking/");
 
   return (
     <aside

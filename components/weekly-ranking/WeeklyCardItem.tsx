@@ -3,8 +3,10 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import Tilt from "react-parallax-tilt";
 import type { WeeklyCardCrew, WeeklyCardData, RestReason } from "@/constants/dummyData/weekly-card-dummy";
+import { buildOrgNavHref, type OrgSlug } from "@/lib/orgNav";
 
 type CrewRow = WeeklyCardCrew & { isPlaceholder?: boolean };
 
@@ -132,10 +134,17 @@ interface Props {
 }
 
 export default function WeeklyCardItem({ data, org = null }: Props) {
-  // 상세 페이지 경로 — /weekly-ranking/[weekId]?org=. org 미상이면 org 쿼리 생략.
-  const detailHref = `/weekly-ranking/${encodeURIComponent(data.id)}${
-    org ? `?org=${encodeURIComponent(org)}` : ""
-  }`;
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // 상세 페이지 경로 — /weekly-ranking/[weekId]?org=. 공통 헬퍼로 org 와 현재 쿼리
+  // (mode/actAsTestUserId + 테스트 유저 컨텍스트)를 유지한다. org prop 이 없으면
+  // 현재 URL(?org=)에서 해석한다.
+  const detailHref = buildOrgNavHref(
+    `/weekly-ranking/${encodeURIComponent(data.id)}`,
+    pathname,
+    searchParams,
+    { org: org as OrgSlug | null },
+  );
   // 썸네일 이미지 로드 실패(매칭된 경로가 디스크에 없음) → placeholder 폴백 유지.
   const [thumbError, setThumbError] = useState(false);
   const isOfficialRest =

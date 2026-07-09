@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
+import { buildOrgNavHref, type OrgSlug } from "@/lib/orgNav";
 import { WEEKLY_CARD_DUMMY, type WeeklyCardData, type ChampionCrew, type WeeklyLeagueMvp, type CrewRankShowcase } from "@/constants/dummyData/weekly-card-dummy";
 import { isDemoMode } from "@/utils/isDemoMode";
 import { getRankingThemeForSeason, getRankingThemeVars } from "@/lib/rankingTheme";
@@ -151,6 +153,8 @@ interface WeeklyDetailContentProps {
 type LoadState = "loading" | "ready" | "notfound";
 
 export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContentProps) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [card, setCard] = useState<WeeklyCardData | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   // 대시보드 Progress Bar 진입 애니메이션 트리거(0% → 목표%).
@@ -302,7 +306,11 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
     [org, card?.seasonName],
   );
 
-  const backHref = org ? `/weekly-ranking?org=${encodeURIComponent(org)}` : "/weekly-ranking";
+  // 목록으로 돌아가기 — 공통 헬퍼로 org 와 현재 쿼리(mode/actAsTestUserId + 테스트 유저
+  // 컨텍스트)를 유지한다. org 미상이면 현재 URL(?org=)에서 해석.
+  const backHref = buildOrgNavHref("/weekly-ranking", pathname, searchParams, {
+    org: org as OrgSlug | null,
+  });
 
   // ── 로딩 / 미발견 상태 ──
   if (state === "loading") {
