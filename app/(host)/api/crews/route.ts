@@ -572,9 +572,14 @@ export async function GET(request: Request) {
       return { p, universityMajor, dgs, approvedSnap, name: p.display_name ?? "-" };
     });
 
-    // 4) 서버측 필터: suspended 항상 제외 + 이름(완전일치)·학교명(부분일치)·상태.
+    // 4) 서버측 필터: suspended 항상 제외 + 이름(부분일치, 대소문자 무시)·학교명(부분일치)·상태.
+    //    이름은 contains match — 1글자 성씨('김','이'...)·영문 case-insensitive 검색 지원.
+    //    nameQuery 는 이미 trim 됨(line 457). raw display_name(r.name) 기준으로 매칭한다.
     let filtered = filterable.filter((r) => r.dgs !== "suspended");
-    if (nameQuery) filtered = filtered.filter((r) => r.name === nameQuery);
+    if (nameQuery) {
+      const nq = nameQuery.toLowerCase();
+      filtered = filtered.filter((r) => r.name.toLowerCase().includes(nq));
+    }
     if (schoolQuery) filtered = filtered.filter((r) => r.universityMajor.includes(schoolQuery));
     if (statusParam === "활동 중") filtered = filtered.filter((r) => r.dgs !== "graduated");
     else if (statusParam === "활동 졸업") filtered = filtered.filter((r) => r.dgs === "graduated");

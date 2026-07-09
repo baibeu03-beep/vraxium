@@ -596,7 +596,7 @@ function CrewsContent() {
                   <input
                     className="filter-sheet-select"
                     type="text"
-                    placeholder="이름 검색 (완전일치)"
+                    placeholder="이름 검색 (부분일치)"
                     maxLength={6}
                     value={draftName}
                     onChange={(e) => setDraftName(e.target.value)}
