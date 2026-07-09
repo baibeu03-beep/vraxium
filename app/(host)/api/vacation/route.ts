@@ -10,12 +10,111 @@ import {
   areWeeksAdjacent,
   isBeforeVacationDeadline,
   isTransitionWeekNumber,
+  isWeekFulfilled,
+  resolveCancelState,
+  addDaysIso,
+  isoToKstMs,
   MAX_VACATION_WEEKS,
   seasonWeekCount,
   VACATION_REASON_MAX,
+  CANCEL_BLOCK_PRESTART_MESSAGE,
+  CANCEL_BLOCK_FULFILLED_MESSAGE,
   kstMsToIso,
   nowKstMs,
 } from "@/lib/vacationWeeks";
+import { getSeasonForDate } from "@/lib/seasonCalendar";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const WEEK_MS = 7 * 24 * 3_600_000;
+
+// 주차 시작일 → "26년 - 여름 - N주차" 라벨(시즌 캘린더 기반, DB 조인 불필요).
+function weekLabelOf(weekStart: string): string {
+  const season = getSeasonForDate(weekStart);
+  if (!season) return weekStart;
+  const idx = Math.floor((isoToKstMs(weekStart) - isoToKstMs(season.startDate)) / WEEK_MS) + 1;
+  return `${String(season.year).slice(2)}년 - ${season.type} - ${idx}주차`;
+}
+
+type VacationRow = {
+  id: string;
+  group_id: string | null;
+  org: string;
+  season_key: string;
+  week_start_date: string;
+  reason: string | null;
+  status: string;
+  created_at: string;
+};
+
+type MyApplication = {
+  groupId: string;
+  displayStatus: "휴식 신청" | "휴식 승인" | "휴식 이행";
+  category: "정상";
+  weeks: { weekStartDate: string; label: string }[];
+  spanStart: string;
+  spanEnd: string;
+  reason: string | null;
+  createdAt: string;
+  cancelState: "cancelable" | "prestart" | "fulfilled";
+};
+
+// pending/approved 주차 행들을 group_id(없으면 id) 단위 "신청 건"으로 묶고,
+// 서버 시각 기준 진행 상태·취소 상태·누적/예정 주차 수를 산출한다.
+function buildMyApplications(rows: VacationRow[], now: number): {
+  applications: MyApplication[];
+  fulfilledWeeks: number;
+  upcomingWeeks: number;
+} {
+  const groups = new Map<string, VacationRow[]>();
+  for (const r of rows) {
+    const key = r.group_id ?? r.id;
+    const arr = groups.get(key) ?? [];
+    arr.push(r);
+    groups.set(key, arr);
+  }
+
+  let fulfilledWeeks = 0;
+  let upcomingWeeks = 0;
+  const applications: MyApplication[] = [];
+
+  for (const [groupId, grp] of Array.from(groups.entries())) {
+    const sortedRows = [...grp].sort((a, b) => a.week_start_date.localeCompare(b.week_start_date));
+    const weeks = sortedRows.map((r) => ({ weekStartDate: r.week_start_date, label: weekLabelOf(r.week_start_date) }));
+    const earliest = sortedRows[0].week_start_date;
+    const latest = sortedRows[sortedRows.length - 1].week_start_date;
+    const approved = sortedRows.every((r) => r.status === "approved");
+
+    // 누적(이행)/예정(승인) 주차 수 — approved 건의 각 주차를 월요일 00:01 기준 분류.
+    if (approved) {
+      for (const r of sortedRows) {
+        if (isWeekFulfilled(r.week_start_date, now)) fulfilledWeeks += 1;
+        else upcomingWeeks += 1;
+      }
+    }
+
+    const displayStatus: MyApplication["displayStatus"] = !approved
+      ? "휴식 신청"
+      : isWeekFulfilled(earliest, now)
+        ? "휴식 이행"
+        : "휴식 승인";
+
+    applications.push({
+      groupId,
+      displayStatus,
+      category: "정상",
+      weeks,
+      spanStart: earliest,
+      spanEnd: addDaysIso(latest, 6),
+      reason: sortedRows[0].reason,
+      createdAt: sortedRows[0].created_at,
+      cancelState: resolveCancelState(earliest, now),
+    });
+  }
+
+  // 최신 주차가 위로(신청 주차명 기준 내림차순).
+  applications.sort((a, b) => b.spanEnd.localeCompare(a.spanEnd));
+  return { applications, fulfilledWeeks, upcomingWeeks };
+}
 
 export const dynamic = "force-dynamic";
 // Next Data Cache 가 supabase GET 을 캐시하지 않도록(테스트/실시간 주차 판정 stale 방지).
@@ -85,12 +184,13 @@ async function computeEligibleWeeks(
 
   const currentSeasonKey = (currentWeek as WeekRow | null)?.season_key ?? null;
 
-  // 본인이 이미 신청한 주차(취소/거절 제외)의 시작일 집합 — 옵션에서 제외.
+  // 본인이 유효 신청(pending/approved)한 주차의 시작일 집합 — 옵션에서 제외.
+  // (cancelled/rejected 는 다시 신청 가능하므로 제외하지 않는다.)
   const { data: appliedRows } = await supabase
     .from("vacation_requests")
     .select("week_start_date, status")
     .eq("user_id", userId)
-    .neq("status", "rejected");
+    .in("status", ["pending", "approved"]);
   const appliedStartDates = new Set<string>(
     ((appliedRows as { week_start_date: string }[] | null) ?? []).map((r) => r.week_start_date),
   );
@@ -163,25 +263,25 @@ export async function GET(request: Request) {
     const supabase = createAdminClient();
     const { eligible, currentSeasonKey } = await computeEligibleWeeks(supabase, userId);
 
-    // 내 휴식 신청 목록(MY 휴식 주차 섹션용) — 최신순.
+    // 내 휴식 신청 목록(MY 휴식 주차) — pending/approved 만, group_id 단위로 묶음.
     const { data: myRows } = await supabase
       .from("vacation_requests")
-      .select("id, org, season_key, week_id, week_start_date, reason, status, created_at")
+      .select("id, group_id, org, season_key, week_start_date, reason, status, created_at")
       .eq("user_id", userId)
-      .order("week_start_date", { ascending: true });
+      .in("status", ["pending", "approved"]);
 
-    const myRequests = ((myRows as Record<string, unknown>[] | null) ?? []).map((r) => ({
-      id: r.id,
-      org: r.org,
-      seasonKey: r.season_key,
-      weekId: r.week_id,
-      weekStartDate: r.week_start_date,
-      reason: r.reason,
-      status: r.status,
-      createdAt: r.created_at,
-    }));
+    const { applications, fulfilledWeeks, upcomingWeeks } = buildMyApplications(
+      (myRows as VacationRow[] | null) ?? [],
+      nowKstMs(),
+    );
 
-    return NextResponse.json({ success: true, currentSeasonKey, eligibleWeeks: eligible, myRequests });
+    return NextResponse.json({
+      success: true,
+      currentSeasonKey,
+      eligibleWeeks: eligible,
+      myApplications: applications,
+      summary: { fulfilledWeeks, upcomingWeeks },
+    });
   } catch (err) {
     console.error("[vacation] GET 오류:", err);
     return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
@@ -256,6 +356,8 @@ export async function POST(request: Request) {
     }
 
     const now = new Date().toISOString();
+    // 한 번의 신청(연속 1~3주)을 하나의 group_id 로 묶는다(MY 목록/취소 단위).
+    const groupId = crypto.randomUUID();
     const rows = resolved.map((w) => ({
       user_id: userId,
       org,
@@ -264,6 +366,7 @@ export async function POST(request: Request) {
       week_start_date: w!.startDate,
       reason,
       status: "pending",
+      group_id: groupId,
       created_at: now,
       updated_at: now,
     }));
@@ -271,7 +374,7 @@ export async function POST(request: Request) {
     const { data: inserted, error: insertError } = await supabase
       .from("vacation_requests")
       .insert(rows)
-      .select("id, org, season_key, week_id, week_start_date, reason, status, created_at");
+      .select("id, group_id, org, season_key, week_id, week_start_date, reason, status, created_at");
 
     if (insertError) {
       // 중복(UNIQUE user_id+week_id) → 이미 신청됨.
@@ -288,6 +391,78 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, created: inserted ?? [] });
   } catch (err) {
     console.error("[vacation] POST 오류:", err);
+    return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH: 휴식 신청 취소. body = { action: "cancel", requestId: <group_id> }.
+//   status='cancelled' 로 전이(hard delete 대신 이력 보존). 취소 가능 시점을
+//   서버가 반드시 재검증한다(가장 이른 주차 기준). 프론트 차단만 신뢰하지 않는다.
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json().catch(() => null);
+    const actor = await resolveWriteActor(request, body);
+    if (!actor.ok) return actor.response;
+    const userId = actor.userId;
+
+    if (body?.action !== "cancel") {
+      return NextResponse.json({ error: "지원하지 않는 action 입니다." }, { status: 400 });
+    }
+    const requestId = body?.requestId;
+    if (typeof requestId !== "string" || !UUID_RE.test(requestId)) {
+      return NextResponse.json({ error: "유효한 requestId 가 필요합니다." }, { status: 400 });
+    }
+
+    const supabase = createAdminClient();
+
+    // 본인 소유 + 취소 가능 상태(pending/approved) 인 신청 건의 주차 행들.
+    const { data: rows } = await supabase
+      .from("vacation_requests")
+      .select("id, week_start_date, status")
+      .eq("user_id", userId)
+      .eq("group_id", requestId)
+      .in("status", ["pending", "approved"]);
+
+    const groupRows = (rows as { id: string; week_start_date: string; status: string }[] | null) ?? [];
+    if (groupRows.length === 0) {
+      return NextResponse.json({ error: "취소할 휴식 신청을 찾을 수 없습니다." }, { status: 404 });
+    }
+
+    // 가장 이른 주차 기준으로 취소 가능 시점 재검증.
+    const earliest = groupRows.reduce(
+      (min, r) => (r.week_start_date < min ? r.week_start_date : min),
+      groupRows[0].week_start_date,
+    );
+    const state = resolveCancelState(earliest, nowKstMs());
+    if (state === "prestart") {
+      return NextResponse.json(
+        { error: CANCEL_BLOCK_PRESTART_MESSAGE, code: "CANCEL_PRESTART" },
+        { status: 409 },
+      );
+    }
+    if (state === "fulfilled") {
+      return NextResponse.json(
+        { error: CANCEL_BLOCK_FULFILLED_MESSAGE, code: "CANCEL_FULFILLED" },
+        { status: 409 },
+      );
+    }
+
+    const { error: updateError } = await supabase
+      .from("vacation_requests")
+      .update({ status: "cancelled", updated_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .eq("group_id", requestId)
+      .in("status", ["pending", "approved"]);
+
+    if (updateError) {
+      console.error("[vacation] PATCH cancel 오류:", updateError);
+      return NextResponse.json({ error: "휴식 취소에 실패했습니다." }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, cancelledGroupId: requestId });
+  } catch (err) {
+    console.error("[vacation] PATCH 오류:", err);
     return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
   }
 }

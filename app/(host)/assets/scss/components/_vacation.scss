@@ -356,39 +356,157 @@
     background: var(--vac-surface);
     border: 1px solid var(--vac-border);
     border-radius: 18px;
-    padding: 22px 26px 24px;
+    padding: 24px 26px 26px;
   }
-  .vacation-my__area { min-height: 60px; }
-  .vacation-my__list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .vacation-my__item {
+  .vacation-my__head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 14px 16px;
-    border-radius: 12px;
-    background: var(--vac-surface-2);
-    border: 1px solid var(--vac-border);
-    font-size: 15.5px;
+    flex-wrap: wrap;
+    gap: 10px 20px;
+    margin-bottom: 18px;
   }
-  .vacation-my__range { font-weight: 600; color: var(--vac-text); font-variant-numeric: tabular-nums; }
-  .vacation-my__status {
-    flex: 0 0 auto;
+  .vacation-my__title { margin-bottom: 0; }
+  .vacation-my__stats { display: flex; flex-wrap: wrap; gap: 10px 22px; }
+  .vacation-my__stat {
+    position: relative;
+    padding-left: 14px;
+    font-size: 15px;
+    color: var(--vac-text-muted);
+    &::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 50%;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--vac-accent);
+      transform: translateY(-50%);
+    }
+    b { color: var(--vac-text); font-size: 17px; font-weight: 800; margin: 0 2px; }
+  }
+  .vacation-my__area { min-height: 56px; }
+
+  // ── badge (진행 상태 / 분류) ──
+  .vacation-badge {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
     font-size: 13px;
     font-weight: 700;
-    border-radius: 999px;
-    padding: 5px 12px;
     line-height: 1;
-    &.is-pending { background: var(--vac-accent-soft); color: var(--vac-accent); border: 1px solid var(--vac-accent); }
-    &.is-approved { background: rgba(46, 160, 67, 0.15); color: #45cf5a; border: 1px solid rgba(69, 207, 90, 0.7); }
-    &.is-rejected { background: rgba(224, 91, 91, 0.15); color: #e97070; border: 1px solid rgba(233, 112, 112, 0.7); }
+    border-radius: 8px;
+    padding: 6px 11px;
+    // 상태색은 org 무관 semantic(구분성 우선).
+    &.is-status-applied  { background: rgba(139, 127, 255, 0.16); color: #b1a6ff; border: 1px solid rgba(139, 127, 255, 0.5); }
+    &.is-status-approved { background: rgba(56, 150, 220, 0.16); color: #6bb8f2; border: 1px solid rgba(56, 150, 220, 0.5); }
+    &.is-status-fulfilled{ background: rgba(46, 160, 90, 0.16); color: #58c68c; border: 1px solid rgba(46, 160, 90, 0.5); }
+    &.is-cat-normal { background: rgba(60, 180, 110, 0.14); color: #79c98f; border: 1px solid rgba(60, 180, 110, 0.45); }
+    &.is-cat-urgent { background: rgba(220, 90, 90, 0.14); color: #e8837f; border: 1px solid rgba(220, 90, 90, 0.45); }
+  }
+
+  // ── 신청 주차명(멀티 주차 태그 스택) ──
+  .vacation-weeknames { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+  .vacation-weekname {
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--vac-text);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  // ── 테이블 ──
+  .vacation-table-wrap { width: 100%; overflow-x: auto; }
+  .vacation-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+    thead th {
+      text-align: left;
+      font-weight: 700;
+      color: var(--vac-text-muted);
+      font-size: 14.5px;
+      padding: 12px 14px;
+      border-bottom: 2px solid var(--vac-border-strong);
+      white-space: nowrap;
+    }
+    tbody td {
+      padding: 16px 14px;
+      border-bottom: 1px solid var(--vac-border);
+      vertical-align: top;
+      color: var(--vac-text);
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: rgba(255, 255, 255, 0.02); }
+  }
+  .vacation-table__nowrap { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--vac-text-muted); }
+  .vacation-table__reason-col { width: 26%; }
+  .vacation-table__empty {
+    text-align: center;
+    color: var(--vac-text-muted);
+    padding: 40px 14px !important;
+    font-size: 15px;
+  }
+  .vacation-card-empty {
+    list-style: none;
+    text-align: center;
+    color: var(--vac-text-muted);
+    font-size: 14.5px;
+    padding: 30px 14px;
+    border: 1px dashed var(--vac-border-strong);
+    border-radius: 14px;
+  }
+  .vacation-reason-cell {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-width: 320px;
+    line-height: 1.5;
+    color: var(--vac-text-muted);
+    word-break: break-word;
+  }
+
+  // ── 휴식 취소 버튼(org 대표색 아웃라인) ──
+  .vacation-btn--cancel {
+    height: 38px;
+    padding: 0 16px;
+    font-size: 14px;
+    background: transparent;
+    color: var(--vac-accent);
+    border: 1px solid var(--vac-accent);
+    &:hover:not(:disabled) { background: var(--vac-accent); color: var(--vac-accent-contrast); filter: none; }
+  }
+
+  // ── 모바일 카드(기본 숨김, 모바일에서 표시) ──
+  .vacation-cards { display: none; }
+
+  // ── 페이지네이션 ──
+  .vacation-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    margin-top: 20px;
+  }
+  .vacation-page-btn {
+    min-width: 36px;
+    height: 36px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+    border: 1px solid var(--vac-border-strong);
+    background: transparent;
+    color: var(--vac-text);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease;
+    i { font-size: 17px; }
+    &:hover:not(:disabled):not(.is-active) { border-color: var(--vac-accent); }
+    &.is-active { background: var(--vac-accent); border-color: var(--vac-accent); color: var(--vac-accent-contrast); }
+    &:disabled { opacity: 0.4; cursor: not-allowed; }
   }
 
   .vacation-empty-text {
@@ -430,5 +548,38 @@
     // 드롭다운 위 / 선택 버튼 아래 세로 배치.
     .vacation-select-row { flex-direction: column; }
     .vacation-btn--select { width: 100%; }
+
+    // MY 목록: 테이블 → 카드형.
+    .vacation-my { padding: 20px 16px 22px; }
+    .vacation-my__stats { gap: 8px 18px; }
+    .vacation-table-wrap { display: none; }
+    .vacation-cards {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .vacation-card-item {
+      background: var(--vac-surface-2);
+      border: 1px solid var(--vac-border);
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .vacation-card-item__top { display: flex; gap: 8px; }
+    .vacation-card-item__meta {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      div { display: flex; gap: 10px; }
+      dt { flex: 0 0 68px; color: var(--vac-text-muted); font-size: 13.5px; }
+      dd { margin: 0; font-size: 14px; color: var(--vac-text); word-break: break-word; }
+    }
+    .vacation-card-item__cancel { width: 100%; height: 44px; }
   }
 }

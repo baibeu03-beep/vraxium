@@ -11,6 +11,8 @@ import {
   MAX_VACATION_WEEKS,
   NON_CONSECUTIVE_POPUP_MESSAGE,
   VACATION_REASON_MAX,
+  CANCEL_BLOCK_PRESTART_MESSAGE,
+  CANCEL_BLOCK_FULFILLED_MESSAGE,
 } from "@/lib/vacationWeeks";
 
 const KNOWN_ORGS = ["phalanx", "encre", "oranke"] as const;
@@ -39,22 +41,34 @@ interface EligibleWeek {
   endDate: string;
 }
 
-interface MyRequest {
-  id: string;
-  org: string;
-  seasonKey: string;
-  weekId: string;
-  weekStartDate: string;
+type DisplayStatus = "휴식 신청" | "휴식 승인" | "휴식 이행";
+type CancelState = "cancelable" | "prestart" | "fulfilled";
+
+interface MyApplication {
+  groupId: string;
+  displayStatus: DisplayStatus;
+  category: "정상";
+  weeks: { weekStartDate: string; label: string }[];
+  spanStart: string;
+  spanEnd: string;
   reason: string | null;
-  status: "pending" | "approved" | "rejected";
   createdAt: string;
+  cancelState: CancelState;
 }
 
-const STATUS_LABEL: Record<MyRequest["status"], string> = {
-  pending: "승인 대기",
-  approved: "승인",
-  rejected: "반려",
+interface VacationSummary {
+  fulfilledWeeks: number;
+  upcomingWeeks: number;
+}
+
+// 진행 상태 badge 클래스 키.
+const STATUS_KEY: Record<DisplayStatus, string> = {
+  "휴식 신청": "applied",
+  "휴식 승인": "approved",
+  "휴식 이행": "fulfilled",
 };
+
+const PAGE_SIZE = 15;
 
 // 선택된(정렬된) 주차 시작일들에서 index 0 부터 연속된 구간만 남긴다.
 // (중간 주차 제거로 끊긴 경우 앞쪽 연속 블록만 유지 → 항상 연속 보장)
@@ -93,6 +107,20 @@ function dotSelectedRange(starts: string[]): string {
   return `${dotDate(s[0])} ~ ${dotDate(addDaysIso(s[s.length - 1], 6))}`;
 }
 
+// "2026년 8월 17일" (신청 기간용, YYYY-MM-DD 입력).
+function longDate(iso: string): string {
+  return `${+iso.slice(0, 4)}년 ${+iso.slice(5, 7)}월 ${+iso.slice(8, 10)}일`;
+}
+// "2026년 7월 9일 오후 2:00" (신청 시점용, created_at 타임스탬프를 KST 로 변환).
+function longDateTime(ts: string): string {
+  const kst = new Date(new Date(ts).getTime() + 9 * 3_600_000);
+  const h = kst.getUTCHours();
+  const ampm = h < 12 ? "오전" : "오후";
+  const h12 = h % 12 || 12;
+  const mm = String(kst.getUTCMinutes()).padStart(2, "0");
+  return `${kst.getUTCFullYear()}년 ${kst.getUTCMonth() + 1}월 ${kst.getUTCDate()}일 ${ampm} ${h12}:${mm}`;
+}
+
 function VacationContent() {
   const searchParams = useSearchParams();
   const orgParam = searchParams?.get("org") ?? null;
@@ -102,11 +130,14 @@ function VacationContent() {
 
   const [loading, setLoading] = useState(true);
   const [eligibleWeeks, setEligibleWeeks] = useState<EligibleWeek[]>([]);
-  const [myRequests, setMyRequests] = useState<MyRequest[]>([]);
+  const [myApplications, setMyApplications] = useState<MyApplication[]>([]);
+  const [summary, setSummary] = useState<VacationSummary>({ fulfilledWeeks: 0, upcomingWeeks: 0 });
   const [dropdownStart, setDropdownStart] = useState<string>("");
   const [selected, setSelected] = useState<string[]>([]);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [myPage, setMyPage] = useState(1);
+  const [cancelingId, setCancelingId] = useState<string | null>(null);
 
   // 데이터 로드 — 일반/테스트 유저 모두 동일 API(demoUserId suffix 만 조건부 부착).
   const loadData = useCallback(async () => {
@@ -114,15 +145,18 @@ function VacationContent() {
       const res = await fetch(demo.appendDemoUserParams("/api/vacation"), { cache: "no-store" });
       if (!res.ok) {
         setEligibleWeeks([]);
-        setMyRequests([]);
+        setMyApplications([]);
+        setSummary({ fulfilledWeeks: 0, upcomingWeeks: 0 });
         return;
       }
       const json = await res.json();
       setEligibleWeeks((json.eligibleWeeks as EligibleWeek[]) ?? []);
-      setMyRequests((json.myRequests as MyRequest[]) ?? []);
+      setMyApplications((json.myApplications as MyApplication[]) ?? []);
+      setSummary((json.summary as VacationSummary) ?? { fulfilledWeeks: 0, upcomingWeeks: 0 });
     } catch {
       setEligibleWeeks([]);
-      setMyRequests([]);
+      setMyApplications([]);
+      setSummary({ fulfilledWeeks: 0, upcomingWeeks: 0 });
     } finally {
       setLoading(false);
     }
@@ -207,6 +241,51 @@ function VacationContent() {
       setSubmitting(false);
     }
   }, [selected, submitting, confirm, alert, demo, org, reason, loadData]);
+
+  // 휴식 취소 — 취소 불가 상태면 서버 호출 없이 즉시 안내 팝업, 가능하면 확인 후 PATCH.
+  //   서버가 시점을 재검증하므로(레이스) 200 이 아니면 서버 메시지를 그대로 노출한다.
+  const handleCancel = useCallback(
+    async (app: MyApplication) => {
+      if (cancelingId) return;
+      if (app.cancelState === "prestart") {
+        await alert(CANCEL_BLOCK_PRESTART_MESSAGE, { variant: "B" });
+        return;
+      }
+      if (app.cancelState === "fulfilled") {
+        await alert(CANCEL_BLOCK_FULFILLED_MESSAGE, { variant: "B" });
+        return;
+      }
+      const ok = await confirm("휴식 신청을 취소하시겠습니까?", { variant: "A" });
+      if (!ok) return;
+      setCancelingId(app.groupId);
+      try {
+        const res = await fetch(demo.appendDemoUserParams("/api/vacation"), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "cancel", requestId: app.groupId }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          await alert(json?.error ?? "휴식 취소에 실패했습니다.", { variant: "B" });
+          return;
+        }
+        await loadData();
+        await alert("휴식 신청이 취소되었습니다.", { variant: "B" });
+      } catch {
+        await alert("휴식 취소 중 오류가 발생했습니다.", { variant: "B" });
+      } finally {
+        setCancelingId(null);
+      }
+    },
+    [cancelingId, confirm, alert, demo, loadData],
+  );
+
+  // 페이지네이션(15개/페이지). 목록이 줄어들면 현재 페이지를 보정.
+  const totalMyPages = Math.max(1, Math.ceil(myApplications.length / PAGE_SIZE));
+  useEffect(() => {
+    if (myPage > totalMyPages) setMyPage(totalMyPages);
+  }, [myPage, totalMyPages]);
+  const pagedApplications = myApplications.slice((myPage - 1) * PAGE_SIZE, myPage * PAGE_SIZE);
 
   const themeClass = org ? ORG_THEME_CLASS[org] : "";
 
@@ -358,24 +437,157 @@ function VacationContent() {
               </button>
             </div>
 
-            {/* MY 휴식 주차 (하단 전체 폭 — 영역 준비, 상세 미구현) */}
+            {/* MY 휴식 주차 (하단 전체 폭) */}
             <div className="vacation-my">
-              <div className="vacation-field__label">
-                <i className="ti ti-calendar-check" aria-hidden="true"></i>MY 휴식 주차
+              <div className="vacation-my__head">
+                <div className="vacation-field__label vacation-my__title">
+                  <i className="ti ti-calendar-check" aria-hidden="true"></i>MY 휴식 주차
+                </div>
+                <div className="vacation-my__stats">
+                  <span className="vacation-my__stat">
+                    누적 휴식 주차 <b>{summary.fulfilledWeeks}</b> 주
+                  </span>
+                  <span className="vacation-my__stat">
+                    예정 휴식 신청 <b>{summary.upcomingWeeks}</b> 주
+                  </span>
+                </div>
               </div>
+
+              {/* 데이터 0건·API 에러·마이그레이션 전이어도 테이블 골격(헤더)은 항상 렌더 */}
               <div className="vacation-my__area">
-                {myRequests.length === 0 ? (
-                  <p className="vacation-empty-text">아직 신청한 휴식이 없습니다.</p>
-                ) : (
-                  <ul className="vacation-my__list">
-                    {myRequests.map((r) => (
-                      <li key={r.id} className="vacation-my__item">
-                        <span className="vacation-my__range">{dotWeekRange(r.weekStartDate)}</span>
-                        <span className={`vacation-my__status is-${r.status}`}>{STATUS_LABEL[r.status]}</span>
+                  {/* 데스크톱 테이블 */}
+                  <div className="vacation-table-wrap">
+                    <table className="vacation-table">
+                      <thead>
+                        <tr>
+                          <th>진행 상태</th>
+                          <th>분류</th>
+                          <th>신청 주차명</th>
+                          <th>신청 기간</th>
+                          <th>신청 시점</th>
+                          <th className="vacation-table__reason-col">휴식 사유</th>
+                          <th>휴식 취소</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pagedApplications.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="vacation-table__empty">
+                              아직 신청한 휴식 주차가 없습니다.
+                            </td>
+                          </tr>
+                        ) : (
+                          pagedApplications.map((app) => (
+                          <tr key={app.groupId}>
+                            <td>
+                              <span className={`vacation-badge is-status-${STATUS_KEY[app.displayStatus]}`}>
+                                {app.displayStatus}
+                              </span>
+                            </td>
+                            <td>
+                              <span className="vacation-badge is-cat-normal">{app.category}</span>
+                            </td>
+                            <td>
+                              <div className="vacation-weeknames">
+                                {app.weeks.map((w) => (
+                                  <span key={w.weekStartDate} className="vacation-weekname">{w.label}</span>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="vacation-table__nowrap">
+                              {longDate(app.spanStart)} → {longDate(app.spanEnd)}
+                            </td>
+                            <td className="vacation-table__nowrap">{longDateTime(app.createdAt)}</td>
+                            <td>
+                              <span className="vacation-reason-cell" title={app.reason ?? ""}>
+                                {app.reason || "-"}
+                              </span>
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className="vacation-btn vacation-btn--cancel"
+                                onClick={() => handleCancel(app)}
+                                disabled={cancelingId === app.groupId}
+                              >
+                                {cancelingId === app.groupId ? "취소 중…" : "휴식 취소"}
+                              </button>
+                            </td>
+                          </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* 모바일 카드 */}
+                  <ul className="vacation-cards">
+                    {pagedApplications.length === 0 ? (
+                      <li className="vacation-card-empty">아직 신청한 휴식 주차가 없습니다.</li>
+                    ) : (
+                      pagedApplications.map((app) => (
+                      <li key={app.groupId} className="vacation-card-item">
+                        <div className="vacation-card-item__top">
+                          <span className={`vacation-badge is-status-${STATUS_KEY[app.displayStatus]}`}>
+                            {app.displayStatus}
+                          </span>
+                          <span className="vacation-badge is-cat-normal">{app.category}</span>
+                        </div>
+                        <div className="vacation-weeknames">
+                          {app.weeks.map((w) => (
+                            <span key={w.weekStartDate} className="vacation-weekname">{w.label}</span>
+                          ))}
+                        </div>
+                        <dl className="vacation-card-item__meta">
+                          <div><dt>신청 기간</dt><dd>{longDate(app.spanStart)} → {longDate(app.spanEnd)}</dd></div>
+                          <div><dt>신청 시점</dt><dd>{longDateTime(app.createdAt)}</dd></div>
+                          <div><dt>휴식 사유</dt><dd>{app.reason || "-"}</dd></div>
+                        </dl>
+                        <button
+                          type="button"
+                          className="vacation-btn vacation-btn--cancel vacation-card-item__cancel"
+                          onClick={() => handleCancel(app)}
+                          disabled={cancelingId === app.groupId}
+                        >
+                          {cancelingId === app.groupId ? "취소 중…" : "휴식 취소"}
+                        </button>
                       </li>
-                    ))}
+                      ))
+                    )}
                   </ul>
-                )}
+
+                  {totalMyPages > 1 && (
+                    <div className="vacation-pagination">
+                      <button
+                        type="button"
+                        className="vacation-page-btn"
+                        onClick={() => setMyPage((p) => Math.max(1, p - 1))}
+                        disabled={myPage <= 1}
+                        aria-label="이전 페이지"
+                      >
+                        <i className="ti ti-chevron-left" aria-hidden="true"></i>
+                      </button>
+                      {Array.from({ length: totalMyPages }, (_, i) => i + 1).map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          className={`vacation-page-btn${n === myPage ? " is-active" : ""}`}
+                          onClick={() => setMyPage(n)}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className="vacation-page-btn"
+                        onClick={() => setMyPage((p) => Math.min(totalMyPages, p + 1))}
+                        disabled={myPage >= totalMyPages}
+                        aria-label="다음 페이지"
+                      >
+                        <i className="ti ti-chevron-right" aria-hidden="true"></i>
+                      </button>
+                    </div>
+                  )}
               </div>
             </div>
           </div>

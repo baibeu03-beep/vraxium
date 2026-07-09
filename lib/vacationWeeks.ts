@@ -132,3 +132,52 @@ export const VACATION_REASON_MAX = 100;
 // 비연속 주차 추가 시 안내 문구.
 export const NON_CONSECUTIVE_POPUP_MESSAGE =
   "휴식 신청 1회 당 연속된 주차 3주까지 고를 수 있습니다";
+
+// ── 휴식 이행 / 취소 시점 규칙 (KST) ──────────────────────────────────────────
+// N주차(월요일 M):
+//   · 휴식 이행(fulfilled)  = M 월요일 00:01 이후.
+//   · 취소 가능             = (N-1)주 일요일 14:00(= M - 1일 + 14:00) 이전.
+//   · 취소 불가(prestart)   = 위 마감 ~ M 월요일 00:01 직전(다음 주 활동 곧 시작).
+//   · 취소 불가(fulfilled)  = M 월요일 00:01 이후(이미 진행됨).
+
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+
+// N주차 월요일 00:01(휴식 이행 시작) 의 KST ms.
+export function fulfilledThresholdKstMs(weekStartDate: string): number {
+  return isoToKstMs(weekStartDate) + 60_000;
+}
+
+// 해당 주차가 "휴식 이행" 상태인지(월요일 00:01 이후).
+export function isWeekFulfilled(weekStartDate: string, now: number = nowKstMs()): boolean {
+  return now >= fulfilledThresholdKstMs(weekStartDate);
+}
+
+// N주차 취소 마감 = (N-1)주 일요일 14:00 KST.
+export function cancelDeadlineKstMs(weekStartDate: string): number {
+  return isoToKstMs(weekStartDate) - DAY + 14 * HOUR;
+}
+
+export type VacationCancelState = "cancelable" | "prestart" | "fulfilled";
+
+/**
+ * 취소 가능 상태 판정. 다중 주차 신청 건은 "가장 이른 주차"(먼저 시작하는 주차)를
+ * 기준으로 삼는다 — 첫 주차가 시작되면 신청 건 전체를 취소할 수 없다.
+ *   · now < (N-1주 일요일 14:00)      → cancelable
+ *   · 그 이후 ~ N주차 월요일 00:01 전  → prestart (다음 주 활동 곧 시작)
+ *   · N주차 월요일 00:01 이후          → fulfilled (이미 진행)
+ */
+export function resolveCancelState(
+  earliestWeekStart: string,
+  now: number = nowKstMs(),
+): VacationCancelState {
+  if (now < cancelDeadlineKstMs(earliestWeekStart)) return "cancelable";
+  if (now < fulfilledThresholdKstMs(earliestWeekStart)) return "prestart";
+  return "fulfilled";
+}
+
+// 취소 불가 안내 문구.
+export const CANCEL_BLOCK_PRESTART_MESSAGE =
+  "준비된 다음 주 활동이 잠시 후 시작되기 때문에, 현 상태에서는 휴식을 취소할 수 없어요!";
+export const CANCEL_BLOCK_FULFILLED_MESSAGE =
+  "해당 주의 활동이 이미 진행되었기에, 휴식 취소가 불가능해요!";
