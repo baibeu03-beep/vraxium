@@ -43,6 +43,8 @@
   // 줄로 분기가 끝난다.
   --org-accent: #1E9503;
   --org-accent-soft: #B2FF8F;
+  // rgba() 합성용 rgb 트리플렛 — hex 변수는 rgba(var(--x), a) 로 못 쓰므로 별도 노출.
+  --org-accent-rgb: 30, 149, 3;
   --org-accent-glow: rgba(30, 149, 3, 0.45);
   --org-accent-soft-glow: rgba(178, 255, 143, 0.35);
   --org-gradient: linear-gradient(145deg, #1E9503, #B2FF8F);
@@ -137,8 +139,15 @@
 // 변경: fill · inset ring · stroke 만 색 치환. 외곽에 부드러운 glow 추가.
 // 보존: span(흰색 inner circle) · arrow(검정) · position · scroll·hover
 //       animation · SVG 구조 · 8px ring 두께.
+//
+// scope: `.cluster-px-theme`(=/cluster-*-px 라우트) + `.phalanx-theme`
+// (=/crews?org=phalanx · /weekly-ranking?org=phalanx 의 <main> 클래스).
+// 종전엔 `.cluster-px-theme` 만 매칭해 crews/weekly-ranking 팔랑크스에서
+// scroll-to-top 버튼이 골드로 남던 것을 교정. EC 는 _theme-tokens.scss:118
+// 의 `body:has(.encre-theme)` 가 crews/weekly-ranking 모두 커버.
 // =============================================================
-body:has(.cluster-px-theme) {
+body:has(.cluster-px-theme),
+body:has(.phalanx-theme) {
   .progress-wrap {
     background: #1E9503 !important;
     box-shadow:

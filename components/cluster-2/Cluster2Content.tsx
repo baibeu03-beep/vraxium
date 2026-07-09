@@ -2893,9 +2893,9 @@ const Cluster2Content = () => {
                   width: 20,
                   height: 20,
                   borderRadius: "50%",
-                  backgroundColor: "rgba(250, 171, 7, 1)",
+                  backgroundColor: accentInline,
                   zIndex: 2,
-                  boxShadow: "0 0 6px 2px rgba(250, 171, 7, 0.6)",
+                  boxShadow: `0 0 6px 2px ${accentInline}99`,
                 }}
               />
             )}
@@ -2935,9 +2935,9 @@ const Cluster2Content = () => {
                       width: 10,
                       height: 10,
                       borderRadius: "50%",
-                      backgroundColor: "rgba(250, 171, 7, 1)",
+                      backgroundColor: accentInline,
                       zIndex: 2,
-                      boxShadow: "0 0 6px 2px rgba(250, 171, 7, 0.6)",
+                      boxShadow: `0 0 6px 2px ${accentInline}99`,
                     }}
                   />
                 )}
@@ -3160,7 +3160,7 @@ const Cluster2Content = () => {
                               if (photo) setPreviewPhoto(photo);
                             }}
                           >
-                            {photo ? <img src={photo} alt={`사진 ${slotNumber}`} style={{ cursor: "pointer" }} /> : <i className="ti ti-photo-plus" style={{ fontSize: "32px", color: "rgba(255, 165, 0, 0.5)" }}></i>}
+                            {photo ? <img src={photo} alt={`사진 ${slotNumber}`} style={{ cursor: "pointer" }} /> : <i className="ti ti-photo-plus" style={{ fontSize: "32px", color: `${accentInline}80` }}></i>}
                           </div>
                           <div className="photo-actions">
                             <button

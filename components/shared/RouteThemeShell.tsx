@@ -3,18 +3,19 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
+import { ORGANIZATION_CONFIG } from "@/lib/cluster-route";
 
 const ROUTE_THEME_MAP: Record<string, { accent: string; name: string }> = {
-  // 사용자가 처음 접속하는 실제 기본 랜딩 화면(root "/") 및 /index-two 를
-  // 보라 계열 포인트 컬러로 변경. org 변형(-ec/-ok/-px)은 기존 색상 그대로 유지.
-  // root "/" 는 기존에 테마가 없어 --quaternary-color 기본값(#45f882 초록)을 그대로
-  // 노출했으므로, grape 테마를 부여해 Play Now/카드/슬라이더/사이드바/아이콘 등
-  // var(--quaternary-color) 기반 포인트 컬러를 일괄 보라(#e1c2f8/#bf7ff0)로 전환.
+  // 사용자가 처음 접속하는 실제 기본 랜딩 화면(root "/") 및 /index-two 는
+  // 보라(grape) 계열 포인트 컬러(비-org 기본). org 변형(-ec/-ok/-px)의 accent 는
+  // 하드코딩하지 않고 ORGANIZATION_CONFIG.accentSoft(단일 정의소)에서 가져온다
+  // — 종전 index-two-ok 의 #FFEC8F(config 어느 필드에도 없던 임의값)를 config 의
+  // 오랑캐 accentSoft(#FFC300)로 교정하고, config 색 변경 시 자동 반영되게 한다.
   "/": { accent: "#e1c2f8", name: "grape" },
   "/index-two": { accent: "#e1c2f8", name: "grape" },
-  "/index-two-ec": { accent: "#FF98A6", name: "pink" },
-  "/index-two-ok": { accent: "#FFEC8F", name: "yellow" },
-  "/index-two-px": { accent: "#B2FF8F", name: "mint" },
+  "/index-two-ec": { accent: ORGANIZATION_CONFIG.entertainment.accentSoft, name: "pink" },
+  "/index-two-ok": { accent: ORGANIZATION_CONFIG.marketing.accentSoft, name: "yellow" },
+  "/index-two-px": { accent: ORGANIZATION_CONFIG.planning.accentSoft, name: "mint" },
 };
 
 const normalizePathname = (pathname: string | null) => {

@@ -11,7 +11,7 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { usePathname } from 'next/navigation';
-import { getThemeClass, getThemeKey } from '@/lib/cluster-route';
+import { getThemeClass, getThemeKey, type ThemeKey } from '@/lib/cluster-route';
 import Popup from './Popup';
 
 /* ----------------------- Types ----------------------- */
@@ -32,6 +32,9 @@ export interface PopupOptions {
 interface PopupQueueItem extends PopupOptions {
   id: number;
   resolve: (value: boolean) => void;
+  /** 팝업이 열린 시점 URL 기준으로 확정한 theme scope (portal root 부착). */
+  themeClassName: string;
+  themeKey: ThemeKey | null;
 }
 
 interface PopupContextValue {
@@ -59,8 +62,32 @@ export const PopupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // (`.cluster-px-theme.custom-popup-backdrop` 결합 selector). themeKey 는
   // body 아이콘 PNG 자산 swap (popup-N-px.png / -ec.png) 용도.
   const pathname = usePathname();
-  const themeClassName = getThemeClass(pathname);
-  const themeKey = getThemeKey(pathname);
+
+  // cluster route(-ec/-px)는 pathname 으로, /crews?org= · /weekly-ranking?org=
+  // 는 ?org= 쿼리로 theme 을 판정한다(Sidebar sidebarThemeClass 와 동일 fallback).
+  // 값은 usePathname 만 dep 으로 두고 org 는 팝업이 열리는 시점의 window.location
+  // 에서 읽어 확정한다 — useSearchParams 를 쓰면 이 Provider 가 앱 전체를 감싸므로
+  // 상위 트리에 Suspense 경계가 강제되어 정적 프리렌더가 깨진다(회피).
+  const resolvePopupTheme = useCallback((): {
+    themeClassName: string;
+    themeKey: ThemeKey | null;
+  } => {
+    const pathClass = getThemeClass(pathname);
+    if (pathClass) {
+      return { themeClassName: pathClass, themeKey: getThemeKey(pathname) };
+    }
+    const orgParam =
+      typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('org')
+        : null;
+    if (orgParam === 'phalanx') {
+      return { themeClassName: 'cluster-px-theme', themeKey: 'px' };
+    }
+    if (orgParam === 'encre') {
+      return { themeClassName: 'encre-theme', themeKey: 'ec' };
+    }
+    return { themeClassName: '', themeKey: null };
+  }, [pathname]);
 
   // Portal은 클라이언트에서만 마운트 (Next.js SSR 호환)
   useEffect(() => {
@@ -74,11 +101,18 @@ export const PopupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     (opts: PopupOptions): Promise<boolean> => {
       return new Promise((resolve) => {
         idRef.current += 1;
-        const item: PopupQueueItem = { ...opts, id: idRef.current, resolve };
+        const theme = resolvePopupTheme();
+        const item: PopupQueueItem = {
+          ...opts,
+          id: idRef.current,
+          resolve,
+          themeClassName: theme.themeClassName,
+          themeKey: theme.themeKey,
+        };
         setQueue((prev) => [...prev, item]);
       });
     },
-    []
+    [resolvePopupTheme]
   );
 
   /** 현재 팝업 닫고 큐에서 제거 */
@@ -121,8 +155,8 @@ export const PopupProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             cancelText={current.cancelText}
             onConfirm={() => handleClose(true)}
             onCancel={() => handleClose(false)}
-            themeClassName={themeClassName}
-            themeKey={themeKey}
+            themeClassName={current.themeClassName}
+            themeKey={current.themeKey}
           />,
           document.body
         )}

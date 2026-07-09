@@ -959,9 +959,11 @@ svg {
 // header/sidebar/footer/콘텐츠 모두 var(--quaternary-color)를 사용하므로
 // 이 변수만 라우트별로 바꿔주면 전체에 일괄 반영됨.
 // --quaternary-hover는 호버 시 살짝 진한 톤으로 페이지별 차이를 부여.
+// mint/pink/yellow 값 = ORGANIZATION_CONFIG accentSoft(팔랑크스/엥크레/오랑캐)와 일치.
+// RouteThemeShell 의 inline style 이 우선하며, 본 클래스 규칙은 inline 유실 대비 fallback.
 .route-theme--mint   { --quaternary-color: #B2FF8F; --quaternary-hover: #7AE852; }
 .route-theme--pink   { --quaternary-color: #FF98A6; --quaternary-hover: #FF6B7E; }
-.route-theme--yellow { --quaternary-color: #FFEC8F; --quaternary-hover: #FFD24A; }
+.route-theme--yellow { --quaternary-color: #FFC300; --quaternary-hover: #FAAB07; }
 // 비-org 기본 진입 화면(/index-two) 전용 보라 계열.
 // Main Color #B2FF8F → #e1c2f8, Point Color #36DA60 → #bf7ff0.
 // org 변형(mint/pink/yellow)은 위 정의 그대로 유지되므로 색상 회귀 없음.

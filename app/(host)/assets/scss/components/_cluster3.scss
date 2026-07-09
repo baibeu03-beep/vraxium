@@ -3428,15 +3428,19 @@
       flex-direction: column;
 
       .textarea-title {
-        background: rgba(178, 255, 143, 0.15);
-        color: #b2ff8f;
+        // 조직 대표색 분기 — org wrapper(.encre-theme / .cluster-px-theme /
+        // .phalanx-theme)가 --org-accent-rgb / --org-accent-soft 를 주입하면 그
+        // 값을, 없으면(오랑캐/기본) 골드로 폴백한다. 종전엔 PX 그린이 base 에
+        // 하드코딩돼 마케팅·엥크레 모달까지 초록으로 새던 것을 교정.
+        background: rgba(var(--org-accent-rgb, 250, 171, 7), 0.15);
+        color: var(--org-accent-soft, #ffd782);
         font-size: 14px;
         font-weight: 600;
         text-align: center;
         padding: 8px 0 4px 0;
         line-height: 1.2;
         margin: 0;
-        border: 1px solid rgba(178, 255, 143, 0.3);
+        border: 1px solid rgba(var(--org-accent-rgb, 250, 171, 7), 0.3);
         border-bottom: none;
       }
 

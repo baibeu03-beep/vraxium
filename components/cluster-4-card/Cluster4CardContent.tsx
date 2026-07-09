@@ -476,6 +476,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 숫자 값(headerDangam 등)·className·PX/default 분기는 미터치.
   const pathname = usePathname();
   const isEC = isEcRoute(pathname);
+  // 조직 대표색(hex) — 오랑캐 #FAAB07 / 엥크레 #FF4B70 / 팔랑크스 #1E9503.
+  // 인라인 스타일에서 org 분기 없이 골드로 박혀 있던 accent 를 본 값으로 치환한다.
+  const orgAccentColor = getOrganizationConfig(getCurrentOrganizationFromPathname(pathname)).themeColor;
   // base key → EC 전용 라벨/아이콘 매핑 (Cluster4Content 의 ecIconSrcMap 과 동일 경로).
   const EC_HEADER_POINT: Record<"단감" | "인절미" | "어흥", { label: string; icon: string }> = {
     단감: { label: "별", icon: "/images/0/Graphic10.png" },
@@ -12027,7 +12030,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       setHeaderModalOpen(true);
                       fetchKeywordsIfNeeded();
                     }}
-                    style={{ padding: "8px 16px", background: "rgba(250, 171, 7, 0.2)", border: "1px solid #FAAB07", borderRadius: "6px", color: "#FAAB07", fontSize: "13px", cursor: "pointer" }}
+                    style={{ padding: "8px 16px", background: `${orgAccentColor}33`, border: `1px solid ${orgAccentColor}`, borderRadius: "6px", color: orgAccentColor, fontSize: "13px", cursor: "pointer" }}
                   >
                     수정
                   </button>

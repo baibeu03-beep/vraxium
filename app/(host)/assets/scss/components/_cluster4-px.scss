@@ -71,9 +71,12 @@
   // 정보 구분 palette 이므로 의도적으로 미변경.
   // ─────────────────────────────────────────────
   .cluster4-content {
-    // 1) top-tabs 활성 탭 — _cluster4-week.scss line 334 (.tab:first-child)
-    //    +1445 줄 TSX 인라인 background:#FAAB07. !important 로 둘 다 덮음.
-    .top-tabs .tab:first-child {
+    // 1) top-tabs 활성 탭 — _cluster4-week.scss L85 처럼 `.cluster4-content--week`
+    //    안에서만 `.tab:first-child` 를 칠한다. `--week` qualifier 가 없으면
+    //    /cluster-4-1-planning(Cluster4Content, `--week` 미부착)의 첫 탭(inactive
+    //    dark #161816)이 green 으로 잘못 덮인다 — EC(_cluster4-encre.scss:89)와 동일
+    //    스코프로 맞춰 회귀 제거. active 탭 색은 JSX inline 3-way 분기가 처리.
+    &.cluster4-content--week .top-tabs .tab:first-child {
       background: var(--px-accent) !important;
     }
 

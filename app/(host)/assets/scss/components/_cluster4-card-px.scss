@@ -502,7 +502,10 @@
     .work-info-card .card-arrow,
     .work-ability-card .card-arrow,
     .work-exp-card .card-arrow,
-    .work-career-card .card-arrow {
+    .work-career-card .card-arrow,
+    .reputation-card .more-icon,
+    .colleague-card .more-icon,
+    .reputation-card .card-description .more-icon {
       filter: hue-rotate(80deg) saturate(1.4);
     }
 

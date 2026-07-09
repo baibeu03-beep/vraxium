@@ -27,6 +27,8 @@
   // 매칭된다.
   --org-accent: #ff4b70;
   --org-accent-soft: #ff98a6;
+  // rgba() 합성용 rgb 트리플렛 — hex 변수는 rgba(var(--x), a) 로 못 쓰므로 별도 노출.
+  --org-accent-rgb: 255, 75, 112;
   --org-accent-glow: rgba(255, 75, 112, 0.32);
   --org-accent-soft-glow: rgba(255, 152, 166, 0.22);
   --org-gradient: linear-gradient(135deg, #ff98a6 0%, #ff4b70 100%);

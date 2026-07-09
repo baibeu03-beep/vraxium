@@ -81,7 +81,7 @@ function WeeklyRankingPageInner() {
   const baseThemeVars = getRankingThemeVars(getRankingTheme(org));
   return (
     <main
-      className={`nftg-content nftg-content-home weekly-ranking-layout${org === "phalanx" ? " phalanx-theme" : ""}`}
+      className={`nftg-content nftg-content-home weekly-ranking-layout${org === "phalanx" ? " phalanx-theme" : org === "encre" ? " encre-theme" : ""}`}
       style={{ padding: 0, ...baseThemeVars }}
     >
       <Animations />
