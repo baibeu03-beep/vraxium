@@ -85,40 +85,33 @@
 }
 
 // =============================================================
-// .crew-club-badge 상태 강제 override
+// .crew-club-badge 색상 통일 (Phalanx)
 // =============================================================
-// 이전 hover 단일 룰은 base→hover 전환 중 background/color 가 순간적으로
-// 동일 톤(둘 다 짙은 녹색)이 되어 글자가 사라지는 구간이 있었음.
-// → base/visited 와 hover/focus/active/visited 를 모두 명시하고,
-//   내부 span/a 까지 동일 톤으로 강제해 어떤 상태에서도 contrast 유지.
-// _all-sections.scss line 157 의 `.crews-grid .crew-club-badge` base
-// (--crews-team-badge-bg = #1E9503 + 흰 글씨) 를 의도적으로 덮어씀.
+// 요구: 팀명/클래스명 배지 배경·테두리·글자색을 "조회" 버튼(.filter-card)과
+// 동일하게 — org 대표색 변수(--crews-primary-accent /
+// --crews-primary-accent-contrast)로 통일. org 분기·mode=test 무관하게 동일 적용.
+// _all-sections.scss line 157 의 base (--crews-team-badge-bg = #1E9503 + 흰 글씨) 덮어씀.
+// 크기/패딩/둥근모서리/폰트는 base 룰 그대로(색상만 변경). hover 도 동일 톤 유지해
+// 비링크 span 에서 색 스왑·글자 사라짐 구간 제거.
 .phalanx-theme {
   .crews-grid {
 
-    // 기본/hover 배경 교체(요구): 기본 = 기존 hover 색(#B2FF8F), 글자도 함께 스왑(#0F4F02)해
-    // 가독성 유지. border/padding/radius/transition 은 불변.
     .crew-club-badge,
-    .crew-club-badge:visited {
-      color: #0F4F02 !important;
-      background: #B2FF8F !important;
-      border-color: rgba(178, 255, 143, 0.45) !important;
-    }
-
-    // hover = 기존 기본 색(rgba(30,149,3,0.18)) + 흰 글자로 스왑.
+    .crew-club-badge:visited,
     .crew-club-badge:hover,
     .crew-club-badge:hover:visited,
     .crew-club-badge:focus,
     .crew-club-badge:active {
-      color: #ffffff !important;
-      background: rgba(30, 149, 3, 0.18) !important;
-      border-color: #1E9503 !important;
+      color: var(--crews-primary-accent-contrast) !important;
+      background: var(--crews-primary-accent) !important;
+      border-color: var(--crews-primary-accent) !important;
     }
 
+    .crew-club-badge *,
     .crew-club-badge:hover *,
     .crew-club-badge:focus *,
     .crew-club-badge:active * {
-      color: #ffffff !important;
+      color: var(--crews-primary-accent-contrast) !important;
     }
   }
 }
