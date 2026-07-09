@@ -138,6 +138,10 @@ export type WeeklyCardData = {
   status: '정상 진행' | '대전 집계' | '휴식';
   leagueResultStatus: '정상 진행' | '심화 진행' | '공식 휴식';
   leagueRecordStatus: '대전 중' | '대전 집계' | '공표 중' | '검수 완료' | '대전 휴식';
+  // 결과 확정(공표) 여부 — 집계(aggregateWeeklyLeague)가 operating result_published_at 로 산정.
+  //   false = 미확정(집계 중) → 성공/실패/휴식을 확정값처럼 노출하지 않는다. 미설정(더미) 시
+  //   소비처는 leagueRecordStatus('대전 중'/'대전 집계')로 동일 판정(하위호환).
+  resultConfirmed?: boolean;
   imageUrl: string | null;
   growthSuccessRate: number;
   growthChallengeRate: number;

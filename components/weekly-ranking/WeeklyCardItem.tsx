@@ -160,6 +160,15 @@ export default function WeeklyCardItem({ data, org = null }: Props) {
     data.leagueRecordStatus === '대전 집계' ||
     data.leagueResultStatus === '공식 휴식';
 
+  // 확정(공표) 전에는 성공/실패/휴식 인원·비율을 확정값처럼 보여주지 않고 '집계 중'(N)으로 표시한다.
+  //   확정 신호 = 집계(aggregateWeeklyLeague)가 준 resultConfirmed(=operating result_published_at).
+  //   더미(미설정)는 leagueRecordStatus('공표 중'/'검수 완료')로 폴백. 실행 취소로 공표가 내려가면
+  //   resultConfirmed=false → '집계 중'으로 복귀(cluster-4 카드와 동일 신호 — 두 화면이 같은 상태).
+  const isConfirmed =
+    data.resultConfirmed ??
+    (data.leagueRecordStatus === '공표 중' || data.leagueRecordStatus === '검수 완료');
+  const isTallying = !isConfirmed && data.leagueRecordStatus !== '대전 휴식';
+
   const crewRows: CrewRow[] = (() => {
     const ranks: Array<1 | 2 | 3> = [1, 2, 3];
     if (shouldForceCrewPlaceholder) {
@@ -260,7 +269,7 @@ export default function WeeklyCardItem({ data, org = null }: Props) {
         ) : (
           <>
             {(() => {
-              const isOngoing = data.leagueRecordStatus === '대전 중' || data.leagueRecordStatus === '대전 집계';
+              const isOngoing = isTallying;
               const successFillWidth = isOngoing ? 0 : data.growthSuccessRate;
               const challengeFillWidth = isOngoing ? 0 : data.growthChallengeRate;
               return (
@@ -295,7 +304,7 @@ export default function WeeklyCardItem({ data, org = null }: Props) {
               <div className="skill-card">
                 <Image src="/images/0/cluster4/icon/icon - cluv.png" alt="" width={34} height={34} className="skill-icon" />
                 <div className="skill-num-row">
-                  <span className="skill-num">{data.leagueRecordStatus === '대전 중' ? 'N' : data.totalCrews}</span>
+                  <span className="skill-num">{isTallying ? 'N' : data.totalCrews}</span>
                   <span className="skill-unit">명</span>
                 </div>
                 <span className="skill-label">전체 크루</span>
@@ -304,7 +313,7 @@ export default function WeeklyCardItem({ data, org = null }: Props) {
               <div className="skill-card">
                 <Image src="/images/0/cluster4/icon/icon-growth-running.png" alt="" width={34} height={34} className="skill-icon" />
                 <div className="skill-num-row">
-                  <span className="skill-num">{data.leagueRecordStatus === '대전 중' ? 'N' : data.growthChallenge}</span>
+                  <span className="skill-num">{isTallying ? 'N' : data.growthChallenge}</span>
                   <span className="skill-unit">명</span>
                 </div>
                 <span className="skill-label">성장 도전</span>
@@ -313,7 +322,7 @@ export default function WeeklyCardItem({ data, org = null }: Props) {
               <div className="skill-card">
                 <Image src="/images/0/cluster4/icon/icon-growth-success.png" alt="" width={34} height={34} className="skill-icon" />
                 <div className="skill-num-row">
-                  <span className="skill-num">{data.leagueRecordStatus === '대전 중' ? 'N' : data.growthSuccess}</span>
+                  <span className="skill-num">{isTallying ? 'N' : data.growthSuccess}</span>
                   <span className="skill-unit">명</span>
                 </div>
                 <span className="skill-label">성장 성공</span>
@@ -322,7 +331,7 @@ export default function WeeklyCardItem({ data, org = null }: Props) {
               <div className="skill-card">
                 <Image src="/images/0/cluster4/icon/icon-growth-fail.png" alt="" width={34} height={34} className="skill-icon" />
                 <div className="skill-num-row">
-                  <span className="skill-num">{data.leagueRecordStatus === '대전 중' ? 'N' : data.growthFail}</span>
+                  <span className="skill-num">{isTallying ? 'N' : data.growthFail}</span>
                   <span className="skill-unit">명</span>
                 </div>
                 <span className="skill-label">성장 실패</span>
@@ -331,7 +340,7 @@ export default function WeeklyCardItem({ data, org = null }: Props) {
               <div className="skill-card">
                 <Image src="/images/0/cluster4/icon/icon-rest-personal.png" alt="" width={34} height={34} className="skill-icon" />
                 <div className="skill-num-row">
-                  <span className="skill-num">{data.leagueRecordStatus === '대전 중' ? 'N' : data.personalRest}</span>
+                  <span className="skill-num">{isTallying ? 'N' : data.personalRest}</span>
                   <span className="skill-unit">명</span>
                 </div>
                 <span className="skill-label">개인 휴식</span>

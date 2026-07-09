@@ -355,6 +355,14 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
   const challengeRate = totalCrew > 0 ? Math.round((challengeCount / totalCrew) * 100) : 0;
   const successRate = challengeCount > 0 ? Math.round((successCount / challengeCount) * 100) : 0;
 
+  // 확정(공표) 전에는 인원/비율을 확정값처럼 노출하지 않고 '집계 중'(N)으로 표시한다.
+  //   확정 신호 = 집계가 준 resultConfirmed(=operating result_published_at). 더미는 leagueRecordStatus 폴백.
+  //   실행 취소로 공표가 내려가면 resultConfirmed=false → 메인 카드와 동일하게 '집계 중'으로 복귀.
+  const isConfirmed =
+    card.resultConfirmed ??
+    (card.leagueRecordStatus === "공표 중" || card.leagueRecordStatus === "검수 완료");
+  const isTallying = !isConfirmed && card.leagueRecordStatus !== "대전 휴식";
+
   // KPI 카드(라벨/아이콘은 UI 카피, 값은 위 파생값). 3행×2열 배치 순서 = 스펙 ①~⑥.
   //   보조 설명(desc)은 노출하지 않는다 — 아이콘/label/value 핵심 정보만.
   const kpis: Array<{ tone: string; icon: string; label: string; value: number }> = [
@@ -578,7 +586,7 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
                 <div className="wd-kpi__content">
                   <span className="wd-kpi__label">{k.label}</span>
                   <strong className="wd-kpi__value">
-                    {k.value.toLocaleString()}
+                    {isTallying ? 'N' : k.value.toLocaleString()}
                     <span className="wd-kpi__unit">명</span>
                   </strong>
                 </div>
@@ -593,19 +601,19 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
                 <div className="wd-prog__head">
                   <span className="wd-prog__label">{p.label}</span>
                   <span className="wd-prog__value">
-                    {p.value}
+                    {isTallying ? 'N' : p.value}
                     <span className="wd-prog__unit">%</span>
                   </span>
                 </div>
                 <div
                   className="wd-prog__track"
                   role="progressbar"
-                  aria-valuenow={p.value}
+                  aria-valuenow={isTallying ? 0 : p.value}
                   aria-valuemin={0}
                   aria-valuemax={100}
                   aria-label={p.label}
                 >
-                  <div className="wd-prog__fill" style={{ width: barsIn ? `${p.value}%` : "0%" }} />
+                  <div className="wd-prog__fill" style={{ width: barsIn && !isTallying ? `${p.value}%` : "0%" }} />
                 </div>
               </div>
             ))}
@@ -778,8 +786,9 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
         )}
       </section>
 
-      {/* [9] Team Battle — 팀별 주차 결과(Champion's Hall 아래). 휴식/무팀 주차는 섹션 숨김 */}
-      {!isRestWeek && teams.length > 0 && (
+      {/* [9] Team Battle — 팀별 주차 결과(Champion's Hall 아래). 휴식/무팀 주차는 섹션 숨김.
+          미확정(집계 중) 주차도 숨긴다 — 팀별 전적·성공/실패는 확정(공표) 후에만 노출(상단 KPI 와 일관). */}
+      {!isRestWeek && !isTallying && teams.length > 0 && (
         <section className="wd-tb" data-fadeup aria-label="Team Battle">
           {/* 장식 헤더 — Champion's Hall 과 동일 위계(데코 라인 + 글로우 타이틀) */}
           <header className="wd-tb__head">
@@ -1060,8 +1069,8 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
           </div>
         </div>
 
-        {/* 페이지네이션 — 리스트 '위쪽'. 10개 초과 시에만 노출 */}
-        {crewPageCount > 1 && (
+        {/* 페이지네이션 — 리스트 '위쪽'. 10개 초과 시에만 노출. 미확정(집계 중)엔 숨김. */}
+        {!isTallying && crewPageCount > 1 && (
           <nav className="wd-wrs__pager" aria-label="크루 목록 페이지">
             {Array.from({ length: crewPageCount }, (_, i) => i + 1).map((p) => (
               <button
@@ -1079,7 +1088,10 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
 
         {/* 크루 랭킹 리스트 — 1열(위→아래 순위). PC 가로형 / 모바일 세로형 */}
         <div className="wd-wrs__list">
-          {crewPageItems.length === 0 ? (
+          {isTallying ? (
+            // 미확정(집계 중) — 사용자별 성공/실패를 확정값처럼 노출하지 않는다(상단 KPI·Team Battle 과 일관).
+            <div className="wd-wrs__empty">이번 주 크루별 결과는 주차 확정(공표) 후 공개됩니다. (집계 중)</div>
+          ) : crewPageItems.length === 0 ? (
             <div className="wd-wrs__empty">조건에 맞는 크루가 없습니다.</div>
           ) : (
             crewPageItems.map((c) => {

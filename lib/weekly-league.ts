@@ -373,10 +373,13 @@ export async function aggregateWeeklyLeague(
       return { success: true, org, cards: [] };
     }
 
-    // 2-1) 공표/검수 상태 — ⚠️ QA 워크백(2026-07-01): test·operating 무관하게 **항상 운영 weeks baseline**.
-    //   과거 test 모집단에 qa_weeks_state / qa_org_week_thresholds overlay 를 씌웠으나, 주차/공표/검수/
-    //   체크기준(비즈니스 정책)은 operating 기준이어야 하므로 isTestMode 와 분리한다. 랭킹에 노출되는
-    //   "모집단"만 위(238)에서 test_user_markers 로 필터되고, 데이터 로직 divergence 는 0 이다.
+    // 2-1) 공표/검수 상태 — **항상 운영 weeks baseline**(mode 무관). cluster-4(고객 카드) 파리티 근거:
+    //   고객 cluster-4 의 확정(공표) 판정은 profile/crews/스냅샷 빌더 모두 operating weeks.result_published_at
+    //   만 읽는다(qa_weeks_state 미조회 — 2026-07-01 QA 워크백). weekly-ranking 도 동일 신호를 써야
+    //   "cluster-4 와 weekly-ranking 이 같은 주차 상태"를 보장한다(요구 최우선). qa overlay 를 읽으면
+    //   테스터가 qa 를 먼저 공표한 순간 weekly-ranking 만 확정으로 튀어 cluster-4 와 발산한다.
+    //   → 확정 여부는 operating, 노출 "모집단"만 mode(위 238)로 갈린다. (2026-07-09 조사: qa overlay
+    //      는 어드민 부기용이며 고객 카드로 흐르지 않음 — 실측 확인.)
     const weekScope: WeekResultScope = "operating";
     const weekStates = await resolveWeekResultStates(db, { scope: weekScope });
     for (const w of weeks) {
@@ -641,6 +644,8 @@ export async function aggregateWeeklyLeague(
           status: "휴식",
           leagueResultStatus: "공식 휴식",
           leagueRecordStatus: "대전 휴식",
+          // 공식 휴식 주차는 확정 파티션이 없다(휴식 UI). 확정 게이트와 무관 — false 로 고정.
+          resultConfirmed: false,
           imageUrl: week.imageUrl,
           growthSuccessRate: 0,
           growthChallengeRate: 0,
@@ -943,6 +948,10 @@ export async function aggregateWeeklyLeague(
         status: isEnded && !isPublished ? "대전 집계" : "정상 진행",
         leagueResultStatus: "정상 진행",
         leagueRecordStatus,
+        // 결과 확정(공표) 여부 — 집계 SoT 신호. 공표(operating result_published_at) 전에는 false →
+        //   소비처(카드/상세)가 성공/실패/휴식을 확정값으로 노출하지 않고 '집계 중'(N)으로 표시한다.
+        //   실행 취소로 공표가 내려가면 다시 false 가 되어 두 화면이 함께 '집계 중'으로 복귀한다.
+        resultConfirmed: isPublished,
         imageUrl: week.imageUrl,
         growthSuccessRate,
         growthChallengeRate,
