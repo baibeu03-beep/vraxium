@@ -15,6 +15,21 @@
     background-size: cover;
     background-repeat: no-repeat;
     background-image: url("/images/home-random/intro-bg.png");
+
+    // ── 히어로 배경 오버레이 (텍스트 가독성 + 캐릭터 부각용) ────────────────
+    // 배경 이미지(intro-bg) 위에만 균일한 검정 오버레이를 얹는다(그라데이션 아님).
+    // z-index:-1 → .banner__content 배경 이미지 "위", sword/thumb(캐릭터)/텍스트/버튼 "아래"라
+    // 캐릭터·검·텍스트·버튼 색은 영향 없이 배경만 전체적으로 어두워진다. 배경이 균일하게
+    // 물러나므로 밝은 캐릭터가 더 도드라지고, 좌측 카피 가독성도 함께 올라간다.
+    // 강도 조절은 알파값만 바꾸면 됨(더 진하게 0.5 / 더 옅게 0.3 등).
+    &::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background: rgba(0, 0, 0, 0.4);
+    }
   }
 
   .breadcrumb {
@@ -182,8 +197,12 @@
     right: 80px;
 
     img {
-      max-width: 34vw;
-      min-width: 120px;
+      // 히어로 캐릭터가 메인 타이틀과 겹치지 않고 "우측 보조 이미지"로 보이도록 실제 표시
+      // 크기(max-width)를 원본 템플릿(34vw) 대비 0.5배로 축소. 비율/위치는 그대로
+      // (width·height:auto, position 불변), transform scale 대신 max-width 로만 조정.
+      // ※ 캐릭터는 오버레이 대상이 아니다 — 원본 색상 그대로 유지(필터/오버레이 없음).
+      max-width: 17vw; // 34vw × 0.5
+      min-width: 60px; // 120px × 0.5 (초소형 화면 floor 도 동일 비율)
       width: auto;
       height: auto;
       transform-origin: right bottom;

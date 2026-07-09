@@ -558,7 +558,7 @@ body:has(.nftg-content-home-two) {
 
       .banner__thumb {
         img {
-          max-width: 20vw;
+          max-width: 10vw; // 20vw × 0.5 (히어로 캐릭터 base 와 동일 비율 축소)
         }
       }
     }
@@ -1328,7 +1328,7 @@ body:has(.nftg-content-home-two) {
 
       .banner__thumb {
         img {
-          max-width: 38vw;
+          max-width: 19vw; // 38vw × 0.5 (히어로 캐릭터 base 와 동일 비율 축소)
         }
       }
     }
