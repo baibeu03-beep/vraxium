@@ -176,22 +176,31 @@ body:has(.nftg-content-home-two) {
   }
 }
 
-// ── /index-two 본문 컨테이너(파란 박스)를 좌측 사이드바 쪽으로 당기기 ────────────────────
+// ── /index-two 레이아웃 밸런싱: 본문을 좌측으로 당기고 우측 사이드바를 넓히기 ────────────────
 // nftg-content-home-two 마커는 index-two/page.tsx(및 -ec/-ok/-px 재export)에서만 쓰이므로 이
 // 규칙은 /index-two 전용이다. / 는 nftg-content-home-one, /home·다른 페이지엔 이 마커가 없어 무영향.
-// 문제: .col-12.col-xxl-9 의 커스텀 좌패딩(70px, 우패딩 0)이 본문 그레이 박스(.home-two-content)를
-// 좌측 네비 레일에서 ~78px 밀어낸다. 데스크톱(xxl, 두 열 레이아웃)에서만 좌패딩을 줄여 본문 전체를
-// 왼쪽으로 당긴다. 컬럼 폭(75%)·우측 패널(col-xxl-3)·.banner__content 폭은 그대로 유지된다.
-// 값(16px)만 바꾸면 더/덜 당길 수 있다. 모바일(<1400px)은 col-12 단일 열이라 규칙이 적용되지 않는다.
+// 데스크톱(xxl, 두 열 레이아웃)에서만 적용 — 모바일(<1400px)은 col-12 단일 열이라 규칙이 적용되지 않는다.
 @media (min-width: 1400px) {
-  .nftg-content-home-two > .container-fluid > .row > .col-12.col-xxl-9 {
-    padding-left: 16px !important;
-  }
-}
+  .nftg-content-home-two {
+    // (1) 좌측 본문 당기기 — .col-xxl-9 커스텀 좌패딩(70px, 우패딩 0)이 본문 그레이 박스를 좌측 네비
+    //     레일에서 ~78px 밀어냈다. 좌패딩만 16px 로 줄여 컬럼 시작 위치는 그대로 두고 본문을 왼쪽으로 당긴다.
+    > .container-fluid > .row > .col-12.col-xxl-9 {
+      padding-left: 16px !important;
+    }
 
-// [TEMP-DEBUG] 파란 박스(본문 전체 컨테이너 = .home-two-content) 대상 확인용 — 확인 후 제거.
-.nftg-content-home-two .home-two-content {
-  outline: 6px solid cyan !important;
+    // (2) 우측 사이드바 확장 — 예약폭 변수(:root --sidebar-width:497px)를 이 서브트리에서만 키운다.
+    //     전역 규칙 .col-xxl-9{max-width:calc(100% - var(--sidebar-width))} 가 좌측 컬럼을 그만큼 좁히고
+    //     (왼쪽 시작점은 유지, 오른쪽 끝만 안으로), 우측 컬럼은 같은 변수폭으로 넓어져 둘이 맞붙는다
+    //     (col 25%=457px 와 예약 497px 의 40px 빈틈까지 흡수). 내부 위젯(chart-box/winner-widget/
+    //     leaderboard-widget)은 width:100% 라 넓어진 컬럼을 그대로 채우고, BalanceChart(ApexCharts,
+    //     width:"100%")도 마운트 시 넓어진 컨테이너 폭으로 렌더된다. 값(560px)만 바꾸면 더/덜 넓힐 수 있다.
+    --sidebar-width: 560px;
+    > .container-fluid > .row > .col-xxl-3 {
+      flex: 0 0 var(--sidebar-width) !important;
+      max-width: var(--sidebar-width) !important;
+      width: var(--sidebar-width) !important;
+    }
+  }
 }
 
 .tournaments,
