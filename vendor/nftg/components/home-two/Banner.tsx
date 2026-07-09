@@ -5,9 +5,7 @@ import Link from "next/link";
 const Banner = () => {
   return (
     <section className="banner-two pt-120 pb-120">
-      {/* index-two 전용 스코프 클래스 — 이 Banner 는 /index-two(및 -ec/-ok/-px)에서만 렌더되므로
-          좌측 히어로 텍스트 폭 조정 CSS(.banner__content--index-two-tight)를 여기서만 적용한다. */}
-      <div className="banner__content banner__content--index-two-tight ">
+      <div className="banner__content ">
         <ol className="breadcrumb">
           <li className="breadcrumb-item active">Explore</li>
           <li className="breadcrumb-item active">Play</li>
