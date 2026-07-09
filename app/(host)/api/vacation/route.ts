@@ -84,12 +84,11 @@ function buildMyApplications(rows: VacationRow[], now: number): {
     const latest = sortedRows[sortedRows.length - 1].week_start_date;
     const approved = sortedRows.every((r) => r.status === "approved");
 
-    // 누적(이행)/예정(승인) 주차 수 — approved 건의 각 주차를 월요일 00:01 기준 분류.
-    if (approved) {
-      for (const r of sortedRows) {
-        if (isWeekFulfilled(r.week_start_date, now)) fulfilledWeeks += 1;
-        else upcomingWeeks += 1;
-      }
+    // 누적 = 휴식 이행(approved + 월요일 00:01 경과) 주차 수.
+    // 예정 = 휴식 신청(pending) + 휴식 승인(approved + 미경과) 주차 수(= 이행 외 전부).
+    for (const r of sortedRows) {
+      if (approved && isWeekFulfilled(r.week_start_date, now)) fulfilledWeeks += 1;
+      else upcomingWeeks += 1;
     }
 
     const displayStatus: MyApplication["displayStatus"] = !approved

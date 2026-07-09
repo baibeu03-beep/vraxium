@@ -420,14 +420,23 @@
     width: 100%;
     border-collapse: collapse;
     font-size: 15px;
+    // 헤더(thead)만 가로·세로 가운데 정렬. tbody 데이터 행은 기존 정렬 유지.
     thead th {
-      text-align: left;
+      text-align: center;
+      vertical-align: middle;
       font-weight: 700;
       color: var(--vac-text-muted);
       font-size: 14.5px;
       padding: 12px 14px;
       border-bottom: 2px solid var(--vac-border-strong);
       white-space: nowrap;
+      // 아이콘+텍스트 헤더는 하나의 inline-flex 로 묶여 가운데 정렬되도록.
+      > * {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+      }
     }
     tbody td {
       padding: 16px 14px;
