@@ -858,9 +858,11 @@ function CrewsContent() {
                                 <span className="crew-club-badge">
                                   {[crew.team, crew.club].find((v) => v && v !== "-") ?? "-"}
                                 </span>
-                                {/* 클래스명 배지 — 값이 있을 때만. 팀명 배지와 동일 디자인(.crew-club-badge). */}
+                                {/* 클래스명(라인/파트) 배지 — 값이 있을 때만. 팀명 배지와 크기/폰트 등 동일
+                                    디자인(.crew-club-badge)이되, 배경·테두리·글자색만 org 대표색(=조회 버튼)으로.
+                                    대표색 적용은 .crew-line-badge 로만 스코프(팀명 배지는 기존 org 색 그대로 유지). */}
                                 {crew.className && (
-                                  <span className="crew-club-badge">{crew.className}</span>
+                                  <span className="crew-club-badge crew-line-badge">{crew.className}</span>
                                 )}
                               </span>
                             </p>

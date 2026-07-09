@@ -95,27 +95,53 @@
   }
 
   // ─────────────────────────────────────────────
-  // crew-club-badge 색상 통일 — 팀명/클래스명 배지 배경·테두리·글자색을
-  // "조회" 버튼(.filter-card)과 동일하게 org 대표색 변수로 맞춤.
-  // (--crews-primary-accent / --crews-primary-accent-contrast; 여기선 amber+#111)
-  // 크기/패딩/둥근모서리/폰트는 base 룰 그대로(색상만 변경).
+  // crew-club-badge (연한 기본 → 진한 hover, 가독성 유지)
+  // 팀명(클럽) 배지(.crew-club-badge 단독)는 기존 amber 톤 그대로 유지.
   // ─────────────────────────────────────────────
   .crews-grid {
     .crew-club-badge,
-    .crew-club-badge:visited,
+    .crew-club-badge:visited {
+      color: #3D2A00 !important;
+      background: #FFC300 !important;
+      border-color: rgba(255, 195, 0, 0.45) !important;
+    }
+
     .crew-club-badge:hover,
     .crew-club-badge:hover:visited,
     .crew-club-badge:focus,
     .crew-club-badge:active {
+      color: #ffffff !important;
+      background: rgba(250, 171, 7, 0.20) !important;
+      border-color: #FAAB07 !important;
+    }
+
+    .crew-club-badge:hover *,
+    .crew-club-badge:focus *,
+    .crew-club-badge:active * {
+      color: #ffffff !important;
+    }
+
+    // ─────────────────────────────────────────────
+    // 라인/파트 배지(.crew-line-badge)만 배경·테두리·글자색을 "조회" 버튼
+    // (.filter-card)과 동일한 org 대표색(--crews-primary-accent /
+    // --crews-primary-accent-contrast; 여기선 amber+#111)으로. 팀명 배지 규칙보다
+    // specificity(2 class)가 높아 line 배지에서만 우선. org·mode=test 무관 동일.
+    // ─────────────────────────────────────────────
+    .crew-club-badge.crew-line-badge,
+    .crew-club-badge.crew-line-badge:visited,
+    .crew-club-badge.crew-line-badge:hover,
+    .crew-club-badge.crew-line-badge:hover:visited,
+    .crew-club-badge.crew-line-badge:focus,
+    .crew-club-badge.crew-line-badge:active {
       color: var(--crews-primary-accent-contrast) !important;
       background: var(--crews-primary-accent) !important;
       border-color: var(--crews-primary-accent) !important;
     }
 
-    .crew-club-badge *,
-    .crew-club-badge:hover *,
-    .crew-club-badge:focus *,
-    .crew-club-badge:active * {
+    .crew-club-badge.crew-line-badge *,
+    .crew-club-badge.crew-line-badge:hover *,
+    .crew-club-badge.crew-line-badge:focus *,
+    .crew-club-badge.crew-line-badge:active * {
       color: var(--crews-primary-accent-contrast) !important;
     }
   }
