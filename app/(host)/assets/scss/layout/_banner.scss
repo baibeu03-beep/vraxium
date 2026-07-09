@@ -163,17 +163,24 @@
     }
 
     .hero-desc {
-      font-family: "Cafe24Ohsquare", sans-serif;
+      // 설명 문구 폰트: "Cafe24AnemoneAir"(= 실제 src 는 Cafe24 Ohsquare "Air" woff).
+      // → hero-title 이 쓰는 Cafe24 Ohsquare(heavy)의 "얇은 Air 형제 폰트"라, 타이틀과
+      //   같은 둥근 캐주얼 DNA(전체 게임/판타지 무드 유지)를 공유하면서도 굵기가 확연히
+      //   가벼워 타이틀과 자연스럽게 차별화된다. Pretendard 대비 살짝 개성 + 가독성 유지.
+      // 이미 전역(_resume-card.scss @font-face)에 로드돼 있어 추가 네트워크 비용 0.
+      // (.hero-title/.hero-breadcrumb 는 기존 폰트 유지 — 여기서만 변경)
+      font-family: "Cafe24AnemoneAir", "Pretendard", "Noto Sans KR", sans-serif;
       letter-spacing: -0.01em;
       word-break: keep-all;
-      // 템플릿 .text-xl(20→18→16px 반응형)을 0.85배로 축소 + 굵기 한 단계 낮춰 자연스럽게.
+      // font-size/line-height 는 현행 유지(20→18px 반응형 × 0.985).
+      // Air 자체가 단일 경량 웨이트라 굵기는 normal 로 둔다(합성 300 은 효과 없음).
       // (취소선은 .line-through 유틸에서 유지, 줄바꿈은 word-break 로 자연스럽게 유지)
-      font-size: 20px * 0.85; // 17px
-      line-height: 30px * 0.85; // 25.5px
-      font-weight: 400;
+      font-size: 20px * 0.985; // 19.7px
+      line-height: 30px * 0.985; // 29.55px
+      font-weight: normal;
       @media only screen and (max-width: 1199.98px) {
-        font-size: 18px * 0.85; // 15.3px
-        line-height: 28px * 0.85; // 23.8px
+        font-size: 18px * 0.985; // 17.73px
+        line-height: 28px * 0.985; // 27.58px
       }
     }
   }
