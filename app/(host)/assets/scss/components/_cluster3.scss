@@ -2730,6 +2730,65 @@
   padding: 40px 24px;
 }
 
+// ============================================================
+// cluster-large-modal — /cluster-3 대형 모달 3종(Portfolio Channel /
+// Output Top 5 / Output Detail 10)의 외곽 shell 크기 단일 소스(SoT).
+//
+// 기존 1468×855(=cluster-4 실무 역량 모달)보다 크게 확대한다. 목표: 1700×950.
+//   width  = min(1700px, calc(100vw - 40px))   height = min(950px, calc(100dvh - 40px))
+//   → 데스크톱(1920)에서 1700×950, 좁은 viewport 는 자동 축소(넘침 방지).
+// transform/zoom 미사용 — 실제 레이아웃 박스를 키운다(getBoundingClientRect 증가).
+//
+// 스코프: .section-modal.cluster-large-modal / .output-modal.cluster-large-modal
+//   → cluster-large-modal 을 부여한 3개 모달에만 적용. 다른 페이지 모달 불변.
+// 특이도 0-2-0 + !important 로 _global.scss Zone A(.section-modal/.output-modal 0-1-0,
+//   max-width:100vw-48 / max-height:100dvh-80) 보다 우선 → 위 확대값을 확정.
+// 내부 콘텐츠 확장은 아래 "cluster-large-modal 내부 비례 확장" 블록 참조.
+// ============================================================
+.section-modal.cluster-large-modal,
+.output-modal.cluster-large-modal {
+  width: min(1700px, calc(100vw - 40px)) !important;
+  max-width: 1700px !important;
+  height: min(950px, calc(100dvh - 40px)) !important;
+  max-height: min(950px, calc(100dvh - 40px)) !important;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+// ---- cluster-large-modal 내부 비례 확장 ----
+// 넓어진 shell 을 콘텐츠가 채우도록(빈 공간만 늘지 않게) 고정폭/고정높이 영역만 키운다.
+// flex:1 / %/50% 기반 컬럼(output-left-column·output-stats-column·output-bottom-left 50%,
+// channel-info-section 32%, channel-images-section flex:1)은 shell 확대 시 자동 확장.
+// 특이도 동률 회귀 방지를 위해 !important 사용(원 선언은 파일 뒤쪽에 위치).
+.output-modal.cluster-large-modal {
+  // 메인 이미지 컬럼: 370 → 470 (+27%)
+  .output-right-column {
+    flex: 0 1 470px !important;
+    width: min(470px, 100%) !important;
+    max-width: 470px !important;
+  }
+  // 역할+사용기술 컬럼: 628 → 760
+  .output-role-links-row .output-role-column {
+    flex: 0 1 760px !important;
+  }
+  // 세로로 커진 shell(855→950, body +~93px)을 콘텐츠가 채우도록 이미지 영역 높이 확장
+  // → 하단 빈 공간(약 92px) 흡수. 스크롤 유발 방지 위해 상단(메인 이미지) 한 곳에만 분배.
+  .output-upper-section {
+    min-height: 400px !important; // 341 → 400 (메인 이미지 세로 확장, body 내 여백 흡수)
+  }
+  .output-bottom-row {
+    gap: 24px !important;
+  }
+}
+
+.section-modal.cluster-large-modal {
+  // 채널 이미지 그리드: 고정 높이 350 → 430 (커진 세로 공간 활용)
+  .channel-images-section {
+    height: 430px !important;
+  }
+}
+
 .section-modal {
   width: min(1468px, calc(100vw - 48px));
   height: 855px;
