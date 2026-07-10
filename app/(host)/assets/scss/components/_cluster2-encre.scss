@@ -147,8 +147,15 @@
         0 0 18px rgba(255, 75, 112, 0.18),
         0 0 36px rgba(255, 152, 166, 0.10);
 
-      .frame-left .hexagon-large-row .hexagon-large-item:hover .hex-label {
+      .frame-left .hexagon-large-row .hexagon-large-item:hover .hex-label,
+      .frame-left .hexagon-large-row .hexagon-large-item.selected .hex-label {
         color: var(--ec-accent);
+      }
+      .frame-left .hexagon-large-row .hexagon-large-item.selected .hex-large {
+        filter: drop-shadow(0 0 6px var(--ec-accent));
+      }
+      .frame-left .hexagon-large-row .hexagon-large-item:focus-visible {
+        outline-color: var(--ec-accent);
       }
       .frame-left .avatar-row .hexagon-stack .hex-more {
         background: var(--ec-accent);

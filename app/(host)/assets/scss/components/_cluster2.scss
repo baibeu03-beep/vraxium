@@ -387,6 +387,24 @@
             color: #ffa500;
           }
 
+          // 선택 상태(중앙 메인에 표시 중) — hover 와 동일한 accent 를 "고정" 표현.
+          &.selected .hex-large {
+            transform: rotateY(0) rotateX(0) scale(1.12);
+            filter: drop-shadow(0 0 6px rgba(255, 165, 0, 0.9));
+          }
+
+          &.selected .hex-label {
+            color: #ffa500;
+            font-weight: 700;
+          }
+
+          // 키보드 포커스 링(접근성)
+          &:focus-visible {
+            outline: 2px solid #ffa500;
+            outline-offset: 4px;
+            border-radius: 8px;
+          }
+
           // 빈 상태 스타일
           &.empty {
             .hex-large {

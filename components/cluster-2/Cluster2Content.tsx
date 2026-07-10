@@ -254,6 +254,7 @@ const Cluster2Content = () => {
     setSidebarPhoto(null);
     setMainPhoto(null);
     setSubPhotos([null, null, null, null]);
+    setSelectedPhotoId(null); // 프로필 전환 시 갤러리 선택 초기화(기본 메인)
     setPhotos([...cluster2DefaultPhotos]);
     // 섹션 2 — 슬로건
     const emptySlogans = createEmptySloganData();
@@ -323,6 +324,10 @@ const Cluster2Content = () => {
   const [mainPhoto, setMainPhoto] = useState<string | null>(null);
   const [subPhotos, setSubPhotos] = useState<(string | null)[]>([null, null, null, null]);
   const [starredPhoto, setStarredPhoto] = useState<number | null>(null);
+  // 상단 프로필 갤러리에서 "메인(중앙)에 크게 표시할 이미지" 선택 상태.
+  // 슬롯 기반 안정 ID(1=메인 기본, 2..5=육각형) 를 보관 — 이미지 파일명/라벨 하드코딩 대신.
+  // null = 기본값(메인). 다른 프로필로 전환/새로고침 시 null 로 리셋되어 기본 메인으로 복귀.
+  const [selectedPhotoId, setSelectedPhotoId] = useState<number | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
   const [photoSaving, setPhotoSaving] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
@@ -508,6 +513,7 @@ const Cluster2Content = () => {
       setSidebarPhoto(userData.photos.mainPhoto);
       setMainPhoto(userData.photos.mainPhoto);
       setSubPhotos(userData.photos.subPhotos);
+      setSelectedPhotoId(null); // 데이터 로드 시 기본 메인 선택으로 복귀
       return;
     }
     setPhotoLoading(true);
@@ -536,6 +542,7 @@ const Cluster2Content = () => {
         setSidebarPhoto(result.data.sidebarPhoto || null);
         setMainPhoto(result.data.mainPhoto || null);
         setSubPhotos(result.data.subPhotos || [null, null, null, null]);
+        setSelectedPhotoId(null); // 데이터 로드 시 기본 메인 선택으로 복귀
       }
     } catch (error) {
       console.error("사진 로드 오류:", error);
@@ -732,26 +739,11 @@ const Cluster2Content = () => {
     }
   };
 
-  // 대표 사진 설정 핸들러 - 사진이 있어야만 설정 가능, 메인 사진으로 변경
-  const handleSetStarred = (index: number) => {
-    if (!subPhotos[index]) return; // 사진이 없으면 무시
-
-    // 선택한 서브 사진을 메인 사진으로 변경
-    const selectedPhoto = subPhotos[index];
-    const currentMainPhoto = mainPhoto;
-
-    // 메인 사진 변경
-    setMainPhoto(selectedPhoto);
-
-    // 서브 사진 재구성: 선택한 사진 위치에 기존 메인 사진 넣기
-    setSubPhotos((prev) => {
-      const newPhotos = [...prev];
-      newPhotos[index] = currentMainPhoto;
-      return newPhotos;
-    });
-
-    // 대표 사진 표시 해제
-    setStarredPhoto(null);
+  // (구) handleSetStarred 스왑 핸들러 제거 — 갤러리 선택은 selectedPhotoId 상태로 처리.
+  // 상단 갤러리(메인+육각형) "메인에 크게 볼 이미지" 선택. 이미지/서브 상태를 파괴적으로
+  // 스왑하지 않고 뷰 전용 selectedPhotoId 만 바꾼다(저장 dirty 미유발). 키보드/마우스 공통.
+  const handleSelectGalleryPhoto = (id: number) => {
+    setSelectedPhotoId(id);
   };
 
   // 섹션 2 모달 (슬로건 편집)
@@ -2205,6 +2197,21 @@ const Cluster2Content = () => {
   const effectiveMainPhoto = mainPhoto || cluster2DefaultPhotos[1];
   const effectiveSubPhotos = [0, 1, 2, 3].map((i) => (subPhotos[i] || cluster2DefaultPhotos[i + 2]));
 
+  // 상단 프로필 갤러리 — 목록(육각형 4개)과 메인(중앙) 이미지가 쓰는 단일 데이터 소스.
+  // 라벨은 위치 기반 장식(어떤 org 든 동일 순서). ID 는 슬롯 기반(1=메인, 2..5=육각형)으로
+  // 이미지 파일명/라벨 조건 분기 없이 org 공통 로직으로 선택 상태를 관리한다.
+  const HEX_LABELS = ["Joy", "Blue", "Passion", "Moments"];
+  const galleryPhotos = [
+    { id: 1, src: effectiveMainPhoto, label: "Profile" },
+    ...effectiveSubPhotos.map((src, i) => ({ id: i + 2, src, label: HEX_LABELS[i] })),
+  ].filter((p) => p.src);
+  // 선택 ID 검증 — 현재 갤러리에 없는 ID 면 기본(첫 항목=메인)으로 폴백.
+  const resolvedSelectedId =
+    selectedPhotoId != null && galleryPhotos.some((p) => p.id === selectedPhotoId)
+      ? selectedPhotoId
+      : galleryPhotos[0]?.id ?? null;
+  const selectedGalleryPhoto = galleryPhotos.find((p) => p.id === resolvedSelectedId) ?? null;
+
   return (
     <div className="cluster2-content">
       {isDemo ? <TestUserBanner /> : null}
@@ -2275,24 +2282,39 @@ const Cluster2Content = () => {
         <div className="frame-left">
           <h2 className="adventure-title">Adventure With Us</h2>
 
-          {/* 큰 육각형 이미지 4개 */}
-          <div className="hexagon-large-row">
-            <div className={`hexagon-large-item ${!effectiveSubPhotos[0] ? "empty" : ""}`} onClick={() => handleSetStarred(0)} style={{ cursor: effectiveSubPhotos[0] ? "pointer" : "default" }}>
-              <div className="hex-large">{effectiveSubPhotos[0] && <img src={effectiveSubPhotos[0]} alt="Joy" fetchPriority="high" decoding="async" />}</div>
-              <span className="hex-label">Joy</span>
-            </div>
-            <div className={`hexagon-large-item ${!effectiveSubPhotos[1] ? "empty" : ""}`} onClick={() => handleSetStarred(1)} style={{ cursor: effectiveSubPhotos[1] ? "pointer" : "default" }}>
-              <div className="hex-large">{effectiveSubPhotos[1] && <img src={effectiveSubPhotos[1]} alt="Blue" fetchPriority="high" decoding="async" />}</div>
-              <span className="hex-label">Blue</span>
-            </div>
-            <div className={`hexagon-large-item ${!effectiveSubPhotos[2] ? "empty" : ""}`} onClick={() => handleSetStarred(2)} style={{ cursor: effectiveSubPhotos[2] ? "pointer" : "default" }}>
-              <div className="hex-large">{effectiveSubPhotos[2] && <img src={effectiveSubPhotos[2]} alt="Passion" fetchPriority="high" decoding="async" />}</div>
-              <span className="hex-label">Passion</span>
-            </div>
-            <div className={`hexagon-large-item ${!effectiveSubPhotos[3] ? "empty" : ""}`} onClick={() => handleSetStarred(3)} style={{ cursor: effectiveSubPhotos[3] ? "pointer" : "default" }}>
-              <div className="hex-large">{effectiveSubPhotos[3] && <img src={effectiveSubPhotos[3]} alt="Moments" fetchPriority="high" decoding="async" />}</div>
-              <span className="hex-label">Moments</span>
-            </div>
+          {/* 큰 육각형 이미지 4개 — 클릭/키보드로 중앙 메인 이미지 선택(갤러리 썸네일) */}
+          <div className="hexagon-large-row" role="group" aria-label="프로필 이미지 갤러리">
+            {effectiveSubPhotos.map((src, i) => {
+              const id = i + 2; // 슬롯 기반 안정 ID (2..5)
+              const label = HEX_LABELS[i];
+              const selectable = !!src;
+              const isSelected = selectable && resolvedSelectedId === id;
+              const select = () => {
+                if (selectable) handleSelectGalleryPhoto(id);
+              };
+              return (
+                <div
+                  key={id}
+                  className={`hexagon-large-item ${!src ? "empty" : ""} ${isSelected ? "selected" : ""}`}
+                  role="button"
+                  tabIndex={selectable ? 0 : -1}
+                  aria-pressed={isSelected}
+                  aria-disabled={!selectable}
+                  aria-label={`${label} 이미지를 메인으로 보기`}
+                  onClick={select}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+                      e.preventDefault();
+                      select();
+                    }
+                  }}
+                  style={{ cursor: selectable ? "pointer" : "default" }}
+                >
+                  <div className="hex-large">{src && <img src={src} alt={label} fetchPriority="high" decoding="async" />}</div>
+                  <span className="hex-label">{label}</span>
+                </div>
+              );
+            })}
           </div>
 
           <div className="avatar-row">
@@ -2317,9 +2339,9 @@ const Cluster2Content = () => {
           </div>
         </div>
 
-        {/* 중앙 프로필 사진 */}
-        <div className={`frame-center ${!effectiveMainPhoto ? "empty" : ""}`}>
-          {effectiveMainPhoto && <img src={effectiveMainPhoto} alt="Profile" />}
+        {/* 중앙 프로필 사진 — 갤러리에서 선택된 이미지를 크게 표시(기본=메인) */}
+        <div className={`frame-center ${!selectedGalleryPhoto ? "empty" : ""}`} aria-live="polite">
+          {selectedGalleryPhoto && <img src={selectedGalleryPhoto.src!} alt={selectedGalleryPhoto.label} />}
         </div>
 
         {/* 오른쪽 카드 */}
