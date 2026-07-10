@@ -2970,9 +2970,9 @@ const Cluster3Content = () => {
 
       {/* 섹션 3 모달 - 채널 링크 편집 */}
       {section3ModalOpen && (
-        <div className="section-modal-overlay">
+        <div className="section-modal-overlay work-modal-size-overlay">
           <div className="modal-scroll-content">
-          <div className={`section-modal cluster-large-modal${!isEditMode && (() => { const c = channelCards[currentCardIndex]; if (!c) return false; return !c.channelName?.trim() && !c.platform && !c.management && !c.startYear && !c.rating && !c.status && !c.link?.trim() && (c.images || []).filter((img) => img).length === 0 && !c.insight?.trim() && !c.experience?.trim() && !c.metrics?.trim(); })() ? " modal-dimmed" : ""}`}>
+          <div className={`section-modal work-modal-size${!isEditMode && (() => { const c = channelCards[currentCardIndex]; if (!c) return false; return !c.channelName?.trim() && !c.platform && !c.management && !c.startYear && !c.rating && !c.status && !c.link?.trim() && (c.images || []).filter((img) => img).length === 0 && !c.insight?.trim() && !c.experience?.trim() && !c.metrics?.trim(); })() ? " modal-dimmed" : ""}`}>
             <div className="section-modal-header">
               <button className="modal-close-btn" onClick={handleCloseModal}>
                 <i className="ti ti-x"></i>
@@ -3653,9 +3653,9 @@ const Cluster3Content = () => {
 
       {/* 섹션 4 모달 - Top Works 링크 편집 */}
       {section4ModalOpen && (
-        <div className="output-modal-overlay">
+        <div className="output-modal-overlay work-modal-size-overlay">
           <div className="modal-scroll-content">
-          <div className="output-modal cluster-large-modal">
+          <div className="output-modal work-modal-size">
             <div className="output-modal-header">
               <button className="modal-close-btn" onClick={handleCloseOutputModal}>
                 <i className="ti ti-x"></i>
@@ -4413,9 +4413,9 @@ const Cluster3Content = () => {
       )}
 
       {isDetailModalOpen && (
-        <div className="output-modal-overlay">
+        <div className="output-modal-overlay work-modal-size-overlay">
           <div className="modal-scroll-content">
-          <div className="output-modal detail-modal-variant cluster-large-modal">
+          <div className="output-modal detail-modal-variant work-modal-size">
             <div className="output-modal-header">
               <button className="modal-close-btn" onClick={handleCloseDetailModal}>
                 <i className="ti ti-x"></i>

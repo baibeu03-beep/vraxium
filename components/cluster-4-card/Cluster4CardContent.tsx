@@ -12177,8 +12177,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
       {/* ========== 실무 정보 카드 상세보기 모달 (1차: 가로형_대 1468×855 / 헤더·푸터·state) ========== */}
       {workInfoViewModalOpen && selectedWorkInfoCard && (
-        <div className="section-modal-overlay">
-          <div className="section-modal work-view-modal workinfo-view-modal">
+        <div className="section-modal-overlay work-modal-size-overlay">
+          <div className="section-modal work-view-modal workinfo-view-modal work-modal-size">
             {/* ── 헤더 (100px) ── */}
             <div className="section-modal-header">
               <div className="modal-header-top">
@@ -12738,8 +12738,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
       {/* ========== 실무 경험 카드 상세보기 모달 (workInfo 패턴 복제 — 가로형_대 1468×855 / 헤더·푸터·state) ========== */}
       {workExpViewModalOpen && selectedWorkExpCard && (
-        <div className="section-modal-overlay">
-          <div className="section-modal work-view-modal workexp-view-modal">
+        <div className="section-modal-overlay work-modal-size-overlay">
+          <div className="section-modal work-view-modal workexp-view-modal work-modal-size">
             {/* ── 헤더 (100px) ── */}
             <div className="section-modal-header">
               <div className="modal-header-top">
@@ -13260,8 +13260,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
       {/* ========== 실무 역량 카드 상세보기 모달 (workInfo 패턴 복제) ========== */}
       {workAbilityViewModalOpen && selectedWorkAbilityCard && (
-        <div className="section-modal-overlay">
-          <div className="section-modal work-view-modal workability-view-modal">
+        <div className="section-modal-overlay work-modal-size-overlay">
+          <div className="section-modal work-view-modal workability-view-modal work-modal-size">
             <div className="section-modal-header">
               <div className="modal-header-top">
                 <img src="/images/0/write.png" alt="write" />
@@ -13730,8 +13730,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
       {/* ========== 실무 경력 카드 상세보기 모달 ========== */}
       {workCareerViewModalOpen && selectedWorkCareerCard && (
-        <div className="section-modal-overlay">
-          <div className="section-modal work-view-modal workcareer-view-modal">
+        <div className="section-modal-overlay work-modal-size-overlay">
+          <div className="section-modal work-view-modal workcareer-view-modal work-modal-size">
             {/* ── 헤더 — workInfo/workExp 패턴 복제 (modal-header-top + h3 + modal-subtitle + close) ── */}
             <div className="section-modal-header">
               <div className="modal-header-top">
