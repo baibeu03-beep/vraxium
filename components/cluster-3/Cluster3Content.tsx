@@ -39,6 +39,8 @@ import {
   getContributeDisplay,
   displayTopMetric,
   TOP_METRIC_MAX_LEN,
+  DEFAULT_CHANNEL_IMAGE,
+  MAX_CHANNEL_NAME_LEN,
 } from "@/lib/cluster3-channel-card";
 
 // Zone C(>1920px, ResponsiveScale.tsx에서 documentElement에 zoom:1.08 적용) 대응.
@@ -713,6 +715,12 @@ const Cluster3Content = () => {
         { cardIndex, channelName: card?.channelName },
       );
       await popup.alert("샘플 데이터는 저장할 수 없습니다. 실제 채널 정보를 입력해주세요.");
+      return null;
+    }
+    // 방어: 대표 이미지(slot 0)는 필수. 기본 이미지 fallback 은 표시 전용이므로
+    // 실제 업로드 이미지가 없으면 저장하지 않는다. (UI 게이트 우회 방지)
+    if (!card?.images?.[0]) {
+      await popup.alert("대표 이미지를 등록해주세요.");
       return null;
     }
     setIsSavingChannelCard(true);
@@ -1573,7 +1581,7 @@ const Cluster3Content = () => {
     if (!card.rating || Number(card.rating) < 1 || Number(card.rating) > 10) return false;
     if (!card.status) return false;
     if (!card.link?.trim()) return false;
-    if ((card.images || []).filter((img) => img !== null).length < 3) return false;
+    if (!card.images?.[0]) return false; // 대표 이미지(slot 0) 1개 필수
     if (!card.insight?.trim()) return false;
     if (!card.experience?.trim()) return false;
     if (!card.metrics?.trim()) return false;
@@ -2187,25 +2195,15 @@ const Cluster3Content = () => {
     handleCardChange("images", newImages);
   };
 
+  // 채널 기여 — 별 10개(반개 없음, 각 10%) + 퍼센트 텍스트. 값 없으면 "-" (미입력).
   const StarRating = ({ rating }: { rating: number }) => {
-    const r = Number(rating) || 0;
-    const fullStars = Math.floor(r / 2);
-    const hasHalf = r % 2 === 1;
-    const emptyStars = 5 - fullStars - (hasHalf ? 1 : 0);
+    const filled = Math.min(10, Math.max(0, Math.round(Number(rating) || 0)));
     return (
       <span className="star-rating">
-        {Array(fullStars)
-          .fill(0)
-          .map((_, i) => (
-            <i key={`f${i}`} className="ti ti-star-filled" />
-          ))}
-        {hasHalf && <i className="ti ti-star-half-filled" />}
-        {Array(emptyStars)
-          .fill(0)
-          .map((_, i) => (
-            <i key={`e${i}`} className="ti ti-star" />
-          ))}
-        <span className="rating-text">{r}/10</span>
+        {Array.from({ length: 10 }).map((_, i) => (
+          <i key={i} className={i < filled ? "ti ti-star-filled" : "ti ti-star"} />
+        ))}
+        <span className="rating-text">{getContributeDisplay(rating).text}</span>
       </span>
     );
   };
@@ -2731,9 +2729,8 @@ const Cluster3Content = () => {
             // 카드 표시 파생값 — 상세 모달과 동일 공통 매퍼 경유 (재조립 금지).
             const statusMeta = getChannelStatusMeta(card.status);
             const contribute = getContributeDisplay(card.rating);
-            const defaultThumb = `/images/0/cluster 3/image/${isPX ? "px/" : isEC ? "ec/" : ""}1-${((card.id - 1) % 8) + 1}.png`;
-            // 대표 이미지 = 모달 대표 이미지(slot 0)와 동일 원천. 없으면 기존 기본 이미지.
-            const thumbSrc = card.images && card.images[0] ? card.images[0] : defaultThumb;
+            // 대표 이미지 = 모달 대표 이미지(slot 0)와 동일 원천. 없으면 공통 기본 이미지(표시 전용).
+            const thumbSrc = card.images && card.images[0] ? card.images[0] : DEFAULT_CHANNEL_IMAGE;
             const dateLabel =
               card.startYear && card.startMonth && card.startDay
                 ? `${card.startYear}년 ${String(card.startMonth).padStart(2, "0")}월 ${String(card.startDay).padStart(2, "0")}일`
@@ -3040,14 +3037,15 @@ const Cluster3Content = () => {
                   {(() => {
                     const card = channelCards[currentCardIndex];
                     if (!card) return null;
+                    // 읽기/편집 공통 단일 정의 — 순서: 채널명 → 플랫폼 → 살펴보기 → 관리 → 시작 → 기여 → 운영현황 → TOP 지표
                     const fields = [
                       { label: "채널명", key: "channelName", type: "channelNameInput" },
                       { label: "채널 플랫폼", key: "platform", type: "platformDropdown" },
+                      { label: "채널 살펴보기", key: "link", type: "link" },
                       { label: "채널 관리", key: "management", type: "select", options: MANAGEMENT_OPTIONS },
                       { label: "채널 시작", key: "date", type: "date" },
-                      { label: "채널 평가", key: "rating", type: "rating" },
+                      { label: "채널 기여", key: "rating", type: "rating" },
                       { label: "운영 현황", key: "status", type: "select", options: STATUS_OPTIONS },
-                      { label: "채널 살펴보기", key: "link", type: "link" },
                       { label: "TOP 지표", key: "topMetric", type: "topMetric" },
                     ];
                     return fields.map((f) => (
@@ -3061,10 +3059,10 @@ const Cluster3Content = () => {
                           (isEditMode ? (
                             <div className="channel-name-input-wrapper">
                               <span className="at-prefix">@&nbsp;</span>
-                              <input type="text" value={(card.channelName || "").replace(/^@\s*/, "")} onChange={(e) => handleCardChange("channelName", "@ " + e.target.value)} placeholder="채널명을 입력하세요" />
+                              <input type="text" maxLength={MAX_CHANNEL_NAME_LEN} value={(card.channelName || "").replace(/^@\s*/, "")} onChange={(e) => handleCardChange("channelName", "@ " + e.target.value)} placeholder="채널명을 입력하세요" />
                             </div>
                           ) : (
-                            <span className="field-value">@ {(card.channelName || "-").replace(/^@\s*/, "")}</span>
+                            <span className="field-value channel-name-value">@ {(card.channelName || "-").replace(/^@\s*/, "")}</span>
                           ))}
                         {f.type === "select" &&
                           (isEditMode ? (
@@ -3122,7 +3120,7 @@ const Cluster3Content = () => {
                             {isEditMode && (
                               <div className="custom-dropdown small">
                                 <div className="dropdown-selected" onClick={(e) => toggleDropdown("rating", e)}>
-                                  <span>{card.rating || "-"}</span>
+                                  <span>{getContributeDisplay(card.rating).text}</span>
                                   <i className="ti ti-chevron-down"></i>
                                 </div>
                               </div>
@@ -3184,62 +3182,52 @@ const Cluster3Content = () => {
                   })()}
                 </div>
                 <div className="channel-images-section" data-field="images">
-                  {/* 대표 이미지 타이틀 — 주석 처리
-                  <h4 className="channel-images-title">대표 이미지 (최소 3장 필수)</h4>
-                  */}
-                  <div className="images-grid">
-                    {channelCards[currentCardIndex]?.images.map((img, si) => (
-                      <div key={si} className={`image-slot${si === 0 ? " large" : " small"}${!isSlotEnabled(si) ? " disabled" : ""}`}>
-                        <div
-                          className="image-preview"
-                          onClick={() => {
-                            if (img) setPreviewImage(img);
-                          }}
-                        >
-                          {img ? (
-                            <img src={img} alt={`대표 이미지 ${si + 1}`} />
-                          ) : (
-                            <div className="empty-slot">
-                              <i className="ti ti-photo-plus"></i>
-                            </div>
-                          )}
-                          {isEditMode && si <= 2 && !img && <span className="image-required">*</span>}
-                          {isEditMode && (
-                            <div className="image-actions-overlay">
-                              <button
-                                className="image-action-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleImageUploadClick(si);
-                                }}
-                                disabled={!isSlotEnabled(si)}
-                              >
-                                <i className="ti ti-upload"></i>
-                              </button>
-                              <button
-                                className="image-action-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleImageDelete(si);
-                                }}
-                                disabled={!isSlotEnabled(si) || !img}
-                              >
-                                <i className="ti ti-trash"></i>
-                              </button>
-                            </div>
-                          )}
+                  {/* 대표 이미지 — 단일 슬롯(1개). 값 없으면 기본 이미지 표시(저장 아님). */}
+                  <div className="images-grid single-image">
+                    {(() => {
+                      const realImg = channelCards[currentCardIndex]?.images?.[0] || null;
+                      const displayImg = realImg || DEFAULT_CHANNEL_IMAGE;
+                      return (
+                        <div className="image-slot large">
+                          <div className="image-preview" onClick={() => setPreviewImage(displayImg)}>
+                            <img src={displayImg} alt="대표 이미지" />
+                            {isEditMode && !realImg && <span className="image-required">*</span>}
+                            {isEditMode && (
+                              <div className="image-actions-overlay">
+                                <button
+                                  className="image-action-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleImageUploadClick(0);
+                                  }}
+                                >
+                                  <i className="ti ti-upload"></i>
+                                </button>
+                                <button
+                                  className="image-action-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleImageDelete(0);
+                                  }}
+                                  disabled={!realImg}
+                                >
+                                  <i className="ti ti-trash"></i>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            ref={(el) => {
+                              imageInputRefs.current[0] = el;
+                            }}
+                            style={{ display: "none" }}
+                            onChange={(e) => handleImageFileChange(e, 0)}
+                          />
                         </div>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          ref={(el) => {
-                            imageInputRefs.current[si] = el;
-                          }}
-                          style={{ display: "none" }}
-                          onChange={(e) => handleImageFileChange(e, si)}
-                        />
-                      </div>
-                    ))}
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -3359,7 +3347,7 @@ const Cluster3Content = () => {
                           if (!card.rating || Number(card.rating) < 1) missing.push("rating");
                           if (!card.status) missing.push("status");
                           if (!card.link?.trim()) missing.push("link");
-                          if ((card.images || []).filter((img) => img !== null).length < 3) missing.push("images");
+                          if (!card.images?.[0]) missing.push("images"); // 대표 이미지 1개 필수
                           if (!card.insight?.trim()) missing.push("insight");
                           if (!card.experience?.trim()) missing.push("experience");
                           if (!card.metrics?.trim()) missing.push("metrics");
@@ -3378,10 +3366,11 @@ const Cluster3Content = () => {
 
                           if (!(await popup.confirm("저장하시겠습니까?"))) return;
 
-                          // 빈 슬롯 뒤로 정렬
-                          const compactImages = (card.images || []).filter((img) => img !== null);
-                          const reorderedImages = [...compactImages, ...Array(5 - compactImages.length).fill(null)];
-                          const cardToSave = { ...card, images: reorderedImages };
+                          // 단일 대표 이미지 구조: slot 0(대표)만 갱신하고 레거시 [1~4]는
+                          // 보존(데이터 손실 없음). compact/재정렬로 후속 이미지를 밀어내지 않는다.
+                          const preservedImages = [...(card.images || [])];
+                          while (preservedImages.length < 5) preservedImages.push(null);
+                          const cardToSave = { ...card, images: preservedImages };
 
                           if (isDemoMode) {
                             const updated = [...channelCards];
@@ -3624,7 +3613,8 @@ const Cluster3Content = () => {
           } else if (openDropdownId === "status") {
             options = STATUS_OPTIONS.map((o) => ({ key: o, label: o }));
           } else if (openDropdownId === "rating") {
-            options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => ({ key: String(n), label: String(n) }));
+            // key=rating(1~10, DB 저장 구조 유지), label=10% 단위 표시
+            options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => ({ key: String(n), label: `${n * 10}%` }));
           }
           if (options.length === 0) return null;
           const currentVal = openDropdownId === "rating" ? String(card.rating) : (card as any)[openDropdownId] || "";

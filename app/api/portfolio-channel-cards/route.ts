@@ -3,7 +3,13 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
 import { resolveWriteUserId } from "@/lib/api-auth";
 import { enforceQaMode } from "@/lib/qaModeGate";
-import { normalizeTopMetric, isTopMetricTooLong, TOP_METRIC_MAX_LEN } from "@/lib/cluster3-channel-card";
+import {
+  normalizeTopMetric,
+  isTopMetricTooLong,
+  TOP_METRIC_MAX_LEN,
+  isChannelNameTooLong,
+  MAX_CHANNEL_NAME_LEN,
+} from "@/lib/cluster3-channel-card";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -184,7 +190,15 @@ export async function PUT(request: Request) {
       ua: request.headers.get("user-agent")?.slice(0, 120) ?? null,
     });
 
-    // TOP 지표 길이 검증 (각 5자). DB 는 원문 보존이 원칙이므로 서버가 조용히
+    // 채널명 길이 검증 ("@ " prefix 제외 40자). 서버가 조용히 절단하지 않고 초과 시 400.
+    if (isChannelNameTooLong(body.channelName)) {
+      return NextResponse.json(
+        { error: `채널명은 ${MAX_CHANNEL_NAME_LEN}자 이내로 입력해주세요.` },
+        { status: 400 },
+      );
+    }
+
+    // TOP 지표 길이 검증 (각 10자). DB 는 원문 보존이 원칙이므로 서버가 조용히
     // 절단하지 않고 초과 시 400 반환. 공백만은 아래 upsert 에서 null 정규화.
     if (isTopMetricTooLong(body.topMetricName) || isTopMetricTooLong(body.topMetricValue)) {
       return NextResponse.json(

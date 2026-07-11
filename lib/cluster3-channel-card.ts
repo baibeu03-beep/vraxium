@@ -93,8 +93,26 @@ export function getChannelStatusMeta(status: unknown): ChannelStatusMeta {
   return CHANNEL_STATUS_FALLBACK;
 }
 
+// ---------- 대표 이미지 fallback (표시 전용, 저장 금지) ----------
+// 실제 저장 이미지가 없을 때 카드 썸네일/모달 미리보기에 보여줄 기본 이미지.
+// DB 에 저장되지 않으며, 필수 validation 을 통과시키지도 않는다.
+export const DEFAULT_CHANNEL_IMAGE = "/images/0/cluster 3/image/ec/1-2.png";
+
+// ---------- 채널명 길이 ----------
+export const MAX_CHANNEL_NAME_LEN = 40; // "@ " prefix 제외한 사용자 입력분 기준
+
+// 저장값("@ Discovery")에서 prefix 제거한 실제 입력 길이.
+export function channelNameBodyLength(value: unknown): number {
+  if (typeof value !== "string") return 0;
+  return value.replace(/^@\s*/, "").length;
+}
+
+export function isChannelNameTooLong(value: unknown): boolean {
+  return channelNameBodyLength(value) > MAX_CHANNEL_NAME_LEN;
+}
+
 // ---------- TOP 지표 (카드 대표 지표 1쌍) ----------
-export const TOP_METRIC_MAX_LEN = 5;
+export const TOP_METRIC_MAX_LEN = 10;
 
 // 공백만 → null 정규화. 문자열 아님 → null.
 export function normalizeTopMetric(value: unknown): string | null {

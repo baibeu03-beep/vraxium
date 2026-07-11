@@ -11,6 +11,10 @@ import {
   isTopMetricTooLong,
   displayTopMetric,
   TOP_METRIC_MAX_LEN,
+  DEFAULT_CHANNEL_IMAGE,
+  MAX_CHANNEL_NAME_LEN,
+  channelNameBodyLength,
+  isChannelNameTooLong,
 } from "../lib/cluster3-channel-card.ts";
 
 let pass = 0;
@@ -76,14 +80,22 @@ t("unknown value → fallback", () => assert.equal(getChannelStatusMeta("삭제�
 t("null → fallback", () => assert.equal(getChannelStatusMeta(null).tone, "unknown"));
 
 console.log("TOP 지표 normalize / length");
-t("MAX = 5", () => assert.equal(TOP_METRIC_MAX_LEN, 5));
+t("MAX = 10", () => assert.equal(TOP_METRIC_MAX_LEN, 10));
 t("공백만 → null", () => assert.equal(normalizeTopMetric("   "), null));
 t("trim 적용", () => assert.equal(normalizeTopMetric("  조회수 "), "조회수"));
 t("non-string → null", () => assert.equal(normalizeTopMetric(123), null));
-t("5자 OK (초과 아님)", () => assert.equal(isTopMetricTooLong("12345"), false));
-t("6자 초과", () => assert.equal(isTopMetricTooLong("123456"), true));
-t("공백 포함 6자라도 trim 후 판단", () => assert.equal(isTopMetricTooLong(" 조회수 "), false));
+t("10자 OK (초과 아님)", () => assert.equal(isTopMetricTooLong("1234567890"), false));
+t("11자 초과", () => assert.equal(isTopMetricTooLong("12345678901"), true));
+t("공백 포함 10자 초과라도 trim 후 판단", () => assert.equal(isTopMetricTooLong(" 1234567890 "), false));
 t("display 빈값 → '-'", () => assert.equal(displayTopMetric(null), "-"));
 t("display 값 → 그대로", () => assert.equal(displayTopMetric("24만"), "24만"));
+
+console.log("채널명 길이 / 기본 이미지");
+t("MAX_CHANNEL_NAME_LEN = 40", () => assert.equal(MAX_CHANNEL_NAME_LEN, 40));
+t("@ prefix 제외 길이", () => assert.equal(channelNameBodyLength("@ Discovery"), 9));
+t("40자 body OK", () => assert.equal(isChannelNameTooLong("@ " + "가".repeat(40)), false));
+t("41자 body 초과", () => assert.equal(isChannelNameTooLong("@ " + "가".repeat(41)), true));
+t("non-string → 0/false", () => { assert.equal(channelNameBodyLength(null), 0); assert.equal(isChannelNameTooLong(null), false); });
+t("DEFAULT_CHANNEL_IMAGE 경로", () => assert.equal(DEFAULT_CHANNEL_IMAGE, "/images/0/cluster 3/image/ec/1-2.png"));
 
 console.log(`\nAll ${pass} assertions passed ✅`);

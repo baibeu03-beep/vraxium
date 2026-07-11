@@ -3345,6 +3345,8 @@
         display: flex;
         align-items: center;
         flex: 1;
+        min-width: 0; // 긴 채널명이 모달 width 를 밀어내지 않도록
+        max-width: 100%;
         background: #1a1a2e;
         border: 1px solid rgba(255, 165, 0, 0.3);
         padding: 0 10px;
@@ -3356,7 +3358,10 @@
           flex-shrink: 0;
         }
         input {
-          flex: 1;
+          flex: 1 1 auto;
+          min-width: 0; // 공백 없는 긴 문자열도 폭 확장 방지
+          max-width: 100%;
+          box-sizing: border-box;
           border: none !important;
           background: transparent !important;
           padding-left: 0;
@@ -3369,6 +3374,17 @@
             opacity: 1;
           }
         }
+      }
+
+      // 읽기 모드 채널명 — 고정폭(233px) 안에서 한 줄 말줄임표 (레이아웃 침범 방지)
+      .field-value.channel-name-value {
+        display: block;
+        min-width: 0;
+        max-width: 233px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        line-height: 24px;
       }
 
       .link-field {
@@ -3414,18 +3430,17 @@
       .star-rating {
         display: flex;
         align-items: center;
-        gap: 2px;
+        gap: 1px;
         font-family: Pretendard, sans-serif !important;
         padding-left: 8px;
         height: 36px;
         min-height: 36px;
         box-sizing: border-box;
         flex-shrink: 0;
-        min-width: 120px;
-        width: 120px;
+        min-width: 0; // 별 10개(10% 단위) 수용
         i {
           color: #faab07;
-          font-size: 16px;
+          font-size: 13px;
         }
         .rating-text {
           margin-left: 6px;
@@ -3450,6 +3465,17 @@
         grid-template-rows: 1fr 1fr;
         gap: 8px;
         height: 100%;
+
+        // 단일 대표 이미지 — 섹션 전체를 채우는 1개 슬롯
+        &.single-image {
+          grid-template-columns: 1fr;
+          grid-template-rows: 1fr;
+
+          .image-slot.large {
+            grid-row: 1 / 2;
+            grid-column: 1 / 2;
+          }
+        }
       }
 
       .image-slot {
