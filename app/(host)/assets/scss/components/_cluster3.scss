@@ -1686,9 +1686,13 @@
             -webkit-box-orient: vertical;
             -webkit-line-clamp: 3;
             line-clamp: 3;
-            // 정확히 3줄 높이로 클립 — line-height(1.45em) × 3.
-            // 4번째 줄의 윗부분이 한 픽셀도 보이지 않도록 max-height 를 line-height 에 맞춘다.
-            max-height: calc(1.45em * 3);
+            // 3줄 노출은 line-clamp 로만 제어(4번째 줄은 clamp 가 잘라냄).
+            // max-height 로 3줄보다 작게 제한하면 3번째 줄이 잘리므로 캡을 두지 않는다.
+            // 대신 3줄 높이를 min-height 로 확보하고 flex-shrink 를 막아 부모 flex 에서
+            // 눌려 2줄로 줄어드는 것을 방지. (line-height 에 비례 → 폰트 스케일 안전)
+            max-height: none;
+            min-height: calc(1.45em * 3);
+            flex-shrink: 0;
             overflow: hidden;
             overflow-wrap: anywhere;
             word-break: break-word;
