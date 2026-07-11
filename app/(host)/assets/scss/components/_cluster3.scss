@@ -1684,8 +1684,11 @@
             color: #b8b8b8;
             display: -webkit-box;
             -webkit-box-orient: vertical;
-            -webkit-line-clamp: 4;
-            line-clamp: 4;
+            -webkit-line-clamp: 3;
+            line-clamp: 3;
+            // 정확히 3줄 높이로 클립 — line-height(1.45em) × 3.
+            // 4번째 줄의 윗부분이 한 픽셀도 보이지 않도록 max-height 를 line-height 에 맞춘다.
+            max-height: calc(1.45em * 3);
             overflow: hidden;
             overflow-wrap: anywhere;
             word-break: break-word;
@@ -3059,16 +3062,21 @@
           max-width: 233px;
           flex: none;
 
+          // 채널 기여 % 드롭다운 — 오른쪽 끝 위치 고정, 왼쪽으로만 폭 확장.
+          // (width +35 = 55→90, margin-left -35 = 49→14 → 오른쪽 edge 불변)
           .custom-dropdown {
-            width: 55px;
-            min-width: 55px;
-            max-width: 55px;
+            width: 90px;
+            min-width: 90px;
+            max-width: 90px;
             flex: none;
-            margin-left: 49px;
+            margin-left: 14px;
+            box-sizing: border-box;
 
             .dropdown-selected {
-              width: 55px;
-              min-width: 55px;
+              width: 90px;
+              min-width: 90px;
+              box-sizing: border-box; // padding 포함 → chevron 이 border 안쪽에서 끝남
+              padding-right: 12px;
             }
           }
         }
