@@ -3430,17 +3430,18 @@
       .star-rating {
         display: flex;
         align-items: center;
-        gap: 1px;
+        gap: 2px;
         font-family: Pretendard, sans-serif !important;
         padding-left: 8px;
         height: 36px;
         min-height: 36px;
         box-sizing: border-box;
         flex-shrink: 0;
-        min-width: 0; // 별 10개(10% 단위) 수용
+        min-width: 120px;
+        width: 120px;
         i {
           color: #faab07;
-          font-size: 13px;
+          font-size: 16px;
         }
         .rating-text {
           margin-left: 6px;
@@ -3465,17 +3466,6 @@
         grid-template-rows: 1fr 1fr;
         gap: 8px;
         height: 100%;
-
-        // 단일 대표 이미지 — 섹션 전체를 채우는 1개 슬롯
-        &.single-image {
-          grid-template-columns: 1fr;
-          grid-template-rows: 1fr;
-
-          .image-slot.large {
-            grid-row: 1 / 2;
-            grid-column: 1 / 2;
-          }
-        }
       }
 
       .image-slot {

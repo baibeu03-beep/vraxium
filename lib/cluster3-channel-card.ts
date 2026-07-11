@@ -8,32 +8,44 @@
 // 관련 단위 테스트: scripts/verify_cluster3_card_mappers.mjs
 // =============================================
 
-// ---------- 기여도 (채널 평가 rating 1~10 → 기여도 %) ----------
+// ---------- 기여도 (채널 평가 rating 1~10 → 기여도 % / 별 5개) ----------
 // 규칙: 항상 10% 단위. rating 이 비어있음/파싱불가 → null (미평가, "0%" 로 오인 금지).
-//        소수/반별 값은 정수 rating 으로 반올림 후 ×10 (10% 단위 규칙 명시 적용).
-//        범위 밖 값은 0~10 으로 clamp → 0~100% 방어.
+//        존재하는 rating 은 1~10 으로 clamp → 10~100% (0% 는 미입력 전용).
+//        소수/반별 값은 정수 rating 으로 반올림.
+//        별점은 5개 만점: starValue = rating / 2 (rating 1 = 별 0.5개 = 10%).
 export function ratingToContributePercent(rating: unknown): number | null {
+  const normalized = normalizeRating(rating);
+  return normalized === null ? null : normalized * 10;
+}
+
+// 존재하는 rating 을 1~10 정수로 정규화. 비어있음/파싱불가 → null.
+function normalizeRating(rating: unknown): number | null {
   if (rating === null || rating === undefined) return null;
   const raw = typeof rating === "string" ? rating.trim() : rating;
   if (raw === "") return null;
   const n = Number(raw);
   if (!Number.isFinite(n)) return null;
-  const clampedRating = Math.min(10, Math.max(0, Math.round(n)));
-  return clampedRating * 10;
+  return Math.min(10, Math.max(1, Math.round(n)));
 }
 
-// 카드/모달 공용 표시 헬퍼. bar 폭은 percent(없으면 0), 텍스트는 "N%" 또는 "-".
+// 카드/모달 공용 표시 헬퍼.
+//  percent: 10~100 또는 null(미입력)
+//  starValue: 0.5~5 또는 null(미입력) — 별 5개 만점, 0.5 단위
+//  barWidth: percent(없으면 0), text: "N%" 또는 "-"
 export function getContributeDisplay(rating: unknown): {
   percent: number | null;
+  starValue: number | null;
   barWidth: number;
   text: string;
   hasValue: boolean;
 } {
-  const percent = ratingToContributePercent(rating);
-  const hasValue = percent !== null;
+  const normalized = normalizeRating(rating);
+  const hasValue = normalized !== null;
+  const percent = hasValue ? normalized * 10 : null;
   return {
     percent,
-    barWidth: hasValue ? percent : 0,
+    starValue: hasValue ? normalized / 2 : null,
+    barWidth: hasValue ? (percent as number) : 0,
     text: hasValue ? `${percent}%` : "-",
     hasValue,
   };

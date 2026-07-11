@@ -34,21 +34,38 @@ t("null → null", () => assert.equal(ratingToContributePercent(null), null));
 t("undefined → null", () => assert.equal(ratingToContributePercent(undefined), null));
 t("non-numeric → null", () => assert.equal(ratingToContributePercent("abc"), null));
 t("above range 15 → clamp 100", () => assert.equal(ratingToContributePercent("15"), 100));
-t("negative -3 → clamp 0", () => assert.equal(ratingToContributePercent("-3"), 0));
+t("negative -3 → clamp 10 (min 1, 0% 금지)", () => assert.equal(ratingToContributePercent("-3"), 10));
 t("half 7.5 → round → 80 (10% 단위)", () => assert.equal(ratingToContributePercent("7.5"), 80));
 t("decimal 2.4 → round → 20", () => assert.equal(ratingToContributePercent(2.4), 20));
 
-console.log("getContributeDisplay");
-t("80% has bar+text", () => {
+console.log("getContributeDisplay (별 5개 만점 + %)");
+t("80% has bar+text+star", () => {
   const d = getContributeDisplay("8");
   assert.equal(d.percent, 80);
+  assert.equal(d.starValue, 4);
   assert.equal(d.barWidth, 80);
   assert.equal(d.text, "80%");
   assert.equal(d.hasValue, true);
 });
-t("empty → bar 0, text '-', no value", () => {
+t("rating 7 → 70% / 별 3.5", () => {
+  const d = getContributeDisplay(7);
+  assert.equal(d.percent, 70);
+  assert.equal(d.starValue, 3.5);
+});
+t("rating 1 → 10% / 별 0.5", () => {
+  const d = getContributeDisplay(1);
+  assert.equal(d.percent, 10);
+  assert.equal(d.starValue, 0.5);
+});
+t("rating 10 → 100% / 별 5", () => {
+  const d = getContributeDisplay(10);
+  assert.equal(d.percent, 100);
+  assert.equal(d.starValue, 5);
+});
+t("empty → bar 0, text '-', star null, no value", () => {
   const d = getContributeDisplay("");
   assert.equal(d.percent, null);
+  assert.equal(d.starValue, null);
   assert.equal(d.barWidth, 0);
   assert.equal(d.text, "-");
   assert.equal(d.hasValue, false);

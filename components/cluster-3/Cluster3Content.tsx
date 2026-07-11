@@ -2195,15 +2195,19 @@ const Cluster3Content = () => {
     handleCardChange("images", newImages);
   };
 
-  // 채널 기여 — 별 10개(반개 없음, 각 10%) + 퍼센트 텍스트. 값 없으면 "-" (미입력).
+  // 채널 기여 — 별 5개 만점(반개 지원, rating 1 = 별 0.5개 = 10%) + 퍼센트 텍스트.
+  // 값 없으면 별 전부 빈 별 + "-" (미입력, 0% 금지). 카드/모달 공통 getContributeDisplay.
   const StarRating = ({ rating }: { rating: number }) => {
-    const filled = Math.min(10, Math.max(0, Math.round(Number(rating) || 0)));
+    const { starValue, text } = getContributeDisplay(rating);
+    const sv = starValue ?? 0; // 미입력이면 전부 빈 별
     return (
       <span className="star-rating">
-        {Array.from({ length: 10 }).map((_, i) => (
-          <i key={i} className={i < filled ? "ti ti-star-filled" : "ti ti-star"} />
-        ))}
-        <span className="rating-text">{getContributeDisplay(rating).text}</span>
+        {Array.from({ length: 5 }).map((_, i) => {
+          const starIndex = i + 1;
+          const cls = sv >= starIndex ? "ti ti-star-filled" : sv >= starIndex - 0.5 ? "ti ti-star-half-filled" : "ti ti-star";
+          return <i key={i} className={cls} />;
+        })}
+        <span className="rating-text">{text}</span>
       </span>
     );
   };
@@ -3182,24 +3186,38 @@ const Cluster3Content = () => {
                   })()}
                 </div>
                 <div className="channel-images-section" data-field="images">
-                  {/* 대표 이미지 — 단일 슬롯(1개). 값 없으면 기본 이미지 표시(저장 아님). */}
-                  <div className="images-grid single-image">
-                    {(() => {
-                      const realImg = channelCards[currentCardIndex]?.images?.[0] || null;
-                      const displayImg = realImg || DEFAULT_CHANNEL_IMAGE;
+                  {/* 대표 이미지 5슬롯 — 1번(large)만 필수. 1번 비면 기본 이미지 표시(저장 아님),
+                      2~5번 비면 photo-plus 빈 슬롯. 레거시 이미지 보존. */}
+                  <div className="images-grid">
+                    {channelCards[currentCardIndex]?.images.map((img, si) => {
+                      const isPrimary = si === 0;
+                      // 1번 슬롯: 실제 이미지 없으면 기본 이미지(표시 전용). 2~5번: 빈 슬롯 UI.
+                      const previewSrc = img || (isPrimary ? DEFAULT_CHANNEL_IMAGE : null);
                       return (
-                        <div className="image-slot large">
-                          <div className="image-preview" onClick={() => setPreviewImage(displayImg)}>
-                            <img src={displayImg} alt="대표 이미지" />
-                            {isEditMode && !realImg && <span className="image-required">*</span>}
+                        <div key={si} className={`image-slot${si === 0 ? " large" : " small"}${!isSlotEnabled(si) ? " disabled" : ""}`}>
+                          <div
+                            className="image-preview"
+                            onClick={() => {
+                              if (previewSrc) setPreviewImage(previewSrc);
+                            }}
+                          >
+                            {previewSrc ? (
+                              <img src={previewSrc} alt={`대표 이미지 ${si + 1}`} />
+                            ) : (
+                              <div className="empty-slot">
+                                <i className="ti ti-photo-plus"></i>
+                              </div>
+                            )}
+                            {isEditMode && isPrimary && !img && <span className="image-required">*</span>}
                             {isEditMode && (
                               <div className="image-actions-overlay">
                                 <button
                                   className="image-action-btn"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleImageUploadClick(0);
+                                    handleImageUploadClick(si);
                                   }}
+                                  disabled={!isSlotEnabled(si)}
                                 >
                                   <i className="ti ti-upload"></i>
                                 </button>
@@ -3207,9 +3225,9 @@ const Cluster3Content = () => {
                                   className="image-action-btn"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleImageDelete(0);
+                                    handleImageDelete(si);
                                   }}
-                                  disabled={!realImg}
+                                  disabled={!isSlotEnabled(si) || !img}
                                 >
                                   <i className="ti ti-trash"></i>
                                 </button>
@@ -3220,14 +3238,14 @@ const Cluster3Content = () => {
                             type="file"
                             accept="image/*"
                             ref={(el) => {
-                              imageInputRefs.current[0] = el;
+                              imageInputRefs.current[si] = el;
                             }}
                             style={{ display: "none" }}
-                            onChange={(e) => handleImageFileChange(e, 0)}
+                            onChange={(e) => handleImageFileChange(e, si)}
                           />
                         </div>
                       );
-                    })()}
+                    })}
                   </div>
                 </div>
               </div>
