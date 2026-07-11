@@ -1,0 +1,115 @@
+// =============================================
+// cluster-3 채널 카드 공통 매퍼 / 변환 로직 (SoT)
+//
+// 카드(목록)와 상세 모달이 같은 값을 서로 다르게 재조립하지 않도록,
+// 기여도(rating→%) 변환, 운영 상태 메타(라벨/아이콘/톤), TOP 지표 정규화를
+// 이 파일 한 곳에 모은다. React / Next 의존성 없음 → node 로 단위 테스트 가능.
+//
+// 관련 단위 테스트: scripts/verify_cluster3_card_mappers.mjs
+// =============================================
+
+// ---------- 기여도 (채널 평가 rating 1~10 → 기여도 %) ----------
+// 규칙: 항상 10% 단위. rating 이 비어있음/파싱불가 → null (미평가, "0%" 로 오인 금지).
+//        소수/반별 값은 정수 rating 으로 반올림 후 ×10 (10% 단위 규칙 명시 적용).
+//        범위 밖 값은 0~10 으로 clamp → 0~100% 방어.
+export function ratingToContributePercent(rating: unknown): number | null {
+  if (rating === null || rating === undefined) return null;
+  const raw = typeof rating === "string" ? rating.trim() : rating;
+  if (raw === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  const clampedRating = Math.min(10, Math.max(0, Math.round(n)));
+  return clampedRating * 10;
+}
+
+// 카드/모달 공용 표시 헬퍼. bar 폭은 percent(없으면 0), 텍스트는 "N%" 또는 "-".
+export function getContributeDisplay(rating: unknown): {
+  percent: number | null;
+  barWidth: number;
+  text: string;
+  hasValue: boolean;
+} {
+  const percent = ratingToContributePercent(rating);
+  const hasValue = percent !== null;
+  return {
+    percent,
+    barWidth: hasValue ? percent : 0,
+    text: hasValue ? `${percent}%` : "-",
+    hasValue,
+  };
+}
+
+// ---------- 운영 상태 (배지 라벨 / 3D 아이콘 / 톤) ----------
+// asset: 향후 3D PNG/WebP 로 교체할 자리 (지금은 null → Tabler 아이콘 사용).
+//        교체 시 이 매핑 한 곳만 수정하면 카드/모달 전체 반영.
+export type ChannelStatusTone = "active" | "stopped" | "hold" | "unknown";
+
+export type ChannelStatusMeta = {
+  key: string; // 원본 status 값 ("" = 미정)
+  label: string; // 배지 텍스트 (항상 표시 — 아이콘 단독 판정 금지)
+  icon: string; // Tabler icon class
+  tone: ChannelStatusTone; // 배지 색상 클래스 suffix
+  asset: string | null; // 3D 에셋 경로 (미보유 시 null)
+};
+
+export const CHANNEL_STATUS_META: Record<string, ChannelStatusMeta> = {
+  "운영 중": {
+    key: "운영 중",
+    label: "운영 중",
+    icon: "ti-broadcast", // 방송 신호 (확성기 계열)
+    tone: "active",
+    asset: null,
+  },
+  "운영 중단": {
+    key: "운영 중단",
+    label: "운영 중단",
+    icon: "ti-ban", // 금지 표식
+    tone: "stopped",
+    asset: null,
+  },
+  "운영 보류": {
+    key: "운영 보류",
+    label: "운영 보류",
+    icon: "ti-player-pause-filled", // 일시정지
+    tone: "hold",
+    asset: null,
+  },
+};
+
+// status 값이 없거나 알 수 없는 경우 임의로 "운영 중" 으로 간주하지 않고 안전 fallback.
+export const CHANNEL_STATUS_FALLBACK: ChannelStatusMeta = {
+  key: "",
+  label: "상태 미정",
+  icon: "ti-help-circle",
+  tone: "unknown",
+  asset: null,
+};
+
+export function getChannelStatusMeta(status: unknown): ChannelStatusMeta {
+  if (typeof status === "string") {
+    const hit = CHANNEL_STATUS_META[status.trim()];
+    if (hit) return hit;
+  }
+  return CHANNEL_STATUS_FALLBACK;
+}
+
+// ---------- TOP 지표 (카드 대표 지표 1쌍) ----------
+export const TOP_METRIC_MAX_LEN = 5;
+
+// 공백만 → null 정규화. 문자열 아님 → null.
+export function normalizeTopMetric(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+// 5자 초과 여부 (정규화 후 기준). API 400 판정에 사용.
+export function isTopMetricTooLong(value: unknown): boolean {
+  const normalized = normalizeTopMetric(value);
+  return normalized !== null && normalized.length > TOP_METRIC_MAX_LEN;
+}
+
+// 카드 표시용 — 빈 값은 "-" 로.
+export function displayTopMetric(value: unknown): string {
+  return normalizeTopMetric(value) ?? "-";
+}

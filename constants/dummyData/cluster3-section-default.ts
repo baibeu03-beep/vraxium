@@ -25,6 +25,8 @@ export const CLUSTER3_CHANNEL_DEFAULTS = {
     insight: "한국의 다양한 문화와 자연을 소개하는 콘텐츠를 기획하고 있으며, 구독자와의 소통을 최우선 가치로 두고 채널을 운영하고 있습니다. 트렌드 분석을 통해 시청자가 원하는 콘텐츠를 선제적으로 제작하는 방향으로 기획하고 있습니다.",
     experience: "영상 촬영 및 편집 경력 3년, 유튜브 크리에이터 아카데미 수료, 다수의 브랜드 협업 프로젝트 참여 경험이 있으며, SNS 마케팅 캠페인 기획 및 운영을 통해 콘텐츠 제작 역량을 키워왔습니다.",
     metrics: "구독자 12,500명 달성, 평균 조회수 8,200회, 월 평균 시청 시간 4,500시간, 최고 조회수 영상 152,000회, 커뮤니티 참여율 6.8%, 브랜드 협업 누적 15건 진행.",
+    topMetricName: "구독자",
+    topMetricValue: "1.2만",
   },
   emptyCard: {
     title: "Career Exp Channel",
@@ -45,6 +47,8 @@ export const CLUSTER3_CHANNEL_DEFAULTS = {
     insight: "",
     experience: "",
     metrics: "",
+    topMetricName: "",
+    topMetricValue: "",
   },
 };
 

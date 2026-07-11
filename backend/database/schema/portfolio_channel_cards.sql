@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS portfolio_channel_cards (
   experience TEXT,
   metrics TEXT,
 
+  -- TOP 지표 (카드 대표 지표 1쌍, 각 5자 — alter_portfolio_channel_cards_add_top_metric.sql)
+  top_metric_name TEXT,
+  top_metric_value TEXT,
+
   -- 타임스탬프
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),

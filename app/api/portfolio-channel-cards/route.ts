@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
 import { resolveWriteUserId } from "@/lib/api-auth";
 import { enforceQaMode } from "@/lib/qaModeGate";
+import { normalizeTopMetric, isTopMetricTooLong, TOP_METRIC_MAX_LEN } from "@/lib/cluster3-channel-card";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -25,6 +26,8 @@ type ChannelCardRow = {
   insight: string | null;
   experience: string | null;
   metrics: string | null;
+  top_metric_name: string | null;
+  top_metric_value: string | null;
 };
 
 const sanitizeImages = (raw: unknown): (string | null)[] => {
@@ -84,13 +87,29 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "서버 설정 오류" }, { status: 500 });
     }
 
-    const { data, error: dbError } = await supabaseAdmin
-      .from("portfolio_channel_cards")
-      .select(
-        "card_index, channel_name, platform, management, start_year, start_month, start_day, rating, status, link, image_urls, insight, experience, metrics"
-      )
-      .eq("user_id", targetUserId)
-      .order("card_index", { ascending: true });
+    // 기본 select 는 TOP 지표 컬럼 포함. 마이그레이션
+    // (alter_portfolio_channel_cards_add_top_metric.sql) 적용 전 배포 시에도
+    // 엔드포인트가 500 나지 않도록, undefined_column(42703) 에러면 legacy 컬럼셋으로
+    // 폴백해 topMetric=null 로 응답한다. 마이그레이션이 모든 환경에 적용되면
+    // 이 폴백은 안전하게 제거 가능.
+    const BASE_COLUMNS =
+      "card_index, channel_name, platform, management, start_year, start_month, start_day, rating, status, link, image_urls, insight, experience, metrics";
+    const runSelect = (columns: string) =>
+      supabaseAdmin!
+        .from("portfolio_channel_cards")
+        .select(columns)
+        .eq("user_id", targetUserId)
+        .order("card_index", { ascending: true });
+
+    let { data, error: dbError } = await runSelect(
+      `${BASE_COLUMNS}, top_metric_name, top_metric_value`
+    );
+    if (dbError && dbError.code === "42703") {
+      console.warn(
+        "[portfolio-channel-cards GET] top_metric 컬럼 미존재 — legacy select 폴백. 마이그레이션 필요."
+      );
+      ({ data, error: dbError } = await runSelect(BASE_COLUMNS));
+    }
 
     if (dbError) {
       console.error("채널 카드 조회 오류:", dbError);
@@ -115,6 +134,9 @@ export async function GET(request: Request) {
       insight: row.insight || "",
       experience: row.experience || "",
       metrics: row.metrics || "",
+      // TOP 지표 — null 의미 유지 (미입력 구분). 카드/모달 공통 DTO.
+      topMetricName: row.top_metric_name ?? null,
+      topMetricValue: row.top_metric_value ?? null,
     }));
 
     return NextResponse.json({ success: true, cards });
@@ -162,6 +184,15 @@ export async function PUT(request: Request) {
       ua: request.headers.get("user-agent")?.slice(0, 120) ?? null,
     });
 
+    // TOP 지표 길이 검증 (각 5자). DB 는 원문 보존이 원칙이므로 서버가 조용히
+    // 절단하지 않고 초과 시 400 반환. 공백만은 아래 upsert 에서 null 정규화.
+    if (isTopMetricTooLong(body.topMetricName) || isTopMetricTooLong(body.topMetricValue)) {
+      return NextResponse.json(
+        { error: `TOP 지표는 각 ${TOP_METRIC_MAX_LEN}자 이내로 입력해주세요.` },
+        { status: 400 },
+      );
+    }
+
     // 방어: firstCard sample 페이로드는 production DB 에 절대 upsert 하지 않는다.
     if (isFirstCardSamplePayload(body)) {
       console.warn("[portfolio-channel-cards PUT] firstCard sample 차단", {
@@ -190,6 +221,9 @@ export async function PUT(request: Request) {
       insight: typeof body.insight === "string" ? body.insight : null,
       experience: typeof body.experience === "string" ? body.experience : null,
       metrics: typeof body.metrics === "string" ? body.metrics : null,
+      // TOP 지표 — 공백만이면 null 정규화 (metrics 배열과 무관한 독립 필드).
+      top_metric_name: normalizeTopMetric(body.topMetricName),
+      top_metric_value: normalizeTopMetric(body.topMetricValue),
       updated_at: new Date().toISOString(),
     };
 

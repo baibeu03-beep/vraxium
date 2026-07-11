@@ -34,6 +34,12 @@ import {
 import { CLUSTER3_CHANNEL_DEFAULTS, createEmptyChannelCards } from "@/constants/dummyData/cluster3-section-default";
 import { OUTPUT_CARD_1_DEFAULT } from "@/constants/dummyData/cluster3-output-default";
 import { DETAIL_CARD_1_DEFAULT, createInitialDetailCardsWithDefault } from "@/constants/dummyData/cluster3-detail-default";
+import {
+  getChannelStatusMeta,
+  getContributeDisplay,
+  displayTopMetric,
+  TOP_METRIC_MAX_LEN,
+} from "@/lib/cluster3-channel-card";
 
 // Zone C(>1920px, ResponsiveScale.tsx에서 documentElement에 zoom:1.08 적용) 대응.
 // getBoundingClientRect는 zoom 적용 후 좌표를 반환하지만 position:fixed의 top/left는 CSS 픽셀 기준이라 좌표가 어긋난다.
@@ -664,6 +670,8 @@ const Cluster3Content = () => {
               insight: saved.insight ?? "",
               experience: saved.experience ?? "",
               metrics: saved.metrics ?? "",
+              topMetricName: saved.topMetricName ?? "",
+              topMetricValue: saved.topMetricValue ?? "",
             };
           })
         );
@@ -765,6 +773,8 @@ const Cluster3Content = () => {
           insight: card.insight ?? "",
           experience: card.experience ?? "",
           metrics: card.metrics ?? "",
+          topMetricName: card.topMetricName ?? "",
+          topMetricValue: card.topMetricValue ?? "",
         }),
       });
       const putJson = await putRes.json();
@@ -2718,6 +2728,17 @@ const Cluster3Content = () => {
             const isUnlocked = actualIndex < unlockedCardCount;
             const isLocked = !isUnlocked;
             const isComplete = isCardComplete(card);
+            // 카드 표시 파생값 — 상세 모달과 동일 공통 매퍼 경유 (재조립 금지).
+            const statusMeta = getChannelStatusMeta(card.status);
+            const contribute = getContributeDisplay(card.rating);
+            const defaultThumb = `/images/0/cluster 3/image/${isPX ? "px/" : isEC ? "ec/" : ""}1-${((card.id - 1) % 8) + 1}.png`;
+            // 대표 이미지 = 모달 대표 이미지(slot 0)와 동일 원천. 없으면 기존 기본 이미지.
+            const thumbSrc = card.images && card.images[0] ? card.images[0] : defaultThumb;
+            const dateLabel =
+              card.startYear && card.startMonth && card.startDay
+                ? `${card.startYear}년 ${String(card.startMonth).padStart(2, "0")}월 ${String(card.startDay).padStart(2, "0")}일`
+                : "";
+            const ownerName = displayName ? mask.crewName(displayName) : "Unknown";
             return (
               <div
                 key={card.id}
@@ -2730,15 +2751,19 @@ const Cluster3Content = () => {
                 }}
               >
                 <div className="card-image">
-                  <img src={`/images/0/cluster 3/image/${isPX ? "px/" : isEC ? "ec/" : ""}1-${((card.id - 1) % 8) + 1}.png`} alt="Channel" />
-                  <div className="card-tag">{card.startYear && card.startMonth && card.startDay ? `${card.startYear}년 ${String(card.startMonth).padStart(2, "0")}월 ${String(card.startDay).padStart(2, "0")}일` : card.tag}</div>
-                  <div className="card-like">
-                    <svg viewBox="0 0 24 24" fill={card.status === "운영 중" ? "#ff4444" : card.status === "운영 중단" ? "#4488ff" : card.status === "운영 보류" ? "#44bb44" : "none"} stroke={card.status ? "none" : "currentColor"} strokeWidth="2">
-                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                    </svg>
+                  <img src={thumbSrc} alt="Channel" />
+                  {/* [9] 채널 시작 날짜 — 이미지 좌측 하단 overlay */}
+                  {dateLabel && <div className="card-tag">{dateLabel}</div>}
+                  {/* [2] 운영 상태 배지 + 3D 아이콘 (텍스트 항상 표시) */}
+                  <div className={`card-status card-status--${statusMeta.tone}`}>
+                    <span className="card-status-label">{statusMeta.label}</span>
+                    <span className="card-status-icon" aria-hidden="true">
+                      {statusMeta.asset ? <img src={statusMeta.asset} alt="" /> : <i className={`ti ${statusMeta.icon}`} />}
+                    </span>
                   </div>
                 </div>
                 <div className="card-content">
+                  {/* [3] 채널명 @ — 최대 2줄 clamp */}
                   <p className="card-title">
                     {card.channelName ? (
                       <>
@@ -2748,25 +2773,42 @@ const Cluster3Content = () => {
                       card.title
                     )}
                   </p>
-                  <div className="card-info">
-                    <div className="info-row">
-                      <div className="info-author">
-                        {card.platform && PLATFORM_ICONS[card.platform] && <img src={PLATFORM_ICONS[card.platform]} alt={card.platform} className={`sns-icon`} />}
-                        <div className="author-text">
-                          <span className="info-label">Created by:</span>
-                          <span className="author-name">{engName ? mask.crewName(engName) : "Unknown"}</span>
-                        </div>
-                      </div>
+                  {/* [4] 플랫폼 · [5] 소유 크루 한글명 · [6] TOP 지표 */}
+                  <div className="card-owner-row">
+                    <div className="card-platform">
+                      {card.platform && PLATFORM_ICONS[card.platform] ? (
+                        <img src={PLATFORM_ICONS[card.platform]} alt={card.platform} className="sns-icon" />
+                      ) : (
+                        <span className="sns-icon sns-icon-empty" />
+                      )}
                     </div>
-                    <div className="card-divider"></div>
-                    <div className="info-row growth-row">
-                      {card.management ? <span className={`management-tag ${card.management === "개인 소유 관리" ? "tag--yellow" : card.management === "팀 소속 협업" ? "tag--red" : "tag--blue"}`}>#{card.management}</span> : <span className="info-label">Growth Bid</span>}
-                      <div className="info-price">
-                        <img src="/images/0/cluster 3/icon/dia.png" alt="dia" className="dia-icon" />
-                        <span className="price-value">{card.rating ? `${card.rating}/10` : "- / 10"}</span>
+                    <div className="card-owner-meta">
+                      <div className="owner-line">
+                        <span className="info-label">Created By</span>
+                        <span className="author-name">{ownerName}</span>
+                      </div>
+                      <div className="card-top-metrics">
+                        <span className="card-top-metric" title={displayTopMetric(card.topMetricName)}>
+                          {displayTopMetric(card.topMetricName)}
+                        </span>
+                        <span className="card-top-metric" title={displayTopMetric(card.topMetricValue)}>
+                          {displayTopMetric(card.topMetricValue)}
+                        </span>
                       </div>
                     </div>
                   </div>
+                  {/* [7] 기여도 — 퍼센트 + 진행 막대 */}
+                  <div className="card-contribute">
+                    <div className="contribute-head">
+                      <span className="contribute-label">Contribute.</span>
+                      <span className={`contribute-value${contribute.hasValue ? "" : " is-empty"}`}>{contribute.text}</span>
+                    </div>
+                    <div className="contribute-bar">
+                      <div className="contribute-bar-fill" style={{ width: `${contribute.barWidth}%` }} />
+                    </div>
+                  </div>
+                  {/* [8] 기획 방향/인사이트 — 3~4줄 clamp */}
+                  <p className="card-insight">{card.insight?.trim() ? card.insight : "등록된 기획 방향/인사이트가 없습니다."}</p>
                 </div>
               </div>
             );
@@ -3006,6 +3048,7 @@ const Cluster3Content = () => {
                       { label: "채널 평가", key: "rating", type: "rating" },
                       { label: "운영 현황", key: "status", type: "select", options: STATUS_OPTIONS },
                       { label: "채널 살펴보기", key: "link", type: "link" },
+                      { label: "TOP 지표", key: "topMetric", type: "topMetric" },
                     ];
                     return fields.map((f) => (
                       <div key={f.key} className="channel-info-field" data-field={f.key === "date" ? "startDate" : f.key === "platformDropdown" ? "platform" : f.key}>
@@ -3110,6 +3153,30 @@ const Cluster3Content = () => {
                                   <i className="ti ti-arrow-up-right"></i>
                                 </button>
                               )}
+                            </div>
+                          ))}
+                        {f.type === "topMetric" &&
+                          (isEditMode ? (
+                            <div className="top-metric-inputs">
+                              <input
+                                type="text"
+                                maxLength={TOP_METRIC_MAX_LEN}
+                                placeholder="인덱스 명"
+                                value={card.topMetricName || ""}
+                                onChange={(e) => handleCardChange("topMetricName", e.target.value)}
+                              />
+                              <input
+                                type="text"
+                                maxLength={TOP_METRIC_MAX_LEN}
+                                placeholder="인덱스 값"
+                                value={card.topMetricValue || ""}
+                                onChange={(e) => handleCardChange("topMetricValue", e.target.value)}
+                              />
+                            </div>
+                          ) : (
+                            <div className="top-metric-inputs readonly">
+                              <span className="field-value">{displayTopMetric(card.topMetricName)}</span>
+                              <span className="field-value">{displayTopMetric(card.topMetricValue)}</span>
                             </div>
                           ))}
                       </div>
