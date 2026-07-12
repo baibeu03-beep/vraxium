@@ -129,6 +129,19 @@ const isIsoDate = (v: unknown): v is string => typeof v === "string" && ISO_DATE
 
 type SupabaseClient = ReturnType<typeof createAdminClient>;
 
+// viewer(현재 해석된 사용자)의 실제 소속 조직 slug. /api/crews 와 동일 출처
+// (user_profiles.organization_slug). 조직 스코프 게이트의 유일한 권위값 —
+// 클라가 보낸 org 는 신뢰하지 않고 이 값과 대조한다.
+async function resolveViewerOrg(supabase: SupabaseClient, userId: string): Promise<OrgSlug | null> {
+  const { data } = await supabase
+    .from("user_profiles")
+    .select("organization_slug")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const slug = (data as { organization_slug?: string | null } | null)?.organization_slug ?? null;
+  return isOrgSlug(slug) ? slug : null;
+}
+
 type SeasonDef = { season_type?: string | null; year?: number | null };
 type WeekRow = {
   id: string;
@@ -260,13 +273,37 @@ export async function GET(request: Request) {
     if (qaBlock) return qaBlock;
 
     const supabase = createAdminClient();
+
+    // ── 조직 스코프 게이트 ──────────────────────────────────────────────
+    // URL ?org= 은 테마/표시용이 아니라 권위 필터다. viewer 의 실제 소속과
+    // 일치할 때만 개인 데이터(내 휴식·신청 가능 주차·summary)를 반환한다.
+    // 타 조직 URL(예: encre 사용자가 ?org=phalanx)에서는 개인 데이터를 절대
+    // 반환/렌더하지 않는다. viewerOrg 는 클라가 교정 안내를 띄우도록 함께 내려준다.
+    const requestedOrgRaw = new URL(request.url).searchParams.get("org");
+    const requestedOrg = isOrgSlug(requestedOrgRaw) ? requestedOrgRaw : null;
+    const viewerOrg = await resolveViewerOrg(supabase, userId);
+
+    if (!requestedOrg || viewerOrg !== requestedOrg) {
+      return NextResponse.json({
+        success: true,
+        viewerOrg,
+        currentSeasonKey: null,
+        eligibleWeeks: [],
+        myApplications: [],
+        summary: { fulfilledWeeks: 0, upcomingWeeks: 0 },
+      });
+    }
+
     const { eligible, currentSeasonKey } = await computeEligibleWeeks(supabase, userId);
 
     // 내 휴식 신청 목록(MY 휴식 주차) — pending/approved 만, group_id 단위로 묶음.
+    // recordOrg(vacation_requests.org) 도 요청 org 로 스코프(조직 이동 전 레거시
+    // 레코드가 새 조직 페이지에 새지 않도록).
     const { data: myRows } = await supabase
       .from("vacation_requests")
       .select("id, group_id, org, season_key, week_start_date, reason, status, created_at")
       .eq("user_id", userId)
+      .eq("org", requestedOrg)
       .in("status", ["pending", "approved"]);
 
     const { applications, fulfilledWeeks, upcomingWeeks } = buildMyApplications(
@@ -276,6 +313,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       success: true,
+      viewerOrg,
       currentSeasonKey,
       eligibleWeeks: eligible,
       myApplications: applications,
@@ -342,6 +380,16 @@ export async function POST(request: Request) {
     }
 
     const supabase = createAdminClient();
+
+    // 조직 스코프: 신청 org 는 반드시 viewer 실제 소속과 일치해야 한다.
+    // 타 조직 페이지(예: encre 사용자가 ?org=phalanx)에서의 쓰기는 403.
+    const viewerOrg = await resolveViewerOrg(supabase, userId);
+    if (viewerOrg !== org) {
+      return NextResponse.json(
+        { error: "본인 소속 조직에서만 휴식을 신청할 수 있습니다." },
+        { status: 403 },
+      );
+    }
 
     // 서버 권위 재검증 — 요청된 모든 주차가 eligible 집합에 있어야 함.
     const { eligible } = await computeEligibleWeeks(supabase, userId);
@@ -415,11 +463,22 @@ export async function PATCH(request: Request) {
 
     const supabase = createAdminClient();
 
-    // 본인 소유 + 취소 가능 상태(pending/approved) 인 신청 건의 주차 행들.
+    // 조직 스코프: 취소는 viewer 실제 소속 조직의 신청 건에 한한다(타 조직 쓰기 차단).
+    // org 는 클라를 신뢰하지 않고 서버가 다시 판정해 쿼리에 강제한다.
+    const viewerOrg = await resolveViewerOrg(supabase, userId);
+    if (!viewerOrg) {
+      return NextResponse.json(
+        { error: "본인 소속 조직에서만 휴식을 취소할 수 있습니다." },
+        { status: 403 },
+      );
+    }
+
+    // 본인 소유 + 본인 조직 + 취소 가능 상태(pending/approved) 인 신청 건의 주차 행들.
     const { data: rows } = await supabase
       .from("vacation_requests")
       .select("id, week_start_date, status")
       .eq("user_id", userId)
+      .eq("org", viewerOrg)
       .eq("group_id", requestId)
       .in("status", ["pending", "approved"]);
 
@@ -451,6 +510,7 @@ export async function PATCH(request: Request) {
       .from("vacation_requests")
       .update({ status: "cancelled", updated_at: new Date().toISOString() })
       .eq("user_id", userId)
+      .eq("org", viewerOrg)
       .eq("group_id", requestId)
       .in("status", ["pending", "approved"]);
 

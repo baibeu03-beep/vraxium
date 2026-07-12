@@ -132,6 +132,9 @@ function VacationContent() {
   const [eligibleWeeks, setEligibleWeeks] = useState<EligibleWeek[]>([]);
   const [myApplications, setMyApplications] = useState<MyApplication[]>([]);
   const [summary, setSummary] = useState<VacationSummary>({ fulfilledWeeks: 0, upcomingWeeks: 0 });
+  // 서버가 판정한 viewer 실제 소속 조직(조직 스코프 게이트). URL org 와 다르면
+  // 개인 데이터가 비어 내려오고, 아래에서 교정 안내를 노출한다.
+  const [viewerOrg, setViewerOrg] = useState<OrgSlug | null>(null);
   const [dropdownStart, setDropdownStart] = useState<string>("");
   const [selected, setSelected] = useState<string[]>([]);
   const [reason, setReason] = useState("");
@@ -140,27 +143,41 @@ function VacationContent() {
   const [cancelingId, setCancelingId] = useState<string | null>(null);
 
   // 데이터 로드 — 일반/테스트 유저 모두 동일 API(demoUserId suffix 만 조건부 부착).
+  //   org 를 권위 필터로 함께 전송한다(서버가 viewer 소속과 대조해 스코프).
   const loadData = useCallback(async () => {
+    const clearPersonal = () => {
+      setEligibleWeeks([]);
+      setMyApplications([]);
+      setSummary({ fulfilledWeeks: 0, upcomingWeeks: 0 });
+    };
+    if (!org) {
+      clearPersonal();
+      setViewerOrg(null);
+      setLoading(false);
+      return;
+    }
     try {
-      const res = await fetch(demo.appendDemoUserParams("/api/vacation"), { cache: "no-store" });
+      const res = await fetch(
+        demo.appendDemoUserParams(`/api/vacation?org=${encodeURIComponent(org)}`),
+        { cache: "no-store" },
+      );
       if (!res.ok) {
-        setEligibleWeeks([]);
-        setMyApplications([]);
-        setSummary({ fulfilledWeeks: 0, upcomingWeeks: 0 });
+        clearPersonal();
+        setViewerOrg(null);
         return;
       }
       const json = await res.json();
+      setViewerOrg(isOrgSlug(json.viewerOrg) ? json.viewerOrg : null);
       setEligibleWeeks((json.eligibleWeeks as EligibleWeek[]) ?? []);
       setMyApplications((json.myApplications as MyApplication[]) ?? []);
       setSummary((json.summary as VacationSummary) ?? { fulfilledWeeks: 0, upcomingWeeks: 0 });
     } catch {
-      setEligibleWeeks([]);
-      setMyApplications([]);
-      setSummary({ fulfilledWeeks: 0, upcomingWeeks: 0 });
+      clearPersonal();
+      setViewerOrg(null);
     } finally {
       setLoading(false);
     }
-  }, [demo]);
+  }, [demo, org]);
 
   useEffect(() => {
     setLoading(true);
@@ -289,6 +306,10 @@ function VacationContent() {
 
   const themeClass = org ? ORG_THEME_CLASS[org] : "";
 
+  // 조직 스코프 불일치 — viewer 실제 소속(viewerOrg)과 URL org 가 다르면
+  // 개인 데이터를 렌더하지 않고 본인 조직 페이지로 교정 안내한다.
+  const orgMismatch = !!org && !!viewerOrg && viewerOrg !== org;
+
   // org 미지정 — 사이드바에서 조직 선택 유도(크루 페이지와 동일 정책).
   if (!org) {
     return (
@@ -300,6 +321,33 @@ function VacationContent() {
             <div className="vacation-empty-org">
               <h1 className="vacation-title">클럽 주차 휴식 신청</h1>
               <p>사이드바에서 조직(팔랑크스 · 엥크레 · 오랑캐)을 선택하면<br />휴식 신청 화면이 표시됩니다.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  // 타 조직 페이지 접근 — 개인 데이터 없이 본인 조직으로 이동 안내.
+  if (orgMismatch && viewerOrg) {
+    const ownOrgHref = demo.appendDemoUserParams(`/vacation?org=${encodeURIComponent(viewerOrg)}`);
+    return (
+      <main className={`nftg-content nftg-content-home vacation-page ${themeClass}`}>
+        <Animations />
+        <Breadcrumb title="클럽 주차 휴식 신청" />
+        <section className="pb-120" style={{ paddingTop: 60 }}>
+          <div className="container">
+            <div className="vacation-empty-org">
+              <h1 className="vacation-title">클럽 주차 휴식 신청</h1>
+              <p>
+                회원님은 <b>{ORG_LABEL[viewerOrg]}</b> 소속입니다.<br />
+                본인 조직의 휴식 신청 페이지에서 신청·조회하실 수 있습니다.
+              </p>
+              <p style={{ marginTop: 16 }}>
+                <a className="vacation-btn vacation-btn--select" href={ownOrgHref}>
+                  {ORG_LABEL[viewerOrg]} 휴식 신청으로 이동
+                </a>
+              </p>
             </div>
           </div>
         </section>
