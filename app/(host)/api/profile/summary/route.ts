@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
       // cumulative_points (배지) — 실제 컬럼명 total_checks/total_advantages/total_penalties.
       //   (종전 total_stars/total_lightnings/total_shields select 는 미존재 컬럼 → 조회 에러로
       //    badges 가 항상 0 으로 떨어지던 결함. 2026-06-04 교정.)
-      supabaseAdmin.from("user_cumulative_points").select("total_checks, total_advantages, total_penalties").eq("user_id", profile.user_id).maybeSingle(),
+      supabaseAdmin.from("user_cumulative_points").select("total_checks, total_advantages, total_raw_advantages, total_penalties").eq("user_id", profile.user_id).maybeSingle(),
       // season_histories
       supabaseAdmin.from("user_season_histories").select(`
         id,
@@ -400,13 +400,17 @@ export async function GET(request: NextRequest) {
       practicalCounts,
       reliabilityRate: calculatedReliabilityRate,
       completionRate,
-      // 포인트 표시 정책(2026-07 통일): 별(A)=total_checks, 방패(B)=total_advantages(net — 캐시
-      //   컬럼 자체가 raw−penalty), Point C=total_penalties 양수 magnitude(빨강). lightnings(−n)=하위호환.
+      // 포인트 표시 정책(2026-07 통일): 별(A)=total_checks, 방패(B)=최종 B(= total_raw_advantages − total_penalties,
+      //   어드민 Po.B parity, 음수 가능). Point C=total_penalties 양수 magnitude(빨강). lightnings(−n)=하위호환.
+      //   ⚠️ total_advantages(파생 캐시)는 음수 net 사용자에게 stale → 최종 B 로 직접 사용 금지(profile route 와 동일).
       badges: {
         stars: cumulativePoints?.total_checks ?? 0,
         pointC: cumulativePoints?.total_penalties ?? 0,
         lightnings: -(cumulativePoints?.total_penalties ?? 0),
-        shields: cumulativePoints?.total_advantages ?? 0,
+        shields: (typeof cumulativePoints?.total_raw_advantages === "number"
+          ? cumulativePoints.total_raw_advantages - (cumulativePoints?.total_penalties ?? 0)
+          : (cumulativePoints?.total_advantages ?? 0)),
+        rawAdvantage: cumulativePoints?.total_raw_advantages ?? 0,
       },
       seasonHistories: finalSeasonHistories,
     });

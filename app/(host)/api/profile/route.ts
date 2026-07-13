@@ -559,13 +559,16 @@ export async function GET(request: NextRequest) {
             pointC: 0,
             lightnings: 0,
             shields: 0,
+            rawAdvantage: 0,
           },
           // point DTO (legacy 경로) — crew_list_view 에는 check/advantage/penalty 집계가 없음.
           // 전용 컬럼(total_checks/advantages/penalties) 부재 → 모두 0 (null 아님).
           // pointC = 패널티 양수 magnitude(표시 SoT). penalty(−n)은 하위호환 deprecated (현재 항상 0).
+          // penalty=0 이므로 최종 B(advantage)=rawAdvantage=total_advantages 로 동일.
           point: {
             check: legacy.total_checks ?? 0,
             advantage: legacy.total_advantages ?? 0,
+            rawAdvantage: legacy.total_advantages ?? 0,
             pointC: legacy.total_penalties ?? 0,
             penalty: -(legacy.total_penalties ?? 0),
           },
@@ -1098,7 +1101,9 @@ export async function GET(request: NextRequest) {
       // 별/방패/번개 SoT = user_cumulative_points 전용 컬럼(total_checks/advantages/penalties).
       // (구 total_stars/total_lightnings/total_shields 는 스키마에 존재하지 않아 쿼리 전체가 에러 →
       //  badges 가 항상 0 으로 죽던 문제. admin getResumeCardForCrew 와 동일 컬럼으로 정정.)
-      supabaseAdmin.from("user_cumulative_points").select("total_checks, total_advantages, total_penalties").eq("user_id", profile.id).maybeSingle(),
+      // total_raw_advantages 포함: 방패(B) 최종값 = raw − penalty (어드민 Po.B SoT). total_advantages(파생 캐시)는
+      //   음수 net 사용자에게 stale(0)로 남아 있어 최종 B로 직접 쓰지 않는다(2026-07-14 어드민 대조 결과).
+      supabaseAdmin.from("user_cumulative_points").select("total_checks, total_advantages, total_raw_advantages, total_penalties").eq("user_id", profile.id).maybeSingle(),
 
       // season_histories
       // 실제 user_season_histories 컬럼: id, user_id, season_id, rating, review,
@@ -1317,10 +1322,10 @@ export async function GET(request: NextRequest) {
     const cumulativePointUserId = profile.user_id ?? profile.id;
     // cluster41 은 point DTO(check/advantage/penalty)를 읽지 않으므로 조회를 스킵한다.
     const cumulativePointsRes = isCluster41
-      ? { data: null as { total_checks: number; total_advantages: number; total_penalties: number } | null, error: null as null }
+      ? { data: null as { total_checks: number; total_advantages: number; total_raw_advantages: number; total_penalties: number } | null, error: null as null }
       : await supabaseAdmin
           .from("user_cumulative_points")
-          .select("total_checks, total_advantages, total_penalties")
+          .select("total_checks, total_advantages, total_raw_advantages, total_penalties")
           .eq("user_id", cumulativePointUserId)
           .maybeSingle();
     if (cumulativePointsRes.error) {
@@ -2624,6 +2629,21 @@ export async function GET(request: NextRequest) {
         responseSeasonHistories.map((s: any) => s?.id));
     }
 
+    // ── 방패(Point B) 최종값 산출 (어드민 Po.B parity) ──────────────────────────
+    // 어드민 SoT: Po.B = 최종 B = Σadvantage − Σpenalty (user_weekly_points 라이브, 음수 가능).
+    // 캐시 user_cumulative_points.total_advantages(파생)는 음수 net 사용자에게 stale(0)로 남아 어드민과 어긋남
+    //   (2026-07-14 전수 대조: total_advantages 591 OK / 131 stale, (raw−penalty) 722/722 OK).
+    // → total_raw_advantages − total_penalties 로 서버에서 최종 B 를 산출한다(프론트 재계산 금지).
+    //   raw 컬럼 부재(구 캐시) 시에만 total_advantages 로 폴백. penalty 재차감 없음(raw 에서 1회만 차감).
+    const finalPointBFrom = (row: { total_advantages?: number | null; total_raw_advantages?: number | null; total_penalties?: number | null } | null | undefined): number => {
+      const rawAdv = row?.total_raw_advantages;
+      const pen = row?.total_penalties ?? 0;
+      if (typeof rawAdv === "number" && Number.isFinite(rawAdv)) return rawAdv - pen;
+      return row?.total_advantages ?? 0; // 구 캐시(raw 컬럼 부재) 폴백
+    };
+    const badgesShields = finalPointBFrom(cumulativePoints);
+    const pointAdvantage = finalPointBFrom(cumulativePointDto);
+
     return NextResponse.json({
       success: true,
       data: profile,
@@ -2634,25 +2654,30 @@ export async function GET(request: NextRequest) {
       reliabilityRate: finalGrowthPeriodStats.reliabilityRate,
       completionRate,
       // 포인트 표시 정책(2026-07 통일): 고객 노출 값은 표시 최종값.
-      //   별(A)=total_checks, 방패(B)=total_advantages(net — 캐시 컬럼 자체가 raw−penalty),
+      //   별(A)=total_checks, 방패(B)=최종 B(= raw advantage − penalty, 어드민 Po.B parity, 음수 가능),
       //   Point C=total_penalties 양수 magnitude(빨강). lightnings(−n)은 하위호환 deprecated.
+      //   rawAdvantage(=total_raw_advantages)는 구 DTO 호환 fallback(resolveFinalPointB) 입력용으로 함께 노출.
       badges: {
         stars: cumulativePoints?.total_checks ?? 0,
         // pointC = 패널티 양수 magnitude(표시 SoT). lightnings 는 하위호환(−n) 유지.
         pointC: cumulativePoints?.total_penalties ?? 0,
         lightnings: -(cumulativePoints?.total_penalties ?? 0),
-        shields: cumulativePoints?.total_advantages ?? 0,
+        shields: badgesShields,                              // 최종 B(raw−pen) — total_advantages(stale) 직접 사용 금지
+        rawAdvantage: cumulativePoints?.total_raw_advantages ?? 0,
       },
       // resume-card .resume-badges 표시용 point DTO.
       // source table: user_cumulative_points (전용 컬럼, cumulativePointDto 로 분리 조회)
-      //   point.check     → total_checks
-      //   point.advantage → total_advantages = net(raw−penalty) 표시 최종값 (음수 가능 — ?? 사용)
-      //   point.pointC    → total_penalties 양수 magnitude(빨강, 표시 SoT)
-      //   point.penalty   → −total_penalties (하위호환 deprecated, −n 표기)
+      //   point.check       → total_checks
+      //   point.advantage   → 최종 B(= total_raw_advantages − total_penalties, 어드민 Po.B parity, 음수 가능)
+      //                       ⚠️ total_advantages(파생 캐시)는 음수 net 사용자에게 stale → 직접 사용 금지.
+      //   point.rawAdvantage→ total_raw_advantages (구 DTO 호환 fallback 입력용)
+      //   point.pointC      → total_penalties 양수 magnitude(빨강, 표시 SoT)
+      //   point.penalty     → −total_penalties (하위호환 deprecated, −n 표기)
       // 행/값 미존재 시 null 이 아니라 0 으로 내려준다. 기존 필드는 유지(append-only).
       point: {
         check: cumulativePointDto?.total_checks ?? 0,
-        advantage: cumulativePointDto?.total_advantages ?? 0,
+        advantage: pointAdvantage,                              // 최종 B(raw−pen)
+        rawAdvantage: cumulativePointDto?.total_raw_advantages ?? 0,
         pointC: cumulativePointDto?.total_penalties ?? 0,
         penalty: -(cumulativePointDto?.total_penalties ?? 0),
       },

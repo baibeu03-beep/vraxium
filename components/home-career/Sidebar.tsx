@@ -9,7 +9,7 @@ import { useProfile } from "@/contexts/ProfileContext";
 import { dedupedJson } from "@/lib/fetch-dedupe";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
-import { resolvePointC } from "@/lib/cluster4-points";
+import { resolvePointC, resolveFinalPointB } from "@/lib/cluster4-points";
 import { DUMMY_USER_PROFILE, DUMMY_SIDEBAR_EXTRA } from "@/constants/dummyData";
 import { SECTION2_SLOGAN_DEFAULTS } from "@/constants/dummyData/cluster2-section2-default";
 import { useResumeCardHeight } from "@/hooks/useResumeCardHeight";
@@ -361,18 +361,20 @@ const Sidebar = () => {
   const [badge2, setBadge2] = useState(0);
   const [badge3, setBadge3] = useState(0);
   // 배지 데이터 상태 (user_cumulative_points 테이블) — SSR-safe 기본값
+  //   shields = 최종 B(raw−pointC, 어드민 Po.B parity, 음수 가능). rawAdvantage = 구 DTO fallback 입력.
   //   pointC = 패널티 양수 magnitude(표시 SoT). lightnings(−n)는 하위호환 폴백.
-  const [badgeData, setBadgeData] = useState<{ stars: number; lightnings: number; shields: number; pointC?: number }>({
+  const [badgeData, setBadgeData] = useState<{ stars: number; lightnings: number; shields: number; pointC?: number; rawAdvantage?: number }>({
     stars: 0, // 별
     lightnings: 0, // 번개
     shields: 0, // 방패
   });
   const [hasBadgeData, setHasBadgeData] = useState<boolean>(false);
   // resume-card .resume-badges 의 SoT — /api/profile 의 point DTO.
-  //   check → icon-graphic10, advantage → icon-shield, pointC → icon-graphic13(red).
+  //   check → icon-graphic10, advantage(최종 B) → icon-shield, pointC → icon-graphic13(red).
+  //   advantage = 최종 B(raw−pointC, 어드민 Po.B parity, 음수 가능). rawAdvantage = 구 DTO fallback 입력.
   //   pointC = 패널티 양수 magnitude(표시 SoT). penalty(−n)는 하위호환 폴백.
-  // null 이면 badgeData(stars/shields/lightnings/pointC) 로 폴백(데모/구캐시 호환).
-  const [pointData, setPointData] = useState<{ check: number; advantage: number; penalty: number; pointC?: number } | null>(null);
+  // null 이면 badgeData(shields/rawAdvantage/pointC) 로 폴백(데모/구캐시 호환).
+  const [pointData, setPointData] = useState<{ check: number; advantage?: number; penalty: number; pointC?: number; rawAdvantage?: number } | null>(null);
 
   // 시즌 히스토리 데이터 상태 (user_season_histories + seasons)
   interface SeasonHistory {
@@ -797,8 +799,10 @@ const Sidebar = () => {
     if (cachedProfile.point) {
       setPointData({
         check: toPointNum(cachedProfile.point.check),
-        advantage: toPointNum(cachedProfile.point.advantage),
-        // pointC 부재(구 응답)는 undefined 유지 → resolvePointC 가 penalty 폴백. (0 으로 강제 금지)
+        // 최종 B(raw−pointC). 부재(구 응답)는 undefined 유지 → resolveFinalPointB 가 rawAdvantage−pointC 폴백. (0 강제 금지)
+        advantage: cachedProfile.point.advantage != null ? toPointNum(cachedProfile.point.advantage) : undefined,
+        // rawAdvantage/pointC 부재(구 응답)는 undefined 유지 → resolveFinalPointB/resolvePointC 폴백. (0 강제 금지)
+        rawAdvantage: cachedProfile.point.rawAdvantage != null ? toPointNum(cachedProfile.point.rawAdvantage) : undefined,
         pointC: cachedProfile.point.pointC != null ? toPointNum(cachedProfile.point.pointC) : undefined,
         penalty: toPointNum(cachedProfile.point.penalty),
       });
@@ -1410,8 +1414,10 @@ const Sidebar = () => {
         if (result.point) {
           setPointData({
             check: toPointNum(result.point.check),
-            advantage: toPointNum(result.point.advantage),
-            // pointC 부재(구 응답)는 undefined 유지 → resolvePointC 가 penalty 폴백. (0 으로 강제 금지)
+            // 최종 B(raw−pointC). 부재(구 응답)는 undefined 유지 → resolveFinalPointB 가 rawAdvantage−pointC 폴백. (0 강제 금지)
+            advantage: result.point.advantage != null ? toPointNum(result.point.advantage) : undefined,
+            // rawAdvantage/pointC 부재(구 응답)는 undefined 유지 → resolveFinalPointB/resolvePointC 폴백. (0 강제 금지)
+            rawAdvantage: result.point.rawAdvantage != null ? toPointNum(result.point.rawAdvantage) : undefined,
             pointC: result.point.pointC != null ? toPointNum(result.point.pointC) : undefined,
             penalty: toPointNum(result.point.penalty),
           });
@@ -2142,11 +2148,17 @@ const Sidebar = () => {
       animateNumber(setStat2, currentStats.stat2, 1000),
       // 배지 데이터 SoT: /api/profile 의 point DTO (check/advantage/pointC).
       //   point 미수신 시 badgeData(stars/shields/pointC) → 데모 currentStats 순 폴백.
-      // 포인트 표시 정책(2026-07): 방패(B)=net(음수 가능, API 최종값) 그대로 · Point C(패널티)=pointC 우선 소비.
+      // 포인트 표시 정책(2026-07): 방패(B)=최종 B(어드민 Po.B parity, 음수 가능) · Point C(패널티)=pointC 우선 소비.
+      //   badge2 = resolveFinalPointB(shield(=advantage/shields) 우선 → rawAdvantage−pointC 폴백). Point C 재차감 없음.
       //   badge3 = resolvePointC(pointC ?? |legacy −n|). 소스별로 pointC(신규)→penalty/lightnings(구)→데모 시드 순.
-      //   Point B 재계산/재차감 없음.
       animateNumber(setBadge1, pointData ? pointData.check : (hasBadgeData ? badgeData.stars : currentStats.badge1), 1000), // icon-graphic10 ← point.check
-      animateNumber(setBadge2, pointData ? pointData.advantage : (hasBadgeData ? badgeData.shields : currentStats.badge2), 1000), // icon-shield ← point.advantage(net)
+      animateNumber(setBadge2,
+        pointData
+          ? resolveFinalPointB({ shield: pointData.advantage, rawAdvantage: pointData.rawAdvantage, pointC: resolvePointC(pointData.pointC, pointData.penalty) })
+          : hasBadgeData
+            ? resolveFinalPointB({ shield: badgeData.shields, rawAdvantage: badgeData.rawAdvantage, pointC: resolvePointC(badgeData.pointC, badgeData.lightnings) })
+            : currentStats.badge2,
+        1000), // icon-shield ← 최종 B(어드민 Po.B parity)
       animateNumber(setBadge3,
         pointData
           ? resolvePointC(pointData.pointC, pointData.penalty)
