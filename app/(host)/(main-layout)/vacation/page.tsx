@@ -133,7 +133,7 @@ function VacationContent() {
   const [myApplications, setMyApplications] = useState<MyApplication[]>([]);
   const [summary, setSummary] = useState<VacationSummary>({ fulfilledWeeks: 0, upcomingWeeks: 0 });
   // 서버가 판정한 viewer 실제 소속 조직(조직 스코프 게이트). URL org 와 다르면
-  // 개인 데이터가 비어 내려오고, 아래에서 교정 안내를 노출한다.
+  // 서버가 개인 데이터를 비워 내려주고, 신청은 아래 isOwnOrg 게이트로 차단한다.
   const [viewerOrg, setViewerOrg] = useState<OrgSlug | null>(null);
   const [dropdownStart, setDropdownStart] = useState<string>("");
   const [selected, setSelected] = useState<string[]>([]);
@@ -141,6 +141,12 @@ function VacationContent() {
   const [submitting, setSubmitting] = useState(false);
   const [myPage, setMyPage] = useState(1);
   const [cancelingId, setCancelingId] = useState<string | null>(null);
+
+  // 본인 조직 페이지 여부 — 서버 org 스코프 게이트의 클라 미러.
+  // viewerOrg(서버 권위) 와 URL org 가 일치할 때만 실제 신청을 허용한다.
+  // 타 조직 페이지에서는 페이지 전체를 이동 안내로 바꾸지 않고(기존 UI 유지),
+  // 신청 버튼 클릭 시에만 안내 팝업을 띄운다.
+  const isOwnOrg = !!org && !!viewerOrg && viewerOrg === org;
 
   // 데이터 로드 — 일반/테스트 유저 모두 동일 API(demoUserId suffix 만 조건부 부착).
   //   org 를 권위 필터로 함께 전송한다(서버가 viewer 소속과 대조해 스코프).
@@ -150,13 +156,16 @@ function VacationContent() {
       setMyApplications([]);
       setSummary({ fulfilledWeeks: 0, upcomingWeeks: 0 });
     };
+    // 재로드/조직 변경 즉시 이전 조직의 개인 데이터를 비운다 — fetch 응답 전
+    // stale 렌더(타 조직 페이지에 직전 본인 조직 데이터가 잠깐 노출) 방지.
+    clearPersonal();
     if (!org) {
-      clearPersonal();
       setViewerOrg(null);
       setLoading(false);
       return;
     }
     try {
+      // no-store + URL 에 org 포함 → 조직별 응답이 서로 캐시 재사용되지 않음.
       const res = await fetch(
         demo.appendDemoUserParams(`/api/vacation?org=${encodeURIComponent(org)}`),
         { cache: "no-store" },
@@ -180,7 +189,11 @@ function VacationContent() {
   }, [demo, org]);
 
   useEffect(() => {
+    // 조직 변경 시 신청 폼 입력(선택 주차·사유)·페이지도 초기화 — 타 조직 값 잔존 방지.
     setLoading(true);
+    setSelected([]);
+    setReason("");
+    setMyPage(1);
     loadData();
   }, [loadData]);
 
@@ -233,7 +246,18 @@ function VacationContent() {
   }, []);
 
   const handleSubmit = useCallback(async () => {
-    if (selected.length === 0 || submitting) return;
+    if (submitting) return;
+    // 타 조직 페이지 — 서버가 403 으로 차단하지만, 클라에서도 신청 API 를 호출하지
+    // 않고 안내 팝업만 띄운다(POST 미발생). 자동 이동 버튼 없음.
+    if (!isOwnOrg) {
+      const orgLine = viewerOrg ? `\n현재 소속 조직: ${ORG_LABEL[viewerOrg]}` : "";
+      await alert(
+        `휴식 신청 불가\n\n소속 조직의 휴식 페이지에서만 휴식을 신청할 수 있습니다.${orgLine}`,
+        { variant: "B" },
+      );
+      return;
+    }
+    if (selected.length === 0) return;
     const ok = await confirm("휴식을 신청하시겠습니까?", { variant: "A" });
     if (!ok) return;
     setSubmitting(true);
@@ -257,7 +281,7 @@ function VacationContent() {
     } finally {
       setSubmitting(false);
     }
-  }, [selected, submitting, confirm, alert, demo, org, reason, loadData]);
+  }, [selected, submitting, isOwnOrg, viewerOrg, confirm, alert, demo, org, reason, loadData]);
 
   // 휴식 취소 — 취소 불가 상태면 서버 호출 없이 즉시 안내 팝업, 가능하면 확인 후 PATCH.
   //   서버가 시점을 재검증하므로(레이스) 200 이 아니면 서버 메시지를 그대로 노출한다.
@@ -306,10 +330,6 @@ function VacationContent() {
 
   const themeClass = org ? ORG_THEME_CLASS[org] : "";
 
-  // 조직 스코프 불일치 — viewer 실제 소속(viewerOrg)과 URL org 가 다르면
-  // 개인 데이터를 렌더하지 않고 본인 조직 페이지로 교정 안내한다.
-  const orgMismatch = !!org && !!viewerOrg && viewerOrg !== org;
-
   // org 미지정 — 사이드바에서 조직 선택 유도(크루 페이지와 동일 정책).
   if (!org) {
     return (
@@ -328,33 +348,9 @@ function VacationContent() {
     );
   }
 
-  // 타 조직 페이지 접근 — 개인 데이터 없이 본인 조직으로 이동 안내.
-  if (orgMismatch && viewerOrg) {
-    const ownOrgHref = demo.appendDemoUserParams(`/vacation?org=${encodeURIComponent(viewerOrg)}`);
-    return (
-      <main className={`nftg-content nftg-content-home vacation-page ${themeClass}`}>
-        <Animations />
-        <Breadcrumb title="클럽 주차 휴식 신청" />
-        <section className="pb-120" style={{ paddingTop: 60 }}>
-          <div className="container">
-            <div className="vacation-empty-org">
-              <h1 className="vacation-title">클럽 주차 휴식 신청</h1>
-              <p>
-                회원님은 <b>{ORG_LABEL[viewerOrg]}</b> 소속입니다.<br />
-                본인 조직의 휴식 신청 페이지에서 신청·조회하실 수 있습니다.
-              </p>
-              <p style={{ marginTop: 16 }}>
-                <a className="vacation-btn vacation-btn--select" href={ownOrgHref}>
-                  {ORG_LABEL[viewerOrg]} 휴식 신청으로 이동
-                </a>
-              </p>
-            </div>
-          </div>
-        </section>
-      </main>
-    );
-  }
-
+  // 타 조직 페이지 접근이어도 페이지 전체를 이동 안내로 교체하지 않는다.
+  // 기존 휴식 UI 를 그대로 렌더하고(서버가 개인 데이터를 비워 내려줌 →
+  // MY 목록 0건·누적/예정 0주), 실제 신청만 handleSubmit 의 isOwnOrg 게이트로 차단한다.
   return (
     <main className={`nftg-content nftg-content-home vacation-page ${themeClass}`}>
       <Animations />
@@ -479,7 +475,9 @@ function VacationContent() {
                 type="button"
                 className="vacation-btn vacation-btn--submit"
                 onClick={handleSubmit}
-                disabled={selected.length === 0 || submitting}
+                // 본인 조직: 주차 선택 전까지 비활성(기존 동작).
+                // 타 조직: 활성 유지 → 클릭 시 신청 API 대신 안내 팝업(POST 미발생).
+                disabled={submitting || loading || (isOwnOrg && selected.length === 0)}
               >
                 {submitting ? "신청 중…" : "휴식 신청"}
               </button>
