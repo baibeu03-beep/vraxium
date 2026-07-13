@@ -574,8 +574,34 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // ⚠️ admin=true 가 붙어도 demoUserId 가 있으면 isPureAdminPreview=false → forceEditUnlock 로
   //    우회되지 않으므로 이 가드가 admin 우회보다 우선한다(정책: admin 으로도 못 깬다).
   const viewerUserId = demoUserId || session?.user?.id || null;
-  const pageOwnerUserId = urlUserId || null;
-  const isForeignViewer = !!demoUserId && !!pageOwnerUserId && viewerUserId !== pageOwnerUserId;
+  // ── 수정 권한 owner 게이트 (비로그인 / 타인 로그인 누수 차단) ──
+  // 기존 isForeignViewer 는 `!!demoUserId` 를 전제로 해 "테스트 유저가 타 크루 카드를 열람"한
+  // 경우만 막았다. 그 결과 다음 두 경로가 게이트를 그대로 통과했다:
+  //   (1) 비로그인 뷰어(session 없음, demoUserId 없음)
+  //   (2) 로그인했지만 남의 카드를 보는 실유저(session.id ≠ urlUserId, demoUserId 없음)
+  // 4허브 라인 canEdit 는 "카드 주인의 submission window" 기준으로 내려오므로(뷰어와 무관),
+  // 주인의 창이 열려 있으면 위 두 뷰어에게도 backendEditable=true → "수정" 버튼이 켜졌다(이번 버그).
+  //
+  // 정책: 수정은 "인증된(로그인 또는 테스트 유저) 뷰어가 카드 주인 본인일 때"만 가능.
+  //   · 인증 = demoUserId(테스트 유저) 또는 세션 로그인이 존재.
+  //   · 카드 주인 = 이 페이지 데이터가 조회된 대상 user = urlUserId, 없으면 로그인 본인(session.id).
+  //   · 둘 다 non-null 이고 정확히 일치해야 함(옵셔널끼리 undefined===undefined 오탐 금지).
+  //   · 세션 로딩 중에는 viewerUserId=null → 자동으로 false(수정 버튼 flash 없음).
+  const isAuthenticatedViewer = !!demoUserId || !!session?.user?.id;
+  const cardOwnerUserId = urlUserId || session?.user?.id || null;
+  const viewerIsCardOwner =
+    isAuthenticatedViewer &&
+    viewerUserId != null &&
+    cardOwnerUserId != null &&
+    viewerUserId === cardOwnerUserId;
+  // 어드민(마더) 계정은 종전 정책(line 547: "모든 프로필 편집 가능")대로 전 유저 4허브 편집 허용.
+  // 단 데모(테스트 유저) 모드에선 "admin 으로도 못 깬다"(기존 정책)를 유지하려 demoUserId 없을 때만 인정.
+  const adminCanEditAny = isAdmin && !demoUserId;
+  // isForeignViewer = "이 뷰어는 이 카드를 소유자로서 수정할 수 없다".
+  // 비로그인·타 유저 로그인·테스트 유저의 타인 카드를 모두 포함(누수 0).
+  // forceEditUnlock(더미 데모 / 순수 어드민 프리뷰)은 모든 가드가 이 값보다 먼저 검사하므로
+  // 종전대로 우회한다(정책 불변).
+  const isForeignViewer = !(viewerIsCardOwner || adminCanEditAny);
 
   // ── 4허브 편집/저장/초기화 권한 단일 게이트 (weekly-cards DTO 라인 기준) ──
   // 편집 진입·수정 버튼은 이미 matchedLine.canEdit + lineTargetId(DTO)로 판정하는데,
