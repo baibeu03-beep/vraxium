@@ -110,8 +110,8 @@ const formatPointValue = (v: number): string => (v > 0 ? `+${v}개` : `${v}개`)
 
 /** 액트 내역 획득 포인트(A/B) — +n / +0. 0 이하는 미적용(회색). */
 const formatGainPoint = (v: number): string => (v > 0 ? `+${v}` : "+0");
-/** 액트 내역 패널티 포인트(C) — magnitude(양수)를 음수로 표기. 0 은 미적용(회색). */
-const formatPenaltyPoint = (v: number): string => (v > 0 ? `-${v}` : v < 0 ? `${v}` : "0");
+/** 액트 내역 패널티 포인트(C) — 양수 magnitude 를 그대로(부호없음) 빨강 표기. 0 은 미적용(회색). */
+const formatPenaltyPoint = (v: number): string => (v !== 0 ? `${Math.abs(v)}` : "0");
 
 /**
  * 액트 내역 요약 통계 — 표시 중인 행(acts) 단일 출처로 파생.
@@ -232,17 +232,26 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
               <div className="dl-summary-layout">
                 <div className="dl-summary-left">
                   <div className="dl-point-cards">
-                    {data.points.map((p, i) => (
-                      <div className="dl-point-card" key={i}>
-                        <span className="dl-point-icon">
-                          {p.icon ? <img src={p.icon} alt={p.label} /> : null}
-                        </span>
-                        <span className="dl-point-text">
-                          <span className="dl-point-label">{p.label}</span>
-                          <span className="dl-point-value">{formatPointValue(p.value)}</span>
-                        </span>
-                      </div>
-                    ))}
+                    {data.points.map((p, i) => {
+                      // 요약 포인트: index 2 = C(패널티) — 양수 magnitude 를 부호없이 빨강. A/B(0,1)=초록.
+                      const isPointC = i === 2;
+                      return (
+                        <div className="dl-point-card" key={i}>
+                          <span className="dl-point-icon">
+                            {p.icon ? <img src={p.icon} alt={p.label} /> : null}
+                          </span>
+                          <span className="dl-point-text">
+                            <span className="dl-point-label">{p.label}</span>
+                            <span
+                              className="dl-point-value"
+                              style={{ color: isPointC ? "#ff6b6b" : "#9dfa07" }}
+                            >
+                              {isPointC ? `${Math.abs(p.value)}개` : formatPointValue(p.value)}
+                            </span>
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 

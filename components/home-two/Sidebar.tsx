@@ -2,6 +2,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { resolvePointC } from "@/lib/cluster4-points";
 
 const Sidebar = () => {
   const { data: session } = useSession();
@@ -29,7 +30,8 @@ const Sidebar = () => {
   });
 
   // 배지 데이터 상태 (user_cumulative_points 테이블)
-  const [badgeData, setBadgeData] = useState({
+  //   pointC = 패널티 양수 magnitude(표시 SoT). lightnings(−n)는 하위호환 폴백.
+  const [badgeData, setBadgeData] = useState<{ stars: number; lightnings: number; shields: number; pointC?: number }>({
     stars: 0,       // 별
     lightnings: 0,  // 번개
     shields: 0      // 방패
@@ -234,12 +236,12 @@ const Sidebar = () => {
     const timers = [
       animateNumber(setStat1, reliabilityRate, 1500),
       animateNumber(setStat2, 80, 1500),
-      // 렌더 슬롯: badge1=icon-graphic10(별) · badge2=icon-shield(방패) · badge3=icon-graphic13(번개·red).
-      // (종전 badge2←lightnings/badge3←shields 는 아이콘과 값이 교차되는 버그 — 2026-06-04 교정.)
-      // 포인트 표시 정책: 방패=net·번개=−n 서버 표시 최종값 그대로 렌더(가공 금지).
-      animateNumber(setBadge1, badgeData.stars, 1500),       // 별
-      animateNumber(setBadge2, badgeData.shields, 1500),     // 방패(net)
-      animateNumber(setBadge3, badgeData.lightnings, 1500),  // 번개(−n)
+      // 렌더 슬롯: badge1=icon-graphic10(별) · badge2=icon-shield(방패) · badge3=icon-graphic13(Point C·red).
+      // 포인트 표시 정책(2026-07): 방패(B)=net(API 최종값) 그대로 · Point C(패널티)=pointC 우선 소비.
+      //   badge3 = resolvePointC(pointC ?? |lightnings|). Point B 재계산/재차감 없음.
+      animateNumber(setBadge1, badgeData.stars, 1500),           // 별(A)
+      animateNumber(setBadge2, badgeData.shields, 1500),         // 방패(B, net)
+      animateNumber(setBadge3, resolvePointC(badgeData.pointC, badgeData.lightnings), 1500),  // Point C(pointC 우선, lightnings 폴백)
       animateNumber(setSkill1, practicalData.competency, 1500),  // 실무역량
       animateNumber(setSkill2, practicalData.experience, 1500),  // 실무경험
       animateNumber(setSkill3, practicalData.info, 1500),        // 실무정보

@@ -6462,9 +6462,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   //   한 카드 안에서 세 포인트의 기준(per-week)을 통일한다. 누적(cumulativeInjeolmi=Σadvantages)은
   //   '누적 방패'가 아니며 주차 칸에 쓰지 않는다(과거 보고 #7 의 누적 표기를 되돌림). 누적 방패가
   //   필요한 자리는 별도 영역에서 net(Σshield-Σlightning) 기준으로만 표기.
-  // 포인트 표시 정책(2026-06-04 통일): DTO(points.*)는 서버 표시 최종값(방패=net, 번개=−n) —
-  //   그대로 렌더. legacy fallback(weekPoints — raw point_type 합산)도 동일 정책으로 변환해
-  //   방패=raw−penalty(net), 번개=−penalty 를 표시한다 (양수 penalty/Math.abs 표기 금지).
+  // 포인트 표시 정책(2026-07 통일): 단감(A)=check · 인절미(B)=net(adv−pen) · 어흥(C)=양수 magnitude(빨강).
+  //   DTO(points.*)는 서버 표시 최종값 — 그대로 렌더(C 는 pointC 양수 우선, 레거시 lightning(−n) 은 -부호로 복원).
+  //   legacy fallback(weekPoints — raw point_type 합산)도 동일 정책으로 변환(방패=raw−penalty(net), C=Math.abs(penalty)).
   const headerCardPoints = weeklyCardMeta?.points ?? null;
   const headerDangam = headerCardPoints?.star ?? weekPoints.star ?? 0;
   const headerInjeolmi =
@@ -6473,9 +6473,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       : (typeof weekPoints.shield === "number" && Number.isFinite(weekPoints.shield)
           ? weekPoints.shield - Math.abs(weekPoints.lightning || 0)
           : 0);
+  // 어흥(Point C) = 패널티 양수 magnitude(부호없음, 빨강). pointC 우선 → 레거시 lightning(−n) 은 부호 반전.
   const headerEoheung = headerCardPoints
-    ? (typeof headerCardPoints.lightning === "number" && Number.isFinite(headerCardPoints.lightning) ? headerCardPoints.lightning : 0)
-    : -Math.abs(weekPoints.lightning || 0);
+    ? (typeof headerCardPoints.pointC === "number" && Number.isFinite(headerCardPoints.pointC)
+        ? headerCardPoints.pointC
+        : typeof headerCardPoints.lightning === "number" && Number.isFinite(headerCardPoints.lightning)
+          ? -headerCardPoints.lightning
+          : 0)
+    : Math.abs(weekPoints.lightning || 0);
 
   // ── Detail Log 모달 데이터 (단일 출처 — header* 계산값 재사용, 순수 표시) ──
   // 누적 성공 주차: DTO accumulatedApprovedWeeks 우선, 없으면 로컬 state.
@@ -9473,7 +9478,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 <span className="info-item with-icon">
                   {resolveHeaderPoint("단감").label}
                   <img src={resolveHeaderPoint("단감").icon} alt={resolveHeaderPoint("단감").label} className="item-icon" />
-                  <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
+                  <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right", color: "#9dfa07" }}>
                     {headerDangam}
                   </strong>
                   <span className="unit-text">개</span>
@@ -9482,7 +9487,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 <span className="info-item with-icon">
                   {resolveHeaderPoint("인절미").label}
                   <img src={resolveHeaderPoint("인절미").icon} alt={resolveHeaderPoint("인절미").label} className="item-icon" />
-                  <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
+                  <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right", color: "#9dfa07" }}>
                     {headerInjeolmi}
                   </strong>
                   <span className="unit-text">개</span>
@@ -9491,7 +9496,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 <span className="info-item with-icon">
                   {resolveHeaderPoint("어흥").label}
                   <img src={resolveHeaderPoint("어흥").icon} alt={resolveHeaderPoint("어흥").label} className="item-icon" />
-                  <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right" }}>
+                  <strong className="number-value" style={{ display: "inline-block", minWidth: "3ch", textAlign: "right", color: "#ff6b6b" }}>
                     {headerEoheung}
                   </strong>
                   <span className="unit-text">개</span>

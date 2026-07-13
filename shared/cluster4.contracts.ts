@@ -22,12 +22,14 @@ export interface Cluster4WeeklyCardDto {
   teamName: string | null;
   partName: string | null;
   roleLabel: string | null;
-  // 포인트 표시 정책(2026-06-04 통일): 표시 최종값 — 별=check · 방패=net(adv−pen) · 번개=−pen.
+  // 포인트 표시 정책(2026-07 통일): 표시 최종값 — 별(A)=check · 방패(B)=net(adv−pen) · C(패널티)=양수 magnitude(빨강).
   // raw advantage 는 내부 집계 전용(고객 DTO 미노출).
   points: {
     star: number;
     shield: number; // net = advantages − penalty (per-week)
-    lightning: number; // −penalty (음수 표기)
+    pointC: number | null; // penalty 양수 magnitude (빨강 표기, 부호없음)
+    /** @deprecated 번개=−penalty(음수). 하위호환 위해 유지 — 표시는 pointC(양수) 사용. */
+    lightning: number; // −penalty (음수 표기, deprecated)
   };
   cumulativeInjeolmi: number;
   growthRate: Cluster4RateDto;
@@ -249,7 +251,7 @@ export interface Cluster4WeeklyColleagueDto {
 //   변동>부분 대상자 필터(recipients matched / manual_grant target)가 원장 단계에서 이미 적용됨.
 //   → 프론트는 이 배열을 "수행 내역"으로 렌더만 하고 별도 계산/대상자 재판정/임의 row 생성을 하지 않는다.
 // 포인트(A/B/C)는 원장 적립값 그대로. pointC(=point_penalty)는 양수 magnitude 로 내려오며,
-//   표시 정책상 패널티는 음수(번개=−penalty)로 보여준다(프론트 렌더 단계에서 부호 적용).
+//   표시 정책(2026-07)상 패널티 C 는 양수 magnitude 를 빨강으로 표기한다(부호 없음).
 export type Cluster4ActLogSource = "regular" | "irregular";
 // 1차는 수행/적립된 내역만 포함하므로 항상 "checked". (miss/실패 row 는 후속 Phase.)
 export type Cluster4ActLogResult = "checked";
@@ -271,7 +273,7 @@ export interface Cluster4ActLogDto {
   durationMinutes: number;
   pointA: number; // = process_point_awards.point_check
   pointB: number; // = process_point_awards.point_advantage
-  pointC: number; // = process_point_awards.point_penalty (양수 magnitude — 표시는 음수)
+  pointC: number; // = process_point_awards.point_penalty (양수 magnitude — 빨강 표기)
   source: Cluster4ActLogSource;
   // regular: process_acts.act_type ("required"|"selection"|레거시 "optional"|"basic")
   // irregular: process_irregular_acts.crew_reaction ("all"|"partial")
@@ -329,10 +331,12 @@ export interface AdminCluster4WeeklyCardDto {
   partName?: string | null;
   roleLabel?: string | null;
   membershipStatusLabel?: string | null;
-  // 포인트 표시 정책(2026-06-04 통일): 방패=net(adv−pen) · 번개=−pen (음수 표기).
+  // 포인트 표시 정책(2026-07 통일): 방패(B)=net(adv−pen) · C(패널티)=양수 magnitude(빨강).
   points?: {
     star?: number | null;
     shield?: number | null;
+    pointC?: number | null; // penalty 양수 magnitude (빨강 표기)
+    /** @deprecated 번개=−penalty(음수). 하위호환 유지 — 표시는 pointC(양수) 사용. */
     lightning?: number | null;
   } | null;
   cumulativeInjeolmi?: number | null;

@@ -1159,7 +1159,13 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
                       {points.map((p) => (
                         <div key={p.key} className="wd-crew__point">
                           <img className="wd-crew__point-icon" src={p.icon} alt="" aria-hidden="true" />
-                          <strong className="wd-crew__point-value">{p.value.toLocaleString()}</strong>
+                          {/* Point C(패널티)=빨강 · A/B=초록. pointC 는 이미 양수 magnitude. */}
+                          <strong
+                            className="wd-crew__point-value"
+                            style={{ color: p.key === "C" ? "#ff6b6b" : "#9dfa07" }}
+                          >
+                            {p.value.toLocaleString()}
+                          </strong>
                         </div>
                       ))}
                     </div>

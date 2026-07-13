@@ -9,6 +9,7 @@ import { useProfile } from "@/contexts/ProfileContext";
 import { dedupedJson } from "@/lib/fetch-dedupe";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
+import { resolvePointC } from "@/lib/cluster4-points";
 import { DUMMY_USER_PROFILE, DUMMY_SIDEBAR_EXTRA } from "@/constants/dummyData";
 import { SECTION2_SLOGAN_DEFAULTS } from "@/constants/dummyData/cluster2-section2-default";
 import { useResumeCardHeight } from "@/hooks/useResumeCardHeight";
@@ -360,16 +361,18 @@ const Sidebar = () => {
   const [badge2, setBadge2] = useState(0);
   const [badge3, setBadge3] = useState(0);
   // 배지 데이터 상태 (user_cumulative_points 테이블) — SSR-safe 기본값
-  const [badgeData, setBadgeData] = useState({
+  //   pointC = 패널티 양수 magnitude(표시 SoT). lightnings(−n)는 하위호환 폴백.
+  const [badgeData, setBadgeData] = useState<{ stars: number; lightnings: number; shields: number; pointC?: number }>({
     stars: 0, // 별
     lightnings: 0, // 번개
     shields: 0, // 방패
   });
   const [hasBadgeData, setHasBadgeData] = useState<boolean>(false);
   // resume-card .resume-badges 의 SoT — /api/profile 의 point DTO.
-  //   check → icon-graphic10, advantage → icon-shield, penalty → icon-graphic13(red).
-  // null 이면 badgeData(stars/shields/lightnings) 로 폴백(데모/구캐시 호환).
-  const [pointData, setPointData] = useState<{ check: number; advantage: number; penalty: number } | null>(null);
+  //   check → icon-graphic10, advantage → icon-shield, pointC → icon-graphic13(red).
+  //   pointC = 패널티 양수 magnitude(표시 SoT). penalty(−n)는 하위호환 폴백.
+  // null 이면 badgeData(stars/shields/lightnings/pointC) 로 폴백(데모/구캐시 호환).
+  const [pointData, setPointData] = useState<{ check: number; advantage: number; penalty: number; pointC?: number } | null>(null);
 
   // 시즌 히스토리 데이터 상태 (user_season_histories + seasons)
   interface SeasonHistory {
@@ -795,6 +798,8 @@ const Sidebar = () => {
       setPointData({
         check: toPointNum(cachedProfile.point.check),
         advantage: toPointNum(cachedProfile.point.advantage),
+        // pointC 부재(구 응답)는 undefined 유지 → resolvePointC 가 penalty 폴백. (0 으로 강제 금지)
+        pointC: cachedProfile.point.pointC != null ? toPointNum(cachedProfile.point.pointC) : undefined,
         penalty: toPointNum(cachedProfile.point.penalty),
       });
     }
@@ -1406,6 +1411,8 @@ const Sidebar = () => {
           setPointData({
             check: toPointNum(result.point.check),
             advantage: toPointNum(result.point.advantage),
+            // pointC 부재(구 응답)는 undefined 유지 → resolvePointC 가 penalty 폴백. (0 으로 강제 금지)
+            pointC: result.point.pointC != null ? toPointNum(result.point.pointC) : undefined,
             penalty: toPointNum(result.point.penalty),
           });
         } else {
@@ -2133,13 +2140,20 @@ const Sidebar = () => {
     const timers = [
       animateNumber(setStat1, currentStats.stat1, 1000),
       animateNumber(setStat2, currentStats.stat2, 1000),
-      // 배지 데이터 SoT: /api/profile 의 point DTO (check/advantage/penalty).
-      //   point 미수신 시 badgeData(stars/shields/lightnings) → 데모 currentStats 순 폴백.
-      // 포인트 표시 정책(2026-06-04): 방패=net·번개=−n 은 서버 표시 최종값 — 그대로 렌더.
-      //   (구 Math.abs(lightnings) 가공 제거. 데모 시드 penalty 도 −n 으로 변환해 동일 정책 유지.)
+      // 배지 데이터 SoT: /api/profile 의 point DTO (check/advantage/pointC).
+      //   point 미수신 시 badgeData(stars/shields/pointC) → 데모 currentStats 순 폴백.
+      // 포인트 표시 정책(2026-07): 방패(B)=net(음수 가능, API 최종값) 그대로 · Point C(패널티)=pointC 우선 소비.
+      //   badge3 = resolvePointC(pointC ?? |legacy −n|). 소스별로 pointC(신규)→penalty/lightnings(구)→데모 시드 순.
+      //   Point B 재계산/재차감 없음.
       animateNumber(setBadge1, pointData ? pointData.check : (hasBadgeData ? badgeData.stars : currentStats.badge1), 1000), // icon-graphic10 ← point.check
       animateNumber(setBadge2, pointData ? pointData.advantage : (hasBadgeData ? badgeData.shields : currentStats.badge2), 1000), // icon-shield ← point.advantage(net)
-      animateNumber(setBadge3, pointData ? pointData.penalty : (hasBadgeData ? (badgeData.lightnings || 0) : -Math.abs(currentStats.badge3)), 1000), // icon-graphic13(red) ← point.penalty(−n)
+      animateNumber(setBadge3,
+        pointData
+          ? resolvePointC(pointData.pointC, pointData.penalty)
+          : hasBadgeData
+            ? resolvePointC(badgeData.pointC, badgeData.lightnings)
+            : Math.abs(currentStats.badge3 || 0),
+        1000), // icon-graphic13(red) ← Point C(pointC 우선, legacy 폴백)
       animateNumber(setSkill1, currentStats.skill1, 1000),
       animateNumber(setSkill2, currentStats.skill2, 1000),
       animateNumber(setSkill3, currentStats.skill3, 1000),

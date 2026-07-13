@@ -1712,6 +1712,9 @@ const Cluster4Content = () => {
   interface SeasonPointSummaryDto {
     star: number;
     shield: number;
+    /** Point C(패널티) 양수 magnitude — 표시 SoT(빨강, 부호없음). */
+    pointC?: number | null;
+    /** @deprecated 번개=−penalty(음수). 하위호환 — 표시는 pointC(양수) 사용. */
     lightning: number;
   }
   interface SeasonSummaryDto {
@@ -2573,11 +2576,11 @@ const Cluster4Content = () => {
           isQualified: sh.is_qualified || false,
           // 시즌 상태 (역할/팀/파트 이력) - 최대 6개, 발생 순서대로
           seasonRoles: seasonRoleItems.slice(0, 6),
-          // 시즌별 포인트 (단감=별, 인절미=방패, 어흥=번개)
+          // 시즌별 포인트 (단감=별, 인절미=방패, 어흥=Point C 패널티 양수 magnitude)
           stats: {
             dangam: seasonPoints.stars,
             injeolmi: seasonPoints.shields,
-            eoheung: seasonPoints.lightnings,
+            eoheung: Math.abs(seasonPoints.lightnings),
           },
           rating: sh.rating || 0,
           review: sh.review || "",
@@ -3493,10 +3496,13 @@ const Cluster4Content = () => {
               <div className="area-4-stats" style={{ transform: "translateX(44px)" }}>
                 {(["단감", "인절미", "어흥"] as const).map((name) => {
                   // 진입 화면 시즌 누적 포인트 — 선택 시즌의 pointSummary(별/방패/번개). 없으면 0.
+                  // 어흥(Point C)=패널티 양수 magnitude. pointC 우선, 없으면 레거시 lightning(−n) 부호반전.
                   const valueMap = {
                     단감: selectedPointSummary?.star ?? 0,
                     인절미: selectedPointSummary?.shield ?? 0,
-                    어흥: selectedPointSummary?.lightning ?? 0,
+                    어흥:
+                      selectedPointSummary?.pointC ??
+                      (selectedPointSummary?.lightning != null ? -selectedPointSummary.lightning : 0),
                   };
                   const defaultSrcMap = {
                     단감: "/images/0/cluster4/icon/icon - 단감.png",
@@ -3524,9 +3530,9 @@ const Cluster4Content = () => {
                       ) : (
                         <img src={defaultSrcMap[name]} alt={name} className="stat-icon" />
                       )}{" "}
-                      {/* 포인트 표시 정책(2026-06-04): 서버 표시 최종값 그대로 렌더 —
-                          방패=net(음수 가능), 번개=−n. Math.abs 가공 금지. 휴식 시즌은 "-". */}
-                      <strong className="number">{voidNum(valueMap[name])}</strong>
+                      {/* 포인트 표시 정책(2026-07): 단감(A)/인절미(B)=초록 · 어흥(C, 패널티)=양수 magnitude 빨강.
+                          방패(B)는 net(음수 가능)이라도 초록. 휴식 시즌은 "-". */}
+                      <strong className="number" style={{ color: name === "어흥" ? "#ff6b6b" : "#9dfa07" }}>{voidNum(valueMap[name])}</strong>
                       <span className="unit">개</span>
                     </span>
                   );

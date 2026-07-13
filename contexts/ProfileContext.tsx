@@ -22,10 +22,13 @@ interface ProfileData {
   careerActivityCount: number | null;
   reliabilityRate: number | null;
   completionRate: number | null;
-  badges: { stars: number; lightnings: number; shields: number } | null;
+  // 포인트 정책(2026-07, admin v38): pointC = 패널티 양수 magnitude(표시 SoT, 빨강).
+  //   lightnings(=−total_penalties)는 하위호환 deprecated — 신규 화면은 pointC 를 우선 소비한다.
+  badges: { stars: number; pointC?: number; lightnings: number; shields: number } | null;
   // resume-card .resume-badges point DTO (source: user_cumulative_points 전용 컬럼).
   // check=total_checks, advantage=total_advantages, penalty=total_penalties. 미존재 시 0.
-  point: { check: number; advantage: number; penalty: number } | null;
+  //   pointC = total_penalties 양수 magnitude(표시 SoT). penalty(=−n)는 하위호환 deprecated.
+  point: { check: number; advantage: number; pointC?: number; penalty: number } | null;
   seasonHistories: any[] | null;
   growthInfo: any | null;
   gradeStats: any | null;

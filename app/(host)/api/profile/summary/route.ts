@@ -400,10 +400,11 @@ export async function GET(request: NextRequest) {
       practicalCounts,
       reliabilityRate: calculatedReliabilityRate,
       completionRate,
-      // 포인트 표시 정책(2026-06-04 통일): 별=total_checks, 방패=total_advantages(net — 캐시
-      //   컬럼 자체가 raw−penalty), 번개=−total_penalties (음수 표기). raw advantage 미노출.
+      // 포인트 표시 정책(2026-07 통일): 별(A)=total_checks, 방패(B)=total_advantages(net — 캐시
+      //   컬럼 자체가 raw−penalty), Point C=total_penalties 양수 magnitude(빨강). lightnings(−n)=하위호환.
       badges: {
         stars: cumulativePoints?.total_checks ?? 0,
+        pointC: cumulativePoints?.total_penalties ?? 0,
         lightnings: -(cumulativePoints?.total_penalties ?? 0),
         shields: cumulativePoints?.total_advantages ?? 0,
       },

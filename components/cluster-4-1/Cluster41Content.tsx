@@ -1531,14 +1531,17 @@ const Cluster41Content = () => {
                 (week.membershipStatusLabel && week.membershipStatusLabel.trim()) ||
                 "-";
 
-              // 포인트: card.points?.star / card.points?.lightning (null → 0)
+              // 포인트: card.points?.star / card.points?.pointC (null → 0)
               const pointsObj = week.points || {};
               const starCount =
                 typeof pointsObj.star === 'number' && Number.isFinite(pointsObj.star) ? pointsObj.star : 0;
-              const lightningCount =
-                typeof pointsObj.lightning === 'number' && Number.isFinite(pointsObj.lightning)
-                  ? pointsObj.lightning
-                  : 0;
+              // Point C(패널티)=양수 magnitude(빨강). pointC 우선, 없으면 레거시 lightning(−pen) 을 -부호로 복원.
+              const pointCCount =
+                typeof pointsObj.pointC === 'number' && Number.isFinite(pointsObj.pointC)
+                  ? pointsObj.pointC
+                  : typeof pointsObj.lightning === 'number' && Number.isFinite(pointsObj.lightning)
+                    ? -pointsObj.lightning
+                    : 0;
 
               // 인절미(방패): 별/번개와 동일하게 "해당 주차" 값 = points.shield (per-week, null → 0).
               //   누적(cumulativeInjeolmi)은 주차별 칸에 쓰지 않는다 — 한 카드 안에서 단감/인절미/어흥의
@@ -1707,9 +1710,9 @@ const Cluster41Content = () => {
                         </div>
 
                         <div className="weekly-card-details-bottom">
-                          <div className="metric">{getOrgAliasFromPathname(pathname, "단감")?.label ?? "단감"} <strong>{starCount}</strong></div>
-                          <div className="metric">{getOrgAliasFromPathname(pathname, "인절미")?.label ?? "인절미"} <strong>{shieldCount}</strong></div>
-                          <div className="metric">{getOrgAliasFromPathname(pathname, "어흥")?.label ?? "어흥"} <strong>{lightningCount}</strong></div>
+                          <div className="metric">{getOrgAliasFromPathname(pathname, "단감")?.label ?? "단감"} <strong style={{ color: '#9dfa07' }}>{starCount}</strong></div>
+                          <div className="metric">{getOrgAliasFromPathname(pathname, "인절미")?.label ?? "인절미"} <strong style={{ color: '#9dfa07' }}>{shieldCount}</strong></div>
+                          <div className="metric">{getOrgAliasFromPathname(pathname, "어흥")?.label ?? "어흥"} <strong style={{ color: '#ff6b6b' }}>{pointCCount}</strong></div>
                           <div className="metric">주차 평판 <strong>{reputationCount}</strong><span className="sub">/{reputationTotal}</span></div>
                         </div>
                       </div>
@@ -1783,9 +1786,11 @@ const Cluster41Content = () => {
                         </span>
                       </div>
                       {(() => {
+                        // 포인트 표시색: 단감(A)/인절미(B)=초록 · 어흥(C, 패널티)=빨강. C 는 양수 magnitude(부호없음).
                         const renderItem = (name: "단감" | "인절미" | "어흥", value: number, defaultSrc: string) => {
                           const mapped = getOrgAliasFromPathname(pathname, name);
                           const label = mapped?.label ?? name;
+                          const valueColor = name === "어흥" ? '#ff6b6b' : '#9dfa07';
                           return (
                             <span className="info-item with-icon" key={name}>
                               {label}
@@ -1794,7 +1799,7 @@ const Cluster41Content = () => {
                               ) : (
                                 <img src={defaultSrc} alt={name} className="item-icon" />
                               )}
-                              <strong className="number-value num-3">{value}</strong>
+                              <strong className="number-value num-3" style={{ color: valueColor }}>{value}</strong>
                               개
                             </span>
                           );
@@ -1806,7 +1811,7 @@ const Cluster41Content = () => {
                             <span className="info-divider">·</span>
                             {renderItem("인절미", shieldCount, "/images/0/cluster4/icon/icon - 인절미.png")}
                             <span className="info-divider">·</span>
-                            {renderItem("어흥", lightningCount, "/images/0/cluster4/icon/icon - 어흥.png")}
+                            {renderItem("어흥", pointCCount, "/images/0/cluster4/icon/icon - 어흥.png")}
                           </div>
                         );
                       })()}

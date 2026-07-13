@@ -2381,13 +2381,14 @@ const Cluster3Content = () => {
     ? {
         dangam: statsCards.points.totalStars, // 별(총합)
         injeolmi: statsCards.points.totalShields, // 방패(총합)
-        eoheung: statsCards.points.totalLightning, // 번개(총합)
+        // Point C(패널티)=양수 magnitude(빨강). upstream 이 음수(−pen)/양수 어느 쪽이든 Math.abs 로 통일.
+        eoheung: Math.abs(statsCards.points.totalLightning),
       }
     : {
         dangam: pointsData.dangam,
         injeolmi: pointsData.injeolmi,
-        // 포인트 표시 정책(2026-06-04): 번개=−n 표기. 데모 시드(양수 penalty)도 동일 정책으로 변환.
-        eoheung: -Math.abs(pointsData.eoheung),
+        // 포인트 표시 정책(2026-07): Point C=양수 magnitude. 데모 시드도 부호없는 양수로 표시.
+        eoheung: Math.abs(pointsData.eoheung),
       };
 
   // 초기 로딩 게이트 — 데이터 도착 전 "-"/0/빈 카드 placeholder 노출 금지.
@@ -2613,7 +2614,7 @@ const Cluster3Content = () => {
                 }> = [
                   { name: "단감", value: pointCard.dangam, defaultSrc: "/images/0/cluster 3/icon/Ok01.png", defaultIconClass: "label-icon orange" },
                   { name: "인절미", value: pointCard.injeolmi, defaultSrc: "/images/0/cluster 3/icon/OK02.png", defaultIconClass: "label-icon" },
-                  // 포인트 표시 정책(2026-06-04): 번개=−n 그대로 렌더 (Math.abs 가공 금지).
+                  // 포인트 표시 정책(2026-07): 어흥(Point C)=양수 magnitude 빨강 렌더.
                   { name: "어흥", value: pointCard.eoheung, defaultSrc: "/images/0/cluster 3/icon/Ok03.png", defaultIconClass: "label-icon" },
                 ];
                 return rows.map((row) => {
@@ -2630,7 +2631,7 @@ const Cluster3Content = () => {
                           <img src={row.defaultSrc} alt={row.name} className={row.defaultIconClass} />
                         )}
                       </span>
-                      <span className="info-value number">
+                      <span className="info-value number" style={{ color: row.name === "어흥" ? "#ff6b6b" : "#9dfa07" }}>
                         {row.value.toLocaleString()}
                         <span className="unit">개</span>
                       </span>

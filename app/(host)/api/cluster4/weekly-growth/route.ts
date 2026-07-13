@@ -41,7 +41,7 @@ async function buildSeasonSummaryAndPoints(
   resumeStatusByKey: Map<string, string>,
   currentSeasonRest: boolean,
   currentSeasonStopped: boolean,
-): Promise<{ seasonSummary: any | null; seasonPointSummary: { star: number; shield: number; lightning: number } | null }> {
+): Promise<{ seasonSummary: any | null; seasonPointSummary: { star: number; shield: number; pointC: number; lightning: number } | null }> {
   if (!currentWeek) return { seasonSummary: null, seasonPointSummary: null };
 
   const sd = currentWeek.season_definitions;
@@ -166,8 +166,9 @@ async function buildSeasonSummaryAndPoints(
 
   // 시즌 누적 포인트 — 캐노니컬 source 는 user_weekly_points (주차 카드/이력서와 동일).
   //   주차 매칭은 week_start_date ∈ 활성 시즌 주차 → 전환주차는 자동 제외.
-  // 포인트 표시 정책(2026-06-04 통일): 고객 노출 값은 표시 최종값.
-  //   별 = Σpoints · 방패 = net(Σadvantages−Σpenalty) · 번개 = −Σpenalty (음수 표기).
+  // 포인트 표시 정책(2026-07 통일): 고객 노출 값은 표시 최종값.
+  //   별(A) = Σpoints · 방패(B) = net(Σadvantages−Σpenalty) · Point C = Σpenalty 양수 magnitude(빨강).
+  //   lightning(−Σpenalty)은 하위호환용 deprecated 필드로 함께 내려준다.
   //   raw advantage 는 내부 집계 전용 — 응답 DTO 로 내보내지 않는다.
   // (public.points 는 이 환경의 PostgREST 스키마에 노출되지 않아 0 으로 떨어진다.)
   const { data: pointRows } = await supabase
@@ -187,7 +188,7 @@ async function buildSeasonSummaryAndPoints(
 
   return {
     seasonSummary,
-    seasonPointSummary: { star, shield: advRaw - pen, lightning: -pen },
+    seasonPointSummary: { star, shield: advRaw - pen, pointC: pen, lightning: -pen },
   };
 }
 
@@ -421,7 +422,8 @@ async function buildSeasonSummaries(
     const fmt = (d: string | null) => (d ? String(d).replace(/-/g, ".") : null);
     const dateRangeLabel = startDate && endDate ? `${fmt(startDate)} - ${fmt(endDate)}` : null;
 
-    // 포인트 표시 정책(2026-06-04 통일): 방패 = net(Σadv−Σpen), 번개 = −Σpen (음수 표기).
+    // 포인트 표시 정책(2026-07 통일): 방패(B) = net(Σadv−Σpen), Point C = Σpen 양수 magnitude(빨강).
+    //   lightning(−Σpen)은 하위호환 deprecated 필드로 병행 제공.
     let star = 0;
     let advRaw = 0;
     let pen = 0;
@@ -432,6 +434,7 @@ async function buildSeasonSummaries(
       pen += p.penalty || 0;
     });
     const shield = advRaw - pen;
+    const pointC = pen;
     const lightning = -pen;
 
     const isCurrent = !!(startDate && endDate && today >= startDate && today <= endDate);
@@ -460,7 +463,7 @@ async function buildSeasonSummaries(
       seasonResult,
       startDate,
       endDate,
-      pointSummary: { star, shield, lightning },
+      pointSummary: { star, shield, pointC, lightning },
     });
   }
 
@@ -585,7 +588,7 @@ export async function GET(request: NextRequest) {
         seasonResult: seasonSummary.seasonResult,
         startDate: seasonSummary.startDate,
         endDate: seasonSummary.endDate,
-        pointSummary: seasonPointSummary ?? { star: 0, shield: 0, lightning: 0 },
+        pointSummary: seasonPointSummary ?? { star: 0, shield: 0, pointC: 0, lightning: 0 },
       });
     }
 
