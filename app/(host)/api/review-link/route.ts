@@ -9,6 +9,10 @@ import {
   reviewLinkOrderErrorMessage,
 } from "@/lib/reviewLinkOrder";
 import { enforceQaMode } from "@/lib/qaModeGate";
+import {
+  canEditWithQaOwnerOverride,
+  QA_OWNER_EDIT_ENABLED,
+} from "@/lib/qa-owner-edit-permission";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -353,9 +357,16 @@ export async function PUT(request: Request) {
     const session = await getServerSession(authOptions);
     const isAdmin = !isDemo && isAdminEmail(session?.user?.email);
 
-    // 권한 검사 (admin 우회). 단, 데모(테스트 유저) 모드에서는 isAdmin=false 이므로
-    // 작성 기간(edit window)이 일반 고객과 동일하게 강제된다.
-    if (!isAdmin) {
+    // 권한 검사 (SoT: lib/qa-owner-edit-permission).
+    //   - admin → 항상 허용(타인 데이터 포함).
+    //   - QA 기간 → 로그인/데모 "본인 소유자"는 작성기간 허가 없이도 허용.
+    //   - 평시 → cluster2.review_links 작성기간(edit window)이 열린 경우에만.
+    // resolveWriteUserId 특성상 비-admin actor 는 항상 본인 행에만 쓴다 → isOwner.
+    // 데모 모드는 isAdmin=false 로 본인 소유자로 게이트된다.
+    const isOwner = !isAdmin;
+    const needsEditWindow = !isAdmin && !(QA_OWNER_EDIT_ENABLED && isOwner);
+    let hasEditWindow = false;
+    if (needsEditWindow) {
       const { data: permRow, error: permError } = await supabaseAdmin
         .from("user_edit_windows")
         .select("opened_at, expires_at")
@@ -370,16 +381,23 @@ export async function PUT(request: Request) {
           { status: 500 },
         );
       }
+      hasEditWindow = isInsideWindow((permRow as PermissionRow | null) ?? null, Date.now());
+    }
 
-      if (!isInsideWindow((permRow as PermissionRow | null) ?? null, Date.now())) {
-        return NextResponse.json(
-          errorPayload(
-            "permission_denied",
-            "리뷰 링크를 수정할 수 있는 기간이 아닙니다.",
-          ),
-          { status: 403 },
-        );
-      }
+    const canEdit = canEditWithQaOwnerOverride({
+      isAdmin,
+      isAuthenticated: true, // resolveWriteUserId.ok = 세션 또는 유효 데모 테스트유저
+      isOwner,
+      hasEditWindow,
+    });
+    if (!canEdit) {
+      return NextResponse.json(
+        errorPayload(
+          "permission_denied",
+          "리뷰 링크를 수정할 수 있는 기간이 아닙니다.",
+        ),
+        { status: 403 },
+      );
     }
 
     // body 파싱 — 신 스키마(links[]) 우선, 구 스키마(cluvingReviewLink) 호환.

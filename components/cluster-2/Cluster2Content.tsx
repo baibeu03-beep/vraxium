@@ -9,6 +9,7 @@ import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { isAdminEmail } from "@/lib/admin";
+import { canEditWithQaOwnerOverride } from "@/lib/qa-owner-edit-permission";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { isPxRoute, isEcRoute, getOrgConfigFromPathname } from "@/lib/cluster-route";
 import { usePopup } from "@/components/ui/popup";
@@ -203,6 +204,12 @@ const Cluster2Content = () => {
   // 본인 프로필인지 확인: URL에 userId가 없거나, 로그인한 사용자 ID와 같으면 본인
   // 어드민(마더) 계정은 모든 프로필 편집 가능. 테스트 유저 모드면 편집 UX 검증을 위해 owner 로 취급.
   const isOwner = session?.user?.isAdmin || isDemo || !urlUserId || (session?.user?.id === urlUserId);
+  // QA 수정 권한용 "본인 소유 데이터" 판정 (관리자/데모모드와 별개).
+  //   - 데모 테스트유저(isDemo): 대상이 그 테스트유저로 고정 → 소유자.
+  //   - 로그인 세션: userId 파라미터 없는 본인 페이지이거나 urlUserId==본인 id.
+  //   - 비로그인/타인 페이지: false → 수정 게이트에서 차단.
+  const viewerIsDataOwner =
+    isDemo || (!!session?.user && (!urlUserId || session?.user?.id === urlUserId));
   // 로컬 더미(localStorage demoMode)는 테스트 유저(?demoUserId=) 모드에서는 끈다 —
   // 테스트 모드는 실제 DB 를 source of truth 로 읽어야 하므로 더미 분기가 응답을 덮으면 안 된다.
   const isDemoMode = checkDemoMode() && !isDemo;
@@ -1551,7 +1558,17 @@ const Cluster2Content = () => {
       });
 
       if (result?.success && permission && typeof permission.canEdit === "boolean") {
-        setCanEditClubReview(permission.canEdit);
+        // 공통 SoT 판정 — QA 기간엔 본인 소유자면 작성기간 허가 없이도 허용,
+        // 타인 페이지(소유자 아님)는 자신의 window 가 열려 있어도 차단.
+        // (admin/데모모드는 위에서 이미 return → 여기선 isAdmin=false)
+        setCanEditClubReview(
+          canEditWithQaOwnerOverride({
+            isAdmin: false,
+            isAuthenticated: !!session?.user || isDemo,
+            isOwner: viewerIsDataOwner,
+            hasEditWindow: permission.canEdit,
+          }),
+        );
         setClubReviewPermissionReason(permission.reason ?? "not_granted");
         setClubReviewPermissionExpiresAt(permission.expiresAt ?? null);
       } else {
@@ -1567,7 +1584,7 @@ const Cluster2Content = () => {
     } finally {
       setReviewPermissionLoading(false);
     }
-  }, [isDemoMode, isDemo, demo.demoUserId, session?.user?.email, session?.user?.isAdmin]);
+  }, [isDemoMode, isDemo, demo.demoUserId, urlUserId, session?.user, session?.user?.id, session?.user?.email, session?.user?.isAdmin]);
 
   useEffect(() => {
     if (sessionStatus === "loading") return;
@@ -1600,14 +1617,23 @@ const Cluster2Content = () => {
       );
       const result = await response.json();
       const permission = result?.data;
+      // 공통 SoT 판정 — QA 기간엔 본인 소유자면 작성기간 허가 없이도 1번 학력 수정 허용,
+      // 타인 페이지(소유자 아님)는 차단. (admin/데모모드는 위에서 이미 return)
       setCanChangePrimary(
-        Boolean(result?.success && permission && permission.canEdit === true),
+        canEditWithQaOwnerOverride({
+          isAdmin: false,
+          isAuthenticated: !!session?.user || isDemo,
+          isOwner: viewerIsDataOwner,
+          hasEditWindow: Boolean(
+            result?.success && permission && permission.canEdit === true,
+          ),
+        }),
       );
     } catch (error) {
       console.error("대표학력 수정 권한 확인 오류:", error);
       setCanChangePrimary(false);
     }
-  }, [isDemo, isDemoMode, session?.user?.email, session?.user?.isAdmin]);
+  }, [isDemo, isDemoMode, urlUserId, session?.user, session?.user?.id, session?.user?.email, session?.user?.isAdmin]);
 
   useEffect(() => {
     if (sessionStatus === "loading") return;

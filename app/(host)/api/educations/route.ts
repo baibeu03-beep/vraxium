@@ -8,6 +8,10 @@ import { isAdminEmail } from "@/lib/admin";
 import { hasOpenEditWindow } from "@/lib/editWindow";
 import { normalizeSchool, normalizeMajor } from "@/lib/schoolNormalize";
 import { enforceQaMode } from "@/lib/qaModeGate";
+import {
+  canEditWithQaOwnerOverride,
+  QA_OWNER_EDIT_ENABLED,
+} from "@/lib/qa-owner-edit-permission";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -448,19 +452,28 @@ export async function PUT(request: Request) {
     const userId = actor.userId;
     const nowIso = new Date().toISOString();
 
-    // 대표학력(1번 학력) 수정 권한 판정.
+    // 대표학력(1번 학력) 수정 권한 판정 (SoT: lib/qa-owner-edit-permission).
     //   - admin(비-데모) → 1번 포함 전체 수정 가능.
-    //   - 그 외(일반 고객 / demoUserId 테스트 유저) → 작성기간 관리
-    //     (cluster2.primary_education) 윈도우가 열려 있을 때만 1번 수정 가능.
-    // 데모 모드는 세션이 없어 isAdmin=false 로 내려가 일반 고객과 동일하게 게이트된다.
+    //   - QA 기간(QA_OWNER_EDIT_ENABLED) → 로그인/데모 "본인 소유자"는 작성기간 허가
+    //     없이도 1번 수정 가능.
+    //   - 평시 → 작성기간 관리(cluster2.primary_education) 윈도우가 열린 경우에만.
+    // resolveWriteUserId 특성상 비-admin actor 는 항상 본인(세션 self / 유효 데모
+    // 테스트유저) 행에만 쓴다 → isOwner. admin 타인편집은 isAdmin=true 로 별도 통과.
+    // 데모 모드는 세션이 없어 isAdmin=false 로 내려가 본인 소유자로 게이트된다.
     const session = await getServerSession(authOptions);
     const isAdmin = !actor.isDemo && isAdminEmail(session?.user?.email);
-    const canEditPrimary =
-      isAdmin ||
-      (await hasOpenEditWindow({
-        userId,
-        resourceKey: PRIMARY_EDU_RESOURCE_KEY,
-      }));
+    const isOwner = !isAdmin;
+    const needsEditWindow =
+      !isAdmin && !(QA_OWNER_EDIT_ENABLED && isOwner);
+    const hasEditWindow = needsEditWindow
+      ? await hasOpenEditWindow({ userId, resourceKey: PRIMARY_EDU_RESOURCE_KEY })
+      : false;
+    const canEditPrimary = canEditWithQaOwnerOverride({
+      isAdmin,
+      isAuthenticated: true, // resolveWriteUserId.ok = 세션 또는 유효 데모 테스트유저
+      isOwner,
+      hasEditWindow,
+    });
 
     // 권한이 없을 때 1번 학력을 덮어쓰지 못하도록, delete 전에 기존 대표학력을 스냅샷.
     let existingPrimary: EducationRow | null = null;
