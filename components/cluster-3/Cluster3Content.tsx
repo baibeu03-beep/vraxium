@@ -3360,19 +3360,29 @@ const Cluster3Content = () => {
                 </div>
                 <div className="modal-footer-right">
                   {!isEditMode ? (
-                    // 수정 버튼은 로그인 + 본인 소유(또는 admin/프리뷰)일 때만 노출.
-                    // 비로그인·타인 카드는 버튼 자체를 렌더하지 않는다.
-                    channelCardCanEdit ? (
-                      <button
-                        className="modal-edit-btn"
-                        onClick={() => {
-                          if (!channelCardCanEdit) return; // DOM 조작 대비 방어
-                          setIsEditMode(true);
-                        }}
-                      >
-                        수정
-                      </button>
-                    ) : null
+                    // 수정 버튼은 항상 렌더하고 권한값으로 disabled 만 제어(숨기지 않음).
+                    // 비로그인·타인 카드는 "표시 + 비활성화" 상태. 권한 판정/서버 차단은 불변.
+                    <button
+                      type="button"
+                      className="modal-edit-btn"
+                      disabled={!channelCardCanEdit}
+                      onClick={() => {
+                        // native disabled 로 클릭·키보드(Enter/Space) 진입은 이미 차단되지만
+                        // DOM 조작으로 disabled 를 제거한 경우까지 대비한 이중 방어.
+                        if (!channelCardCanEdit) return;
+                        setIsEditMode(true);
+                      }}
+                      title={
+                        channelCardCanEdit
+                          ? "수정"
+                          : !!session?.user || isDemo
+                            ? "본인 소유 카드만 수정할 수 있습니다."
+                            : "로그인한 본인만 수정할 수 있습니다."
+                      }
+                      style={!channelCardCanEdit ? { opacity: 0.5, cursor: "not-allowed" } : {}}
+                    >
+                      수정
+                    </button>
                   ) : (
                     <>
                       <button
