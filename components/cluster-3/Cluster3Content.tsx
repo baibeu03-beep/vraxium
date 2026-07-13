@@ -11,6 +11,7 @@ import { useModalScroll } from "@/utils/useModalScroll";
 import { useProfile } from "@/contexts/ProfileContext";
 import { isAdminEmail } from "@/lib/admin";
 import { canEditCluster3TopCard } from "@/lib/cluster3-top-card-edit-permission";
+import { canEditOwnedResource } from "@/lib/owner-edit-permission";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { isPxRoute, isEcRoute, getThemeClass, ORGANIZATION_CONFIG } from "@/lib/cluster-route";
 import type { Cluster3StatsCards } from "@/lib/cluster3StatsCardsTypes";
@@ -257,6 +258,22 @@ const Cluster3Content = () => {
   //   - 비로그인/타인 페이지: false → 카드 수정 게이트에서 차단.
   const viewerIsCardOwner =
     isDemo || (!!session?.user && (!urlUserId || session?.user?.id === urlUserId));
+
+  // Portfolio Channel 카드(대표 카드 + 상세 모달) 수정 권한 — 영구 정책(SoT).
+  //   canEdit = isAdmin || (로그인/데모 인증 && 본인 소유). 작성 기간 허가·QA 우회 무관.
+  //   - 비로그인/타인 카드 → false (수정 버튼 미노출·저장 차단).
+  //   - isDemoMode(localStorage 디자인 프리뷰)는 DB 미접촉 클라 전용 편집이라 별도 허용.
+  //   서버(/api/portfolio-channel-cards)는 resolveWriteUserId 로 비로그인 401 + 비-admin
+  //   본인 행 고정이라 이미 동일 정책을 강제한다(방어선 이중화).
+  const channelCardIsAdmin =
+    (!!session?.user?.isAdmin || isAdminEmail(session?.user?.email)) && !isDemo;
+  const channelCardCanEdit =
+    isDemoMode ||
+    canEditOwnedResource({
+      isAdmin: channelCardIsAdmin,
+      isAuthenticated: !!session?.user || isDemo,
+      isOwner: viewerIsCardOwner,
+    });
 
   // 저장/조회 API URL 빌더.
   //   - 테스트 유저 모드: demoUserId 부착(백엔드가 test_user_markers 검증 후 대상 고정).
@@ -714,6 +731,12 @@ const Cluster3Content = () => {
   const saveChannelCard = async (cardIndex: number, card: any): Promise<any | null> => {
     if (isDemoMode) {
       return card;
+    }
+    // 권한 방어(최종): 비로그인·타인 카드는 PUT 자체를 발사하지 않는다.
+    // (서버도 resolveWriteUserId 로 비로그인 401 + 본인 행 고정이라 이중 차단.)
+    if (!channelCardCanEdit) {
+      await popup.alert("수정 권한이 없습니다.");
+      return null;
     }
     // 방어: sample(firstCard) 페이로드는 production DB 에 절대 PUT 하지 않는다.
     // 2026-05-18 사고 — canonical row 의 channel_name 이 '@ Discovery_Korea' 로 revert.
@@ -3337,9 +3360,19 @@ const Cluster3Content = () => {
                 </div>
                 <div className="modal-footer-right">
                   {!isEditMode ? (
-                    <button className="modal-edit-btn" onClick={() => setIsEditMode(true)}>
-                      수정
-                    </button>
+                    // 수정 버튼은 로그인 + 본인 소유(또는 admin/프리뷰)일 때만 노출.
+                    // 비로그인·타인 카드는 버튼 자체를 렌더하지 않는다.
+                    channelCardCanEdit ? (
+                      <button
+                        className="modal-edit-btn"
+                        onClick={() => {
+                          if (!channelCardCanEdit) return; // DOM 조작 대비 방어
+                          setIsEditMode(true);
+                        }}
+                      >
+                        수정
+                      </button>
+                    ) : null
                   ) : (
                     <>
                       <button
@@ -3379,6 +3412,13 @@ const Cluster3Content = () => {
                         className="modal-save-btn"
                         disabled={isSavingChannelCard}
                         onClick={async () => {
+                          // 권한 방어: 로그인 본인 소유(또는 admin/프리뷰)가 아니면 저장 금지.
+                          // 수정 버튼을 DOM 으로 되살려 편집 모드에 진입했더라도 여기서 차단.
+                          if (!channelCardCanEdit) {
+                            await popup.alert("수정 권한이 없습니다.");
+                            setIsEditMode(false);
+                            return;
+                          }
                           const card = channelCards[currentCardIndex];
 
                           // 방어: 사용자가 실제로 편집하지 않은 카드는 절대 PUT 하지 않는다.
