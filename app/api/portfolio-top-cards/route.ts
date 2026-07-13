@@ -7,6 +7,10 @@ import { isAdminEmail } from "@/lib/admin";
 import { resolveWriteUserId } from "@/lib/api-auth";
 import { hasOpenTopCardEditWindow } from "@/lib/topCardsEditWindow";
 import { enforceQaMode } from "@/lib/qaModeGate";
+import {
+  canEditCluster3TopCard,
+  CLUSTER3_QA_OWNER_EDIT_ENABLED,
+} from "@/lib/cluster3-top-card-edit-permission";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -177,25 +181,34 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "잘못된 카드 인덱스입니다." }, { status: 400 });
     }
 
-    // === 작성 기간 권한 체크 ===
-    // 어드민(마더)은 작성 기간과 무관하게 항상 허용.
-    // 일반 사용자는 user_edit_windows 에 cardType 별 리소스 키 row 가
-    // 현재 시각 기준 열려 있어야만 PUT 허용.
+    // === 작성 기간 권한 체크 (SoT: lib/cluster3-top-card-edit-permission) ===
+    // 클라이언트 버튼 활성화와 반드시 동일한 판정을 쓰도록 공통 함수를 통과시킨다.
+    //   - 어드민(마더)은 작성 기간과 무관하게 항상 허용(타인 카드 편집 포함).
+    //   - QA 기간(CLUSTER3_QA_OWNER_EDIT_ENABLED)에는 로그인/데모 "본인 소유자"가
+    //     작성 기간 허가 없이도 허용된다.
+    //   - QA 종료 후엔 평시 정책(작성 기간 허가)만으로 복귀.
     //   - cluster3.output_cards / cluster3.detail_cards 는 admin repo 의
     //     작성 기간 관리에서 별개 row 로 운영되므로 cardType 별로 독립 체크.
-    //   - 프론트의 ?unlockCluster3* QA 쿼리는 UI 테스트용일 뿐이며
-    //     서버 PUT 권한에는 영향을 주지 않는다.
-    // 데모(테스트 유저) 모드에서는 관리자라도 작성 기간을 우회하지 않는다.
-    // 데모 모드에서는 세션이 없으므로 admin 판정도 false → 작성 기간 강제.
+    //   - 프론트의 ?unlockCluster3* QA 쿼리는 UI 테스트용일 뿐이며 서버 권한 무관.
+    // isOwner: resolveWriteUserId 특성상 비-어드민 actor 는 항상 본인(세션 self /
+    //   유효 데모 테스트유저) 행에만 쓴다 → 비-어드민 = 소유자. 어드민 타인 편집은
+    //   isAdmin=true 로 별도 통과(actor.userId=대상 유저). 데모 모드는 admin 미부여.
     const session = await getServerSession(authOptions);
     const isAdmin =
       !isDemo && (!!session?.user?.isAdmin || isAdminEmail(session?.user?.email));
-    const canEdit =
-      isAdmin ||
-      (await hasOpenTopCardEditWindow({
-        userId: actor.userId,
-        cardType,
-      }));
+    const isOwner = !isAdmin;
+    // QA 오버라이드/어드민이 이미 허용하는 경우 불필요한 edit-window 조회를 생략한다.
+    const needsEditWindow =
+      !isAdmin && !(CLUSTER3_QA_OWNER_EDIT_ENABLED && isOwner);
+    const hasEditWindow = needsEditWindow
+      ? await hasOpenTopCardEditWindow({ userId: actor.userId, cardType })
+      : false;
+    const canEdit = canEditCluster3TopCard({
+      isAdmin,
+      isAuthenticated: true, // resolveWriteUserId.ok = 세션 또는 유효 데모 테스트유저
+      isOwner,
+      hasEditWindow,
+    });
     if (!canEdit) {
       return NextResponse.json(
         {

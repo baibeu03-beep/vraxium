@@ -10,6 +10,7 @@ import { getOrgAliasFromPathname } from "@/utils/orgLabelAlias";
 import { useModalScroll } from "@/utils/useModalScroll";
 import { useProfile } from "@/contexts/ProfileContext";
 import { isAdminEmail } from "@/lib/admin";
+import { canEditCluster3TopCard } from "@/lib/cluster3-top-card-edit-permission";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { isPxRoute, isEcRoute, getThemeClass, ORGANIZATION_CONFIG } from "@/lib/cluster-route";
 import type { Cluster3StatsCards } from "@/lib/cluster3StatsCardsTypes";
@@ -249,6 +250,13 @@ const Cluster3Content = () => {
   // 어드민(마더) 계정은 모든 프로필 편집 가능. 테스트 유저 모드면 편집 UX 검증을 위해 owner 로 취급.
   const isOwner = session?.user?.isAdmin || isDemo || !urlUserId || session?.user?.id === urlUserId;
   const isDemoMode = checkDemoMode();
+
+  // 대표/상세 카드 QA 수정 권한용 "본인 카드 소유자" 판정 (관리자/데모모드와 별개).
+  //   - 데모 테스트유저(isDemo): 대상이 그 테스트유저로 고정 → 소유자.
+  //   - 로그인 세션: userId 파라미터 없는 본인 페이지이거나 urlUserId==본인 id.
+  //   - 비로그인/타인 페이지: false → 카드 수정 게이트에서 차단.
+  const viewerIsCardOwner =
+    isDemo || (!!session?.user && (!urlUserId || session?.user?.id === urlUserId));
 
   // 저장/조회 API URL 빌더.
   //   - 테스트 유저 모드: demoUserId 부착(백엔드가 test_user_markers 검증 후 대상 고정).
@@ -1350,8 +1358,22 @@ const Cluster3Content = () => {
       loadPermission("cluster3.detail_cards"),
     ]).then(([outputPerm, detailPerm]) => {
       if (cancelled) return;
-      setCanEditOutput((unlockAll || unlockOutput) || outputPerm.canEdit);
-      setCanEditDetail((unlockAll || unlockDetail) || detailPerm.canEdit);
+      // 공통 SoT 판정 통과 — QA 기간엔 본인 소유자면 작성 기간 허가 없이도 허용,
+      // 타인 페이지(소유자 아님)는 자신의 window 가 열려 있어도 차단.
+      // (이 branch 는 admin/demoMode 가 이미 위에서 return 된 뒤이므로 isAdmin=false)
+      const editCtx = {
+        isAdmin: false,
+        isAuthenticated: !!session?.user || isDemo,
+        isOwner: viewerIsCardOwner,
+      };
+      setCanEditOutput(
+        (unlockAll || unlockOutput) ||
+          canEditCluster3TopCard({ ...editCtx, hasEditWindow: outputPerm.canEdit }),
+      );
+      setCanEditDetail(
+        (unlockAll || unlockDetail) ||
+          canEditCluster3TopCard({ ...editCtx, hasEditWindow: detailPerm.canEdit }),
+      );
       setOutputPermissionReason(outputPerm.reason);
       setDetailPermissionReason(detailPerm.reason);
       setOutputPermissionExpiresAt(outputPerm.expiresAt);
@@ -1388,13 +1410,25 @@ const Cluster3Content = () => {
         const unlockDetail = searchParams.get("unlockCluster3Detail") === "1";
         const oPerm = outputRes?.data;
         const dPerm = detailRes?.data;
+        // 메인 effect 와 동일한 공통 SoT 판정 사용 (QA 소유자 오버라이드 + 타인 차단 일관).
+        const editCtx = {
+          isAdmin: false,
+          isAuthenticated: !!session?.user || isDemo,
+          isOwner: viewerIsCardOwner,
+        };
         if (oPerm && typeof oPerm.canEdit === "boolean") {
-          setCanEditOutput((unlockAll || unlockOutput) || Boolean(oPerm.canEdit));
+          setCanEditOutput(
+            (unlockAll || unlockOutput) ||
+              canEditCluster3TopCard({ ...editCtx, hasEditWindow: Boolean(oPerm.canEdit) }),
+          );
           setOutputPermissionReason((oPerm.reason ?? "not_granted") as TopCardPermissionReason);
           setOutputPermissionExpiresAt((oPerm.expiresAt ?? null) as string | null);
         }
         if (dPerm && typeof dPerm.canEdit === "boolean") {
-          setCanEditDetail((unlockAll || unlockDetail) || Boolean(dPerm.canEdit));
+          setCanEditDetail(
+            (unlockAll || unlockDetail) ||
+              canEditCluster3TopCard({ ...editCtx, hasEditWindow: Boolean(dPerm.canEdit) }),
+          );
           setDetailPermissionReason((dPerm.reason ?? "not_granted") as TopCardPermissionReason);
           setDetailPermissionExpiresAt((dPerm.expiresAt ?? null) as string | null);
         }
