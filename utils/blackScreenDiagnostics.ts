@@ -287,7 +287,10 @@ export async function publishSnapshot(reason: string, options: PublishOptions = 
   console.error("[BlackScreenDiag] snapshot", snapshot);
 
   if (options.notify && isBrowser()) {
-    window.alert("진단 정보가 클립보드에 복사되었습니다. 개발자에게 그대로 전달해주세요.");
+    // 의도적 예외: 이 경로는 앱이 검은 화면(React 렌더 실패)으로 죽었을 때 동작하는 진단
+    // 실패대비(failsafe)다. 공통 커스텀 팝업(usePopup)은 React 렌더링에 의존하므로, 정작
+    // 화면이 깨진 상황에서 표시되지 않을 수 있다. 따라서 여기서는 네이티브 alert 를 그대로 쓴다.
+    window.alert("진단 정보가 클립보드에 복사되었습니다. 개발자에게 그대로 전달해주세요."); // popup-allow: failsafe
   }
 
   return snapshot;

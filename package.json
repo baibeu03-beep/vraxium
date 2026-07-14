@@ -11,6 +11,7 @@
     "build": "next build",
     "start": "next start",
     "test:zone-a-modals": "node scripts/zone-a-modal-diagnostics.js",
+    "verify:popups": "node scripts/verify-no-native-popups.mjs",
     "lint": "next lint"
   },
   "dependencies": {

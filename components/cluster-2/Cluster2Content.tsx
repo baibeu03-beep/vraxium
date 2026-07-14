@@ -318,7 +318,7 @@ const Cluster2Content = () => {
       return;
     }
     if (!session) {
-      alert("로그인이 필요합니다.");
+      await showAlert("로그인이 필요합니다.");
       return;
     }
     openModalFn();

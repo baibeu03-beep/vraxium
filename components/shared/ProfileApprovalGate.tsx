@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { usePopup } from "@/components/ui/popup";
 
 // 신규 가입자 가드: user_profiles 매칭이 없는 카카오 계정으로 (main-layout) 자식 라우트 진입 시
 // '어드민 승인 대기중' 안내 후 메인('/') 으로 돌려보냄.
@@ -12,6 +13,7 @@ export default function ProfileApprovalGate() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const pathname = usePathname();
+  const popup = usePopup();
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -26,13 +28,13 @@ export default function ProfileApprovalGate() {
         if (cancelled) return;
         if (res.status === 404) {
           try { sessionStorage.setItem("approval-gate-shown", "1"); } catch {}
-          alert("어드민 승인 대기중입니다.");
+          await popup.alert("어드민 승인 대기중입니다.");
           router.replace("/");
         }
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [status, session, pathname, router]);
+  }, [status, session, pathname, router, popup]);
 
   return null;
 }

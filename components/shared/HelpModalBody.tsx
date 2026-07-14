@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useDataMasking } from "@/hooks/useDataMasking";
+import { usePopup } from "@/components/ui/popup";
 
 export type HelpKey =
   | "seasonReputation"
@@ -49,6 +50,7 @@ function notify(map: Record<string, string>) {
  */
 export default function HelpModalBody({ helpKey }: { helpKey: HelpKey }) {
   const { isAdmin } = useDataMasking();
+  const popup = usePopup();
   const [body, setBody] = useState<string>("");
   const [loaded, setLoaded] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -92,7 +94,7 @@ export default function HelpModalBody({ helpKey }: { helpKey: HelpKey }) {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(json?.error || "저장 실패");
+        await popup.alert(json?.error || "저장 실패");
         return;
       }
       const next = { ...(cache ?? {}), [helpKey]: draft };
@@ -101,7 +103,7 @@ export default function HelpModalBody({ helpKey }: { helpKey: HelpKey }) {
     } finally {
       setSaving(false);
     }
-  }, [helpKey, draft]);
+  }, [helpKey, draft, popup]);
 
   const display = body && body.trim().length > 0 ? body : PLACEHOLDER;
 

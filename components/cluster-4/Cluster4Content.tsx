@@ -2764,15 +2764,15 @@ const Cluster4Content = () => {
           }),
         });
         const result = await response.json();
-        if (!response.ok) { alert(result.error || "수정에 실패했습니다."); return; }
+        if (!response.ok) { await popup.alert(result.error || "수정에 실패했습니다."); return; }
 
         const targetId = urlUserId || session?.user?.id;
         if (targetId && currentSeason?.id) fetchSeasonReputations(targetId, currentSeason.id);
-        alert("수정되었습니다.");
+        await popup.alert("수정되었습니다.");
         setSeasonReputationModalOpen(false);
         setSeasonReputationEditData({ rating: 0, content: "", keyword1: "", keyword2: "", keyword3: "" });
         setEditingReputationId(null);
-      } catch { alert("서버 오류가 발생했습니다."); }
+      } catch { await popup.alert("서버 오류가 발생했습니다."); }
       finally { setSeasonReputationSaving(false); }
       return;
     }
@@ -2946,7 +2946,7 @@ const Cluster4Content = () => {
 
   const handleSaveSeasonReview = async () => {
     if (!isOwner) {
-      alert("본인 시즌 리뷰만 저장할 수 있습니다.");
+      await popup.alert("본인 시즌 리뷰만 저장할 수 있습니다.");
       return;
     }
     if (!isDemoMode && !canEditSeasonReview) {
@@ -4300,19 +4300,19 @@ const Cluster4Content = () => {
                     >수정</button>
                     <button
                       onClick={async () => {
-                        if (!confirm('이 평판을 삭제하시겠습니까?')) return;
+                        if (!(await popup.confirm('이 평판을 삭제하시겠습니까?'))) return;
                         try {
                           const res = await fetch(apiUrl(`/api/season-reputations?id=${selectedReputation.id}`), { method: 'DELETE' });
                           const json = await res.json();
                           if (json.success) {
-                            alert('삭제되었습니다.');
+                            await popup.alert('삭제되었습니다.');
                             setReputationDetailModalOpen(false);
                             const targetId = urlUserId || session?.user?.id;
                             if (targetId && currentSeason?.id) fetchSeasonReputations(targetId, currentSeason.id);
                           } else {
-                            alert(json.error || '삭제 실패');
+                            await popup.alert(json.error || '삭제 실패');
                           }
-                        } catch { alert('삭제 중 오류 발생'); }
+                        } catch { await popup.alert('삭제 중 오류 발생'); }
                       }}
                       style={{ padding: '8px 16px', background: 'rgba(255, 60, 60, 0.2)', border: '1px solid #ff3c3c', borderRadius: '6px', color: '#ff3c3c', fontSize: '13px', cursor: 'pointer' }}
                     >삭제</button>

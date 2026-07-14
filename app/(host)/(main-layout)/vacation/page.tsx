@@ -125,7 +125,7 @@ function VacationContent() {
   const searchParams = useSearchParams();
   const orgParam = searchParams?.get("org") ?? null;
   const org: OrgSlug | null = isOrgSlug(orgParam) ? orgParam : null;
-  const { confirm, alert } = usePopup();
+  const popup = usePopup();
   const demo = useDemoUserMode();
 
   const [loading, setLoading] = useState(true);
@@ -223,19 +223,19 @@ function VacationContent() {
 
     // 최대 개수 또는 비연속 → 안내 팝업(추가하지 않음).
     if (selected.length >= MAX_VACATION_WEEKS) {
-      await alert(NON_CONSECUTIVE_POPUP_MESSAGE, { variant: "B" });
+      await popup.alert(NON_CONSECUTIVE_POPUP_MESSAGE, { variant: "B" });
       return;
     }
     if (selected.length > 0) {
       const sorted = [...selected].sort();
       const expectedNext = addDaysIso(sorted[sorted.length - 1], 7);
       if (dropdownStart !== expectedNext) {
-        await alert(NON_CONSECUTIVE_POPUP_MESSAGE, { variant: "B" });
+        await popup.alert(NON_CONSECUTIVE_POPUP_MESSAGE, { variant: "B" });
         return;
       }
     }
     setSelected((prev) => [...prev, dropdownStart].sort());
-  }, [dropdownStart, selected, alert]);
+  }, [dropdownStart, selected, popup]);
 
   const handleRemove = useCallback((start: string) => {
     setSelected((prev) => contiguousPrefix(prev.filter((s) => s !== start).sort()));
@@ -251,14 +251,14 @@ function VacationContent() {
     // 않고 안내 팝업만 띄운다(POST 미발생). 자동 이동 버튼 없음.
     if (!isOwnOrg) {
       const orgLine = viewerOrg ? `\n현재 소속 조직: ${ORG_LABEL[viewerOrg]}` : "";
-      await alert(
+      await popup.alert(
         `휴식 신청 불가\n\n소속 조직의 휴식 페이지에서만 휴식을 신청할 수 있습니다.${orgLine}`,
         { variant: "B" },
       );
       return;
     }
     if (selected.length === 0) return;
-    const ok = await confirm("휴식을 신청하시겠습니까?", { variant: "A" });
+    const ok = await popup.confirm("휴식을 신청하시겠습니까?", { variant: "A" });
     if (!ok) return;
     setSubmitting(true);
     try {
@@ -269,19 +269,19 @@ function VacationContent() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        await alert(json?.error ?? "휴식 신청에 실패했습니다.", { variant: "B" });
+        await popup.alert(json?.error ?? "휴식 신청에 실패했습니다.", { variant: "B" });
         return;
       }
       setSelected([]);
       setReason("");
       await loadData();
-      await alert("휴식 신청이 완료되었습니다.", { variant: "B" });
+      await popup.alert("휴식 신청이 완료되었습니다.", { variant: "B" });
     } catch {
-      await alert("휴식 신청 중 오류가 발생했습니다.", { variant: "B" });
+      await popup.alert("휴식 신청 중 오류가 발생했습니다.", { variant: "B" });
     } finally {
       setSubmitting(false);
     }
-  }, [selected, submitting, isOwnOrg, viewerOrg, confirm, alert, demo, org, reason, loadData]);
+  }, [selected, submitting, isOwnOrg, viewerOrg, popup, demo, org, reason, loadData]);
 
   // 휴식 취소 — 취소 불가 상태면 서버 호출 없이 즉시 안내 팝업, 가능하면 확인 후 PATCH.
   //   서버가 시점을 재검증하므로(레이스) 200 이 아니면 서버 메시지를 그대로 노출한다.
@@ -289,14 +289,14 @@ function VacationContent() {
     async (app: MyApplication) => {
       if (cancelingId) return;
       if (app.cancelState === "prestart") {
-        await alert(CANCEL_BLOCK_PRESTART_MESSAGE, { variant: "B" });
+        await popup.alert(CANCEL_BLOCK_PRESTART_MESSAGE, { variant: "B" });
         return;
       }
       if (app.cancelState === "fulfilled") {
-        await alert(CANCEL_BLOCK_FULFILLED_MESSAGE, { variant: "B" });
+        await popup.alert(CANCEL_BLOCK_FULFILLED_MESSAGE, { variant: "B" });
         return;
       }
-      const ok = await confirm("휴식 신청을 취소하시겠습니까?", { variant: "A" });
+      const ok = await popup.confirm("휴식 신청을 취소하시겠습니까?", { variant: "A" });
       if (!ok) return;
       setCancelingId(app.groupId);
       try {
@@ -307,18 +307,18 @@ function VacationContent() {
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok) {
-          await alert(json?.error ?? "휴식 취소에 실패했습니다.", { variant: "B" });
+          await popup.alert(json?.error ?? "휴식 취소에 실패했습니다.", { variant: "B" });
           return;
         }
         await loadData();
-        await alert("휴식 신청이 취소되었습니다.", { variant: "B" });
+        await popup.alert("휴식 신청이 취소되었습니다.", { variant: "B" });
       } catch {
-        await alert("휴식 취소 중 오류가 발생했습니다.", { variant: "B" });
+        await popup.alert("휴식 취소 중 오류가 발생했습니다.", { variant: "B" });
       } finally {
         setCancelingId(null);
       }
     },
-    [cancelingId, confirm, alert, demo, loadData],
+    [cancelingId, popup, demo, loadData],
   );
 
   // 페이지네이션(15개/페이지). 목록이 줄어들면 현재 페이지를 보정.

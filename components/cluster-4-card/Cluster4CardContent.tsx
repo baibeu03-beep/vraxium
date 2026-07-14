@@ -743,7 +743,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       return;
     } // 더미 모드 / 테스트 유저(데모) 모드: 세션 체크 스킵 (저장은 demoUserId 로 백엔드 검증)
     if (!session) {
-      alert("로그인이 필요합니다.");
+      await popup.alert("로그인이 필요합니다.");
       return;
     }
 
@@ -2613,7 +2613,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         if (!res.ok) throw new Error("삭제 실패");
       } catch (err) {
         console.error("[colleague] 삭제 API 실패:", err);
-        alert("삭제에 실패했습니다.");
+        await popup.alert("삭제에 실패했습니다.");
         return;
       }
     }
@@ -3546,7 +3546,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           persistedImages = persisted.images;
         } catch (err) {
           console.error("workInfo 저장 실패:", err);
-          alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
+          await popup.alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
           return;
         }
       }
@@ -3978,7 +3978,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           persistedImages = persisted.images;
         } catch (err) {
           console.error("workAbility 저장 실패:", err);
-          alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
+          await popup.alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
           return;
         }
       }
@@ -4307,7 +4307,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           persistedImages = persisted.images;
         } catch (err) {
           console.error("workExp 저장 실패:", err);
-          alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
+          await popup.alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
           return;
         }
       }
@@ -4645,7 +4645,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           persistedCrewImages = persisted.images;
         } catch (err) {
           console.error("workCareer 저장 실패:", err);
-          alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
+          await popup.alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
           return;
         }
       }
@@ -5951,7 +5951,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
     // 수정 모드 — 기존 평판 PUT (어드민 전체 / 일반 유저는 본인 작성분)
     if (editingWeeklyReputationId) {
-      if (!window.confirm("저장하시겠습니까?")) return;
+      if (!(await popup.confirm("저장하시겠습니까?"))) return;
       setReputationSaving(true);
       try {
         const res = await fetch(apiUrl("/api/weekly-reputations"), {
@@ -5966,7 +5966,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         });
         const json = await res.json();
         if (!res.ok) {
-          alert(json.error || "수정에 실패했습니다.");
+          await popup.alert(json.error || "수정에 실패했습니다.");
           return;
         }
         await fetchWeeklyReputations();
@@ -5979,13 +5979,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             tagText: `#${reputationEditData.keyword}`,
           });
         }
-        alert("수정되었습니다.");
+        await popup.alert("수정되었습니다.");
         setHeaderModalOpen(false);
         setReputationEditData({ rating: 0, content: "", keyword: "" });
         setEditingWeeklyReputationId(null);
         if (selectedReputationCard) setReputationViewModalOpen(true);
       } catch {
-        alert("서버 오류가 발생했습니다.");
+        await popup.alert("서버 오류가 발생했습니다.");
       } finally {
         setReputationSaving(false);
       }
@@ -12071,19 +12071,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   </button>
                   <button
                     onClick={async () => {
-                      if (!confirm("이 평판을 삭제하시겠습니까?")) return;
+                      if (!(await popup.confirm("이 평판을 삭제하시겠습니까?"))) return;
                       try {
                         const res = await fetch(apiUrl(`/api/weekly-reputations?id=${selectedReputationCard.id}`), { method: "DELETE" });
                         const json = await res.json();
                         if (json.success) {
-                          alert("삭제되었습니다.");
+                          await popup.alert("삭제되었습니다.");
                           setReputationViewModalOpen(false);
                           fetchWeeklyReputations();
                         } else {
-                          alert(json.error || "삭제 실패");
+                          await popup.alert(json.error || "삭제 실패");
                         }
                       } catch {
-                        alert("삭제 중 오류 발생");
+                        await popup.alert("삭제 중 오류 발생");
                       }
                     }}
                     style={{ padding: "8px 16px", background: "rgba(255, 60, 60, 0.2)", border: "1px solid #ff3c3c", borderRadius: "6px", color: "#ff3c3c", fontSize: "13px", cursor: "pointer" }}
