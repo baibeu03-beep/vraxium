@@ -2687,6 +2687,7 @@
         transition: transform 0.3s ease;
       }
 
+      // 정보형 오버레이 ([0]~[4]) — pointer-events:none 로 카드 클릭(모달) 불방해
       .item-overlay {
         position: absolute;
         top: 0;
@@ -2696,86 +2697,146 @@
         display: flex;
         flex-direction: column;
         justify-content: space-between;
+        pointer-events: none;
 
-        .like-badge {
-          align-self: flex-end;
-          display: flex;
+        // [3] 주요 지표 1개 — 상단(이름 좌 / 값 우, 한 줄)
+        .detail-metric {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(0, auto);
           align-items: center;
-          gap: 10px;
-          background: rgba(255, 255, 255, 0.2);
-          backdrop-filter: blur(4px);
-          -webkit-backdrop-filter: blur(4px);
-          border-radius: 10px;
+          gap: 8px;
+          background: rgba(0, 0, 0, 0.42);
+          backdrop-filter: blur(2px);
+          -webkit-backdrop-filter: blur(2px);
+          border-radius: 10px 10px 0 0;
           padding: 6px 10px;
-          margin: 10px 10px 0 0;
-          min-width: 86px;
-          height: 26px;
-          box-sizing: border-box;
 
-          span {
+          .detail-metric__name,
+          .detail-metric__value {
+            min-width: 0;
             font-family: "Pretendard", sans-serif;
-            font-size: 0.75rem;
-            color: #fff;
+            font-size: 0.78rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
           }
 
-          svg {
-            width: 12px;
-            height: 12px;
+          .detail-metric__name {
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.9);
+          }
+
+          .detail-metric__value {
+            font-weight: 700;
             color: #fff;
+            text-align: right;
           }
         }
 
+        // [2] 플랫폼 · [1] 제목 · [4] 도구 — 하단
         .item-bottom {
-          display: flex;
-          align-items: center;
+          display: grid;
+          grid-template-columns: auto minmax(0, 1fr);
+          align-items: end;
           gap: 8px;
-          background: rgba(255, 255, 255, 0.2);
+          background: rgba(0, 0, 0, 0.38);
           backdrop-filter: blur(2px);
           -webkit-backdrop-filter: blur(2px);
           border-radius: 0 0 10px 10px;
-          padding: 10px;
-          height: 64px;
+          padding: 8px 10px;
 
           .sns-icon {
-            width: 38px;
-            height: 38px;
+            width: 34px;
+            height: 34px;
             border-radius: 50%;
             object-fit: cover;
             flex-shrink: 0;
+            // 하단에 너무 붙지 않도록 소폭 위로(제목과 수평 균형). X는 불변.
+            transform: translateY(-8px);
 
             &.sns-gradient {
               background: linear-gradient(180deg, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0) 100%);
             }
           }
 
-          .item-info {
+          .item-bottom-content {
+            min-width: 0;
             display: flex;
             flex-direction: column;
-            gap: 0;
-            min-width: 0;
-            overflow: hidden;
-            max-width: 100%;
-            text-overflow: ellipsis;
+            gap: 5px;
 
-            .item-tags {
-              font-family: "Pretendard", sans-serif;
-              font-size: 1rem;
-              font-weight: 700;
-              color: #fff;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              white-space: nowrap;
+            // [1] 제목 (# 접두 + 최대 2줄)
+            .detail-title-wrap {
+              display: flex;
+              align-items: flex-start;
+              flex: 1;
+              min-width: 0;
+              gap: 3px;
+
+              .detail-title-prefix {
+                flex-shrink: 0;
+                font-family: "Pretendard", sans-serif;
+                font-size: 0.8rem;
+                font-weight: 700;
+                line-height: 1.2;
+                color: #fff;
+                text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+              }
+
+              .detail-title {
+                // flex:1 + min-width:0 → 남은 가로폭 전부 사용(첫 줄 조기 말줄임 방지).
+                flex: 1;
+                min-width: 0;
+                width: 100%;
+                margin: 0;
+                font-family: "Pretendard", sans-serif;
+                font-size: 0.8rem;
+                font-weight: 700;
+                line-height: 1.2;
+                color: #fff;
+                text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+                display: -webkit-box;
+                -webkit-box-orient: vertical;
+                -webkit-line-clamp: 2;
+                overflow: hidden;
+                // 1줄 말줄임(nowrap/ellipsis) 금지 — 2줄 line-clamp 이 말줄임 담당.
+                white-space: normal;
+                text-overflow: clip;
+                word-break: keep-all;
+                overflow-wrap: anywhere;
+                min-height: calc(1.2em * 2); // 2줄 높이 항상 확보(… 는 2줄째에서만)
+              }
             }
 
-            .item-author {
-              font-family: "Pretendard", sans-serif;
-              font-size: 0.6875rem;
-              font-weight: 400;
-              color: rgba(255, 255, 255, 0.7);
-              margin-top: -3px;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              white-space: nowrap;
+            // [4] 사용 기술·도구 (입력분만, 최대 5, 한 행)
+            .detail-tools {
+              display: flex;
+              flex-wrap: nowrap;
+              gap: 3px;
+
+              .detail-tool {
+                width: 25px;
+                height: 25px;
+                flex-shrink: 0;
+                border-radius: 5px;
+                background: rgba(255, 255, 255, 0.85);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                overflow: hidden;
+
+                img {
+                  width: 80%;
+                  height: 80%;
+                  object-fit: contain;
+                }
+
+                .detail-tool__text {
+                  font-size: 0.62rem;
+                  font-weight: 700;
+                  color: #1a1a1a;
+                }
+              }
             }
           }
         }

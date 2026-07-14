@@ -442,8 +442,8 @@ const Cluster3Content = () => {
     endDate: null,
   });
 
-  // 영어 이름
-  const [engName, setEngName] = useState<string>("Eng Name");
+  // 영어 이름 (프로필 fetch 시 설정만 유지 — 카드/상세 표시에서는 미사용)
+  const [, setEngName] = useState<string>("Eng Name");
 
   // 크루 한글 이름 (display_name) — 모달 타이틀 "{displayName} 님의 ..." 용
   const [displayName, setDisplayName] = useState<string>("");
@@ -3108,6 +3108,17 @@ const Cluster3Content = () => {
               // 작성된 카드만 선명 (채널과 동일 패턴)
               const isDetailComplete = !isVoidDetail && validateOutputCard(detailCards[index]).length === 0;
 
+              // 카드 미리보기 표시값 — 상세 모달과 동일한 detailCards[index] 원천에서 파생 (DOM 재파싱 금지).
+              const dcard = detailCards[index];
+              // [0] 첫 아웃풋 이미지 = mainImage. 없으면 기존 placeholder(3-{id}.png).
+              const detailPrimaryImage = dcard?.mainImage || `/images/0/cluster 3/image/3-${thumb.id}.png`;
+              // [2] 플랫폼 아이콘 (기존 resolver 재사용, 없으면 미표시=기존 정책)
+              const detailPlatformIcon = dcard?.platform ? PLATFORM_ICONS[dcard.platform] : null;
+              // [3] 첫 유효 주요 지표 1개
+              const detailFirstMetric = getFirstValidMetric(dcard?.metrics);
+              // [4] 입력된 도구만 (최대 5, 빈 슬롯 없음)
+              const detailSelectedTools = TOOL_OPTIONS.filter((t) => (dcard?.tools || []).includes(t.key)).slice(0, 5);
+
               return (
                 <div
                   key={thumb.id}
@@ -3119,21 +3130,36 @@ const Cluster3Content = () => {
                   }}
                   style={{ cursor: isVoidDetail ? "default" : "pointer", opacity: isVoidDetail ? 0.4 : (isDetailComplete ? 1 : 0.4) }}
                 >
-                  <img src={`/images/0/cluster 3/image/3-${thumb.id}.png`} alt={`Detail ${thumb.id}`} />
+                  {/* [0] 아웃풋 배경 이미지 (cover) */}
+                  <img src={detailPrimaryImage} alt={dcard?.mainTitle || `Detail ${thumb.id}`} />
+                  {/* 정보형 오버레이 — pointer-events:none 로 카드 클릭(모달 열기) 불방해 */}
                   <div className="item-overlay">
-                    <div className="like-badge">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                      </svg>
-                      <span>99 Like</span>
-                    </div>
+                    {/* [3] 주요 지표 1개 (상단, 이름 좌 / 값 우) */}
+                    {detailFirstMetric && (detailFirstMetric.label || detailFirstMetric.value) && (
+                      <div className="detail-metric">
+                        <span className="detail-metric__name">{detailFirstMetric.label || "-"}</span>
+                        <span className="detail-metric__value" title={detailFirstMetric.value}>{detailFirstMetric.value || "-"}</span>
+                      </div>
+                    )}
+                    {/* [2] 플랫폼 + [1] 제목 + [4] 도구 (하단) */}
                     <div className="item-bottom">
-                      {detailCards[index]?.platform && PLATFORM_ICONS[detailCards[index].platform] && (
-                        <img src={PLATFORM_ICONS[detailCards[index].platform]} alt={detailCards[index].platform} className="sns-icon" />
-                      )}
-                      <div className="item-info">
-                        <span className="item-tags">#Detail, #Micro</span>
-                        <span className="item-author">@{engName ? mask.crewName(engName) : "Unknown"}</span>
+                      {detailPlatformIcon && <img src={detailPlatformIcon} alt={dcard?.platform || ""} className="sns-icon" />}
+                      <div className="item-bottom-content">
+                        {/* [1] 제목 (# 접두 표시, 최대 2줄) */}
+                        <div className="detail-title-wrap">
+                          <span className="detail-title-prefix" aria-hidden="true">#</span>
+                          <h3 className="detail-title">{dcard?.mainTitle || "-"}</h3>
+                        </div>
+                        {/* [4] 사용 기술·도구 (입력분만, 최대 5, 한 행) */}
+                        {detailSelectedTools.length > 0 && (
+                          <div className="detail-tools" aria-label="사용 기술 및 도구">
+                            {detailSelectedTools.map((tool) => (
+                              <span key={tool.key} className="detail-tool" title={tool.label}>
+                                {tool.icon ? <img src={tool.icon} alt={tool.label} /> : <span className="detail-tool__text">{tool.label.charAt(0)}</span>}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
