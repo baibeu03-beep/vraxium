@@ -1110,14 +1110,13 @@ const Cluster2Content = () => {
         edu.school !== "-" &&
         edu.status &&
         edu.status !== "-" &&
+        // 계열/전공의 "-"(해당 정보 없음)는 충족으로 인정. placeholder(빈 값)만 미충족.
         edu.category &&
-        edu.category !== "-" &&
         edu.major1 &&
-        edu.major1 !== "-" &&
         edu.startYear &&
         edu.startMonth &&
-        edu.gradeValue &&
-        edu.gradeValue !== "-" &&
+        // 총점 "-"(성적 없음)는 달성치 없이도 충족. 그 외 척도는 달성치 필수.
+        (edu.gradeMax === "-" || !!edu.gradeValue) &&
         edu.description &&
         edu.description.trim() !== "" &&
         (edu.status !== "졸업" || (edu.endYear && edu.endMonth)) &&
@@ -1202,8 +1201,12 @@ const Cluster2Content = () => {
   const handleSaveEducations = async (processedData: EduData[]) => {
     if (isDemoMode) {
       const primary = processedData[0];
+      // 학교/상태: "-"를 "정보 없음"으로 제공하지 않으므로 "-"도 비움(=초기화) 취급.
       const isEmptyRequired = (value?: string) => !value || value.trim() === "" || value === "-";
-      const isPrimaryCleared = !canChangePrimary && (!primary || isEmptyRequired(primary.school) || isEmptyRequired(primary.status) || isEmptyRequired(primary.category) || isEmptyRequired(primary.major1) || isEmptyRequired(primary.gradeValue));
+      // 계열/전공/성적: "-"는 "해당 정보 없음"을 뜻하는 정상 값 → placeholder(빈 값)만 비움.
+      const isUnselected = (value?: string) => !value || value.trim() === "";
+      const isGradeCleared = primary && primary.gradeMax !== "-" && isUnselected(primary.gradeValue);
+      const isPrimaryCleared = !canChangePrimary && (!primary || isEmptyRequired(primary.school) || isEmptyRequired(primary.status) || isUnselected(primary.category) || isUnselected(primary.major1) || isGradeCleared);
 
       if (isPrimaryCleared) {
         showAlert("관리자 승인 후 수정할 수 있습니다.");
@@ -5102,6 +5105,10 @@ const Cluster2Content = () => {
                     disabled={eduSaving}
                     onClick={async () => {
                       // 모든 카드 필수필드 검증
+                      // SoT: "-"는 "해당 정보 없음"을 뜻하는 정상 선택값(계열/전공/성적 공통 정책).
+                      //   placeholder(빈 값/미선택)만 미입력으로 판정하고 "-"는 항상 유효.
+                      //   (학교/상태는 "-"를 "정보 없음"으로 제공하지 않으므로 이 정책에서 제외.)
+                      const isUnselected = (value?: string) => !value || value.trim() === "";
                       const newErrors: { [key: string]: boolean } = {};
                       editingEduData.forEach((edu, idx) => {
                         // 1번 카드는 canChangePrimary=true일 때만 체크
@@ -5109,11 +5116,14 @@ const Cluster2Content = () => {
 
                         if (!edu.school || edu.school === "-") newErrors[`${idx}_school`] = true;
                         if (!edu.status || edu.status === "-") newErrors[`${idx}_status`] = true;
-                        if (!edu.category || edu.category === "-") newErrors[`${idx}_category`] = true;
-                        if (!edu.major1 || edu.major1 === "-") newErrors[`${idx}_major1`] = true;
+                        if (isUnselected(edu.category)) newErrors[`${idx}_category`] = true;
+                        if (isUnselected(edu.major1)) newErrors[`${idx}_major1`] = true;
                         if (!edu.startYear) newErrors[`${idx}_startYear`] = true;
                         if (edu.startYear && !edu.startMonth) newErrors[`${idx}_startMonth`] = true;
-                        if (!edu.gradeValue || edu.gradeValue === "-") newErrors[`${idx}_gradeValue`] = true;
+                        // 성적: 총점 "-"(성적 없음)는 정상 선택이므로 달성치 없이도 유효.
+                        //   실제 척도(4.5/4.3/100%/9등급/기타) 선택 시에만 달성치 필수.
+                        //   "-" 저장 → DB null → 재로드 시 gradeValue=null·gradeMax="-"로 복원되므로 gradeMax 기준 판정.
+                        if (edu.gradeMax !== "-" && !edu.gradeValue) newErrors[`${idx}_gradeValue`] = true;
                         if (!edu.description || edu.description.trim() === "") newErrors[`${idx}_description`] = true;
                         if (edu.status === "졸업") {
                           if (!edu.endYear) newErrors[`${idx}_endYear`] = true;
