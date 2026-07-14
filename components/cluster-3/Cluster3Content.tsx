@@ -43,7 +43,10 @@ import {
   TOP_METRIC_MAX_LEN,
   DEFAULT_CHANNEL_IMAGE,
   MAX_CHANNEL_NAME_LEN,
+  getChannelCardImage,
+  type Cluster3Organization,
 } from "@/lib/cluster3-channel-card";
+import { formatOutputCardEndDate, clampContribution, getFirstValidMetric } from "@/lib/cluster3-output-card";
 
 // Zone C(>1920px, ResponsiveScale.tsx에서 documentElement에 zoom:1.08 적용) 대응.
 // getBoundingClientRect는 zoom 적용 후 좌표를 반환하지만 position:fixed의 top/left는 CSS 픽셀 기준이라 좌표가 어긋난다.
@@ -240,6 +243,8 @@ const Cluster3Content = () => {
   // 판정 로직은 lib/cluster-route 로 일원화.
   const isPX = isPxRoute(pathname);
   const isEC = isEcRoute(pathname);
+  // 조직별 채널 카드 기본 이미지 base path 결정용 canonical slug (mode/유저 무관 단일 판정).
+  const cluster3Org: Cluster3Organization = isPX ? "phalanx" : isEC ? "encre" : "orc";
   const popup = usePopup();
   // 테스트 유저(데모) 모드 — ?demoUserId={id}&demoUserName={name} (공통 훅).
   const demo = useDemoUserMode();
@@ -2791,8 +2796,9 @@ const Cluster3Content = () => {
             // 카드 표시 파생값 — 상세 모달과 동일 공통 매퍼 경유 (재조립 금지).
             const statusMeta = getChannelStatusMeta(card.status);
             const contribute = getContributeDisplay(card.rating);
-            // 대표 이미지 = 모달 대표 이미지(slot 0)와 동일 원천. 없으면 공통 기본 이미지(표시 전용).
-            const thumbSrc = card.images && card.images[0] ? card.images[0] : DEFAULT_CHANNEL_IMAGE;
+            // 대표 이미지 = 모달 대표 이미지(slot 0)와 동일 원천.
+            // 등록 이미지가 없으면 "조직 base path + 화면 렌더 순번(actualIndex)" 공통 resolver 로 1-N.png.
+            const thumbSrc = card.images && card.images[0] ? card.images[0] : getChannelCardImage(cluster3Org, actualIndex);
             const dateLabel =
               card.startYear && card.startMonth && card.startDay
                 ? `${card.startYear}년 ${String(card.startMonth).padStart(2, "0")}월 ${String(card.startDay).padStart(2, "0")}일`
@@ -2949,6 +2955,23 @@ const Cluster3Content = () => {
             const isVoidCard = index >= unlockedOutputCount;
             // 작성된(검증 통과) 카드만 선명 — 미완성 unlock 카드는 채널과 동일하게 dim
             const isOutputComplete = !isVoidCard && validateOutputCard(outputCards[index]).length === 0;
+
+            // 카드 미리보기 표시값 — 상세 모달과 동일한 outputCards[index] 원천에서 파생 (DOM 재파싱 금지).
+            const card = outputCards[index];
+            // [0] 첫 아웃풋 이미지 = mainImage. 없으면 기존 placeholder(2-{id}.png) 유지.
+            const primaryImageUrl = card?.mainImage || `/images/0/cluster 3/image/2-${slide.id}.png`;
+            // [2] 플랫폼 아이콘 (기존 resolver 재사용)
+            const platformIcon = card?.platform ? PLATFORM_ICONS[card.platform] : null;
+            // [3] 종료일만 (YY - MM - DD, 없으면 "-")
+            const endDateLabel = formatOutputCardEndDate(card?.periodEndYear, card?.periodEndMonth, card?.periodEndDay);
+            // [5] 선택 역할만 (비활성 제외, 최대 10)
+            const selectedRoles = ROLE_OPTIONS.filter((r) => (card?.roles || []).includes(r.key));
+            // [6] 기여도 0~100 clamp (null=미입력)
+            const contributionPercent = clampContribution(card?.contribution);
+            // [7] 입력된 도구만 (최대 5, 빈 슬롯 없음)
+            const selectedTools = TOOL_OPTIONS.filter((t) => (card?.tools || []).includes(t.key)).slice(0, 5);
+            // [8] 첫 유효 주요 지표 1개 (name/value)
+            const firstMetric = getFirstValidMetric(card?.metrics);
             return (
               <div
                 key={slide.id}
@@ -2962,27 +2985,79 @@ const Cluster3Content = () => {
                 }}
                 style={{ cursor: position === 0 && !isVoidCard ? "pointer" : "default", opacity: isVoidCard ? 0.4 : (isOutputComplete ? 1 : 0.4) }}
               >
-                <img src={`/images/0/cluster 3/image/2-${slide.id}.png`} alt={`Work ${slide.id}`} />
-                <div className="card-overlay">
-                  <div className="card-top">
-                    <div className="info-author">
-                      {outputCards[index]?.platform && PLATFORM_ICONS[outputCards[index].platform] && (
-                        <img src={PLATFORM_ICONS[outputCards[index].platform]} alt={outputCards[index].platform} className="sns-icon" />
+                {/* [0] 아웃풋 배경 이미지 (cover, 카드 전체) */}
+                <img src={primaryImageUrl} alt={card?.mainTitle || `Work ${slide.id}`} />
+                {/* 정보형 오버레이 — pointer-events:none 로 카드 클릭(모달 열기) 불방해 */}
+                <div className="output-preview-card__overlay">
+                  <header className="opc-header">
+                    {/* [2] 플랫폼 아이콘 */}
+                    {platformIcon ? (
+                      <img src={platformIcon} alt={card?.platform || ""} className="opc-platform" />
+                    ) : (
+                      <span className="opc-platform opc-platform--empty" aria-hidden="true" />
+                    )}
+                    {/* [1] 아웃풋 제목 (최대 2줄, 남은 가로폭 전부 사용) */}
+                    <h3 className="opc-title">{card?.mainTitle || "-"}</h3>
+                    {/* [4] 완료·검증 배지 (헤더 우측 고정, 실제 완료 카드만 활성) */}
+                    <span
+                      className={`opc-verify${isOutputComplete ? " is-complete" : ""}`}
+                      aria-label={isOutputComplete ? "검증 완료" : "미완료"}
+                    >
+                      <i className="ti ti-rosette-discount-check" aria-hidden="true" />
+                    </span>
+                  </header>
+
+                  <div className="opc-body">
+                    <div className="opc-left">
+                      {/* [3] 종료일 (좌측 열 상단, 컴팩트) */}
+                      <time className="opc-end-date">{endDateLabel}</time>
+                      {/* [5] 선택한 역할 (좌측 세로, 최대 10) */}
+                      {selectedRoles.length > 0 && (
+                        <div className="opc-roles" aria-label="선택 역할">
+                          {selectedRoles.map((role) => (
+                            <span key={role.key} className="opc-role" style={{ backgroundColor: role.color }}>
+                              {role.label}
+                            </span>
+                          ))}
+                        </div>
                       )}
-                      <div className="author-text">
-                        <span className="info-label">Posted by :</span>
-                        <span className="author-name">{engName ? mask.crewName(engName) : "Unknown"}</span>
+                      {/* [6] 기여도 (퍼센트 + 막대) */}
+                      <div className="opc-contribution">
+                        <strong className="opc-contribution__value">{contributionPercent != null ? `${contributionPercent}%` : "-"}</strong>
+                        <div
+                          className="opc-contribution__track"
+                          role="progressbar"
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={contributionPercent ?? 0}
+                        >
+                          <div className="opc-contribution__fill" style={{ width: `${contributionPercent ?? 0}%` }} />
+                        </div>
                       </div>
                     </div>
+                    {/* [7] 사용 기술·도구 (입력분만, 최대 5) */}
+                    {selectedTools.length > 0 && (
+                      <div className="opc-tools" aria-label="사용 도구">
+                        {selectedTools.map((tool) => (
+                          <span key={tool.key} className="opc-tool" title={tool.label}>
+                            {tool.icon ? <img src={tool.icon} alt={tool.label} /> : <span className="opc-tool__text">{tool.label.charAt(0)}</span>}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="card-badges">
-                    <div className="card-tag">09h 99m 99s</div>
-                    <div className="card-like">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                      </svg>
-                    </div>
-                  </div>
+
+                  <footer className="opc-footer">
+                    {/* [8] 주요 지표 1개 (이름 좌 / 값 우) */}
+                    {firstMetric && (firstMetric.label || firstMetric.value) && (
+                      <div className="opc-metric">
+                        <span className="opc-metric__name">{firstMetric.label || "-"}</span>
+                        <span className="opc-metric__value">{firstMetric.value || "-"}</span>
+                      </div>
+                    )}
+                    {/* [9] 아웃풋 개요 (최대 3줄) */}
+                    <p className="opc-summary">{card?.subTitle || "-"}</p>
+                  </footer>
                 </div>
               </div>
             );

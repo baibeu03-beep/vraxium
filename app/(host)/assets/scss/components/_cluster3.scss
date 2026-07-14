@@ -2142,122 +2142,271 @@
           object-fit: cover;
         }
 
-        .card-overlay {
+        // 정보형 아웃풋 미리보기 오버레이 ([0]~[9])
+        // pointer-events:none → 카드 클릭(모달 열기)을 내부 요소가 가로채지 않음.
+        .output-preview-card__overlay {
           position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
+          inset: 0;
           display: flex;
           flex-direction: column;
-          justify-content: flex-start;
-          gap: 5px;
-          padding: 15px;
+          gap: 8px;
+          padding: 14px;
+          pointer-events: none;
+          color: #fff;
+          // 상·하단 가독성 그라디언트 (원본 이미지를 과하게 가리지 않음)
+          background: linear-gradient(180deg, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0) 24%), linear-gradient(0deg, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0) 46%);
 
-          .card-top {
-            display: flex;
-            flex-direction: column;
-            gap: 3px;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 12px;
-            padding: 10px 12px;
-            width: fit-content;
+          // [2] 플랫폼 · [1] 제목(남은 폭 전부) · [4] 완료 배지 — 3열 그리드
+          .opc-header {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            align-items: start;
+            column-gap: 8px;
 
-            .info-author {
+            .opc-platform {
+              width: 34px;
+              height: 34px;
+              border-radius: 50%;
+              flex-shrink: 0;
+              object-fit: cover;
+              background: rgba(255, 255, 255, 0.2);
+
+              &--empty {
+                background: rgba(255, 255, 255, 0.15);
+              }
+            }
+
+            .opc-title {
+              min-width: 0;
+              width: 100%;
+              margin: 0;
+              align-self: center;
+              font-family: "Pretendard", sans-serif;
+              font-size: 1.02rem;
+              font-weight: 700;
+              line-height: 1.3;
+              color: #fff;
+              text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+              display: -webkit-box;
+              -webkit-box-orient: vertical;
+              -webkit-line-clamp: 2;
+              overflow: hidden;
+              // 한글은 어절(keep-all) 우선, 불가피할 때만 문자 내부 줄바꿈(anywhere).
+              word-break: keep-all;
+              overflow-wrap: anywhere;
+              min-height: calc(1.3em * 2); // 2줄 높이 고정 확보
+            }
+
+            // [4] 완료·검증 배지 (헤더 우측)
+            .opc-verify {
+              width: 30px;
+              height: 30px;
+              border-radius: 50%;
               display: flex;
               align-items: center;
-              gap: 8px;
+              justify-content: center;
+              flex-shrink: 0;
+              background: rgba(255, 255, 255, 0.18);
 
-              .sns-icon {
-                width: 38px;
-                height: 38px;
-                border-radius: 50%;
-                flex-shrink: 0;
-                object-fit: cover;
-
-                &.sns-gradient {
-                  background: linear-gradient(180deg, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0) 100%);
-                }
-
-                &.sns-icon-etc {
-                  border-radius: 8px;
-                  object-fit: contain;
-                }
+              i {
+                font-size: 18px;
+                color: rgba(255, 255, 255, 0.5);
               }
 
-              .author-text {
-                display: flex;
-                flex-direction: column;
-                gap: 0;
-                min-width: 150px;
-                max-width: 250px;
-                flex-shrink: 0;
-                overflow: hidden;
-                text-overflow: ellipsis;
+              &.is-complete {
+                background: rgba(56, 193, 114, 0.25);
 
-                .info-label {
-                  font-family: "Pretendard", sans-serif;
-                  font-size: 0.75rem;
-                  font-weight: 400;
-                  color: rgba(255, 255, 255, 0.7);
-                  line-height: 1;
-                  margin-bottom: 7px;
-                  overflow: hidden;
-                  text-overflow: ellipsis;
-                  white-space: nowrap;
-                }
-
-                .author-name {
-                  font-family: "Pretendard", sans-serif;
-                  font-size: 0.75rem;
-                  color: #fff;
-                  line-height: 1;
-                  overflow: hidden;
-                  text-overflow: ellipsis;
-                  white-space: nowrap;
+                i {
+                  color: #38c172;
                 }
               }
             }
           }
 
-          .card-badges {
+          // 좌 열(종료일·역할·기여도) + 우 하단(도구)
+          .opc-body {
+            flex: 1;
+            min-height: 0;
             display: flex;
-            align-items: center;
             gap: 8px;
+            align-items: stretch;
 
-            .card-tag {
-              background: rgba(255, 255, 255, 0.2);
-              color: #fff;
-              font-family: "Pretendard", sans-serif;
-              font-size: 0.75rem;
-              font-weight: 600;
-              padding: 0 10px;
-              height: 28px;
-              line-height: 28px;
-              border-radius: 999px;
+            .opc-left {
+              display: flex;
+              flex-direction: column;
+              align-items: flex-start;
+              gap: 6px;
+              min-height: 0;
+              max-width: 62%;
+
+              // [3] 종료일 — 좌열 상단, 컴팩트(기존 대비 ~25% 축소)
+              .opc-end-date {
+                display: inline-flex;
+                align-items: center;
+                width: fit-content;
+                background: rgba(0, 0, 0, 0.5);
+                border: 1px solid rgba(255, 255, 255, 0.25);
+                color: #fff;
+                font-family: "Manrope", "Pretendard", sans-serif;
+                font-weight: 700;
+                font-size: 13px;
+                letter-spacing: 0.3px;
+                line-height: 1;
+                padding: 3px 8px;
+                border-radius: 8px;
+                white-space: nowrap;
+              }
+
+              // [5] 선택 역할 — 세로 스택, 최대 10개 밀도 배치(찌그러짐 방지)
+              .opc-roles {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 3px;
+                width: max-content;
+                max-width: 100%;
+                overflow: hidden;
+
+                .opc-role {
+                  display: inline-flex;
+                  align-items: center;
+                  justify-content: center;
+                  min-width: 58px;
+                  max-width: 128px;
+                  padding: 2px 7px;
+                  border-radius: 6px;
+                  font-family: "Pretendard", sans-serif;
+                  font-size: 0.76rem;
+                  font-weight: 700;
+                  line-height: 1.1;
+                  color: #1a1a1a;
+                  text-align: center;
+                  white-space: nowrap;
+                  overflow: hidden;
+                  text-overflow: ellipsis;
+                  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+                }
+              }
+
+              // [6] 기여도 — 좌열 하단(축소하여 역할/도구에 공간 양보)
+              .opc-contribution {
+                margin-top: auto;
+                padding-top: 6px;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                width: 132px;
+                max-width: 100%;
+
+                .opc-contribution__value {
+                  font-family: "Manrope", "Pretendard", sans-serif;
+                  font-size: 28px;
+                  font-weight: 800;
+                  line-height: 0.95;
+                  color: #fff;
+                  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+                }
+
+                .opc-contribution__track {
+                  height: 7px;
+                  border-radius: 999px;
+                  overflow: hidden;
+                  background: rgba(255, 255, 255, 0.25);
+
+                  .opc-contribution__fill {
+                    height: 100%;
+                    border-radius: 999px;
+                    background: linear-gradient(90deg, #7ee787, #38c172);
+                  }
+                }
+              }
             }
 
-            .card-like {
-              width: 28px;
-              height: 28px;
-              background: rgba(255, 255, 255, 0.2);
-              border-radius: 50%;
+            // [7] 사용 도구 — 우측 하단, 최대 5개 한 행(줄바꿈 금지)
+            .opc-tools {
+              margin-left: auto;
+              align-self: flex-end;
+              display: flex;
+              flex-wrap: nowrap;
+              justify-content: flex-end;
+              gap: 4px;
+
+              .opc-tool {
+                width: 32px;
+                height: 32px;
+                border-radius: 9px;
+                background: rgba(255, 255, 255, 0.85);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-shrink: 0;
+                overflow: hidden;
+
+                img {
+                  width: 74%;
+                  height: 74%;
+                  object-fit: contain;
+                }
+
+                .opc-tool__text {
+                  font-size: 0.8rem;
+                  font-weight: 700;
+                  color: #1a1a1a;
+                }
+              }
+            }
+          }
+
+          // [8] 주요 지표 + [9] 개요
+          .opc-footer {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+
+            .opc-metric {
               display: flex;
               align-items: center;
-              justify-content: center;
-              cursor: pointer;
-              transition: all 0.3s ease;
+              justify-content: space-between;
+              gap: 10px;
+              background: rgba(0, 0, 0, 0.5);
+              border-radius: 8px;
+              padding: 7px 12px;
 
-              svg {
-                width: 12px;
-                height: 12px;
+              .opc-metric__name {
+                font-family: "Pretendard", sans-serif;
+                font-size: 0.82rem;
+                font-weight: 600;
+                color: rgba(255, 255, 255, 0.85);
+                white-space: nowrap;
+                flex-shrink: 0;
+              }
+
+              .opc-metric__value {
+                font-family: "Pretendard", sans-serif;
+                font-size: 0.82rem;
+                font-weight: 700;
                 color: #fff;
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
               }
+            }
 
-              &:hover {
-                background: rgba(255, 255, 255, 0.3);
-                transform: scale(1.1);
-              }
+            .opc-summary {
+              margin: 0;
+              font-family: "Pretendard", sans-serif;
+              font-size: 0.82rem;
+              line-height: 1.45;
+              color: rgba(255, 255, 255, 0.92);
+              text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+              display: -webkit-box;
+              -webkit-box-orient: vertical;
+              -webkit-line-clamp: 3;
+              overflow: hidden;
+              overflow-wrap: anywhere;
+              min-height: calc(1.45em * 3); // 3줄 높이 고정 확보
+              max-height: calc(1.45em * 3);
             }
           }
         }

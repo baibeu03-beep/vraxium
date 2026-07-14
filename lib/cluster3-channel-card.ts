@@ -110,6 +110,30 @@ export function getChannelStatusMeta(status: unknown): ChannelStatusMeta {
 // DB 에 저장되지 않으며, 필수 validation 을 통과시키지도 않는다.
 export const DEFAULT_CHANNEL_IMAGE = "/images/0/cluster 3/image/ec/1-2.png";
 
+// ---------- 조직별 채널 카드 기본 이미지 (순번 기반, 표시 전용) ----------
+// 채널 카드에 실제 등록 이미지(card.images[0])가 없을 때, "현재 조회 조직 +
+// 화면에 렌더링되는 최종 카드 순번"으로 `1-N.png` 를 선택한다.
+// 삼항 분기/조직별 JSX 복제 대신 이 resolver 한 곳에서 결정 → 카드/조직 무관 단일 경로.
+export type Cluster3Organization = "encre" | "orc" | "phalanx";
+
+// 조직별 base path (canonical slug 기준). encre=엥크레, orc=오랑캐(기본), phalanx=팔랑크스.
+export const CHANNEL_IMAGE_BASE_PATH: Record<Cluster3Organization, string> = {
+  encre: "/images/0/cluster 3/image/ec",
+  orc: "/images/0/cluster 3/image",
+  phalanx: "/images/0/cluster 3/image/px",
+};
+
+// 파일 목록: 1-1.png ~ 1-8.png (조직당 8종). 순번을 1~8 로 clamp.
+export const CHANNEL_IMAGE_COUNT = 8;
+
+// cardIndex = 화면에 렌더링되는 최종 카드 순서의 index (0-based).
+//   DB id / 정렬 전 원본 index / 잠금·등록 여부로 센 index 금지.
+// 반환: `${base}/1-N.png` (N = clamp(cardIndex+1, 1, 8)).
+export function getChannelCardImage(organization: Cluster3Organization, cardIndex: number): string {
+  const imageNumber = Math.min(Math.max(cardIndex + 1, 1), CHANNEL_IMAGE_COUNT);
+  return `${CHANNEL_IMAGE_BASE_PATH[organization]}/1-${imageNumber}.png`;
+}
+
 // ---------- 채널명 길이 ----------
 export const MAX_CHANNEL_NAME_LEN = 40; // "@ " prefix 제외한 사용자 입력분 기준
 
