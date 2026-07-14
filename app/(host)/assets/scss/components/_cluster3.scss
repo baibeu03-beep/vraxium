@@ -62,6 +62,28 @@
 }
 
 .cluster3-content {
+  // =============================================================
+  // 조직 대표색 카드 헤더 오버레이 토큰 (공통 SoT) — 정보형 카드 2종
+  // (상단 아웃풋 슬라이더 카드 · 하단 The Detail 카드) 공용.
+  //
+  // 사이드바 "Identity - Core" 헤더처럼, 카드의 상단/정보 밴드에 조직 대표색
+  // 반투명 그라데이션을 깔아 이미지 분위기는 유지하면서 제목·플랫폼·완료·주요
+  // 지표의 가독성을 높인다. 조직별 CSS/JSX 복제 없이 이 토큰 한 곳만 사용한다.
+  //
+  // 색 SoT = --org-accent-rgb ("R, G, B" 트리플렛). encre-theme /
+  //   cluster-px-theme wrapper(<main>)가 상속 제공 → 카드 자손이 조직색을 자동
+  //   상속한다. 기본(오랑캐/marketing) 라우트는 테마 wrapper 미부착이므로
+  //   오랑캐 골드 트리플렛(250, 171, 7)으로 폴백. (mode=test·demo·snapshot·일반
+  //   경로 모두 동일 라우트/래퍼를 거치므로 경로 분기 없이 동일 적용.)
+  //
+  // alpha 정책(요구 범위): strong 0.55 / mid 0.26 / end 0 — 너무 진하지도(이미지
+  //   가림) 연하지도(차이 없음) 않게. 방향/구간(°·%)은 카드별 밴드 위치에 맞춰
+  //   각 사용처에서 지정(상단 밴드만 덮고 중앙 이미지는 불침범).
+  // =============================================================
+  --c3-org-strong: rgba(var(--org-accent-rgb, 250, 171, 7), 0.55);
+  --c3-org-mid: rgba(var(--org-accent-rgb, 250, 171, 7), 0.26);
+  --c3-org-end: rgba(var(--org-accent-rgb, 250, 171, 7), 0);
+
   padding: 0;
   color: #fff;
   display: flex;
@@ -2153,8 +2175,16 @@
           padding: 14px;
           pointer-events: none;
           color: #fff;
-          // 상·하단 가독성 그라디언트 (원본 이미지를 과하게 가리지 않음)
-          background: linear-gradient(180deg, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0) 24%), linear-gradient(0deg, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0) 46%);
+          // 배경 이미지 위 레이어 순서(위→아래):
+          //   1) 상단 조직 대표색 헤더 오버레이 — 제목·플랫폼·완료 배지 밴드(상단
+          //      ~38%)에만. 사이드바 헤더 느낌. 38% 이후 transparent 라 카드 중앙
+          //      (역할·기여도)·하단 이미지는 조직색 불침범.
+          //   2) 상단 미세 흑색 스크림 — 밝은 이미지에서 흰 텍스트 대비 보강(얕음).
+          //   3) 하단 흑색 스크림(기존 보존) — [8] 지표·[9] 개요 가독성.
+          background:
+            linear-gradient(180deg, var(--c3-org-strong) 0%, var(--c3-org-mid) 20%, var(--c3-org-end) 38%),
+            linear-gradient(180deg, rgba(0, 0, 0, 0.28) 0%, rgba(0, 0, 0, 0) 24%),
+            linear-gradient(0deg, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0) 46%);
 
           // [2] 플랫폼 · [1] 제목(남은 폭 전부) · [4] 완료 배지 — 3열 그리드
           .opc-header {
@@ -2705,17 +2735,45 @@
           grid-template-columns: minmax(0, 1fr) minmax(0, auto);
           align-items: center;
           gap: 8px;
-          background: rgba(0, 0, 0, 0.42);
-          backdrop-filter: blur(2px);
-          -webkit-backdrop-filter: blur(2px);
-          border-radius: 10px 10px 0 0;
-          padding: 6px 10px;
+          position: relative;
+          isolation: isolate; // ::before(z-index:-1)를 이 밴드 안에 격리(이미지 뒤로 안 빠짐)
+          padding: 7px 10px 6px;
+
+          // [3] 주요 지표(조회수·반응 수) 전용 조직 대표색 오버레이.
+          //   지표 텍스트 높이보다 살짝 더 길게(하단 -18px) 깔고 하단은 transparent 로
+          //   완전 소실 → 이미지와 만나는 직선 경계 없음(단색 사각형/blur/보더/box-shadow
+          //   미사용). 색 SoT=--org-accent-rgb(테마 wrapper 상속, 기본 오랑캐 250,171,7
+          //   폴백). 상단엔 밝은 이미지 대비용 옅은 흑색도 함께 깔되 역시 transparent 로
+          //   소실. 하단 밴드에는 조직색 미사용(중립 흑색).
+          &::before {
+            content: "";
+            position: absolute;
+            inset: -1px -1px -18px; // 상·좌·우는 카드 모서리(overflow clip), 하단만 이미지로 확장
+            z-index: -1;
+            pointer-events: none;
+            background:
+              linear-gradient(
+                180deg,
+                rgba(var(--org-accent-rgb, 250, 171, 7), 0.6) 0%,
+                rgba(var(--org-accent-rgb, 250, 171, 7), 0.38) 45%,
+                rgba(var(--org-accent-rgb, 250, 171, 7), 0.14) 78%,
+                rgba(var(--org-accent-rgb, 250, 171, 7), 0) 100%
+              ),
+              linear-gradient(
+                180deg,
+                rgba(0, 0, 0, 0.3) 0%,
+                rgba(0, 0, 0, 0.12) 50%,
+                rgba(0, 0, 0, 0) 85%
+              );
+          }
 
           .detail-metric__name,
           .detail-metric__value {
             min-width: 0;
             font-family: "Pretendard", sans-serif;
             font-size: 0.78rem;
+            // 불투명 박스 제거(소프트 그라데이션만) → 밝은 이미지 대비용 텍스트 그림자.
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -2739,9 +2797,15 @@
           grid-template-columns: auto minmax(0, 1fr);
           align-items: end;
           gap: 8px;
-          background: rgba(0, 0, 0, 0.38);
-          backdrop-filter: blur(2px);
-          -webkit-backdrop-filter: blur(2px);
+          // [1]제목·[2]플랫폼·[4]도구 밴드 — 중립 흑색 가독성 처리만(조직 대표색 미사용).
+          //   위→아래로 짙어지고 상단은 transparent 로 소실 → 상단 직선 경계 없음.
+          //   blur 미사용(사각 blur 경계 방지). 아이콘/도구 원색·제목 2줄 말줄임 불변.
+          background: linear-gradient(
+            0deg,
+            rgba(0, 0, 0, 0.62) 0%,
+            rgba(0, 0, 0, 0.24) 68%,
+            rgba(0, 0, 0, 0) 100%
+          );
           border-radius: 0 0 10px 10px;
           padding: 8px 10px;
 
