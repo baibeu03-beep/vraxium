@@ -274,6 +274,12 @@ export interface Cluster4ActLogDto {
   pointA: number; // = process_point_awards.point_check
   pointB: number; // = process_point_awards.point_advantage
   pointC: number; // = process_point_awards.point_penalty (양수 magnitude — 빨강 표기)
+  // (선택·append-only) 획득 가능했던 최대 포인트 — Detail Log 요약의 "획득 / 가능" 비율용.
+  //   업스트림이 내려주면 그대로 사용(획득/가능 분리), 미제공 시 프론트는 pointA/B/C(획득값=가능값)로 폴백한다.
+  //   후속 Phase 의 miss/부분 획득 row 대비 — 현재 스냅샷은 checked-only 라 대개 pointX 와 동일.
+  availableA?: number | null;
+  availableB?: number | null;
+  availableC?: number | null;
   source: Cluster4ActLogSource;
   // regular: process_acts.act_type ("required"|"selection"|레거시 "optional"|"basic")
   // irregular: process_irregular_acts.crew_reaction ("all"|"partial")

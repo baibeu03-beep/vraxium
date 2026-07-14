@@ -6673,6 +6673,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       pointA: a.pointA ?? 0,
       pointB: a.pointB ?? 0,
       pointC: a.pointC ?? 0,
+      // 획득 가능(available) — 업스트림이 내려주면 그대로, 없으면 undefined → 요약이 pointX(획득=가능)로 폴백.
+      availableA: typeof a.availableA === "number" ? a.availableA : undefined,
+      availableB: typeof a.availableB === "number" ? a.availableB : undefined,
+      availableC: typeof a.availableC === "number" ? a.availableC : undefined,
       source,
       kindLabel: kind.label,
       kindKey: kind.key,

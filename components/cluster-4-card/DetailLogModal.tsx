@@ -41,6 +41,14 @@ export interface DetailLogActRow {
   pointB: number;
   /** Po.C(번개/어흥/화살 …) 패널티 magnitude(양수) — 표시는 음수 */
   pointC: number;
+  /**
+   * (선택) 획득 가능했던 최대 Po.A/B/C — 요약 "획득 / 가능" 비율의 분모용.
+   * 서버 DTO 가 제공하면 그대로, 없으면 획득값(pointA/B/C)으로 폴백(획득=가능).
+   * 별도 조회/DOM 재추산 없이 이 값(=표시 중인 행)만 합산한다.
+   */
+  availableA?: number;
+  availableB?: number;
+  availableC?: number;
   /** 구분 — 정규/변동 */
   source: "regular" | "irregular";
   /** 종류 — 필수/선별(정규) · 전원/부분(변동) */
@@ -108,15 +116,44 @@ const alertToneFromStatus = (statusClass: string): "positive" | "warn" | "neutra
 /** +53개 / -3개 / 0개 — '개' 단위 포함 */
 const formatPointValue = (v: number): string => (v > 0 ? `+${v}개` : `${v}개`);
 
+/**
+ * 크루 이름 표시 전용 — 마스킹 결과 뒤에 '님'을 부착한다(순수 표시, 데이터/DTO 불변).
+ * 이미 '님'으로 끝나면 중복 부착하지 않는다. 빈 값/"-" 은 그대로 반환.
+ */
+const formatCrewNameHonorific = (name: string): string => {
+  const trimmed = (name ?? "").trim();
+  if (!trimmed || trimmed === "-") return trimmed;
+  return /님$/.test(trimmed) ? trimmed : `${trimmed} 님`;
+};
+
 /** 액트 내역 획득 포인트(A/B) — +n / +0. 0 이하는 미적용(회색). */
 const formatGainPoint = (v: number): string => (v > 0 ? `+${v}` : "+0");
 /** 액트 내역 패널티 포인트(C) — 양수 magnitude 를 그대로(부호없음) 빨강 표기. 0 은 미적용(회색). */
 const formatPenaltyPoint = (v: number): string => (v !== 0 ? `${Math.abs(v)}` : "0");
 
 /**
+ * 포인트 값 색상 — 포인트 종류(A/B/C) 기준 단일 출처. 조직 무관(if org 분기 금지).
+ *  - A/B(index 0·1) = 연두(#9dfa07), C(index 2, 패널티) = 빨강(#ff6b6b).
+ * 포인트 카드(dl-point-value)와 요약 인덱스(dl-act-stat--point 값)가 동일하게 재사용한다.
+ */
+const pointValueColor = (index: number): string => (index === 2 ? "#ff6b6b" : "#9dfa07");
+
+/** 획득/가능 포인트 쌍 */
+interface DetailLogPointPair {
+  earned: number;
+  available: number;
+}
+
+/**
  * 액트 내역 요약 통계 — 표시 중인 행(acts) 단일 출처로 파생.
  * 불변식: 체크 가능 = 행 개수 = 체크 성공 + 체크 실패. (UI 별도 계산/외부 데이터 없음)
  * 체크 필수/선별 = 정규(regular) 행 중 종류 필수/선별 개수.
+ *
+ * 추가 인덱스(2026-07):
+ *  - points.pointA/B/C: 획득(earned)=행별 적립값 합, 가능(available)=행별 availableX 합(미제공 시 pointX 폴백).
+ *    포인트 C(패널티)는 표(formatPenaltyPoint)와 동일하게 magnitude(양수) 기준으로 합산 — UI 부호 규칙 신설 금지.
+ *  - regularActCount/variableActCount: 구분(source) 단일 기준(체크 성공/필수 여부로 정규·변동 추정 금지).
+ * 모든 값은 하단 "액트 내역 목록" 과 동일한 acts 배열만 사용 — 숨겨진/타 주차 액트 미합산, DOM 재추산 없음.
  */
 const buildActSummary = (acts: DetailLogActRow[]) => {
   const total = acts.length;
@@ -125,7 +162,37 @@ const buildActSummary = (acts: DetailLogActRow[]) => {
   const required = acts.filter((a) => a.source === "regular" && a.kindKey === "required").length;
   const selective = acts.filter((a) => a.source === "regular" && a.kindKey === "selective").length;
   const rate = total > 0 ? Math.round((success / total) * 100) : 0;
-  return { total, success, fail, required, selective, rate };
+  const regularActCount = acts.filter((a) => a.source === "regular").length;
+  const variableActCount = acts.filter((a) => a.source === "irregular").length;
+  const sum = (pick: (a: DetailLogActRow) => number) =>
+    acts.reduce((n, a) => n + (pick(a) || 0), 0);
+  const points: { pointA: DetailLogPointPair; pointB: DetailLogPointPair; pointC: DetailLogPointPair } = {
+    pointA: { earned: sum((a) => a.pointA), available: sum((a) => a.availableA ?? a.pointA) },
+    pointB: { earned: sum((a) => a.pointB), available: sum((a) => a.availableB ?? a.pointB) },
+    // C(패널티): 표시(formatPenaltyPoint=Math.abs)와 동일 magnitude 합산으로 표↔요약 parity 보장.
+    pointC: {
+      earned: sum((a) => Math.abs(a.pointC)),
+      available: sum((a) => Math.abs(a.availableC ?? a.pointC)),
+    },
+  };
+  return { total, success, fail, required, selective, rate, regularActCount, variableActCount, points };
+};
+
+/** null-data 시 요약 기본값(타입 안정용 — 실제 렌더는 data 존재 분기에서만) */
+const EMPTY_ACT_SUMMARY = {
+  total: 0,
+  success: 0,
+  fail: 0,
+  required: 0,
+  selective: 0,
+  rate: 0,
+  regularActCount: 0,
+  variableActCount: 0,
+  points: {
+    pointA: { earned: 0, available: 0 },
+    pointB: { earned: 0, available: 0 },
+    pointC: { earned: 0, available: 0 },
+  },
 };
 
 const DetailLogModal: React.FC<DetailLogModalProps> = ({
@@ -176,9 +243,10 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
     : [];
 
   // 액트 내역 요약 — 표시 중인 행 단일 출처(불변식: 체크 가능 = 행 개수 = 성공 + 실패).
-  const actSummary = data
-    ? buildActSummary(data.acts)
-    : { total: 0, success: 0, fail: 0, required: 0, selective: 0, rate: 0 };
+  const actSummary = data ? buildActSummary(data.acts) : EMPTY_ACT_SUMMARY;
+
+  // 획득 포인트 인덱스 라벨 — 포인트 카드/표 헤더와 동일 단일 출처(조직 point config). 하드코딩 금지.
+  const [pointALabel, pointBLabel, pointCLabel] = data?.actPointNames ?? ["Po.A", "Po.B", "Po.C"];
 
   return createPortal(
     <div className={overlayClass} onClick={handleOverlayClick}>
@@ -188,19 +256,12 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
         aria-modal="true"
         aria-label="Weekly League Detail Log"
       >
-        {/* ── Header (제목 좌측 · 시즌/주차/기간 우측, 동일 행) ── */}
+        {/* ── Header (제목 좌측 · 도움말/닫기 우측). 주차 메타는 본문 상단으로 이동. ── */}
         <div className="dl-modal-header">
           <span className="dl-header-icon" aria-hidden="true">
             <i className="ti ti-list-details" />
           </span>
           <h3 className="dl-modal-title">Weekly League Detail Log</h3>
-          {data && (
-            <p className="dl-modal-meta">
-              <span className="dl-meta-strong">{data.seasonWeekTitle}</span>
-              <span className="dl-meta-dot">·</span>
-              <span className="dl-meta-period">{data.periodText}</span>
-            </p>
-          )}
           <div className="dl-header-actions">
             <button type="button" className="dl-help-btn" onClick={() => setShowHelp(true)} aria-label="도움말">
               <i className="ti ti-help-circle" />
@@ -218,12 +279,22 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
             <div className="dl-empty">데이터를 불러오는 중입니다…</div>
           ) : (
             <>
+              {/* 주차 메타(시즌/주차 · 기간) — 헤더에서 본문 상단(크루 배지 바로 위)으로 이동. 원천/포맷 불변. */}
+              <p className="dl-modal-meta">
+                <span className="dl-meta-strong">{data.seasonWeekTitle}</span>
+                <span className="dl-meta-dot">·</span>
+                <span className="dl-meta-period">{data.periodText}</span>
+              </p>
+
               {/* 크루 프로필 (Badge) */}
               <div className="dl-crew-badge">
                 {crewSegments.map((seg, i) => (
                   <React.Fragment key={i}>
                     {i > 0 && <span className="dl-crew-sep">|</span>}
-                    <span className={i === 0 ? "dl-crew-name" : "dl-crew-seg"}>{seg}</span>
+                    {/* 크루 이름(i===0)만 표시 전용 '님' 부착 — 마스킹 결과 뒤, 데이터 불변 */}
+                    <span className={i === 0 ? "dl-crew-name" : "dl-crew-seg"}>
+                      {i === 0 ? formatCrewNameHonorific(seg) : seg}
+                    </span>
                   </React.Fragment>
                 ))}
               </div>
@@ -244,7 +315,7 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                             <span className="dl-point-label">{p.label}</span>
                             <span
                               className="dl-point-value"
-                              style={{ color: isPointC ? "#ff6b6b" : "#9dfa07" }}
+                              style={{ color: pointValueColor(i) }}
                             >
                               {isPointC ? `${Math.abs(p.value)}개` : formatPointValue(p.value)}
                             </span>
@@ -265,12 +336,8 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                       </span>
                     </div>
                     <div className="dl-result-right">
+                      <span className="dl-cumulative-label">누적 성공 주차</span>
                       <span className="dl-cumulative-num">{data.cumulativeWeeks}</span>
-                      <span className="dl-cumulative-label">
-                        누적 성공
-                        <br />
-                        주차
-                      </span>
                     </div>
                   </div>
 
@@ -356,6 +423,37 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                         <span className="dl-act-stat">
                           <span className="dl-act-stat-label">체크 선별</span>
                           <span className="dl-act-stat-value">{actSummary.selective}</span>
+                        </span>
+
+                        {/* 획득 포인트 A/B/C — "획득 / 가능"(표시 중인 행 단일 출처 합계). 라벨=조직 point config.
+                            값 색상 = 포인트 카드와 동일 단일 출처(pointValueColor) — A/B 연두·C 빨강, 조직 무관. 라벨 색상 불변. */}
+                        <span className="dl-act-stat dl-act-stat--point">
+                          <span className="dl-act-stat-label">획득 {pointALabel}</span>
+                          <span className="dl-act-stat-value" style={{ color: pointValueColor(0) }}>
+                            {actSummary.points.pointA.earned} / {actSummary.points.pointA.available}
+                          </span>
+                        </span>
+                        <span className="dl-act-stat dl-act-stat--point">
+                          <span className="dl-act-stat-label">획득 {pointBLabel}</span>
+                          <span className="dl-act-stat-value" style={{ color: pointValueColor(1) }}>
+                            {actSummary.points.pointB.earned} / {actSummary.points.pointB.available}
+                          </span>
+                        </span>
+                        <span className="dl-act-stat dl-act-stat--point">
+                          <span className="dl-act-stat-label">획득 {pointCLabel}</span>
+                          <span className="dl-act-stat-value" style={{ color: pointValueColor(2) }}>
+                            {actSummary.points.pointC.earned} / {actSummary.points.pointC.available}
+                          </span>
+                        </span>
+
+                        {/* 정규/변동 액트 — 구분(source) 단일 기준 */}
+                        <span className="dl-act-stat">
+                          <span className="dl-act-stat-label">정규 액트</span>
+                          <span className="dl-act-stat-value">{actSummary.regularActCount}</span>
+                        </span>
+                        <span className="dl-act-stat">
+                          <span className="dl-act-stat-label">변동 액트</span>
+                          <span className="dl-act-stat-value">{actSummary.variableActCount}</span>
                         </span>
                       </div>
                     </div>

@@ -13899,15 +13899,15 @@
     }
   }
 
-  // 시즌/주차/기간 — 우측 정렬, 버튼 바로 앞.
+  // 시즌/주차/기간 — 본문 상단(크루 배지 바로 위)로 이동. 좌측 정렬.
   .dl-modal-meta {
     margin: 0;
     display: flex;
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
-    justify-content: flex-end;
-    text-align: right;
+    justify-content: flex-start;
+    text-align: left;
     color: rgba(255, 255, 255, 0.62);
     font-family: "Pretendard", sans-serif;
     font-size: 13px;
@@ -14093,10 +14093,13 @@
     }
   }
 
+  // 누적 성공 주차 — 한 줄 가로(라벨 좌 · 숫자 우). 좁은 화면에서도 순서 반전/줄바꿈 금지.
   .dl-result-right {
     display: flex;
-    align-items: center;
-    gap: 10px;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    gap: 8px;
   }
 
   .dl-cumulative-num {
@@ -14113,6 +14116,7 @@
     font-size: 12px;
     font-weight: 600;
     line-height: 1.25;
+    white-space: nowrap;
   }
 
   // 결과 메시지 Alert
@@ -14231,14 +14235,16 @@
     .dl-point-label {
       color: rgba(255, 255, 255, 0.72);
       font-family: "Pretendard", sans-serif;
-      font-size: 13px;
+      // 기존 13px 대비 정확히 +2pt.
+      font-size: calc(13px + 2pt);
       font-weight: 600;
       line-height: 1.2;
     }
     .dl-point-value {
       color: #fff;
       font-family: "Manrope", sans-serif;
-      font-size: 20px;
+      // 기존 20px 대비 정확히 +10pt.
+      font-size: calc(20px + 10pt);
       font-weight: 800;
       line-height: 1.1;
     }
@@ -14428,6 +14434,11 @@
     font-weight: 800;
     color: #fff;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap; // "43 / 103" 값이 숫자 사이에서 줄바꿈되지 않도록
+  }
+  // 획득 포인트 인덱스 — 라벨·값이 한 칩 안에서 분리되지 않도록 줄바꿈 금지(값은 위에서 nowrap).
+  .dl-act-stat--point .dl-act-stat-label {
+    white-space: nowrap;
   }
   .dl-act-stat--success .dl-act-stat-value {
     color: #9dfa07;
@@ -14619,11 +14630,6 @@
     }
     .dl-modal-header {
       flex-wrap: wrap;
-    }
-    .dl-modal-meta {
-      width: 100%;
-      justify-content: flex-start;
-      order: 3;
     }
   }
 }
