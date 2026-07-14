@@ -76,12 +76,20 @@
   //   오랑캐 골드 트리플렛(250, 171, 7)으로 폴백. (mode=test·demo·snapshot·일반
   //   경로 모두 동일 라우트/래퍼를 거치므로 경로 분기 없이 동일 적용.)
   //
-  // alpha 정책(요구 범위): strong 0.55 / mid 0.26 / end 0 — 너무 진하지도(이미지
-  //   가림) 연하지도(차이 없음) 않게. 방향/구간(°·%)은 카드별 밴드 위치에 맞춰
-  //   각 사용처에서 지정(상단 밴드만 덮고 중앙 이미지는 불침범).
+  // 톤 정책(개정): 가독성의 주역은 "검정/짙은 남색 계열 중립 어두운 오버레이"가
+  //   맡고, 조직 대표색은 은은한 색감만 담당(단색 띠 금지). 그래서 조직색 토큰은
+  //   soft(상단 정보 밴드용, 약하게)와 faint(주요 지표 밴드용, 매우 약하게) 2단으로
+  //   낮춘다. 중립 어두운 스크림 alpha 는 각 사용처에서 지정(상단 0.55~0.70 /
+  //   중간 0.30~0.48 / 끝 0). 방향/구간(°·%)은 카드별 밴드 위치에 맞춰 지정(상단
+  //   밴드만 덮고 중앙 이미지에는 전체 조직색 필터를 씌우지 않음).
+  //
+  //   color-mix 미사용(호환) — resolver 가 --org-accent-rgb 트리플렛으로 rgba 를
+  //   직접 만든다. soft ≈ 18%, faint ≈ 9% 혼합에 해당.
   // =============================================================
-  --c3-org-strong: rgba(var(--org-accent-rgb, 250, 171, 7), 0.55);
-  --c3-org-mid: rgba(var(--org-accent-rgb, 250, 171, 7), 0.26);
+  --c3-org-soft: rgba(var(--org-accent-rgb, 250, 171, 7), 0.26);
+  --c3-org-soft-mid: rgba(var(--org-accent-rgb, 250, 171, 7), 0.14);
+  --c3-org-faint: rgba(var(--org-accent-rgb, 250, 171, 7), 0.14);
+  --c3-org-faint-mid: rgba(var(--org-accent-rgb, 250, 171, 7), 0.07);
   --c3-org-end: rgba(var(--org-accent-rgb, 250, 171, 7), 0);
 
   padding: 0;
@@ -2175,16 +2183,11 @@
           padding: 14px;
           pointer-events: none;
           color: #fff;
-          // 배경 이미지 위 레이어 순서(위→아래):
-          //   1) 상단 조직 대표색 헤더 오버레이 — 제목·플랫폼·완료 배지 밴드(상단
-          //      ~38%)에만. 사이드바 헤더 느낌. 38% 이후 transparent 라 카드 중앙
-          //      (역할·기여도)·하단 이미지는 조직색 불침범.
-          //   2) 상단 미세 흑색 스크림 — 밝은 이미지에서 흰 텍스트 대비 보강(얕음).
-          //   3) 하단 흑색 스크림(기존 보존) — [8] 지표·[9] 개요 가독성.
-          background:
-            linear-gradient(180deg, var(--c3-org-strong) 0%, var(--c3-org-mid) 20%, var(--c3-org-end) 38%),
-            linear-gradient(180deg, rgba(0, 0, 0, 0.28) 0%, rgba(0, 0, 0, 0) 24%),
-            linear-gradient(0deg, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0) 46%);
+          // 이 wrapper 는 카드 전체(inset:0)를 덮으므로 여기에 background 를 넣으면
+          //   중앙 이미지까지 물든다(Detail 카드와 어긋남). 색 오버레이는 상단 헤더
+          //   (.opc-header::before)와 하단 푸터(.opc-footer::before) 전용 pseudo-element
+          //   에만 국한 → 중앙 인물/배경은 원본 색감 유지. wrapper 는 레이아웃만.
+          background: none;
 
           // [2] 플랫폼 · [1] 제목(남은 폭 전부) · [4] 완료 배지 — 3열 그리드
           .opc-header {
@@ -2192,6 +2195,36 @@
             grid-template-columns: auto minmax(0, 1fr) auto;
             align-items: start;
             column-gap: 8px;
+            position: relative;
+            isolation: isolate; // ::before(z-index:-1)를 헤더 밴드 안에 격리(이미지 뒤로 안 빠짐)
+
+            // 상단 헤더 전용 오버레이 — Detail 카드 .detail-metric::before 와 동일 톤.
+            //   조직색 tint(soft 0.26, 135°) 최상단 + 중립 어두운(짙은 남색) 스크림.
+            //   inset 상/좌/우는 카드 모서리(overflow clip)까지, 하단은 제목 바로 아래
+            //   에서 종료(-4px) → 날짜 배지(header 아래 8px gap 의 body 상단)는 침범 안 함.
+            //   그라데이션이 100%에서 transparent 라 마지막 구간이 부드럽게 소실(경계선
+            //   없음). wrapper padding(14px) 상쇄 위해 상/좌/우 -14px.
+            &::before {
+              content: "";
+              position: absolute;
+              inset: -14px -14px -4px;
+              z-index: -1;
+              pointer-events: none;
+              background:
+                linear-gradient(
+                  135deg,
+                  var(--c3-org-soft) 0%,
+                  var(--c3-org-soft-mid) 55%,
+                  var(--c3-org-end) 88%
+                ),
+                linear-gradient(
+                  180deg,
+                  rgba(4, 8, 18, 0.62) 0%,
+                  rgba(4, 8, 18, 0.34) 56%,
+                  rgba(4, 8, 18, 0.08) 82%,
+                  rgba(4, 8, 18, 0) 100%
+                );
+            }
 
             .opc-platform {
               width: 34px;
@@ -2200,6 +2233,8 @@
               flex-shrink: 0;
               object-fit: cover;
               background: rgba(255, 255, 255, 0.2);
+              // 제목과 시각적 정렬 — Y축만 4px 아래로(크기·X·레이아웃 불변).
+              transform: translateY(4px);
 
               &--empty {
                 background: rgba(255, 255, 255, 0.15);
@@ -2216,7 +2251,7 @@
               font-weight: 700;
               line-height: 1.3;
               color: #fff;
-              text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+              text-shadow: 0 1px 3px rgba(0, 0, 0, 0.72);
               display: -webkit-box;
               -webkit-box-orient: vertical;
               -webkit-line-clamp: 2;
@@ -2387,18 +2422,49 @@
             }
           }
 
-          // [8] 주요 지표 + [9] 개요
+          // [8] 주요 지표 + [9] 개요 — 하단 정보 밴드
           .opc-footer {
             display: flex;
             flex-direction: column;
             gap: 8px;
+            position: relative;
+            isolation: isolate; // ::before(z-index:-1)를 푸터 밴드 안에 격리
+
+            // 하단 푸터 전용 오버레이 — Detail 카드 .item-bottom 과 동일 톤.
+            //   조직색 tint(faint 0.14, 35°) 최상단 + 중립 어두운(짙은 남색) 스크림.
+            //   inset 하/좌/우는 카드 모서리까지, 상단은 body(도구·기여도)로 -30px
+            //   확장 후 transparent 로 소실 → 중앙에서 헤더 오버레이와 이어지지 않고
+            //   경계선 없음. wrapper padding(14px) 상쇄 위해 하/좌/우 -14px.
+            &::before {
+              content: "";
+              position: absolute;
+              inset: -30px -14px -14px;
+              z-index: -1;
+              pointer-events: none;
+              background:
+                linear-gradient(
+                  35deg,
+                  var(--c3-org-faint) 0%,
+                  var(--c3-org-faint-mid) 45%,
+                  var(--c3-org-end) 74%
+                ),
+                linear-gradient(
+                  0deg,
+                  rgba(2, 5, 12, 0.76) 0%,
+                  rgba(2, 5, 12, 0.48) 52%,
+                  rgba(2, 5, 12, 0.12) 80%,
+                  rgba(2, 5, 12, 0) 100%
+                );
+            }
 
             .opc-metric {
               display: flex;
               align-items: center;
               justify-content: space-between;
               gap: 10px;
-              background: rgba(0, 0, 0, 0.5);
+              // 주요 지표 한 줄(예: 조회수 240,000회) — 조직색은 푸터 밴드(::before)가
+              //   담당하므로 pill 은 중립 흑색만(이중 착색 방지). 둥근 pill.
+              background: rgba(2, 6, 14, 0.42);
               border-radius: 8px;
               padding: 7px 12px;
 
@@ -2429,7 +2495,7 @@
               font-size: 0.82rem;
               line-height: 1.45;
               color: rgba(255, 255, 255, 0.92);
-              text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+              text-shadow: 0 1px 3px rgba(0, 0, 0, 0.72);
               display: -webkit-box;
               -webkit-box-orient: vertical;
               -webkit-line-clamp: 3;
@@ -2739,12 +2805,13 @@
           isolation: isolate; // ::before(z-index:-1)를 이 밴드 안에 격리(이미지 뒤로 안 빠짐)
           padding: 7px 10px 6px;
 
-          // [3] 주요 지표(조회수·반응 수) 전용 조직 대표색 오버레이.
-          //   지표 텍스트 높이보다 살짝 더 길게(하단 -18px) 깔고 하단은 transparent 로
-          //   완전 소실 → 이미지와 만나는 직선 경계 없음(단색 사각형/blur/보더/box-shadow
-          //   미사용). 색 SoT=--org-accent-rgb(테마 wrapper 상속, 기본 오랑캐 250,171,7
-          //   폴백). 상단엔 밝은 이미지 대비용 옅은 흑색도 함께 깔되 역시 transparent 로
-          //   소실. 하단 밴드에는 조직색 미사용(중립 흑색).
+          // [3] 주요 지표(조회수·반응 수) 밴드 오버레이.
+          //   조직 대표색 tint(soft 0.26→0, 135° 대각)를 맨 앞 레이어로 얹고 그 아래에
+          //   중립 어두운(짙은 남색) 스크림 → 조직색이 스크림에 묻히지 않으면서 지표
+          //   텍스트 가독성 유지. 지표 텍스트보다 살짝 더 길게(하단 -18px) 깔고 하단은
+          //   transparent 로 완전 소실 → 이미지와 만나는 직선 경계 없음(단색 사각형/
+          //   blur/보더/box-shadow 미사용). 색 SoT=--org-accent-rgb(테마 wrapper 상속,
+          //   기본 오랑캐 250,171,7 폴백).
           &::before {
             content: "";
             position: absolute;
@@ -2753,17 +2820,17 @@
             pointer-events: none;
             background:
               linear-gradient(
-                180deg,
-                rgba(var(--org-accent-rgb, 250, 171, 7), 0.6) 0%,
-                rgba(var(--org-accent-rgb, 250, 171, 7), 0.38) 45%,
-                rgba(var(--org-accent-rgb, 250, 171, 7), 0.14) 78%,
-                rgba(var(--org-accent-rgb, 250, 171, 7), 0) 100%
+                135deg,
+                var(--c3-org-soft) 0%,
+                var(--c3-org-soft-mid) 55%,
+                var(--c3-org-end) 88%
               ),
               linear-gradient(
                 180deg,
-                rgba(0, 0, 0, 0.3) 0%,
-                rgba(0, 0, 0, 0.12) 50%,
-                rgba(0, 0, 0, 0) 85%
+                rgba(4, 8, 18, 0.6) 0%,
+                rgba(4, 8, 18, 0.36) 56%,
+                rgba(4, 8, 18, 0.08) 82%,
+                rgba(4, 8, 18, 0) 100%
               );
           }
 
@@ -2797,15 +2864,24 @@
           grid-template-columns: auto minmax(0, 1fr);
           align-items: end;
           gap: 8px;
-          // [1]제목·[2]플랫폼·[4]도구 밴드 — 중립 흑색 가독성 처리만(조직 대표색 미사용).
-          //   위→아래로 짙어지고 상단은 transparent 로 소실 → 상단 직선 경계 없음.
-          //   blur 미사용(사각 blur 경계 방지). 아이콘/도구 원색·제목 2줄 말줄임 불변.
-          background: linear-gradient(
-            0deg,
-            rgba(0, 0, 0, 0.62) 0%,
-            rgba(0, 0, 0, 0.24) 68%,
-            rgba(0, 0, 0, 0) 100%
-          );
+          // [1]제목·[2]플랫폼·[4]도구 밴드 — 조직 대표색 tint(faint 0.14→0, 35° 대각)를
+          //   맨 앞 레이어로 얹고 그 아래에 중립 어두운(짙은 남색) 하단 스크림. 위→아래로
+          //   짙어지고 상단은 transparent 로 소실 → 상단 직선 경계 없음. blur 미사용
+          //   (사각 blur 경계 방지). 아이콘/도구 원색·제목 2줄 말줄임 불변.
+          background:
+            linear-gradient(
+              35deg,
+              var(--c3-org-faint) 0%,
+              var(--c3-org-faint-mid) 46%,
+              var(--c3-org-end) 76%
+            ),
+            linear-gradient(
+              0deg,
+              rgba(2, 5, 12, 0.76) 0%,
+              rgba(2, 5, 12, 0.48) 54%,
+              rgba(2, 5, 12, 0.12) 82%,
+              rgba(0, 0, 0, 0) 100%
+            );
           border-radius: 0 0 10px 10px;
           padding: 8px 10px;
 
@@ -2844,7 +2920,7 @@
                 font-weight: 700;
                 line-height: 1.2;
                 color: #fff;
-                text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+                text-shadow: 0 1px 3px rgba(0, 0, 0, 0.72);
               }
 
               .detail-title {
@@ -2858,7 +2934,7 @@
                 font-weight: 700;
                 line-height: 1.2;
                 color: #fff;
-                text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+                text-shadow: 0 1px 3px rgba(0, 0, 0, 0.72);
                 display: -webkit-box;
                 -webkit-box-orient: vertical;
                 -webkit-line-clamp: 2;
