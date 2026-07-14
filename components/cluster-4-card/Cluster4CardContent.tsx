@@ -1485,7 +1485,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         // 전환 주차(봄·가을 17주차 / 여름·겨울 9주차)는 휴식(공식)으로 계산·표시하지 않는다.
         const isTransitionForWeek = isTransitionWeek(rawSeasonName, currentWeek.week_number);
         const userIsOnOfficialRestForWeek = isOfficialRestWeek(rawSeasonName, currentWeek.week_number, baseOfficialRestForWeek);
-        const userIsOnPersonalRestForWeek = !isCurrentWeekOnboarding && (!!weeklyGrowth?.is_resting || (!weeklyGrowth && apiRestWeekIds.includes(currentWeek.id)));
+        // 개인 휴식 판정: per-user uws(weeklyGrowth.is_resting) 또는 승인된 휴식 주차(apiRestWeekIds).
+        //   apiRestWeekIds 는 /api/profile 이 vacation_requests(status='approved') 공통 SoT 로부터 내려주는
+        //   승인된 휴식 주차(week_id) 집합이다. 과거엔 rest_requests(현재 DB 부재) 기반이라 stale 우려로
+        //   weeklyGrowth 부재 시에만 폴백했지만, 이제 승인 SoT 가 권위값이므로 uws 유무와 무관하게 항상
+        //   반영한다 — admin 판정 코어(승인 휴식→personal_rest 강제, uws 상태 무시)와 정합. official rest 우선.
+        const userIsOnPersonalRestForWeek = !isCurrentWeekOnboarding && (!!weeklyGrowth?.is_resting || apiRestWeekIds.includes(currentWeek.id));
 
         // 상태 phase(진행 중/집계 중/성공/실패)는 프론트에서 날짜(Date.now/weekStart/144h·252h)로 계산하지 않는다.
         // 상태 배지의 단일 출처는 어드민 weekly-cards DTO(weeklyCardMeta.statusLabel/statusTone)이며,

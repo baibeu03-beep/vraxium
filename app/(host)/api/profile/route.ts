@@ -9,6 +9,7 @@ import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import { pageSlugFromReferer, applyPageSlug } from "@/lib/pageSlugForward";
 import { DemoModeError, resolveDemoProfileUserId } from "@/lib/demoMode";
 import { requireOwnerOrAdmin } from "@/lib/api-auth";
+import { approvedRestWeekIdsQuery } from "@/lib/approvedRestWeeks";
 import { resolveMembershipDisplay } from "@/lib/membership";
 import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confirmed-success-weeks";
 import { resolveWeekScopeForUser, resolveWeekResultStates, statesByStartDate } from "@/lib/weekResultState";
@@ -880,7 +881,8 @@ export async function GET(request: NextRequest) {
         profile.onboarding_week_id
           ? supabaseAdmin.from("weeks").select("started_at").eq("id", profile.onboarding_week_id).maybeSingle()
           : Promise.resolve({ data: null }),
-        supabaseAdmin.from("rest_requests").select("week_id").eq("user_id", profile.id).eq("status", "approved"),
+        // 승인된 개인 휴식 주차 — 공통 SoT(vacation_requests, status='approved'). 레거시 rest_requests 대체.
+        approvedRestWeekIdsQuery(supabaseAdmin, profile.id),
         Promise.resolve({ data: [], error: null }),
         supabaseAdmin.from("user_role_history").select("id, user_id, role, started_at, ended_at").eq("user_id", profile.id),
         supabaseAdmin.from("activity_records").select("id, week_id, activity_type_id, is_completed").eq("user_id", profile.id),
@@ -1127,8 +1129,8 @@ export async function GET(request: NextRequest) {
       // 공표 여부(result_published_at)는 공용 resolveWeekResultStates 로 일원화(Phase B) — 아래 주입.
       supabaseAdmin.from("weeks").select("id, start_date, end_date, is_official_rest, season_key, week_number").order("start_date", { ascending: true }),
 
-      // 해당 유저의 승인된 휴식 요청
-      supabaseAdmin.from("rest_requests").select("week_id").eq("user_id", profile.id).eq("status", "approved"),
+      // 해당 유저의 승인된 휴식 요청 — 공통 SoT(vacation_requests, status='approved'). 레거시 rest_requests 대체.
+      approvedRestWeekIdsQuery(supabaseAdmin, profile.id),
 
       // 모든 시즌 — season_definitions 테이블 사용
       supabaseAdmin.from("season_definitions").select("season_key, season_label, season_type, year").order("year", { ascending: true }),
