@@ -6204,7 +6204,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 본문 4파트(정보/경험/역량/경력)는 isRestMode 일 때 기본 not_applicable, 단 그 주차 귀속 라인이 있으면
   // 본문(라인 내용)만 예외적으로 노출(상태는 여전히 not_applicable) — 기존 effective*/matchedAbilityCard 로직 유지.
   const isOfficialRestLocal = !!weekData?.isOfficialRest;
-  const isRestMode = !!(weekData?.isPersonalRest || isOfficialRestLocal);
+  // 공통 weekly-cards DTO 가 '휴식(개인)'으로 판정하면 본문도 반드시 휴식 모드로 둔다.
+  //   헤더 배지는 DTO(weeklyCardMeta.statusLabel)에서, 본문 휴식여부는 로컬(weekData.isPersonalRest,
+  //   승인 vacation_requests 파생)에서 오는 이중 소스라 이론상 desync 가능(공식 휴식만 헤더 보정이
+  //   있고 개인 휴식엔 없었음). DTO 판정을 additive(OR)로 신뢰해 본문이 항상 공통 판정과 일치하게
+  //   한다 — 개인 휴식은 주차단위 override 우려가 없어(공식 휴식과 달리) DTO 신뢰가 안전하고,
+  //   OR 결합이라 휴식 모드를 끄는 방향으로는 절대 작용하지 않는다. label 규약은 badge helper와 동일.
+  const metaSaysPersonalRest = (weeklyCardMeta?.statusLabel ?? "").includes("개인");
+  const isRestMode = !!(weekData?.isPersonalRest || isOfficialRestLocal || metaSaysPersonalRest);
 
   // 시즌명과 주차번호로 월/주차 계산하여 이미지 경로 생성
   // primary 는 holiday_name 접미사를 포함한 1차 경로, stripped 는 holiday 없는 폴백.

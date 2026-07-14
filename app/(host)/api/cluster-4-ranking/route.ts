@@ -446,7 +446,10 @@ export async function GET(request: NextRequest) {
       userGrowthMap.set(wg.user_id, {
         is_success: wg.status === "success",
         is_resting: wg.status === "personal_rest",
-        is_club_break: wg.status === "official_rest",
+        // WeeklyGrowthRow.is_official_rest 로 저장해야 아래 판정부(is_official_rest 읽음)와 일치.
+        // 구 is_club_break 키는 타입에 없어 항상 undefined → 비-전환 official_rest 주차가 fail 로
+        // 오표시되던 버그(휴식은 성공/실패로 표시 금지 규칙 위반) 및 TS 오류 동시 교정.
+        is_official_rest: wg.status === "official_rest",
         failure_reason: null,
         failure_details: null,
         earned_stars: null,
