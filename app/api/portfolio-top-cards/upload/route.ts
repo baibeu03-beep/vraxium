@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveWriteUserId } from "@/lib/api-auth";
+import { MAX_UPLOAD_IMAGE_BYTES, MAX_UPLOAD_IMAGE_LABEL } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+// 플랫폼(Vercel serverless ~4.5MB) 한도 아래로 정렬 — 앱 도달 전 plain-text 413 예방.
+const MAX_FILE_SIZE = MAX_UPLOAD_IMAGE_BYTES;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const BUCKET = "portfolio-top-images";
 
@@ -54,7 +56,10 @@ export async function POST(request: Request) {
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: "파일 크기는 5MB 이하여야 합니다." }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, code: "PAYLOAD_TOO_LARGE", error: `첨부한 이미지의 용량이 너무 큽니다. (1장당 ${MAX_UPLOAD_IMAGE_LABEL} 이하)` },
+        { status: 413 },
+      );
     }
 
     if (!ALLOWED_TYPES.includes(file.type)) {

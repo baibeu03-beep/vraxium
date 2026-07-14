@@ -47,6 +47,7 @@ import {
   type Cluster3Organization,
 } from "@/lib/cluster3-channel-card";
 import { formatOutputCardEndDate, clampContribution, getFirstValidMetric } from "@/lib/cluster3-output-card";
+import { readJsonSafe, ApiRequestError, MAX_UPLOAD_IMAGE_BYTES, MAX_UPLOAD_IMAGE_LABEL } from "@/lib/api-response";
 
 // Zone C(>1920px, ResponsiveScale.tsx에서 documentElement에 zoom:1.08 적용) 대응.
 // getBoundingClientRect는 zoom 적용 후 좌표를 반환하지만 position:fixed의 top/left는 CSS 픽셀 기준이라 좌표가 어긋난다.
@@ -731,6 +732,35 @@ const Cluster3Content = () => {
     );
   };
 
+  // 이미지 업로드/저장 실패 시 사용자용 공통 문구 (내부 파싱 오류·JSON 문자열 노출 금지).
+  const IMAGE_TOO_LARGE_MESSAGE = `저장할 수 없어요.\n\n첨부한 이미지의 용량이 너무 큽니다. (1장당 ${MAX_UPLOAD_IMAGE_LABEL} 이하)\n이미지 크기를 줄이거나 장수를 줄인 뒤 다시 시도해주세요.`;
+  const SAVE_NETWORK_MESSAGE = "저장 중 오류가 발생했습니다.\n네트워크 상태를 확인한 뒤 다시 시도해주세요.";
+
+  // blob URL → File 변환(+ 업로드 전 크기 사전검증).
+  // 플랫폼 요청 한도를 넘는 이미지는 아예 전송하지 않고 친절 메시지로 차단
+  // → Vercel plain-text 413("Request Entity Too Large") 자체를 예방.
+  const blobUrlToUploadFile = async (blobUrl: string, baseName: string): Promise<File> => {
+    const blob = await fetch(blobUrl).then((r) => r.blob());
+    if (blob.size > MAX_UPLOAD_IMAGE_BYTES) {
+      throw new ApiRequestError(IMAGE_TOO_LARGE_MESSAGE, 413, { code: "PAYLOAD_TOO_LARGE" });
+    }
+    const mime = blob.type || "image/jpeg";
+    const ext = mime.split("/")[1] || "jpg";
+    return new File([blob], `${baseName}.${ext}`, { type: mime });
+  };
+
+  // 저장 실패 오류를 공통 커스텀 팝업으로 표시 (alert/window.alert 사용 금지).
+  //  - ApiRequestError: 상태/코드 기반 사용자 메시지(413 등) 그대로.
+  //  - 그 외(네트워크·SyntaxError 등): 내부 상세는 콘솔에만, UI 는 일반 안내.
+  const showSaveError = async (e: unknown) => {
+    if (e instanceof ApiRequestError) {
+      await popup.alert(e.message);
+      return;
+    }
+    console.error("[save] 알 수 없는 저장 오류:", e);
+    await popup.alert(SAVE_NETWORK_MESSAGE);
+  };
+
   // 채널 카드 저장: blob URL 이미지 업로드 → 카드 PUT
   // 성공 시 업로드된 URL이 반영된 카드 객체 반환, 실패 시 null
   const saveChannelCard = async (cardIndex: number, card: any): Promise<any | null> => {
@@ -773,26 +803,18 @@ const Cluster3Content = () => {
           continue;
         }
         if (typeof img === "string" && img.startsWith("blob:")) {
-          try {
-            const blob = await fetch(img).then((r) => r.blob());
-            const mime = blob.type || "image/jpeg";
-            const ext = mime.split("/")[1] || "jpg";
-            const file = new File([blob], `slot-${slot}.${ext}`, { type: mime });
-            const fd = new FormData();
-            fd.append("file", file);
-            fd.append("cardIndex", String(cardIndex));
-            fd.append("slotIndex", String(slot));
-            const uploadRes = await fetch(apiUrl("/api/portfolio-channel-cards/upload"), {
-              method: "POST",
-              body: fd,
-            });
-            const uploadJson = await uploadRes.json();
-            if (!uploadRes.ok) throw new Error(uploadJson?.error || "이미지 업로드 실패");
-            uploadedImages.push(uploadJson.url);
-          } catch (e) {
-            console.error(`slot-${slot} 업로드 오류:`, e);
-            throw e;
-          }
+          const file = await blobUrlToUploadFile(img, `slot-${slot}`);
+          const fd = new FormData();
+          fd.append("file", file);
+          fd.append("cardIndex", String(cardIndex));
+          fd.append("slotIndex", String(slot));
+          const uploadRes = await fetch(apiUrl("/api/portfolio-channel-cards/upload"), {
+            method: "POST",
+            body: fd,
+          });
+          // 비-JSON(413 plain-text 등) 응답도 안전 처리 — SyntaxError 미전파.
+          const uploadJson = (await readJsonSafe(uploadRes)) as { url?: string } | null;
+          uploadedImages.push(uploadJson?.url ?? null);
         } else {
           // 이미 저장된 public URL 또는 default 경로
           uploadedImages.push(img);
@@ -821,12 +843,8 @@ const Cluster3Content = () => {
           topMetricValue: card.topMetricValue ?? "",
         }),
       });
-      const putJson = await putRes.json();
-      if (!putRes.ok) {
-        console.error("카드 저장 실패:", putJson);
-        alert(putJson?.error || "저장에 실패했습니다.");
-        return null;
-      }
+      // 성공/실패 모두 안전 파싱 — 실패면 ApiRequestError throw → 아래 catch 에서 공통 처리.
+      await readJsonSafe(putRes);
 
       const finalCard = { ...card, images: uploadedImages };
       // 채널 카드 GET 이 dedupedJson(30s) 을 쓰므로 저장 후 endpoint 캐시 무효화.
@@ -838,8 +856,7 @@ const Cluster3Content = () => {
       });
       return finalCard;
     } catch (e) {
-      console.error("채널 카드 저장 오류:", e);
-      alert(e instanceof Error ? e.message : "저장 중 오류가 발생했습니다.");
+      await showSaveError(e);
       return null;
     } finally {
       setIsSavingChannelCard(false);
@@ -1831,11 +1848,11 @@ const Cluster3Content = () => {
     // 권한 방어선: UI 가 가려도 직접 호출 경로가 생길 수 있으니 saveTopCard 자체에서도 차단.
     //   cardType 별로 분리 체크 — Output 만 unlock / Detail 만 unlock 시나리오 대응.
     if (cardType === "output" && !canEditOutput) {
-      alert(getOutputPermissionMessage());
+      await popup.alert(getOutputPermissionMessage());
       return null;
     }
     if (cardType === "detail" && !canEditDetail) {
-      alert(getDetailPermissionMessage());
+      await popup.alert(getDetailPermissionMessage());
       return null;
     }
     if (isDemoMode) return card;
@@ -1844,19 +1861,15 @@ const Cluster3Content = () => {
       // main 이미지 업로드 (blob URL인 경우만)
       let uploadedMain: string | null = card.mainImage ?? null;
       if (uploadedMain && uploadedMain.startsWith("blob:")) {
-        const blob = await fetch(uploadedMain).then((r) => r.blob());
-        const mime = blob.type || "image/jpeg";
-        const ext = mime.split("/")[1] || "jpg";
-        const file = new File([blob], `main.${ext}`, { type: mime });
+        const file = await blobUrlToUploadFile(uploadedMain, "main");
         const fd = new FormData();
         fd.append("file", file);
         fd.append("cardType", cardType);
         fd.append("cardIndex", String(cardIndex));
         fd.append("imageType", "main");
         const res = await fetch(apiUrl("/api/portfolio-top-cards/upload"), { method: "POST", body: fd });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json?.error || "메인 이미지 업로드 실패");
-        uploadedMain = json.url;
+        const json = (await readJsonSafe(res)) as { url?: string } | null;
+        uploadedMain = json?.url ?? null;
       }
 
       // sub 이미지 2장
@@ -1870,19 +1883,15 @@ const Cluster3Content = () => {
           continue;
         }
         if (typeof img === "string" && img.startsWith("blob:")) {
-          const blob = await fetch(img).then((r) => r.blob());
-          const mime = blob.type || "image/jpeg";
-          const ext = mime.split("/")[1] || "jpg";
-          const file = new File([blob], `sub-${slot}.${ext}`, { type: mime });
+          const file = await blobUrlToUploadFile(img, `sub-${slot}`);
           const fd = new FormData();
           fd.append("file", file);
           fd.append("cardType", cardType);
           fd.append("cardIndex", String(cardIndex));
           fd.append("imageType", `sub-${slot}`);
           const res = await fetch(apiUrl("/api/portfolio-top-cards/upload"), { method: "POST", body: fd });
-          const json = await res.json();
-          if (!res.ok) throw new Error(json?.error || `서브 이미지 ${slot + 1} 업로드 실패`);
-          uploadedSubs.push(json.url);
+          const json = (await readJsonSafe(res)) as { url?: string } | null;
+          uploadedSubs.push(json?.url ?? null);
         } else {
           uploadedSubs.push(img);
         }
@@ -1917,27 +1926,21 @@ const Cluster3Content = () => {
           links: card.links || ["", "", ""],
         }),
       });
-      const putJson = await putRes.json();
-      if (!putRes.ok) {
-        console.error("탑 카드 저장 실패:", putJson);
-        // 작성 기간이 닫혔거나 만료된 경우: 사용자 alert 는 서버 메시지가 아닌
-        // 통일 문구(EDIT_WINDOW_LOCKED_MESSAGE)로 노출하고, 즉시 권한을 재조회해
-        // UI 가 다시 잠금 상태로 돌아가도록 한다.
-        if (putRes.status === 403 && putJson?.error === "EDIT_WINDOW_CLOSED") {
-          alert(EDIT_WINDOW_LOCKED_MESSAGE);
-          setPermissionRefreshTick((tick) => tick + 1);
-          return null;
-        }
-        alert(putJson?.message || putJson?.error || "저장에 실패했습니다.");
-        return null;
-      }
+      // 성공/실패 모두 안전 파싱 — 실패면 ApiRequestError throw → 아래 catch 에서 공통 처리.
+      await readJsonSafe(putRes);
 
       // 탑 카드 GET 이 dedupedJson(30s) 을 쓰므로 저장 후 endpoint 캐시 무효화.
       invalidateDedupe("/api/portfolio-top-cards");
       return { ...card, mainImage: uploadedMain, subImages: uploadedSubs as (string | null)[] };
     } catch (e) {
-      console.error("탑 카드 저장 오류:", e);
-      alert(e instanceof Error ? e.message : "저장 중 오류가 발생했습니다.");
+      // 작성 기간이 닫혔거나 만료된 경우(403 EDIT_WINDOW_CLOSED): 서버 메시지가 아닌
+      // 통일 문구로 노출하고, 즉시 권한을 재조회해 UI 가 다시 잠금 상태로 돌아가도록 한다.
+      if (e instanceof ApiRequestError && e.status === 403 && e.code === "EDIT_WINDOW_CLOSED") {
+        await popup.alert(EDIT_WINDOW_LOCKED_MESSAGE);
+        setPermissionRefreshTick((tick) => tick + 1);
+        return null;
+      }
+      await showSaveError(e);
       return null;
     } finally {
       setIsSavingTopCard(false);
