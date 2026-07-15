@@ -46,8 +46,17 @@ export function friendlyStatusMessage(status: number): string {
       return "첨부한 이미지의 전체 용량이 너무 큽니다.\n이미지 수나 파일 크기를 줄인 뒤 다시 시도해주세요.";
     default:
       if (status >= 500) return "서버 오류로 저장하지 못했습니다. 잠시 후 다시 시도해주세요.";
-      return `저장에 실패했습니다. (${status})`;
+      return "저장에 실패했습니다. 다시 시도해주세요.";
   }
+}
+
+// API가 명시적으로 보낸 사용자용 메시지만 화면에 노출한다. 네트워크 예외,
+// JSON 파싱 예외, stack trace 등은 호출부의 안전한 fallback으로 숨긴다.
+export function apiErrorMessage(
+  error: unknown,
+  fallback = "저장에 실패했습니다. 다시 시도해주세요.",
+): string {
+  return error instanceof ApiRequestError ? error.message : fallback;
 }
 
 // 오류 코드가 될 만한 UPPER_SNAKE_CASE 문자열인지.

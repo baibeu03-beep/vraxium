@@ -24,6 +24,7 @@ import { clampAdminOutputs, ADMIN_OUTPUT_IMAGE_MAX, ADMIN_OUTPUT_LINK_MAX } from
 import { REPUTATION_KEYWORD_GROUPS } from "@/lib/reputation-keywords";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
+import { ApiRequestError, apiErrorMessage, readJsonSafe } from "@/lib/api-response";
 import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
 import DetailLogModal, { type DetailLogData, type DetailLogCondition, type DetailLogActRow } from "./DetailLogModal";
 import confetti from "canvas-confetti";
@@ -3482,7 +3483,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       }),
     });
     // res.ok 뿐 아니라 body.success === false 도 실패로 처리 (백엔드가 200+success:false 를 내도 안내 오인 방지).
-    const body = await res.json().catch(() => ({} as { success?: boolean; error?: string }));
+    const body = (await readJsonSafe(res)) as { success?: boolean; error?: string; message?: string } | null;
     console.log("[cluster4-save-diag] POST 응답", {
       status: res.status,
       ok: res.ok,
@@ -3490,8 +3491,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       hasSubmission: !!(body as { submission?: unknown })?.submission,
       error: (body as { error?: string })?.error ?? null,
     });
-    if (!res.ok || body?.success === false) {
-      throw new Error(body?.error || "저장에 실패했습니다.");
+    if (body?.success === false) {
+      // HTTP 200 + success:false 인 legacy 응답도 동일 DTO 우선순위로 처리한다.
+      const message = body.message || (body.error && !/^[A-Z][A-Z0-9_]+$/.test(body.error) ? body.error : null);
+      throw new ApiRequestError(message || "저장에 실패했습니다. 다시 시도해주세요.", res.status, {
+        code: body.error && /^[A-Z][A-Z0-9_]+$/.test(body.error) ? body.error : undefined,
+        payload: body,
+      });
     }
     return { images: persistedImages };
   };
@@ -3551,7 +3557,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           persistedImages = persisted.images;
         } catch (err) {
           console.error("workInfo 저장 실패:", err);
-          await popup.alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
+          await popup.alert(apiErrorMessage(err));
           return;
         }
       }
@@ -3983,7 +3989,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           persistedImages = persisted.images;
         } catch (err) {
           console.error("workAbility 저장 실패:", err);
-          await popup.alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
+          await popup.alert(apiErrorMessage(err));
           return;
         }
       }
@@ -4312,7 +4318,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           persistedImages = persisted.images;
         } catch (err) {
           console.error("workExp 저장 실패:", err);
-          await popup.alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
+          await popup.alert(apiErrorMessage(err));
           return;
         }
       }
@@ -4650,7 +4656,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           persistedCrewImages = persisted.images;
         } catch (err) {
           console.error("workCareer 저장 실패:", err);
-          await popup.alert(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
+          await popup.alert(apiErrorMessage(err));
           return;
         }
       }
@@ -5505,18 +5511,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ weekCardId: weekId, rating: weeklyReviewData.rating, content: weeklyReviewData.content }),
       });
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => null);
-        console.error("[weekly-review] API 응답 오류:", res.status, errJson);
-        return null;
-      }
-      const json = await res.json();
+      const json = (await readJsonSafe(res)) as {
+        success?: boolean;
+        data?: { id: string; weekCardId?: string; rating: number; content: string; created_at: string; updated_at?: string };
+      } | null;
       const record = json?.success && json?.data ? json.data : null;
       if (!record) return null;
       return { id: record.id, weekCardId: record.weekCardId, created_at: record.created_at, updated_at: record.updated_at };
     } catch (err) {
-      console.error("[weekly-review] API 예외:", err);
-      return null;
+      console.error("[weekly-review] API 저장 실패:", err);
+      throw err;
     }
   };
 
@@ -5699,10 +5703,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     setWeeklyReviewSaving(true);
     try {
       const savedRecord = await saveWeeklyReview();
-      if (!savedRecord) {
-        await popup.alert("저장에 실패했습니다. 다시 시도해주세요.");
-        return;
-      }
+      if (!savedRecord) throw new Error("invalid-save-response");
       setWeeklyReviewFromDB({
         id: savedRecord.id,
         weekCardId: savedRecord.weekCardId,
@@ -5719,7 +5720,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       setWeeklyReviewFormSnapshot(null);
     } catch (err) {
       console.error("[weekly-review] 저장 실패:", err);
-      await popup.alert("저장 중 오류가 발생했습니다.");
+      await popup.alert(apiErrorMessage(err));
     } finally {
       setWeeklyReviewSaving(false);
     }
@@ -5969,11 +5970,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             keyword: reputationEditData.keyword,
           }),
         });
-        const json = await res.json();
-        if (!res.ok) {
-          await popup.alert(json.error || "수정에 실패했습니다.");
-          return;
-        }
+        await readJsonSafe(res);
         await fetchWeeklyReputations();
         if (selectedReputationCard) {
           setSelectedReputationCard({
@@ -5989,8 +5986,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         setReputationEditData({ rating: 0, content: "", keyword: "" });
         setEditingWeeklyReputationId(null);
         if (selectedReputationCard) setReputationViewModalOpen(true);
-      } catch {
-        await popup.alert("서버 오류가 발생했습니다.");
+      } catch (error) {
+        console.error("주차 평판 수정 오류:", error);
+        await popup.alert(apiErrorMessage(error));
       } finally {
         setReputationSaving(false);
       }
@@ -6134,20 +6132,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         }),
       });
 
-      const json = await res.json();
-      if (!res.ok) {
-        await popup.alert(json.error || "저장에 실패했습니다.");
-        return null;
-      }
+      const json = (await readJsonSafe(res)) as { data?: { id?: string; created_at?: string } } | null;
       setReputationSaveSuccess(true);
       return {
-        id: json.data?.id || "",
-        created_at: json.data?.created_at || new Date().toISOString(),
+        id: json?.data?.id || "",
+        created_at: json?.data?.created_at || new Date().toISOString(),
       };
     } catch (error) {
       console.error("주차 평판 저장 오류:", error);
       setReputationSaveError((error as Error)?.message || "서버 오류");
-      await popup.alert("서버 오류가 발생했습니다.");
+      await popup.alert(apiErrorMessage(error));
       return null;
     } finally {
       setReputationSaving(false);
@@ -7774,15 +7768,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         }),
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        console.error("Failed to save activity detail:", error);
-        await popup.alert("저장에 실패했습니다.");
-        return;
-      }
+      await readJsonSafe(response);
     } catch (error) {
       console.error("Error saving activity detail:", error);
-      await popup.alert("저장 중 오류가 발생했습니다.");
+      await popup.alert(apiErrorMessage(error));
     } finally {
       setIsSaving(false);
     }

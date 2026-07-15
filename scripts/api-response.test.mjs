@@ -1,7 +1,7 @@
 // 공통 API 응답 파서 단위 테스트.
 // 실행: node --experimental-strip-types scripts/api-response.test.mjs
 import assert from "node:assert/strict";
-import { readJsonSafe, ApiRequestError, friendlyStatusMessage, MAX_UPLOAD_IMAGE_BYTES } from "../lib/api-response.ts";
+import { readJsonSafe, ApiRequestError, apiErrorMessage, friendlyStatusMessage, MAX_UPLOAD_IMAGE_BYTES } from "../lib/api-response.ts";
 
 let pass = 0;
 async function t(name, fn) {
@@ -64,6 +64,28 @@ await t("JSON error 가 enum(EDIT_WINDOW_CLOSED) → code 로 노출, message �
       return true;
     },
   );
+});
+await t("message 가 enum error 와 HTTP 403 문구보다 우선", async () => {
+  const message = "관리자 허가를 받은 기간에만 작성할 수 있습니다. ";
+  await assert.rejects(
+    () => readJsonSafe(mockResponse({ status: 403, body: JSON.stringify({ success: false, error: "EDIT_WINDOW_CLOSED", message }) })),
+    (e) => e instanceof ApiRequestError && e.code === "EDIT_WINDOW_CLOSED" && e.message === message && apiErrorMessage(e) === message,
+  );
+});
+await t("message 없는 사용자 문구형 error 가 상태 문구보다 우선", async () => {
+  await assert.rejects(
+    () => readJsonSafe(mockResponse({ status: 400, body: JSON.stringify({ error: "필수값을 입력해주세요." }) })),
+    (e) => e instanceof ApiRequestError && e.message === "필수값을 입력해주세요.",
+  );
+});
+await t("알 수 없는 HTTP 오류는 최종 저장 fallback", async () => {
+  await assert.rejects(
+    () => readJsonSafe(mockResponse({ status: 418, body: JSON.stringify({ error: "SOME_CODE" }) })),
+    (e) => e instanceof ApiRequestError && e.message === "저장에 실패했습니다. 다시 시도해주세요.",
+  );
+});
+await t("네트워크/내부 예외 메시지는 사용자에게 노출하지 않음", async () => {
+  assert.equal(apiErrorMessage(new TypeError("Failed to fetch: secret endpoint")), "저장에 실패했습니다. 다시 시도해주세요.");
 });
 await t("413 JSON(code PAYLOAD_TOO_LARGE) → code+메시지", async () => {
   await assert.rejects(
