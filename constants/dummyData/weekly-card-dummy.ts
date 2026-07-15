@@ -128,6 +128,11 @@ export type CrewRankShowcase = {
   competencyRate: number;             competencyRateDelta: number;
   careerRate: number;                 careerRateDelta: number;
   weeklyReview: string | null;
+  weeklyReviewId?: string | null;
+  hasWeeklyReview?: boolean;
+  weeklyReviewRating?: number | null;
+  weeklyReviewCreatedAt?: string | null;
+  weeklyReviewUpdatedAt?: string | null;
 };
 
 export type WeeklyCardData = {

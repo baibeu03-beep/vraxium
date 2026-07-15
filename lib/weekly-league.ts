@@ -24,26 +24,11 @@ import { pickPrimaryMembership, type MembershipRow } from "@/lib/membership";
 import { resolveMembershipRoleLabel } from "@/lib/cluster4-role-label";
 import { resolveResumeClassLabel } from "@/lib/crewClassLabel";
 import type { ScopeMode } from "@/lib/userScopeShared";
-import {
-  resolveWeekResultStates,
-  resolveOrgWeekThresholds,
-  type WeekResultScope,
-} from "@/lib/weekResultState";
-import type {
-  WeeklyCardData,
-  WeeklyCardCrew,
-  ChampionCrew,
-  RestReason,
-  WeeklyLeagueTeamBattle,
-  WeeklyLeagueMvp,
-  CrewRankShowcase,
-} from "@/constants/dummyData/weekly-card-dummy";
-import {
-  loadTeamBattleContext,
-  buildTeamBattles,
-  type CrewVerdict,
-  type TeamBattleContext,
-} from "@/lib/weekly-league-teams";
+import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
+import type { AdminCluster4WeeklyCardDto, Cluster4RateDto } from "@/shared/cluster4.contracts";
+import { resolveWeekResultStates, resolveOrgWeekThresholds, type WeekResultScope } from "@/lib/weekResultState";
+import type { WeeklyCardData, WeeklyCardCrew, ChampionCrew, RestReason, WeeklyLeagueTeamBattle, WeeklyLeagueMvp, CrewRankShowcase } from "@/constants/dummyData/weekly-card-dummy";
+import { loadTeamBattleContext, buildTeamBattles, type CrewVerdict, type TeamBattleContext } from "@/lib/weekly-league-teams";
 
 // 운영 데이터 시작(이관 정책 경계) = 2026 봄 시즌 시작일.
 //   기본(누적) 노출은 이 날짜 이후 시작 주차만 노출한다 — 그 이전(2023~2026 겨울)은
@@ -56,8 +41,7 @@ export const WEEKLY_LEAGUE_ARCHIVE_SEASON_KEY = "2026-spring";
 export const WEEKLY_LEAGUE_SEASON_KEY = WEEKLY_LEAGUE_ARCHIVE_SEASON_KEY; // 과거 import 보호
 
 const SEASON_KEY_RE = /^\d{4}-(spring|summer|autumn|fall|winter)$/;
-export const isValidSeasonKey = (v: string | null | undefined): v is string =>
-  !!v && SEASON_KEY_RE.test(v);
+export const isValidSeasonKey = (v: string | null | undefined): v is string => !!v && SEASON_KEY_RE.test(v);
 
 // 현재 운영 시즌 키 — operationalSeasonDbKey(전환 주차 선반영) 기반.
 //   누적 리스트에서 "현재 시즌"(최상단에 새로 추가되는 시즌) 지표다. 리스트의 필터가 아니라
@@ -71,8 +55,7 @@ export function resolveCurrentSeasonKey(today: string): string | null {
 export const WEEKLY_LEAGUE_ORGS = ["phalanx", "encre", "oranke"] as const;
 export type WeeklyLeagueOrg = (typeof WEEKLY_LEAGUE_ORGS)[number];
 
-export const isWeeklyLeagueOrg = (v: string | null | undefined): v is WeeklyLeagueOrg =>
-  !!v && (WEEKLY_LEAGUE_ORGS as readonly string[]).includes(v);
+export const isWeeklyLeagueOrg = (v: string | null | undefined): v is WeeklyLeagueOrg => !!v && (WEEKLY_LEAGUE_ORGS as readonly string[]).includes(v);
 
 export interface WeeklyLeagueResult {
   success: boolean;
@@ -85,8 +68,7 @@ export interface WeeklyLeagueResult {
 //   now 를 KST(UTC+9)로 옮긴 뒤 1분을 빼고 날짜만 취하면, 월요일 00:01 KST 에 그 주
 //   날짜로 넘어간다(admin getCurrentActivityDateIso / weekStartToBoundaryMs 와 동일 경계).
 //   주차 카드 "생성"(=대전 중 등장) 및 "종료/진행" 판정의 단일 기준.
-const resolveActivityDate = (): string =>
-  new Date(Date.now() + 9 * 3600 * 1000 - 60 * 1000).toISOString().split("T")[0];
+const resolveActivityDate = (): string => new Date(Date.now() + 9 * 3600 * 1000 - 60 * 1000).toISOString().split("T")[0];
 
 const DOW = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -106,12 +88,7 @@ const fmtDate = (d: string): string => {
 //      == true 인 카드에서만 호출되며, 전환 주차(17/9)는 isOfficialRestWeek 에서
 //      이미 제외되므로 여기로 들어오지 않는다.
 //   4) 그 외(여름·겨울 명절 등 holiday_name 누락) → '시즌 전환' 폴백.
-const resolveRestReason = (
-  holidayName: string | null,
-  isBreak: boolean,
-  seasonName: string,
-  weekNumber: number,
-): RestReason => {
+const resolveRestReason = (holidayName: string | null, isBreak: boolean, seasonName: string, weekNumber: number): RestReason => {
   const h = holidayName ?? "";
   // 1) holiday_name SoT 우선
   if (h.includes("중간")) return "중간고사";
@@ -131,9 +108,7 @@ const resolveRestReason = (
 };
 
 // PostgREST max-rows=1000 강제 → range 페이지네이션으로 전 행 수집(crews/cluster-4-ranking 동형).
-async function fetchAllRows<T>(
-  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
-): Promise<{ data: T[]; error: unknown }> {
+async function fetchAllRows<T>(build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<{ data: T[]; error: unknown }> {
   const PAGE = 1000;
   const all: T[] = [];
   for (let from = 0; ; from += PAGE) {
@@ -144,6 +119,71 @@ async function fetchAllRows<T>(
     if (data.length < PAGE) break;
   }
   return { data: all, error: null };
+}
+
+type GrowthMetricSnapshot = {
+  cumulativeSuccessWeeks: number;
+  weeklyGrowthRate: number;
+  infoRate: number;
+  experienceRate: number;
+  competencyRate: number;
+  careerRate: number;
+};
+
+type WeeklyReviewSnapshot = {
+  id: string;
+  content: string;
+  rating: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const rateValue = (rate: Cluster4RateDto | null | undefined): number => {
+  if (typeof rate?.rate === "number" && Number.isFinite(rate.rate)) return rate.rate;
+  const total = Number(rate?.total) || 0;
+  const count = Number(rate?.count) || 0;
+  return total > 0 ? Math.round((count / total) * 100) : 0;
+};
+
+const metricFromCard = (card: AdminCluster4WeeklyCardDto): GrowthMetricSnapshot => ({
+  cumulativeSuccessWeeks: Math.max(0, Number(card.accumulatedApprovedWeeks) || 0),
+  weeklyGrowthRate:
+    card.growthRate != null
+      ? rateValue(card.growthRate)
+      : typeof card.weeklyGrowthRate === "number"
+        ? card.weeklyGrowthRate
+        : 0,
+  infoRate: rateValue(card.infoRate),
+  experienceRate: rateValue(card.experienceRate),
+  competencyRate: rateValue(card.competencyRate),
+  careerRate: rateValue(card.careerRate),
+});
+
+async function loadGrowthMetricSnapshots(userIds: string[], mode: ScopeMode) {
+  const result = new Map<string, Map<string, GrowthMetricSnapshot>>();
+  const baseUrl = await resolveAdminBaseUrl();
+  if (!baseUrl || userIds.length === 0) return result;
+  const headers = new Headers({ "x-internal-api-key": process.env.INTERNAL_API_KEY ?? "" });
+  const concurrency = 12;
+  for (let offset = 0; offset < userIds.length; offset += concurrency) {
+    await Promise.all(
+      userIds.slice(offset, offset + concurrency).map(async (userId) => {
+        try {
+          const url = new URL("/api/cluster4/weekly-cards", baseUrl);
+          url.searchParams.set("userId", userId);
+          url.searchParams.set("mode", mode);
+          const response = await fetch(url, { headers, cache: "no-store", signal: AbortSignal.timeout(25_000) });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const body = (await response.json()) as { success?: boolean; data?: AdminCluster4WeeklyCardDto[] };
+          if (!body.success || !Array.isArray(body.data)) throw new Error("invalid weekly-cards response");
+          result.set(userId, new Map(body.data.map((card) => [card.weekId, metricFromCard(card)])));
+        } catch (error) {
+          console.warn("[weekly-league] weekly-card snapshot load failed", { userId, error: (error as Error)?.message ?? String(error) });
+        }
+      }),
+    );
+  }
+  return result;
 }
 
 type WeekMeta = {
@@ -206,9 +246,7 @@ export async function aggregateWeeklyLeague(
     const isTestMode = mode === "test";
     const testUserIds = new Set<string>();
     {
-      const { data: markers, error: markerErr } = await fetchAllRows<{ user_id: string }>((from, to) =>
-        db.from("test_user_markers").select("user_id").range(from, to),
-      );
+      const { data: markers, error: markerErr } = await fetchAllRows<{ user_id: string }>((from, to) => db.from("test_user_markers").select("user_id").range(from, to));
       if (markerErr) {
         console.warn("[weekly-league] test_user_markers 조회 실패 — 테스트 유저 미제외", (markerErr as Error)?.message ?? String(markerErr));
       } else {
@@ -221,28 +259,18 @@ export async function aggregateWeeklyLeague(
     //   OFF : 현행 활동행(user_week_statuses) 경로 그대로 — 숫자 불변(byte-identical).
     let memberRosterMode = false;
     {
-      const { data: gateRows } = await db
-        .from("weekly_league_roster_orgs")
-        .select("organization_slug")
-        .eq("organization_slug", org)
-        .eq("enabled", true);
+      const { data: gateRows } = await db.from("weekly_league_roster_orgs").select("organization_slug").eq("organization_slug", org).eq("enabled", true);
       memberRosterMode = !!(gateRows && gateRows.length > 0);
     }
     const operatorIds = new Set<string>();
     if (memberRosterMode) {
-      const { data: ops } = await fetchAllRows<{ user_id: string }>((from, to) =>
-        db.from("operator_markers").select("user_id").eq("organization_slug", org).range(from, to),
-      );
+      const { data: ops } = await fetchAllRows<{ user_id: string }>((from, to) => db.from("operator_markers").select("user_id").eq("organization_slug", org).range(from, to));
       for (const o of ops) operatorIds.add(o.user_id);
     }
 
     // 1) org 로스터 — user_profiles.organization_slug 기준(/api/crews 동일 SoT). 테스트 유저 제외.
     //    회원명부 모드: status·activity_started_at 추가 select 후 운영진/시즌전체휴식/graduated 제외.
-    const { data: orgProfilesRaw, error: profileErr } = await db
-      .from("user_profiles")
-      .select("user_id, display_name, current_team_name, current_part_name, status, activity_started_at")
-      .eq("organization_slug", org)
-      .in("status", ["active", "seasonal_rest", "weekly_rest", "graduated"]);
+    const { data: orgProfilesRaw, error: profileErr } = await db.from("user_profiles").select("user_id, display_name, current_team_name, current_part_name, status, activity_started_at").eq("organization_slug", org).in("status", ["active", "seasonal_rest", "weekly_rest", "graduated"]);
 
     if (profileErr) {
       return { success: false, org, cards: [], error: `org 로스터 조회 실패: ${profileErr.message}` };
@@ -252,7 +280,7 @@ export async function aggregateWeeklyLeague(
       if (isTestMode ? !testUserIds.has(p.user_id) : testUserIds.has(p.user_id)) return false;
       if (memberRosterMode) {
         if ((p as { status?: string }).status === "graduated") return false; // PMS 졸업 제외
-        if (operatorIds.has(p.user_id)) return false;                         // PMS 운영진 제외
+        if (operatorIds.has(p.user_id)) return false; // PMS 운영진 제외
         if ((p as { current_team_name?: string }).current_team_name === "시즌전체휴식") return false; // PMS Team 제외
       }
       return true;
@@ -261,17 +289,13 @@ export async function aggregateWeeklyLeague(
     if (orgUserIds.length === 0) {
       return { success: true, org, cards: [] };
     }
-    const profileMap = new Map(
-      orgProfiles.map((p) => [p.user_id, p] as const),
-    );
+    const profileMap = new Map(orgProfiles.map((p) => [p.user_id, p] as const));
 
     // 1-1) 개인휴식 기간(회원명부 모드 전용) — crew_personal_rest_periods (restdates 격리본).
     //   user_week_statuses 무관·무수정. 개인 카드/growth/resume/snapshot 무영향.
     const restPeriods: Array<{ user_id: string; start_date: string; end_date: string }> = [];
     if (memberRosterMode) {
-      const { data: rp } = await fetchAllRows<{ user_id: string; start_date: string; end_date: string }>((from, to) =>
-        db.from("crew_personal_rest_periods").select("user_id, start_date, end_date").eq("organization_slug", org).range(from, to),
-      );
+      const { data: rp } = await fetchAllRows<{ user_id: string; start_date: string; end_date: string }>((from, to) => db.from("crew_personal_rest_periods").select("user_id, start_date, end_date").eq("organization_slug", org).range(from, to));
       restPeriods.push(...rp);
     }
 
@@ -280,10 +304,7 @@ export async function aggregateWeeklyLeague(
     //   success/fail split 만 보정(fail = nonRest − growth_success). best-effort(테이블/조회 실패 시 미적용).
     const successOverrideByWeekStart = new Map<string, number>();
     if (memberRosterMode) {
-      const { data: ov, error: ovErr } = await db
-        .from("weekly_league_success_overrides")
-        .select("week_start_date, growth_success")
-        .eq("organization_slug", org);
+      const { data: ov, error: ovErr } = await db.from("weekly_league_success_overrides").select("week_start_date, growth_success").eq("organization_slug", org);
       if (ovErr) {
         console.warn("[weekly-league] success_overrides 조회 실패 — 미적용", ovErr.message);
       } else {
@@ -296,10 +317,7 @@ export async function aggregateWeeklyLeague(
     //   effectiveStart = member_start_date ?? activity_started_at. best-effort.
     const memberStartByUser = new Map<string, string>();
     if (memberRosterMode) {
-      const { data: msRows, error: msErr } = await db
-        .from("weekly_league_member_start")
-        .select("user_id, member_start_date")
-        .eq("organization_slug", org);
+      const { data: msRows, error: msErr } = await db.from("weekly_league_member_start").select("user_id, member_start_date").eq("organization_slug", org);
       if (msErr) console.warn("[weekly-league] member_start 조회 실패 — activity_started_at 사용", msErr.message);
       else for (const m of msRows || []) memberStartByUser.set(m.user_id, m.member_start_date);
     }
@@ -317,13 +335,10 @@ export async function aggregateWeeklyLeague(
     // result_published_at / result_reviewed_at 는 여기서 직접 읽지 않는다(Phase B):
     //   공용 resolveWeekResultStates 가 운영/QA overlay 를 일원화해 아래에서 weeks[] 에 주입한다.
     //   (reviewed_at 미마이그레이션 DB 폴백도 resolver 내부에서 처리.)
-    const WEEK_SELECT =
-      "id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, season_definitions!inner(season_label, season_type, year)";
+    const WEEK_SELECT = "id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, season_definitions!inner(season_label, season_type, year)";
     const buildWeekQuery = (sel: string) => {
       let q = db.from("weeks").select(sel).lte("start_date", today);
-      q = explicitSeasonKey
-        ? q.eq("season_key", explicitSeasonKey)
-        : q.gte("start_date", WEEKLY_LEAGUE_ERA_START_DATE);
+      q = explicitSeasonKey ? q.eq("season_key", explicitSeasonKey) : q.gte("start_date", WEEKLY_LEAGUE_ERA_START_DATE);
       return q.order("start_date", { ascending: false });
     };
     const { data: weekRows, error: weekErr } = await buildWeekQuery(WEEK_SELECT);
@@ -333,41 +348,40 @@ export async function aggregateWeeklyLeague(
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const weeks: WeekMeta[] = (weekRows || []).map((w: any) => {
-      const sd = w.season_definitions;
-      const sType: string = sd?.season_type || "";
-      const isBreak = sType.includes("break");
-      // 시즌 한글 단어(봄/여름/가을/겨울)는 season_type 에서만 도출한다.
-      // season_definitions.season_label 은 "2026년도 봄시즌" 같은 풀 문자열이라
-      // 그대로 쓰면 "2026년, 2026년도 봄시즌 시즌" 으로 이중 래핑 + 프론트 parseYearSeason
-      // 정규식 매칭 실패를 유발한다 — 사용 금지.
-      const displayName = isBreak
-        ? seasonLabel(sType.replace("_break", "").split("_")[1] || "")
-        : seasonLabel(sType);
-      return {
-        id: w.id,
-        weekNumber: w.week_number ?? 0,
-        startDate: w.start_date,
-        endDate: w.end_date,
-        // 프론트 parseYearSeason 정규식이 기대하는 "YYYY년, {시즌} 시즌, N주차" 포맷
-        // (cluster-4-ranking label 과 동일 — "년도" 포맷은 필터 파싱 실패하므로 사용 금지).
-        seasonName: `${sd?.year}년, ${displayName} 시즌, ${w.week_number}주차`,
-        seasonKey: w.season_key,
-        seasonYear: sd?.year || 0,
-        isBreak,
-        isOfficialRest: !!w.is_official_rest,
-        holidayName: w.holiday_name ?? null,
-        // 공표/검수 시각은 아래 resolveWeekResultStates overlay 로 주입(운영/QA 일원화).
-        resultPublishedAt: null,
-        resultReviewedAt: null,
-        // 휴식·활동 주차 공통 — 시즌 단어(displayName)+주차번호로 썸네일 경로 도출.
-        // 매칭 실패(전환/break/미상 주차)는 null → 클라이언트 placeholder 폴백.
-        imageUrl: getWeekImageUrl({ seasonName: displayName, weekNumber: w.week_number }),
-      };
-    })
-    // 전환 주차(봄·가을 17 / 여름·겨울 9)는 '대전'이 없는 시즌 사이 주차 → 목록 제외
-    //   (기존엔 미공표라 자연히 숨겨졌던 주차 — 공표/종료 게이트 제거 후 명시 제외로 동작 보존).
-    .filter((w) => !isTransitionWeek(w.seasonName, w.weekNumber));
+    const weeks: WeekMeta[] = (weekRows || [])
+      .map((w: any) => {
+        const sd = w.season_definitions;
+        const sType: string = sd?.season_type || "";
+        const isBreak = sType.includes("break");
+        // 시즌 한글 단어(봄/여름/가을/겨울)는 season_type 에서만 도출한다.
+        // season_definitions.season_label 은 "2026년도 봄시즌" 같은 풀 문자열이라
+        // 그대로 쓰면 "2026년, 2026년도 봄시즌 시즌" 으로 이중 래핑 + 프론트 parseYearSeason
+        // 정규식 매칭 실패를 유발한다 — 사용 금지.
+        const displayName = isBreak ? seasonLabel(sType.replace("_break", "").split("_")[1] || "") : seasonLabel(sType);
+        return {
+          id: w.id,
+          weekNumber: w.week_number ?? 0,
+          startDate: w.start_date,
+          endDate: w.end_date,
+          // 프론트 parseYearSeason 정규식이 기대하는 "YYYY년, {시즌} 시즌, N주차" 포맷
+          // (cluster-4-ranking label 과 동일 — "년도" 포맷은 필터 파싱 실패하므로 사용 금지).
+          seasonName: `${sd?.year}년, ${displayName} 시즌, ${w.week_number}주차`,
+          seasonKey: w.season_key,
+          seasonYear: sd?.year || 0,
+          isBreak,
+          isOfficialRest: !!w.is_official_rest,
+          holidayName: w.holiday_name ?? null,
+          // 공표/검수 시각은 아래 resolveWeekResultStates overlay 로 주입(운영/QA 일원화).
+          resultPublishedAt: null,
+          resultReviewedAt: null,
+          // 휴식·활동 주차 공통 — 시즌 단어(displayName)+주차번호로 썸네일 경로 도출.
+          // 매칭 실패(전환/break/미상 주차)는 null → 클라이언트 placeholder 폴백.
+          imageUrl: getWeekImageUrl({ seasonName: displayName, weekNumber: w.week_number }),
+        };
+      })
+      // 전환 주차(봄·가을 17 / 여름·겨울 9)는 '대전'이 없는 시즌 사이 주차 → 목록 제외
+      //   (기존엔 미공표라 자연히 숨겨졌던 주차 — 공표/종료 게이트 제거 후 명시 제외로 동작 보존).
+      .filter((w) => !isTransitionWeek(w.seasonName, w.weekNumber));
 
     if (weeks.length === 0) {
       return { success: true, org, cards: [] };
@@ -431,10 +445,7 @@ export async function aggregateWeeklyLeague(
     }
 
     // 5) 멤버십(팀/파트) — top3 라벨용. org 유저 한정.
-    const { data: membershipRows } = await db
-      .from("user_memberships")
-      .select("user_id, team_name, part_name, membership_level, membership_state, is_current")
-      .in("user_id", orgUserIds);
+    const { data: membershipRows } = await db.from("user_memberships").select("user_id, team_name, part_name, membership_level, membership_state, is_current").in("user_id", orgUserIds);
     const membershipByUser = new Map<string, Array<MembershipRow & { user_id: string }>>();
     (membershipRows || []).forEach((m) => {
       const arr = membershipByUser.get(m.user_id) || [];
@@ -445,16 +456,10 @@ export async function aggregateWeeklyLeague(
     // 5-1) Champion's Hall 확장 프로필(프로필사진/역할/학교/전공) — **격리·best-effort**.
     //   별도 쿼리 + try/catch 로 감싸 실패해도 top10 만 축소되고 카드 본체/기존 응답은 무영향.
     //   학교/전공은 user_educations(대표=sort_order 최소) 우선, 없으면 user_profiles 폴백.
-    const champProfile = new Map<
-      string,
-      { photo: string | null; role: string | null; school: string | null; major: string | null }
-    >();
+    const champProfile = new Map<string, { photo: string | null; role: string | null; school: string | null; major: string | null }>();
     // (a) user_profiles — 아바타/역할/학교/전공(폴백). 컬럼명: profile_photo_url(=/crews 동일).
     try {
-      const { data: cp } = await db
-        .from("user_profiles")
-        .select("user_id, profile_photo_url, role, school_name, department_name")
-        .in("user_id", orgUserIds);
+      const { data: cp } = await db.from("user_profiles").select("user_id, profile_photo_url, role, school_name, department_name").in("user_id", orgUserIds);
       for (const p of cp || []) {
         champProfile.set((p as { user_id: string }).user_id, {
           photo: (p as { profile_photo_url?: string | null }).profile_photo_url ?? null,
@@ -469,11 +474,7 @@ export async function aggregateWeeklyLeague(
     // (b) user_educations 우선(대표=sort_order 최소) — 학교/전공 canonical. profiles 폴백 유지.
     //     (a)와 독립 try/catch — 한쪽 실패가 다른 쪽/school·major 전체를 날리지 않도록.
     try {
-      const { data: edu } = await db
-        .from("user_educations")
-        .select("user_id, school_name, major_name_1, sort_order")
-        .in("user_id", orgUserIds)
-        .order("sort_order", { ascending: true });
+      const { data: edu } = await db.from("user_educations").select("user_id, school_name, major_name_1, sort_order").in("user_id", orgUserIds).order("sort_order", { ascending: true });
       const eduSeen = new Set<string>();
       for (const e of edu || []) {
         const uid = (e as { user_id: string }).user_id;
@@ -495,10 +496,7 @@ export async function aggregateWeeklyLeague(
     //   best-effort: 실패해도 카드 형태는 유지(폴백 gradeLevel=10 / grade='-'). org 로스터 한정(1행/유저).
     const gradeByUser = new Map<string, { level: number; label: string }>();
     try {
-      const { data: gs } = await db
-        .from("user_grade_stats")
-        .select("user_id, grade, grade_label")
-        .in("user_id", orgUserIds);
+      const { data: gs } = await db.from("user_grade_stats").select("user_id, grade, grade_label").in("user_id", orgUserIds);
       for (const g of gs || []) {
         const uid = (g as { user_id: string }).user_id;
         const lvlRaw = Number((g as { grade?: number | string | null }).grade);
@@ -519,10 +517,7 @@ export async function aggregateWeeklyLeague(
       arr.push({ user_id: r.user_id, status: r.status });
       statusByWeek.set(r.week_start_date, arr);
     }
-    const pointsByWeek = new Map<
-      string,
-      Array<{ user_id: string; points: number; advantages: number; penalty: number }>
-    >();
+    const pointsByWeek = new Map<string, Array<{ user_id: string; points: number; advantages: number; penalty: number }>>();
     for (const r of pointRows) {
       const arr = pointsByWeek.get(r.week_start_date) || [];
       arr.push({
@@ -539,16 +534,11 @@ export async function aggregateWeeklyLeague(
     //    confirmStar = org_week_thresholds.check_threshold (이미 weekssettings.confirmStar 백필값).
     //    uws.status / uwp.points / 개인 카드 / snapshot 무변경 — READ only 소비.
     const { data: pmsActRows } = await fetchAllRows<{
-      user_id: string; week_start_date: string; user_activity_submitted: boolean; user_activity_star: number | null;
-    }>((from, to) =>
-      db
-        .from("cluster4_weekly_pms_activity")
-        .select("user_id, week_start_date, user_activity_submitted, user_activity_star")
-        .in("user_id", orgUserIds)
-        .order("user_id", { ascending: true })
-        .order("week_start_date", { ascending: true })
-        .range(from, to),
-    );
+      user_id: string;
+      week_start_date: string;
+      user_activity_submitted: boolean;
+      user_activity_star: number | null;
+    }>((from, to) => db.from("cluster4_weekly_pms_activity").select("user_id, week_start_date, user_activity_submitted, user_activity_star").in("user_id", orgUserIds).order("user_id", { ascending: true }).order("week_start_date", { ascending: true }).range(from, to));
     const pmsActByUserWeek = new Map<string, { submitted: boolean; star: number | null }>();
     const weeksWithPmsData = new Set<string>();
     for (const r of pmsActRows || []) {
@@ -574,7 +564,10 @@ export async function aggregateWeeklyLeague(
       .eq("organization_slug", org)
       // 누적 리스트 — 표시 주차(week_id) 기준으로 예외 조회(시즌 무관). 봄 정합 예외는
       // 봄 week_id 에만 매칭되어 그대로 적용되고, 다른 시즌엔 예외 행이 없으면 무영향.
-      .in("week_id", weeks.map((w) => w.id));
+      .in(
+        "week_id",
+        weeks.map((w) => w.id),
+      );
     const confirmStarOverrideByWeekId = new Map<string, number>();
     const cohortExcludeKey = new Set<string>(); // `${user_id}|${week_id}`
     for (const e of exRows || []) {
@@ -599,8 +592,7 @@ export async function aggregateWeeklyLeague(
       return { team, part };
     };
     // 심화/정규 분류용 — 대표 멤버십의 membership_level.
-    const levelOf = (userId: string): string | null =>
-      pickPrimaryMembership(membershipByUser.get(userId) || [])?.membership_level ?? null;
+    const levelOf = (userId: string): string | null => pickPrimaryMembership(membershipByUser.get(userId) || [])?.membership_level ?? null;
 
     // ── Team Battle 컨텍스트(팀 카탈로그/파트/리더/시즌휴식/신규 SoT) — 주차 전체 batch 로드.
     //   best-effort: 실패해도 teamCtx=null 로 두고 teams[] 없이 기존 카드만 산출(무영향).
@@ -615,13 +607,53 @@ export async function aggregateWeeklyLeague(
       console.warn("[weekly-league] Team Battle 컨텍스트 로드 실패 — teams 생략", (err as Error)?.message ?? String(err));
     }
 
+    // 고객 주차 카드와 동일한 admin snapshot DTO를 Rank Showcase에서도 사용한다.
+    const showcaseUserIds = Array.from(new Set(pointRows.map((row) => row.user_id)));
+    const growthMetricsByUser = await loadGrowthMetricSnapshots(showcaseUserIds, mode);
+    const weeklyReviewByUserWeek = new Map<string, WeeklyReviewSnapshot>();
+    if (showcaseUserIds.length > 0 && weeks.length > 0) {
+      const { data: reviewRows, error: reviewError } = await fetchAllRows<{
+        id: string;
+        user_id: string;
+        week_card_id: string;
+        content: string;
+        rating: number;
+        created_at: string;
+        updated_at: string;
+      }>((from, to) =>
+        db
+          .from("weekly_reviews")
+          .select("id, user_id, week_card_id, content, rating, created_at, updated_at")
+          .in("user_id", showcaseUserIds)
+          .in("week_card_id", weeks.map((week) => week.id))
+          .order("created_at", { ascending: false })
+          .range(from, to),
+      );
+      if (reviewError) {
+        console.warn("[weekly-league] weekly review load failed", reviewError);
+      } else {
+        for (const review of reviewRows) {
+          const key = `${review.user_id}|${review.week_card_id}`;
+          if (weeklyReviewByUserWeek.has(key)) continue;
+          weeklyReviewByUserWeek.set(key, {
+            id: review.id,
+            content: review.content,
+            rating: Number(review.rating) || 0,
+            createdAt: review.created_at,
+            updatedAt: review.updated_at,
+          });
+        }
+      }
+    }
+    const previousWeekIdByWeekId = new Map<string, string | null>();
+    const chronologicalWeeks = [...weeks].sort((a, b) => a.startDate.localeCompare(b.startDate));
+    chronologicalWeeks.forEach((week, index) => {
+      previousWeekIdByWeekId.set(week.id, index > 0 ? chronologicalWeeks[index - 1].id : null);
+    });
+
     const cards: WeeklyCardData[] = weeks.map((week) => {
       // 주차 레벨 공식 휴식 — 전환 주차(봄·가을 17 / 여름·겨울 9)는 제외(공용 헬퍼).
-      const weekOfficialRest = isOfficialRestWeek(
-        week.seasonName,
-        week.weekNumber,
-        week.isOfficialRest || week.isBreak,
-      );
+      const weekOfficialRest = isOfficialRestWeek(week.seasonName, week.weekNumber, week.isOfficialRest || week.isBreak);
 
       // 주차 생명주기 판정(시간 기반 자동전환 미사용 — 공표/검수는 관리자 신호):
       //   · 진행 중(미종료) = today(월 00:01 KST) <= end_date            → '대전 중'
@@ -672,16 +704,23 @@ export async function aggregateWeeklyLeague(
         //   모집단 = activity_started_at <= 주차종료 인 로스터(운영진/시즌전체휴식/graduated/test 이미 제외).
         //   휴식  = crew_personal_rest_periods 가 주차[start,end] 와 overlap. (uws.status 미사용)
         //   성공  = uws.status='success' (PMS union 의 uws 절 — 별점/잔차는 별도 명단 이슈).
-        const restUserIds = new Set(
-          restPeriods.filter((r) => r.start_date <= week.endDate && r.end_date >= week.startDate).map((r) => r.user_id),
-        );
+        const restUserIds = new Set(restPeriods.filter((r) => r.start_date <= week.endDate && r.end_date >= week.startDate).map((r) => r.user_id));
         for (const p of orgProfiles) {
           const started = memberStartByUser.get(p.user_id) ?? (p as { activity_started_at?: string | null }).activity_started_at ?? null;
           if (!started || started.slice(0, 10) > week.endDate) continue; // 미시작(StartDate>주차종료) 제외
-          if (restUserIds.has(p.user_id)) { personalRest++; verdicts.set(p.user_id, "rest"); continue; }
+          if (restUserIds.has(p.user_id)) {
+            personalRest++;
+            verdicts.set(p.user_id, "rest");
+            continue;
+          }
           const st = statusByUserWeek.get(`${p.user_id}|${week.startDate}`) ?? null;
-          if (st === "success") { growthSuccess++; verdicts.set(p.user_id, "success"); }
-          else { growthFail++; verdicts.set(p.user_id, "fail"); } // uws fail/기타/행없음 → 실패
+          if (st === "success") {
+            growthSuccess++;
+            verdicts.set(p.user_id, "success");
+          } else {
+            growthFail++;
+            verdicts.set(p.user_id, "fail");
+          } // uws fail/기타/행없음 → 실패
         }
         // 주차별 성공수 집계 보정 — PMS 실측 override (total/rest 불변, success/fail split 만).
         const ovSuccess = successOverrideByWeekStart.get(week.startDate);
@@ -692,37 +731,53 @@ export async function aggregateWeeklyLeague(
           overrideSuccess = growthSuccess; // Team Battle 재배분 목표(팀 success 합 == override).
         }
       } else {
-      // effectiveConfirmStar = 예외 override 우선, 없으면 org_week_thresholds.check_threshold.
-      const effectiveConfirmStar = confirmStarOverrideByWeekId.get(week.id) ?? confirmStarByWeekId.get(week.id);
-      const usePmsFormula = weeksWithPmsData.has(week.startDate) && effectiveConfirmStar != null;
-      if (usePmsFormula) {
-        const ecs = effectiveConfirmStar as number;
-        // PMS 활동인정 공식 (데이터-게이트 org×week). 정정: uws.success 무조건절 제거.
-        //   success = user_activity_submitted AND user_activity_star>=4
-        //             AND uwp.points>=effectiveConfirmStar AND NOT isRest
-        //   cohort  = ¬예외제외 AND (uws행 존재 OR uwp.points>=effectiveConfirmStar OR isRest)
-        for (const uid of orgUserIds) {
-          if (cohortExcludeKey.has(`${uid}|${week.id}`)) continue; // 코호트 예외(cohort_exclude)
-          const st = statusByUserWeek.get(`${uid}|${week.startDate}`) ?? null;
-          const pts = pointsByUserWeek.get(`${uid}|${week.startDate}`) ?? null;
-          const isRest = st === "personal_rest" || st === "official_rest";
-          const inCohort = st !== null || (pts ?? 0) >= ecs || isRest;
-          if (!inCohort) continue;
-          if (isRest) { personalRest++; verdicts.set(uid, "rest"); continue; }
-          const pa = pmsActByUserWeek.get(`${uid}|${week.startDate}`);
-          const isSuccess = !!pa?.submitted && (pa.star ?? -1) >= 4 && (pts ?? -1) >= ecs;
-          if (isSuccess) { growthSuccess++; verdicts.set(uid, "success"); }
-          else { growthFail++; verdicts.set(uid, "fail"); }
+        // effectiveConfirmStar = 예외 override 우선, 없으면 org_week_thresholds.check_threshold.
+        const effectiveConfirmStar = confirmStarOverrideByWeekId.get(week.id) ?? confirmStarByWeekId.get(week.id);
+        const usePmsFormula = weeksWithPmsData.has(week.startDate) && effectiveConfirmStar != null;
+        if (usePmsFormula) {
+          const ecs = effectiveConfirmStar as number;
+          // PMS 활동인정 공식 (데이터-게이트 org×week). 정정: uws.success 무조건절 제거.
+          //   success = user_activity_submitted AND user_activity_star>=4
+          //             AND uwp.points>=effectiveConfirmStar AND NOT isRest
+          //   cohort  = ¬예외제외 AND (uws행 존재 OR uwp.points>=effectiveConfirmStar OR isRest)
+          for (const uid of orgUserIds) {
+            if (cohortExcludeKey.has(`${uid}|${week.id}`)) continue; // 코호트 예외(cohort_exclude)
+            const st = statusByUserWeek.get(`${uid}|${week.startDate}`) ?? null;
+            const pts = pointsByUserWeek.get(`${uid}|${week.startDate}`) ?? null;
+            const isRest = st === "personal_rest" || st === "official_rest";
+            const inCohort = st !== null || (pts ?? 0) >= ecs || isRest;
+            if (!inCohort) continue;
+            if (isRest) {
+              personalRest++;
+              verdicts.set(uid, "rest");
+              continue;
+            }
+            const pa = pmsActByUserWeek.get(`${uid}|${week.startDate}`);
+            const isSuccess = !!pa?.submitted && (pa.star ?? -1) >= 4 && (pts ?? -1) >= ecs;
+            if (isSuccess) {
+              growthSuccess++;
+              verdicts.set(uid, "success");
+            } else {
+              growthFail++;
+              verdicts.set(uid, "fail");
+            }
+          }
+        } else {
+          // ── 기존 동작 — user_week_statuses 스냅샷 버킷팅 (PMS 데이터 없는 주차/org) ──
+          const rows = statusByWeek.get(week.startDate) || [];
+          for (const r of rows) {
+            if (r.status === "success") {
+              growthSuccess++;
+              verdicts.set(r.user_id, "success");
+            } else if (r.status === "personal_rest" || r.status === "official_rest") {
+              personalRest++;
+              verdicts.set(r.user_id, "rest");
+            } else {
+              growthFail++;
+              verdicts.set(r.user_id, "fail");
+            } // 'fail' 및 기타 → 실패
+          }
         }
-      } else {
-        // ── 기존 동작 — user_week_statuses 스냅샷 버킷팅 (PMS 데이터 없는 주차/org) ──
-        const rows = statusByWeek.get(week.startDate) || [];
-        for (const r of rows) {
-          if (r.status === "success") { growthSuccess++; verdicts.set(r.user_id, "success"); }
-          else if (r.status === "personal_rest" || r.status === "official_rest") { personalRest++; verdicts.set(r.user_id, "rest"); }
-          else { growthFail++; verdicts.set(r.user_id, "fail"); } // 'fail' 및 기타 → 실패
-        }
-      }
       } // end memberRosterMode 분기
       const growthChallenge = growthSuccess + growthFail; // 휴식 제외, 도전 인원
       const totalCrews = growthChallenge + personalRest;
@@ -750,19 +805,11 @@ export async function aggregateWeeklyLeague(
       }
 
       // 진행 중=대전 중 · 종료+미공표=대전 집계 · 공표+미검수=공표 중 · 공표+검수=검수 완료.
-      const leagueRecordStatus: WeeklyCardData["leagueRecordStatus"] = !isEnded
-        ? "대전 중"
-        : isReviewed
-          ? "검수 완료"
-          : isPublished
-            ? "공표 중"
-            : "대전 집계";
+      const leagueRecordStatus: WeeklyCardData["leagueRecordStatus"] = !isEnded ? "대전 중" : isReviewed ? "검수 완료" : isPublished ? "공표 중" : "대전 집계";
 
       // 별점(points=포인트 A) DESC 정렬본 — top3/top10 공용. 동점은 user_id tie-break.
       //   (전체 랭킹 규칙의 상위 키 = 포인트 A. 하위 키(B/C·강화·주차)는 별도 데이터라 미적용.)
-      const rankedByPoints = (pointsByWeek.get(week.startDate) || [])
-        .filter((p) => p.points > 0)
-        .sort((a, b) => b.points - a.points || a.user_id.localeCompare(b.user_id));
+      const rankedByPoints = (pointsByWeek.get(week.startDate) || []).filter((p) => p.points > 0).sort((a, b) => b.points - a.points || a.user_id.localeCompare(b.user_id));
 
       const top3: WeeklyCardCrew[] = rankedByPoints.slice(0, 3).map((p, i) => {
         const { team, part } = teamPartFor(p.user_id);
@@ -778,14 +825,10 @@ export async function aggregateWeeklyLeague(
       //   해당 주차 최대 포인트 대비 상대치(points/maxPoints*100). 진짜 성장률 지표가 생기면 여기만 교체.
       const weekPts = pointsByWeek.get(week.startDate) || [];
       const maxWeekPoints = weekPts.reduce((m, x) => Math.max(m, x.points), 0);
-      const growthRateOf = (p: { points: number }): number =>
-        maxWeekPoints > 0 ? Math.round((p.points / maxWeekPoints) * 100) : 0;
+      const growthRateOf = (p: { points: number }): number => (maxWeekPoints > 0 ? Math.round((p.points / maxWeekPoints) * 100) : 0);
 
       // Champion's Hall 크루 매퍼 — 포인트 엔트리 → 표시 카드(포인트 A/B + 주차 성장률 동시 보유).
-      const championFor = (
-        p: { user_id: string; points: number; advantages: number },
-        rank: number,
-      ): ChampionCrew => {
+      const championFor = (p: { user_id: string; points: number; advantages: number }, rank: number): ChampionCrew => {
         const { team, part } = teamPartFor(p.user_id);
         const primary = pickPrimaryMembership(membershipByUser.get(p.user_id) || []);
         const cp = champProfile.get(p.user_id);
@@ -817,13 +860,7 @@ export async function aggregateWeeklyLeague(
       //    (스펙의 4·5순위 '강화 성공 라인수'/'활동 가능 주차'는 본 집계 데이터에 없어 미적용 — user_id 로 결정성 보강.)
       const top10Focus: ChampionCrew[] = weekPts
         .filter((p) => p.advantages > 0)
-        .sort(
-          (a, b) =>
-            b.advantages - a.advantages ||
-            b.points - a.points ||
-            a.penalty - b.penalty ||
-            a.user_id.localeCompare(b.user_id),
-        )
+        .sort((a, b) => b.advantages - a.advantages || b.points - a.points || a.penalty - b.penalty || a.user_id.localeCompare(b.user_id))
         .slice(0, 10)
         .map((p, i) => championFor(p, i + 1));
 
@@ -831,13 +868,7 @@ export async function aggregateWeeklyLeague(
       //    정렬: 성장률 desc → (강화성공 desc·활동주차 asc = 데이터없음, 미적용) → A desc → C(penalty) desc → user_id.
       const top10Growth: ChampionCrew[] = weekPts
         .filter((p) => growthRateOf(p) > 0)
-        .sort(
-          (a, b) =>
-            growthRateOf(b) - growthRateOf(a) ||
-            b.points - a.points ||
-            b.penalty - a.penalty ||
-            a.user_id.localeCompare(b.user_id),
-        )
+        .sort((a, b) => growthRateOf(b) - growthRateOf(a) || b.points - a.points || b.penalty - a.penalty || a.user_id.localeCompare(b.user_id))
         .slice(0, 10)
         .map((p, i) => championFor(p, i + 1));
 
@@ -885,8 +916,7 @@ export async function aggregateWeeklyLeague(
         .map((p) => {
           const c = championFor(p, 0);
           const v = verdicts.get(p.user_id) ?? null;
-          const weeklyResult: "success" | "fail" | null =
-            v === "success" ? "success" : v === "fail" ? "fail" : null;
+          const weeklyResult: "success" | "fail" | null = v === "success" ? "success" : v === "fail" ? "fail" : null;
           const g = gradeByUser.get(p.user_id);
           return {
             p,
@@ -899,43 +929,59 @@ export async function aggregateWeeklyLeague(
         });
       // 전체 등수 확정 정렬 — ① 품계(레벨 오름차=정승 먼저) ② 주차 성장률 desc ③ 이름 가나다
       //   ④ user_id(안정 tie-break). WeeklyDetailContent 기본 정렬과 동일 키 → rank 번호와 표시 순서 일치.
-      crewBase.sort(
-        (a, b) =>
-          a.gradeLevel - b.gradeLevel ||
-          b.c.growthRate - a.c.growthRate ||
-          a.c.name.localeCompare(b.c.name, "ko") ||
-          a.p.user_id.localeCompare(b.p.user_id),
-      );
+      crewBase.sort((a, b) => a.gradeLevel - b.gradeLevel || b.c.growthRate - a.c.growthRate || a.c.name.localeCompare(b.c.name, "ko") || a.p.user_id.localeCompare(b.p.user_id));
       const crewTotal = crewBase.length;
       const crewRankShowcase: CrewRankShowcase[] = crewBase.map((x, i) => {
+        const weeklyReview = weeklyReviewByUserWeek.get(`${x.p.user_id}|${week.id}`) ?? null;
+        const currentMetric = growthMetricsByUser.get(x.p.user_id)?.get(week.id) ?? null;
+        const previousWeekId = previousWeekIdByWeekId.get(week.id) ?? null;
+        const previousMetric = previousWeekId ? (growthMetricsByUser.get(x.p.user_id)?.get(previousWeekId) ?? null) : null;
+        const current: GrowthMetricSnapshot = currentMetric ?? {
+          cumulativeSuccessWeeks: 0,
+          weeklyGrowthRate: 0,
+          infoRate: 0,
+          experienceRate: 0,
+          competencyRate: 0,
+          careerRate: 0,
+        };
+        const delta = (key: keyof Omit<GrowthMetricSnapshot, "cumulativeSuccessWeeks">) => (previousMetric ? current[key] - previousMetric[key] : 0);
         return {
-        userId: x.p.user_id,
-        weekId: week.id,
-        rank: i + 1,
-        totalRankCount: crewTotal,
-        gradeLevel: x.gradeLevel, // user_grade_stats.grade(숫자 레벨) — 정렬 키와 동일 소스
-        grade: x.gradeLabel,      // user_grade_stats.grade_label(품계명)
-        profileImage: x.c.profileImage ?? null,
-        name: x.c.name,
-        className: x.c.className,
-        school: x.c.school,
-        major: x.c.major,
-        teamName: x.c.team,
-        partName: x.c.part,
-        pointA: x.p.points,
-        pointB: x.p.advantages,
-        pointC: x.p.penalty,
-        cumulativeSuccessWeeks: 0, // TODO(backend)
-        weeklySuccessDelta: x.weeklyResult === "success" ? 1 : 0,
-        weeklyProgress: x.weeklyProgress,
-        weeklyResult: x.weeklyResult,
-        weeklyGrowthRate: x.c.growthRate,
-        weeklyGrowthRateDelta: 0, // TODO(backend): 전주 대비
-        infoRate: 0, infoRateDelta: 0,
-        experienceRate: 0, experienceRateDelta: 0,
-        competencyRate: 0, competencyRateDelta: 0,
-        careerRate: 0, careerRateDelta: 0,
-        weeklyReview: null, // TODO(backend): cluster-4-card weekly review
+          userId: x.p.user_id,
+          weekId: week.id,
+          rank: i + 1,
+          totalRankCount: crewTotal,
+          gradeLevel: x.gradeLevel, // user_grade_stats.grade(숫자 레벨) — 정렬 키와 동일 소스
+          grade: x.gradeLabel, // user_grade_stats.grade_label(품계명)
+          profileImage: x.c.profileImage ?? null,
+          name: x.c.name,
+          className: x.c.className,
+          school: x.c.school,
+          major: x.c.major,
+          teamName: x.c.team,
+          partName: x.c.part,
+          pointA: x.p.points,
+          pointB: x.p.advantages,
+          pointC: x.p.penalty,
+          cumulativeSuccessWeeks: current.cumulativeSuccessWeeks,
+          weeklySuccessDelta: Math.min(1, Math.max(0, current.cumulativeSuccessWeeks - (previousMetric?.cumulativeSuccessWeeks ?? current.cumulativeSuccessWeeks))) as 0 | 1,
+          weeklyProgress: x.weeklyProgress,
+          weeklyResult: x.weeklyResult,
+          weeklyGrowthRate: current.weeklyGrowthRate,
+          weeklyGrowthRateDelta: delta("weeklyGrowthRate"),
+          infoRate: current.infoRate,
+          infoRateDelta: delta("infoRate"),
+          experienceRate: current.experienceRate,
+          experienceRateDelta: delta("experienceRate"),
+          competencyRate: current.competencyRate,
+          competencyRateDelta: delta("competencyRate"),
+          careerRate: current.careerRate,
+          careerRateDelta: delta("careerRate"),
+          weeklyReview: weeklyReview?.content ?? null,
+          weeklyReviewId: weeklyReview?.id ?? null,
+          hasWeeklyReview: weeklyReview != null,
+          weeklyReviewRating: weeklyReview?.rating ?? null,
+          weeklyReviewCreatedAt: weeklyReview?.createdAt ?? null,
+          weeklyReviewUpdatedAt: weeklyReview?.updatedAt ?? null,
         };
       });
 

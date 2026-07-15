@@ -1114,7 +1114,8 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
                   : c.weeklyResult === "success"
                     ? { cls: "success", label: "성장 성공", icon: WRS_RESULT_SUCCESS_ICON }
                     : { cls: "fail", label: "성장 실패", icon: WRS_RESULT_FAIL_ICON };
-              const reviewText = c.weeklyReview && c.weeklyReview.trim() ? c.weeklyReview.trim() : "";
+              const reviewText = typeof c.weeklyReview === "string" ? c.weeklyReview.trim() : "";
+              const hasReview = c.hasWeeklyReview ?? reviewText.length > 0;
               return (
                 <article key={c.userId} className="wd-crew" data-tier={tier}>
                   {/* 상단 좌측 — 상세 · 등수 · 프로필 · 학교/전공/팀/파트 (한 행) */}
@@ -1224,14 +1225,14 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
                         type="button"
                         className="wd-crew__review-view"
                         aria-label={`${c.name} 크루 위클리 리뷰 전체 보기`}
-                        disabled={!reviewText}
-                        onClick={() => reviewText && setReviewModal({ name: c.name, body: reviewText })}
+                        disabled={!hasReview}
+                        onClick={() => hasReview && setReviewModal({ name: c.name, body: reviewText })}
                       >
                         <i className="ti ti-eye" aria-hidden="true" />
                       </button>
                     </div>
-                    <p className={`wd-crew__review-body${reviewText ? "" : " is-empty"}`}>
-                      {reviewText || "작성된 위클리 리뷰가 없습니다."}
+                    <p className={`wd-crew__review-body${hasReview ? "" : " is-empty"}`}>
+                      {hasReview ? reviewText : "작성된 위클리 리뷰가 없습니다."}
                     </p>
                   </div>
                 </article>
