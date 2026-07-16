@@ -175,120 +175,6 @@ async function enrichCardHeaders(rawBody: string, userId: string | null): Promis
   }
 }
 
-// 관리자 per-line "2차 기입" 수동 override(force-open)를 canEdit 에 반영한다.
-// ─────────────────────────────────────────────────────────────────────
-// SoT = cluster4_line_second_entry_overrides (admin 앱이 write, allowed=true). 이 테이블은
-// activity-details POST/DELETE 저장 게이트가 이미 "저장 인가"에 반영한다(hasLineSecondEntryOverride).
-// 그런데 upstream 이 내려주는 canEdit(수정 버튼 활성화 SoT)은 라인 submission window 만 보므로,
-// 자동 기간이 닫힌 뒤 admin 이 override 로 열어준 라인은 "저장은 되는데 버튼은 disabled" 인
-// 미스매치가 된다(이번 버그). 저장 게이트와 동일 규칙을 read(DTO)에도 미러링해 canEdit 을 승격한다.
-//
-// 규칙(저장 게이트와 동일): 소유(target_mode=user, target_user_id=userId) · 활성(cluster4_lines.is_active)
-//   라인이며 overrides(user_id, week_id, line_id).allowed=true 인 경우에만 canEdit=true 로 승격.
-// 매칭: DTO 라인엔 raw line_id 가 없으므로 lineTargetId → cluster4_line_targets.line_id 로 해석한다
-//   (저장 게이트와 동일 조인). 이미 canEdit=true 인 라인/override 없는 라인/타인 라인은 무변경.
-// 비파괴: lineRating/헤더/클램프 보강과 동일 패턴 — 어떤 단계든 실패/예외 시 원본 그대로 반환.
-async function enrichSecondEntryOverrides(rawBody: string, userId: string | null): Promise<string> {
-  if (!userId) return rawBody;
-  let json: unknown;
-  try {
-    json = JSON.parse(rawBody);
-  } catch {
-    return rawBody; // 비 JSON 응답(에러 등) → 그대로
-  }
-  const root = json as {
-    success?: boolean;
-    data?: Array<{ weekId?: string | null; lines?: Cluster4WeeklyLineDto[] }>;
-  };
-  const cards = Array.isArray(root?.data) ? root.data : null;
-  if (!cards) return rawBody;
-
-  // (lineTargetId, weekId) 수집 — 이미 canEdit=true 인 라인은 override 불필요라 스킵.
-  const refs: Array<{ line: Cluster4WeeklyLineDto; lineTargetId: string; weekId: string }> = [];
-  const lineTargetIds = new Set<string>();
-  for (const card of cards) {
-    const lines = Array.isArray(card?.lines) ? card.lines : [];
-    for (const line of lines) {
-      if (line?.canEdit === true) continue; // 이미 열림 → override 조회 불필요
-      const lineTargetId = line?.lineTargetId ?? null;
-      const weekId = (line?.weekId ?? card?.weekId) ?? null;
-      if (!lineTargetId || !weekId) continue;
-      refs.push({ line, lineTargetId, weekId });
-      lineTargetIds.add(lineTargetId);
-    }
-  }
-  if (refs.length === 0) return rawBody;
-
-  try {
-    const supabase = createAdminClient();
-    // lineTargetId → line_id + 소유(활성 라인) 매핑 — 저장 게이트와 동일한 소유/활성 조건.
-    const { data: targets, error: tErr } = await supabase
-      .from("cluster4_line_targets")
-      .select("id, line_id, target_mode, target_user_id, cluster4_lines!inner(is_active)")
-      .in("id", Array.from(lineTargetIds));
-    if (tErr || !targets) {
-      if (tErr) console.warn("[weekly-cards proxy] second-entry override target 조회 실패 — 원본 반환", tErr.message);
-      return rawBody;
-    }
-    const lineIdByTarget = new Map<string, string>();
-    const lineIds = new Set<string>();
-    for (const t of targets as unknown as Array<{
-      id: string;
-      line_id: string | null;
-      target_mode: "user" | "rule";
-      target_user_id: string | null;
-      cluster4_lines: { is_active: boolean } | null;
-    }>) {
-      const ownsActiveLine =
-        t.cluster4_lines?.is_active === true &&
-        t.target_mode === "user" &&
-        t.target_user_id === userId &&
-        !!t.line_id;
-      if (ownsActiveLine && t.line_id) {
-        lineIdByTarget.set(t.id, t.line_id);
-        lineIds.add(t.line_id);
-      }
-    }
-    if (lineIds.size === 0) return rawBody;
-
-    const { data: ovs, error: oErr } = await supabase
-      .from("cluster4_line_second_entry_overrides")
-      .select("week_id, line_id, allowed")
-      .eq("user_id", userId)
-      .in("line_id", Array.from(lineIds));
-    if (oErr || !ovs) {
-      if (oErr) console.warn("[weekly-cards proxy] second-entry override 조회 실패 — 원본 반환", oErr.message);
-      return rawBody;
-    }
-    const allowedKeys = new Set<string>();
-    for (const o of ovs as Array<{ week_id: string; line_id: string; allowed: boolean }>) {
-      if (o.allowed === true) allowedKeys.add(`${o.week_id}|${o.line_id}`);
-    }
-    if (allowedKeys.size === 0) return rawBody;
-
-    let promoted = 0;
-    for (const ref of refs) {
-      const lineId = lineIdByTarget.get(ref.lineTargetId);
-      if (!lineId) continue;
-      if (allowedKeys.has(`${ref.weekId}|${lineId}`)) {
-        ref.line.canEdit = true;
-        if (!ref.line.editReason) ref.line.editReason = "second_entry_override";
-        promoted++;
-      }
-    }
-    if (promoted === 0) return rawBody;
-    console.log("[weekly-cards proxy] 2차 기입 override canEdit 승격", {
-      promoted,
-      candidates: refs.length,
-      overriddenLines: allowedKeys.size,
-    });
-    return JSON.stringify(root);
-  } catch (e) {
-    console.warn("[weekly-cards proxy] second-entry override enrich 예외 — 원본 반환", (e as Error)?.message);
-    return rawBody;
-  }
-}
-
 // 운영진 output image/link 정책 클램프 — 각 line 의 admin outputImages/outputLinks 를 최대 1개로 제한한다.
 // (정책 2026-06-10: 운영진 output 정확히 1개.) 비파괴: clampAdminOutputs 가 새 객체를 반환하며,
 // snapshot 원본은 건드리지 않는다(전달 단계 클램프만). lineRating/헤더 보강과 동일하게 실패 시 원본 반환.
@@ -398,17 +284,12 @@ export async function GET(request: NextRequest) {
       elapsedMs,
     });
 
-    // 정상 JSON 응답에 한해 (1) experience line lineRating, (2) 카드 헤더 team/part/membership,
-    // (3) 관리자 2차 기입 override 를 canEdit 에 반영(저장 게이트와 parity)한다 (실패 시 각 단계에서 원본 반환).
+    // 정상 JSON 응답에 한해 (1) experience line lineRating, (2) 카드 헤더 team/part/membership
+    // 을 비파괴 보강한다 (실패 시 각 단계에서 원본 반환).
     const userId = sourceUrl.searchParams.get("userId");
     const enrichedBody =
       upstream.ok && contentType.includes("application/json")
-        ? clampAdminOutputsBody(
-            await enrichSecondEntryOverrides(
-              await enrichCardHeaders(await enrichLineRatings(body, userId), userId),
-              userId,
-            ),
-          )
+        ? clampAdminOutputsBody(await enrichCardHeaders(await enrichLineRatings(body, userId), userId))
         : body;
 
     return new NextResponse(enrichedBody, {
