@@ -909,8 +909,16 @@ export async function aggregateWeeklyLeague(
       // ── [5] Weekly Rank Showcase — 크루 개별 활동 결과(best-effort) ──
       //   points/advantages 보유 크루 대상. championFor 재사용(프로필/포인트/팀·파트/성장률프록시),
       //   결과는 per-user verdict(success/fail/rest)로 매핑.
-      //   ⚠️ 품계(user_grade_stats)·강화율 5종+전주 델타·누적 성공주차·위클리 리뷰는 본 집계에 미로드다.
-      //      백엔드 DTO 확장 필요 → 여기선 안전한 placeholder(기본품계/0/null)로 형태만 완결한다.
+      //   품계(user_grade_stats)·강화율 5종+전주 델타·누적 성공주차·위클리 리뷰는 스냅샷(growthMetricsByUser)에서 주입.
+      const previousWeekId = previousWeekIdByWeekId.get(week.id) ?? null;
+      const emptyMetric: GrowthMetricSnapshot = {
+        cumulativeSuccessWeeks: 0,
+        weeklyGrowthRate: 0,
+        infoRate: 0,
+        experienceRate: 0,
+        competencyRate: 0,
+        careerRate: 0,
+      };
       const crewBase = (weekPts as Array<{ user_id: string; points: number; advantages: number; penalty: number }>)
         .filter((p) => p.points > 0 || p.advantages > 0)
         .map((p) => {
@@ -918,6 +926,9 @@ export async function aggregateWeeklyLeague(
           const v = verdicts.get(p.user_id) ?? null;
           const weeklyResult: "success" | "fail" | null = v === "success" ? "success" : v === "fail" ? "fail" : null;
           const g = gradeByUser.get(p.user_id);
+          // 주차 성장률/강화율 스냅샷(관리자 weekly-cards) — 정렬 키(주차 성장률)와 표시값을 동일 소스로 통일.
+          const current = growthMetricsByUser.get(p.user_id)?.get(week.id) ?? emptyMetric;
+          const previousMetric = previousWeekId ? (growthMetricsByUser.get(p.user_id)?.get(previousWeekId) ?? null) : null;
           return {
             p,
             c,
@@ -925,30 +936,46 @@ export async function aggregateWeeklyLeague(
             gradeLabel: g?.label ?? "-",
             weeklyProgress: (v === "rest" ? "rest" : "challenge") as "challenge" | "rest",
             weeklyResult,
+            current,
+            previousMetric,
           };
         });
-      // 전체 등수 확정 정렬 — ① 품계(레벨 오름차=정승 먼저) ② 주차 성장률 desc ③ 이름 가나다
-      //   ④ user_id(안정 tie-break). WeeklyDetailContent 기본 정렬과 동일 키 → rank 번호와 표시 순서 일치.
-      crewBase.sort((a, b) => a.gradeLevel - b.gradeLevel || b.c.growthRate - a.c.growthRate || a.c.name.localeCompare(b.c.name, "ko") || a.p.user_id.localeCompare(b.p.user_id));
+
+      // weeklyPointRank — 주간 포인트(별점=points) 랭킹 순위. top3/top10/MVP 와 동일 points SoT
+      //   (user_weekly_points.points, pointsByWeek→weekPts)로 산출한다. 동점(같은 points) 처리는
+      //   기존 주간 랭킹 SoT 와 동일 — points 만으로 순위를 매긴다(표준 경쟁 순위: 동점=같은 rank,
+      //   다음 rank 는 앞선 인원수만큼 건너뜀). 동점 그룹 '안'의 표시 순서는 아래 comparator 하위 키
+      //   (품계→주차성장률→이름→user_id)가 결정한다. (임의 dense/ordinal 재정의 없음 — points 경쟁 순위만 부여.)
+      const byPointsDesc = [...crewBase].sort((a, b) => b.p.points - a.p.points);
+      const weeklyPointRankByUser = new Map<string, number>();
+      byPointsDesc.forEach((x, i) => {
+        const prev = i > 0 ? byPointsDesc[i - 1] : null;
+        weeklyPointRankByUser.set(x.p.user_id, prev && prev.p.points === x.p.points ? weeklyPointRankByUser.get(prev.p.user_id)! : i + 1);
+      });
+      const pointRankOf = (userId: string): number => weeklyPointRankByUser.get(userId) ?? crewBase.length + 1;
+
+      // 전체 등수 확정 정렬(백엔드가 최종 배열 순서를 확정 — 프론트는 이 순서를 그대로 사용):
+      //   ① weeklyPointRank(주간 포인트 순위) asc ② 품계(레벨 오름차=정승 먼저) asc
+      //   ③ 주차 성장률(스냅샷 weeklyGrowthRate) desc ④ 이름 가나다 ⑤ user_id(안정 tie-break).
+      //   WeeklyDetailContent 기본 정렬과 동일 키 → rank 번호와 표시 순서 일치.
+      crewBase.sort(
+        (a, b) =>
+          pointRankOf(a.p.user_id) - pointRankOf(b.p.user_id) ||
+          a.gradeLevel - b.gradeLevel ||
+          b.current.weeklyGrowthRate - a.current.weeklyGrowthRate ||
+          a.c.name.localeCompare(b.c.name, "ko") ||
+          a.p.user_id.localeCompare(b.p.user_id),
+      );
       const crewTotal = crewBase.length;
-      const crewRankShowcase: CrewRankShowcase[] = crewBase.map((x, i) => {
+      const crewRankShowcase: CrewRankShowcase[] = crewBase.map((x) => {
         const weeklyReview = weeklyReviewByUserWeek.get(`${x.p.user_id}|${week.id}`) ?? null;
-        const currentMetric = growthMetricsByUser.get(x.p.user_id)?.get(week.id) ?? null;
-        const previousWeekId = previousWeekIdByWeekId.get(week.id) ?? null;
-        const previousMetric = previousWeekId ? (growthMetricsByUser.get(x.p.user_id)?.get(previousWeekId) ?? null) : null;
-        const current: GrowthMetricSnapshot = currentMetric ?? {
-          cumulativeSuccessWeeks: 0,
-          weeklyGrowthRate: 0,
-          infoRate: 0,
-          experienceRate: 0,
-          competencyRate: 0,
-          careerRate: 0,
-        };
+        const current = x.current;
+        const previousMetric = x.previousMetric;
         const delta = (key: keyof Omit<GrowthMetricSnapshot, "cumulativeSuccessWeeks">) => (previousMetric ? current[key] - previousMetric[key] : 0);
         return {
           userId: x.p.user_id,
           weekId: week.id,
-          rank: i + 1,
+          rank: pointRankOf(x.p.user_id), // 표시 "N등" = 주간 포인트 랭킹 순위(전체 랭킹, 필터 무관 불변)
           totalRankCount: crewTotal,
           gradeLevel: x.gradeLevel, // user_grade_stats.grade(숫자 레벨) — 정렬 키와 동일 소스
           grade: x.gradeLabel, // user_grade_stats.grade_label(품계명)

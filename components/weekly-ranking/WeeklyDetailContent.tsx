@@ -138,10 +138,12 @@ const WRS_RESULT_OPTIONS: FilterOption[] = [
   { value: "fail", label: "성장 실패" },
 ];
 
-// 정렬 규칙 — 다음 작업(크루 목록)에서 소비할 키 시퀀스. 이번 회차는 구조만 선반영.
-//   · 필터 미적용(기본): 품계 desc → 주차 성장률 desc → 이름 가나다순
+// 정렬 규칙 — 크루 목록에서 소비하는 키 시퀀스.
+//   · 필터 미적용(기본): 주간 포인트 순위 asc → 품계 asc → 주차 성장률 desc → 이름 가나다순
+//       (백엔드 aggregateWeeklyLeague 가 확정한 crewRankShowcase.rank 순서와 동일 — 프론트는 그 순서를 그대로 유지)
 //   · 필터 1개 이상 적용: 누적 주차 desc → 주차 성장률 desc → 팀 가나다순 → 파트 가나다순 → 이름 가나다순
-const WRS_SORT_KEYS_DEFAULT = ["품계", "주차성장률", "이름"] as const;
+//       (표시 rank 는 전체 주간 포인트 랭킹 순위를 유지 — 필터 화면만 별도 기준으로 재정렬)
+const WRS_SORT_KEYS_DEFAULT = ["주간포인트순위", "품계", "주차성장률", "이름"] as const;
 const WRS_SORT_KEYS_FILTERED = ["누적주차", "주차성장률", "팀", "파트", "이름"] as const;
 
 interface WeeklyDetailContentProps {
@@ -440,7 +442,10 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
     if (wrsTeam !== WRS_VOID && c.teamName !== wrsTeam) return false;               // 소속 팀
     return true;
   });
-  // 정렬: 기본(품계↑·주차성장률↓·이름) / 필터 적용(누적성공주차↓·주차성장률↓·팀·파트·이름).
+  // 정렬: 기본(주간 포인트 순위↑·품계↑·주차성장률↓·이름·userId) / 필터 적용(누적성공주차↓·주차성장률↓·팀·파트·이름).
+  //   기본 정렬은 백엔드(aggregateWeeklyLeague)가 확정한 crewRankShowcase.rank(=주간 포인트 랭킹 순위)를
+  //   1차 키로 그대로 사용한다 → 화면 순서 = 백엔드 배열 순서 = 표시 "N등". 동점 rank 안의 순서(품계→주차성장률→
+  //   이름→userId)도 백엔드 comparator 와 동일 키라 재정렬해도 백엔드 순서가 그대로 유지된다.
   const crewSorted = [...crewFiltered].sort((a, b) => {
     if (wrsHasActiveFilter) {
       return (
@@ -452,9 +457,11 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
       );
     }
     return (
+      a.rank - b.rank ||
       a.gradeLevel - b.gradeLevel ||
       b.weeklyGrowthRate - a.weeklyGrowthRate ||
-      a.name.localeCompare(b.name, "ko")
+      a.name.localeCompare(b.name, "ko") ||
+      a.userId.localeCompare(b.userId)
     );
   });
   const crewPageCount = Math.max(1, Math.ceil(crewSorted.length / WRS_PER_PAGE));

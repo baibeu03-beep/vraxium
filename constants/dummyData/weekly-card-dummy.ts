@@ -97,8 +97,9 @@ export type WeeklyLeagueMvp = {
 };
 
 // ── [5] Weekly Rank Showcase — 크루 개별 활동 결과(랭킹 리스트) ──
-//   전체 등수(rank)는 '필터 없는 기본 정렬(품계↑·주차성장률↓·이름 가나다순)' 기준으로 1회 확정되며,
-//   필터/재정렬로 표시 순서가 바뀌어도 카드의 rank/totalRankCount 는 불변(= "총 N명 중 M등").
+//   전체 등수(rank) = 주간 포인트(별점=pointA) 랭킹 순위. '주간 포인트 순위↑ → 품계↑ → 주차성장률↓ →
+//   이름 가나다순' 정렬로 1회 확정되며, 필터/재정렬로 표시 순서가 바뀌어도 카드의 rank/totalRankCount 는
+//   불변(= "총 N명 중 M등"). 동점(같은 포인트)은 같은 rank 를 갖고, 그 안의 순서는 품계→주차성장률→이름이 결정.
 //   gradeLevel(1=정승 최상위~10) 만 실으면 프론트가 org 별 cluster-3 이미지 경로를 재구성한다
 //   (gradeImage/gradeMedalImage 는 org 종속이라 백엔드가 아닌 프론트에서 파생 — cluster-3 로직 재사용).
 export type CrewRankShowcase = {
@@ -570,18 +571,28 @@ const buildCrewShowcase = (seed: number, weekId: string): CrewRankShowcase[] => 
       isSuccess,
     };
   });
-  // 기본 정렬(품계 높은순=gradeLevel↑ → 주차성장률↓ → 이름 가나다순) → 전체 등수 확정.
+  // weeklyPointRank — 실 API(aggregateWeeklyLeague)와 동일 규칙: pointA(주간 포인트=별점) 표준 경쟁
+  //   순위(동점=같은 rank, 다음 rank 는 앞선 인원수만큼 건너뜀).
+  const byPointsDesc = [...pool].sort((a, b) => b.pointA - a.pointA);
+  const pointRankByUid = new Map<number, number>();
+  byPointsDesc.forEach((c, i) => {
+    const prev = i > 0 ? byPointsDesc[i - 1] : null;
+    pointRankByUid.set(c._uid, prev && prev.pointA === c.pointA ? pointRankByUid.get(prev._uid)! : i + 1);
+  });
+  const pointRankOf = (uid: number) => pointRankByUid.get(uid) ?? N + 1;
+  // 기본 정렬(주간 포인트 순위↑ → 품계↑ → 주차성장률↓ → 이름 가나다순 → _uid 안정) → 전체 등수 확정.
   const sorted = [...pool].sort(
     (a, b) =>
+      pointRankOf(a._uid) - pointRankOf(b._uid) ||
       a.gradeLevel - b.gradeLevel ||
       b.weeklyGrowthRate - a.weeklyGrowthRate ||
       a.name.localeCompare(b.name, "ko") ||
       a._uid - b._uid,
   );
-  return sorted.map((c, i) => ({
+  return sorted.map((c) => ({
     userId: c.userId,
     weekId,
-    rank: i + 1,
+    rank: pointRankOf(c._uid),
     totalRankCount: N,
     gradeLevel: c.gradeLevel,
     grade: c.gradeLevel === 1 ? "정승" : `정${c.gradeLevel - 1}품`,
