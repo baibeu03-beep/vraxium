@@ -226,15 +226,21 @@ export async function POST(request: NextRequest) {
     //    canEdit 스냅샷(ok_override)=true 인데 저장만 403 되는 미스매치가 발생한다(이번 버그).
     let lineSubmissionAuthorized = false
     let linePartType: string | null = null
+    // 관리자 per-line "2차 기입" 수동 override(force-open) — admin repo 와 동일 SoT
+    //   (cluster4_line_second_entry_overrides, 키=user_id+week_id+line_id, allowed=true).
+    //   자동 기간이 닫혔어도 소유·활성 라인이 허용돼 있으면 저장을 허용한다(회수=행 없음/allowed=false).
+    //   자격(강화성공)은 관리자 허용 시점에 강제되므로 여기선 소유+활성+allowed 만 확인한다.
+    let hasLineSecondEntryOverride = false
     if (typeof line_target_id === 'string' && UUID_RE.test(line_target_id)) {
       const { data: authRow } = await supabaseAdmin
         .from('cluster4_line_targets')
         .select(
-          'target_mode, target_user_id, cluster4_lines!inner(part_type, is_active, submission_opens_at, submission_closes_at)',
+          'line_id, target_mode, target_user_id, cluster4_lines!inner(part_type, is_active, submission_opens_at, submission_closes_at)',
         )
         .eq('id', line_target_id)
         .maybeSingle()
       const aRow = authRow as unknown as {
+        line_id: string | null
         target_mode: 'user' | 'rule'
         target_user_id: string | null
         cluster4_lines: {
@@ -245,18 +251,29 @@ export async function POST(request: NextRequest) {
         } | null
       } | null
       linePartType = aRow?.cluster4_lines?.part_type ?? null
-      if (
-        aRow &&
+      const ownsActiveLine =
+        !!aRow &&
         aRow.cluster4_lines?.is_active === true &&
         aRow.target_mode === 'user' &&
         aRow.target_user_id === ownerUserId
-      ) {
+      if (ownsActiveLine) {
         const nowMs = Date.now()
-        const opensAt = aRow.cluster4_lines.submission_opens_at
-        const closesAt = aRow.cluster4_lines.submission_closes_at
+        const opensAt = aRow!.cluster4_lines!.submission_opens_at
+        const closesAt = aRow!.cluster4_lines!.submission_closes_at
         const afterOpen = !opensAt || nowMs >= new Date(opensAt).getTime()
         const beforeClose = !closesAt || nowMs < new Date(closesAt).getTime()
         lineSubmissionAuthorized = afterOpen && beforeClose
+      }
+      // 소유·활성 라인일 때만 override 조회(미오픈/타인 라인은 override 무관하게 차단).
+      if (ownsActiveLine && !canBypassAsAdmin && aRow!.line_id && week_id) {
+        const { data: ov } = await supabaseAdmin
+          .from('cluster4_line_second_entry_overrides')
+          .select('allowed')
+          .eq('user_id', ownerUserId)
+          .eq('week_id', week_id)
+          .eq('line_id', aRow!.line_id)
+          .maybeSingle()
+        hasLineSecondEntryOverride = (ov as { allowed: boolean } | null)?.allowed === true
       }
     }
 
@@ -414,6 +431,7 @@ export async function POST(request: NextRequest) {
       !canBypassAsAdmin &&
       !hasOpenWindow &&
       !lineSubmissionAuthorized &&
+      !hasLineSecondEntryOverride &&
       !isBeforeDeadline &&
       !hasActiveGrant
     ) {
@@ -656,15 +674,19 @@ export async function DELETE(request: NextRequest) {
     let lineTargetsOwner = false
     let lineSubmissionAuthorized = false
     let linePartType: string | null = null
+    // 관리자 per-line "2차 기입" 수동 override(force-open) — POST 와 동일 SoT. 소유·활성 라인이
+    //   허용돼 있으면 자동 기간이 닫혀도 편집(삭제/초기화 포함)을 허용한다.
+    let hasLineSecondEntryOverride = false
     if (typeof lineTargetId === 'string' && UUID_RE.test(lineTargetId)) {
       const { data: authRow } = await supabaseAdmin
         .from('cluster4_line_targets')
         .select(
-          'target_mode, target_user_id, cluster4_lines!inner(part_type, is_active, submission_opens_at, submission_closes_at)',
+          'line_id, target_mode, target_user_id, cluster4_lines!inner(part_type, is_active, submission_opens_at, submission_closes_at)',
         )
         .eq('id', lineTargetId)
         .maybeSingle()
       const aRow = authRow as unknown as {
+        line_id: string | null
         target_mode: 'user' | 'rule'
         target_user_id: string | null
         cluster4_lines: {
@@ -675,19 +697,29 @@ export async function DELETE(request: NextRequest) {
         } | null
       } | null
       linePartType = aRow?.cluster4_lines?.part_type ?? null
-      if (
-        aRow &&
+      const ownsActiveLine =
+        !!aRow &&
         aRow.cluster4_lines?.is_active === true &&
         aRow.target_mode === 'user' &&
         aRow.target_user_id === ownerUserId
-      ) {
+      if (ownsActiveLine) {
         lineTargetsOwner = true
         const nowMs = Date.now()
-        const opensAt = aRow.cluster4_lines.submission_opens_at
-        const closesAt = aRow.cluster4_lines.submission_closes_at
+        const opensAt = aRow!.cluster4_lines!.submission_opens_at
+        const closesAt = aRow!.cluster4_lines!.submission_closes_at
         const afterOpen = !opensAt || nowMs >= new Date(opensAt).getTime()
         const beforeClose = !closesAt || nowMs < new Date(closesAt).getTime()
         lineSubmissionAuthorized = afterOpen && beforeClose
+      }
+      if (ownsActiveLine && !canBypassAsAdmin && aRow!.line_id && weekId) {
+        const { data: ov } = await supabaseAdmin
+          .from('cluster4_line_second_entry_overrides')
+          .select('allowed')
+          .eq('user_id', ownerUserId)
+          .eq('week_id', weekId)
+          .eq('line_id', aRow!.line_id)
+          .maybeSingle()
+        hasLineSecondEntryOverride = (ov as { allowed: boolean } | null)?.allowed === true
       }
     }
 
@@ -747,6 +779,7 @@ export async function DELETE(request: NextRequest) {
       !canBypassAsAdmin &&
       !hasOpenWindow &&
       !lineSubmissionAuthorized &&
+      !hasLineSecondEntryOverride &&
       !isBeforeDeadline &&
       !hasActiveGrant
     ) {
