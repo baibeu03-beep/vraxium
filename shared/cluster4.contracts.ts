@@ -292,11 +292,23 @@ export interface Cluster4ActLogDto {
 //   로만 조회하고 **값을 그대로 표시**한다 — 강화 결과/평점/유형/허브/포인트 재계산 금지.
 //   관리자 전용 편집 필드(2차 기입 override·편집권·mutation 키·제출 원문)는 응답에 없다.
 //
+// 결과(result/resultLabel/resultTone) = 어드민 enhancementStatus/enhancementLabel **그대로**(v3+).
+//   ⚠ lineTargetId(배정)·submissionStatus(제출)·포인트 0·평점 없음 중 **무엇도 결과를 바꾸지 않는다**.
+//     정보/경험은 미기입이어도 마감 후 성공 처리될 수 있어 `제출=미제출 + 결과=강화 성공` 조합이
+//     정상이다. 프론트에서 `row.result ?? "해당 없음"` 같은 폴백/재분류를 넣지 말 것 —
+//     v2 까지 백엔드가 ltid==null 행을 해당 없음으로 재분류해 어드민=강화 실패 / 크루=해당 없음 으로
+//     갈렸던 회귀가 있다(2026-07-17 수정, 실측 296/370 행 영향).
+//
+// ⚠ 행 범위 차이(의도) — 크루 표는 **클럽 오픈 라인만** 싣는다. 어드민 표는 미오픈 카탈로그 행까지
+//   보여주고 그 행을 not_applicable 로 세므로, **요약의 "해당 없음"만** 어드민과 다를 수 있다
+//   (실측: 어드민 6 / 크루 0). 실려 있는 행의 결과값은 어드민과 100% 동일하다.
+//
 // 불변식(백엔드 projection 이 by construction 보장 — 프론트 보정 금지):
 //   clubOpenCount = rows.length = success + failure + notApplicable + pending
 //   crewOpenCount = success + failure + pending  (확정 주차 pending=0 → = success + failure)
 //   notApplicableCount = clubOpenCount − crewOpenCount
 //   enhancementRate = round(success / crewOpen × 100), 분모 0 → 0
+//     = 어드민 summary.weeklyGrowthRate(오픈 라인 중 성공 비율)와 일치한다(실측 88 = 88).
 //   summary.point{A,B,C}.{earned,available} = Σ rows.point{A,B,C}.{earned,available}
 export type CrewLineEnhancementResult =
   | "success"
