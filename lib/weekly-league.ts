@@ -107,6 +107,16 @@ const resolveRestReason = (holidayName: string | null, isBreak: boolean, seasonN
   return "시즌 전환";
 };
 
+// [perf] 프리로드한 promise 를 "원래 try/catch 의미 그대로" 소비하기 위한 어댑터.
+//   일찍 시작한 promise 가 try 블록 밖에서 reject 되어 unhandled rejection 이 되는 것을 막고,
+//   소비 지점(try 안)에서 `if (!s.ok) throw s.e` 로 다시 던져 원래 catch/전파 경로를 보존한다.
+//   → 실패를 삼키지(fail-open) 않는다. 에러 의미·우선순위 불변.
+const settle = <T>(p: PromiseLike<T>): Promise<{ ok: true; v: T } | { ok: false; e: unknown }> =>
+  Promise.resolve(p).then(
+    (v) => ({ ok: true as const, v }),
+    (e) => ({ ok: false as const, e }),
+  );
+
 // PostgREST max-rows=1000 강제 → range 페이지네이션으로 전 행 수집(crews/cluster-4-ranking 동형).
 async function fetchAllRows<T>(build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<{ data: T[]; error: unknown }> {
   const PAGE = 1000;
@@ -244,9 +254,41 @@ export async function aggregateWeeklyLeague(
     //      · test          : 시드 계정만 포함(실사용자 제외) — 테스트 모드 랭킹.
     //    best-effort: 조회 실패 시 빈 집합 → operating 은 미제외(보수), test 는 빈 결과(실유저 미유입).
     const isTestMode = mode === "test";
+
+    // ── [perf] 의존성 그룹 A 선행 로드 — "org(또는 아무 입력도) 만 있으면 실행 가능" 한 조회 ──
+    //   아래 4건은 서로도, 다른 어떤 쿼리 결과에도 의존하지 않는다(입력이 org/today/상수뿐).
+    //   기존엔 완전 직렬이라 각자 앞 쿼리의 RTT 를 기다렸다 → 여기서 시작만 동시에 한다.
+    //   ⚠️ await 위치·에러 검사·에러 우선순위는 전부 원래 자리 그대로 유지한다.
+    //     · test_user_markers      → testUserIds (실패=warn 후 빈 집합)
+    //     · weekly_league_roster_orgs → memberRosterMode 게이트
+    //     · user_profiles(로스터)  → orgProfiles (실패=하드 에러 반환, 원래 순서 유지)
+    //     · weeks(주차 메타)       → weeks[]     (실패=하드 에러 반환, 원래 순서 유지)
+    //   operator_markers 는 memberRosterMode(=roster_orgs 결과) 게이트 뒤에만 실행돼야 하므로
+    //   그룹 A 가 아니다(그룹 B) — 여기서 시작하면 게이트 OFF 인 org 에서 불필요 조회가 생긴다.
+    const markersPromise = fetchAllRows<{ user_id: string }>((from, to) => db.from("test_user_markers").select("user_id").range(from, to));
+    const rosterGatePromise = settle(db.from("weekly_league_roster_orgs").select("organization_slug").eq("organization_slug", org).eq("enabled", true));
+    const orgProfilesPromise = settle(
+      db
+        .from("user_profiles")
+        .select("user_id, display_name, current_team_name, current_part_name, status, activity_started_at, profile_photo_url, role, school_name, department_name")
+        .eq("organization_slug", org)
+        .in("status", ["active", "seasonal_rest", "weekly_rest", "graduated"]),
+    );
+    // 주차 메타(2번) — 입력이 today/explicitSeasonKey(둘 다 DB 무관)뿐이라 그룹 A.
+    //   select/filter/order 는 원본 buildWeekQuery 와 완전히 동일하다.
+    const WEEK_SELECT = "id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, season_definitions!inner(season_label, season_type, year)";
+    const buildWeekQuery = (sel: string) => {
+      let q = db.from("weeks").select(sel).lte("start_date", today);
+      q = explicitSeasonKey ? q.eq("season_key", explicitSeasonKey) : q.gte("start_date", WEEKLY_LEAGUE_ERA_START_DATE);
+      return q.order("start_date", { ascending: false });
+    };
+    const weekRowsPromise = settle(buildWeekQuery(WEEK_SELECT));
+    // 2-1) 공표/검수 상태 — scope 는 항상 "operating" 상수(아래 weekScope)라 weekIds 등 선행 입력이 없다 → 그룹 A.
+    const weekStatesPromise = settle(resolveWeekResultStates(db, { scope: "operating" as WeekResultScope }));
+
     const testUserIds = new Set<string>();
     {
-      const { data: markers, error: markerErr } = await fetchAllRows<{ user_id: string }>((from, to) => db.from("test_user_markers").select("user_id").range(from, to));
+      const { data: markers, error: markerErr } = await markersPromise;
       if (markerErr) {
         console.warn("[weekly-league] test_user_markers 조회 실패 — 테스트 유저 미제외", (markerErr as Error)?.message ?? String(markerErr));
       } else {
@@ -259,12 +301,25 @@ export async function aggregateWeeklyLeague(
     //   OFF : 현행 활동행(user_week_statuses) 경로 그대로 — 숫자 불변(byte-identical).
     let memberRosterMode = false;
     {
-      const { data: gateRows } = await db.from("weekly_league_roster_orgs").select("organization_slug").eq("organization_slug", org).eq("enabled", true);
+      // 쿼리는 위에서 이미 시작됐다(그룹 A preload). reject 시 바깥 catch 로 전파되던 원래
+      // 동작을 !ok 재throw 로 보존한다(원본은 에러를 검사하지 않고 data 만 사용).
+      const gateSettled = await rosterGatePromise;
+      if (!gateSettled.ok) throw gateSettled.e;
+      const { data: gateRows } = gateSettled.v;
       memberRosterMode = !!(gateRows && gateRows.length > 0);
     }
+    // ── [perf] 의존성 그룹 B 선행 로드 — "roster 게이트 결과(memberRosterMode) + org" 만 필요 ──
+    //   4건 모두 org 스코프 조회이고 서로 의존이 없다. 게이트 OFF 면 원본과 동일하게 아예 실행하지 않는다
+    //   (게이트를 우회하거나 스코프를 넓히지 않는다 — 실행 집합 불변, 시작 시점만 겹친다).
+    //   await/에러 처리는 각자 원래 자리에 그대로 둔다.
+    const operatorRowsPromise = memberRosterMode ? fetchAllRows<{ user_id: string }>((from, to) => db.from("operator_markers").select("user_id").eq("organization_slug", org).range(from, to)) : null;
+    const restPeriodRowsPromise = memberRosterMode ? fetchAllRows<{ user_id: string; start_date: string; end_date: string }>((from, to) => db.from("crew_personal_rest_periods").select("user_id, start_date, end_date").eq("organization_slug", org).range(from, to)) : null;
+    const successOverrideRowsPromise = memberRosterMode ? settle(db.from("weekly_league_success_overrides").select("week_start_date, growth_success").eq("organization_slug", org)) : null;
+    const memberStartRowsPromise = memberRosterMode ? settle(db.from("weekly_league_member_start").select("user_id, member_start_date").eq("organization_slug", org)) : null;
+
     const operatorIds = new Set<string>();
-    if (memberRosterMode) {
-      const { data: ops } = await fetchAllRows<{ user_id: string }>((from, to) => db.from("operator_markers").select("user_id").eq("organization_slug", org).range(from, to));
+    if (operatorRowsPromise) {
+      const { data: ops } = await operatorRowsPromise;
       for (const o of ops) operatorIds.add(o.user_id);
     }
 
@@ -274,7 +329,10 @@ export async function aggregateWeeklyLeague(
     //    profile_photo_url/role/school_name/department_name 을 여기서 함께 읽는다.
     //    5-1(a)는 `.in("user_id", orgUserIds)` 였고 orgUserIds ⊆ 본 로스터 행이므로
     //    행 집합이 정확히 동일하다 → 같은 테이블 2회 조회를 1회로 합친다(값 불변).
-    const { data: orgProfilesRaw, error: profileErr } = await db.from("user_profiles").select("user_id, display_name, current_team_name, current_part_name, status, activity_started_at, profile_photo_url, role, school_name, department_name").eq("organization_slug", org).in("status", ["active", "seasonal_rest", "weekly_rest", "graduated"]);
+    //    쿼리는 위에서 이미 시작됐다(그룹 A preload) — await/에러 검사 위치는 원본 그대로다.
+    const orgProfilesSettled = await orgProfilesPromise;
+    if (!orgProfilesSettled.ok) throw orgProfilesSettled.e;
+    const { data: orgProfilesRaw, error: profileErr } = orgProfilesSettled.v;
 
     if (profileErr) {
       return { success: false, org, cards: [], error: `org 로스터 조회 실패: ${profileErr.message}` };
@@ -295,14 +353,46 @@ export async function aggregateWeeklyLeague(
     }
     const profileMap = new Map(orgProfiles.map((p) => [p.user_id, p] as const));
 
-    // ── [perf] 선행 로드(preload) — orgUserIds 만 의존하는 두 로드를 여기서 "시작"만 한다 ──
-    //   ⚠️ 집계/판정 로직·SoT·DTO 는 일절 불변이다. 바뀌는 것은 I/O 대기 시점뿐:
-    //     · user_weekly_points  : await 와 에러 처리는 원래 자리(4번)에 그대로 둔다 →
-    //                             에러 우선순위(주차 상태 → 주차 포인트)까지 기존과 동일.
-    //     · weekly-cards 팬아웃 : 유저당 1콜(N+1)이라 본 라우트 최대 병목(전체의 약 55%)인데,
-    //                             기존엔 supabase 워터폴이 전부 끝난 뒤에야 시작했다. points 가
-    //                             도착하는 즉시 시작해 나머지 조회와 겹친다(await 는 사용 직전).
+    // ── [perf] 선행 로드(preload) — 입력이 orgUserIds 뿐인 로드를 여기서 "시작"만 한다 ──
+    //   ⚠️ 집계/판정 로직·SoT·DTO 는 일절 불변이다. 바뀌는 것은 I/O 시작 시점뿐이며,
+    //   await 와 에러 처리는 전부 원래 자리에 그대로 둔다 → 에러 우선순위·의미 동일.
+    //   (의존성 그룹 C = "orgUserIds 만 있으면 실행 가능". 서로 간 의존 없음 —
+    //    각 결과는 독립 Map/배열로만 소비되고 다른 쿼리의 입력이 되지 않는다.)
+    //     · user_weekly_points        → pointRows        (4번에서 await + 에러 반환)
+    //     · user_week_statuses        → statusRows       (3번에서 await + 에러 반환)
+    //     · user_memberships          → membershipByUser (5번, 에러 무시 = 기존 동일)
+    //     · user_educations           → champProfile     (5-1b, try/catch = 기존 동일)
+    //     · user_grade_stats          → gradeByUser      (5-2, try/catch = 기존 동일)
+    //     · cluster4_weekly_pms_activity → pmsAct*       (6번, 에러 무시 = 기존 동일)
+    //     · weekly-cards 팬아웃       → growthMetrics    (유저당 1콜 N+1, points 도착 즉시 시작)
     //   showcaseUserIds 산출식(pointRows 의 user_id 유니크)은 원본과 동일하게 유지한다.
+    const statusRowsPromise = fetchAllRows<{
+      user_id: string;
+      week_start_date: string;
+      status: string;
+    }>((from, to) =>
+      db
+        .from("user_week_statuses")
+        .select("user_id, week_start_date, status")
+        .in("user_id", orgUserIds)
+        // PostgREST range 페이지네이션은 안정적 ORDER BY 가 없으면 1000행 초과 시
+        // 페이지 경계에서 행 중복/누락이 발생한다(집계 과대/과소). 결정적 정렬 필수.
+        .order("user_id", { ascending: true })
+        .order("week_start_date", { ascending: true })
+        .range(from, to),
+    );
+    const membershipRowsPromise = settle(
+      db.from("user_memberships").select("user_id, team_name, part_name, membership_level, membership_state, is_current").in("user_id", orgUserIds),
+    );
+    const eduRowsPromise = settle(db.from("user_educations").select("user_id, school_name, major_name_1, sort_order").in("user_id", orgUserIds).order("sort_order", { ascending: true }));
+    const gradeRowsPromise = settle(db.from("user_grade_stats").select("user_id, grade, grade_label").in("user_id", orgUserIds));
+    const pmsActRowsPromise = fetchAllRows<{
+      user_id: string;
+      week_start_date: string;
+      user_activity_submitted: boolean;
+      user_activity_star: number | null;
+    }>((from, to) => db.from("cluster4_weekly_pms_activity").select("user_id, week_start_date, user_activity_submitted, user_activity_star").in("user_id", orgUserIds).order("user_id", { ascending: true }).order("week_start_date", { ascending: true }).range(from, to));
+
     const pointRowsPromise = fetchAllRows<{
       user_id: string;
       week_start_date: string;
@@ -331,8 +421,8 @@ export async function aggregateWeeklyLeague(
     // 1-1) 개인휴식 기간(회원명부 모드 전용) — crew_personal_rest_periods (restdates 격리본).
     //   user_week_statuses 무관·무수정. 개인 카드/growth/resume/snapshot 무영향.
     const restPeriods: Array<{ user_id: string; start_date: string; end_date: string }> = [];
-    if (memberRosterMode) {
-      const { data: rp } = await fetchAllRows<{ user_id: string; start_date: string; end_date: string }>((from, to) => db.from("crew_personal_rest_periods").select("user_id, start_date, end_date").eq("organization_slug", org).range(from, to));
+    if (restPeriodRowsPromise) {
+      const { data: rp } = await restPeriodRowsPromise;
       restPeriods.push(...rp);
     }
 
@@ -340,8 +430,10 @@ export async function aggregateWeeklyLeague(
     //   PMS 행정공표 실측 성공수를 주차별로 override(사람별 verdict 아님). total/rest 무접촉,
     //   success/fail split 만 보정(fail = nonRest − growth_success). best-effort(테이블/조회 실패 시 미적용).
     const successOverrideByWeekStart = new Map<string, number>();
-    if (memberRosterMode) {
-      const { data: ov, error: ovErr } = await db.from("weekly_league_success_overrides").select("week_start_date, growth_success").eq("organization_slug", org);
+    if (successOverrideRowsPromise) {
+      const ovSettled = await successOverrideRowsPromise;
+      if (!ovSettled.ok) throw ovSettled.e;
+      const { data: ov, error: ovErr } = ovSettled.v;
       if (ovErr) {
         console.warn("[weekly-league] success_overrides 조회 실패 — 미적용", ovErr.message);
       } else {
@@ -353,8 +445,10 @@ export async function aggregateWeeklyLeague(
     //   공유 user_profiles.activity_started_at 무수정. 모집단 StartDate 필터에서만 사용:
     //   effectiveStart = member_start_date ?? activity_started_at. best-effort.
     const memberStartByUser = new Map<string, string>();
-    if (memberRosterMode) {
-      const { data: msRows, error: msErr } = await db.from("weekly_league_member_start").select("user_id, member_start_date").eq("organization_slug", org);
+    if (memberStartRowsPromise) {
+      const msSettled = await memberStartRowsPromise;
+      if (!msSettled.ok) throw msSettled.e;
+      const { data: msRows, error: msErr } = msSettled.v;
       if (msErr) console.warn("[weekly-league] member_start 조회 실패 — activity_started_at 사용", msErr.message);
       else for (const m of msRows || []) memberStartByUser.set(m.user_id, m.member_start_date);
     }
@@ -372,13 +466,10 @@ export async function aggregateWeeklyLeague(
     // result_published_at / result_reviewed_at 는 여기서 직접 읽지 않는다(Phase B):
     //   공용 resolveWeekResultStates 가 운영/QA overlay 를 일원화해 아래에서 weeks[] 에 주입한다.
     //   (reviewed_at 미마이그레이션 DB 폴백도 resolver 내부에서 처리.)
-    const WEEK_SELECT = "id, week_number, start_date, end_date, is_official_rest, holiday_name, season_key, season_definitions!inner(season_label, season_type, year)";
-    const buildWeekQuery = (sel: string) => {
-      let q = db.from("weeks").select(sel).lte("start_date", today);
-      q = explicitSeasonKey ? q.eq("season_key", explicitSeasonKey) : q.gte("start_date", WEEKLY_LEAGUE_ERA_START_DATE);
-      return q.order("start_date", { ascending: false });
-    };
-    const { data: weekRows, error: weekErr } = await buildWeekQuery(WEEK_SELECT);
+    //    쿼리는 위에서 이미 시작됐다(그룹 A preload) — await/에러 검사 위치는 원본 그대로다.
+    const weekRowsSettled = await weekRowsPromise;
+    if (!weekRowsSettled.ok) throw weekRowsSettled.e;
+    const { data: weekRows, error: weekErr } = weekRowsSettled.v;
 
     if (weekErr) {
       return { success: false, org, cards: [], error: `주차 메타 조회 실패: ${weekErr.message}` };
@@ -432,7 +523,10 @@ export async function aggregateWeeklyLeague(
     //   → 확정 여부는 operating, 노출 "모집단"만 mode(위 238)로 갈린다. (2026-07-09 조사: qa overlay
     //      는 어드민 부기용이며 고객 카드로 흐르지 않음 — 실측 확인.)
     const weekScope: WeekResultScope = "operating";
-    const weekStates = await resolveWeekResultStates(db, { scope: weekScope });
+    // 위 그룹 A 에서 동일 인자(scope:"operating")로 이미 시작됐다 — 소비 위치는 원본 그대로다.
+    const weekStatesSettled = await weekStatesPromise;
+    if (!weekStatesSettled.ok) throw weekStatesSettled.e;
+    const weekStates = weekStatesSettled.v;
     for (const w of weeks) {
       const st = weekStates.get(w.id);
       w.resultPublishedAt = st?.resultPublishedAt ?? null;
@@ -440,21 +534,8 @@ export async function aggregateWeeklyLeague(
     }
 
     // 3) 성장 상태 스냅샷(SoT) — user_week_statuses. org 유저 한정, 전 행 수집.
-    const { data: statusRows, error: statusErr } = await fetchAllRows<{
-      user_id: string;
-      week_start_date: string;
-      status: string;
-    }>((from, to) =>
-      db
-        .from("user_week_statuses")
-        .select("user_id, week_start_date, status")
-        .in("user_id", orgUserIds)
-        // PostgREST range 페이지네이션은 안정적 ORDER BY 가 없으면 1000행 초과 시
-        // 페이지 경계에서 행 중복/누락이 발생한다(집계 과대/과소). 결정적 정렬 필수.
-        .order("user_id", { ascending: true })
-        .order("week_start_date", { ascending: true })
-        .range(from, to),
-    );
+    //    쿼리는 위(1번 직후)에서 이미 시작됐다(preload) — await/에러 처리 위치는 원본 그대로다.
+    const { data: statusRows, error: statusErr } = await statusRowsPromise;
     if (statusErr) {
       return { success: false, org, cards: [], error: `주차 상태 조회 실패: ${(statusErr as Error)?.message ?? String(statusErr)}` };
     }
@@ -468,7 +549,11 @@ export async function aggregateWeeklyLeague(
     }
 
     // 5) 멤버십(팀/파트) — top3 라벨용. org 유저 한정.
-    const { data: membershipRows } = await db.from("user_memberships").select("user_id, team_name, part_name, membership_level, membership_state, is_current").in("user_id", orgUserIds);
+    //    쿼리는 위(1번 직후)에서 이미 시작됐다(preload). 원본은 에러를 검사하지 않고 data 만 쓰되,
+    //    reject 시엔 바깥 catch 로 전파됐다 → !ok 재throw 로 그 의미를 그대로 보존한다.
+    const membershipSettled = await membershipRowsPromise;
+    if (!membershipSettled.ok) throw membershipSettled.e;
+    const { data: membershipRows } = membershipSettled.v;
     const membershipByUser = new Map<string, Array<MembershipRow & { user_id: string }>>();
     (membershipRows || []).forEach((m) => {
       const arr = membershipByUser.get(m.user_id) || [];
@@ -493,7 +578,11 @@ export async function aggregateWeeklyLeague(
     // (b) user_educations 우선(대표=sort_order 최소) — 학교/전공 canonical. profiles 폴백 유지.
     //     (a)와 독립 try/catch — 한쪽 실패가 다른 쪽/school·major 전체를 날리지 않도록.
     try {
-      const { data: edu } = await db.from("user_educations").select("user_id, school_name, major_name_1, sort_order").in("user_id", orgUserIds).order("sort_order", { ascending: true });
+      // 쿼리는 위(1번 직후)에서 이미 시작됐다(preload). try 안에서 재throw 하므로
+      // 실패 시 아래 catch(=console.warn, 부분 폴백)가 원본과 동일하게 실행된다.
+      const eduSettled = await eduRowsPromise;
+      if (!eduSettled.ok) throw eduSettled.e;
+      const { data: edu } = eduSettled.v;
       const eduSeen = new Set<string>();
       for (const e of edu || []) {
         const uid = (e as { user_id: string }).user_id;
@@ -515,7 +604,10 @@ export async function aggregateWeeklyLeague(
     //   best-effort: 실패해도 카드 형태는 유지(폴백 gradeLevel=10 / grade='-'). org 로스터 한정(1행/유저).
     const gradeByUser = new Map<string, { level: number; label: string }>();
     try {
-      const { data: gs } = await db.from("user_grade_stats").select("user_id, grade, grade_label").in("user_id", orgUserIds);
+      // 쿼리는 위(1번 직후)에서 이미 시작됐다(preload). try 안에서 재throw → 원본 catch 의미 보존.
+      const gradeSettled = await gradeRowsPromise;
+      if (!gradeSettled.ok) throw gradeSettled.e;
+      const { data: gs } = gradeSettled.v;
       for (const g of gs || []) {
         const uid = (g as { user_id: string }).user_id;
         const lvlRaw = Number((g as { grade?: number | string | null }).grade);
@@ -552,12 +644,8 @@ export async function aggregateWeeklyLeague(
     //    org×week 에만 PMS 공식 적용, 없는 주차/org 는 기존 uws 버킷팅 유지(현재 oranke W13만 적재).
     //    confirmStar = org_week_thresholds.check_threshold (이미 weekssettings.confirmStar 백필값).
     //    uws.status / uwp.points / 개인 카드 / snapshot 무변경 — READ only 소비.
-    const { data: pmsActRows } = await fetchAllRows<{
-      user_id: string;
-      week_start_date: string;
-      user_activity_submitted: boolean;
-      user_activity_star: number | null;
-    }>((from, to) => db.from("cluster4_weekly_pms_activity").select("user_id, week_start_date, user_activity_submitted, user_activity_star").in("user_id", orgUserIds).order("user_id", { ascending: true }).order("week_start_date", { ascending: true }).range(from, to));
+    //    쿼리는 위(1번 직후)에서 이미 시작됐다(preload) — 소비 위치/에러 무시 동작은 원본 그대로다.
+    const { data: pmsActRows } = await pmsActRowsPromise;
     const pmsActByUserWeek = new Map<string, { submitted: boolean; star: number | null }>();
     const weeksWithPmsData = new Set<string>();
     for (const r of pmsActRows || []) {
