@@ -487,6 +487,30 @@ export interface AdminCluster4WeeklyCardDto {
   // 프론트는 이 값을 "수행 내역"으로 렌더만 하고 별도 API 호출/임의 계산 금지(snapshot-only).
   actLogs?: Cluster4ActLogDto[] | null;
 
+  // ── 실무 경험 주차 verdict + 주차 인정 check 게이트 (어드민 snapshot — 기존 필드 타입만 명시) ──
+  // checkGate = 이 카드의 success/fail 을 실제로 결정한 Point.A 게이트 그 자체
+  // (admin lineAvailability.applyExperienceCheckGate). 고객앱은 표시만 하고 재계산하지 않는다.
+  //   required : 그 주차·조직의 Point.A 기준값. SoT=cluster4_week_opening_configs.recognition_count_n
+  //              (2026-07-12 정책 전환. org_week_thresholds/weeks.check_threshold 계열은 판정에서
+  //               제거됐으므로 기준값으로 쓰면 안 된다 — 주간 리그 전용으로만 존치).
+  //   earned   : 그 주차 Point.A 획득량(user_weekly_points.points). points.star 와 동일 값.
+  //   passed   : earned >= required.
+  //   enforced : 게이트 강제 여부. false 면 그 주차엔 기준이 적용되지 않았고 required 는 무의미(0)다
+  //              → 기준값을 문구에 노출하지 말 것.
+  // ⚠ checkGate 는 슬롯 verdict 가 pass 일 때만 채워진다(슬롯 실패로 주차 실패한 경우 null).
+  experienceGrowth?: {
+    status?: "pass" | "fail" | "pending" | "not_applicable" | string | null;
+    checkGate?: {
+      required: number;
+      earned: number;
+      passed: boolean;
+      enforced: boolean;
+    } | null;
+    failedSlotOrders?: number[] | null;
+    appliedToWeekStatus?: boolean | null;
+    [key: string]: unknown;
+  } | null;
+
   [key: string]: unknown;
 }
 

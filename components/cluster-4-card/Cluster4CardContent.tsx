@@ -6589,12 +6589,34 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   //   ② [실무 경험] 필수 라인 강화 완료 = 오픈 라인 전부 강화(total>0 && success>=total)
   const detailLogPoaMet = detailLogStatusClass.includes("success");
   const detailLogExpAllEnhanced = detailLogExpTotal > 0 && detailLogExpSuccess >= detailLogExpTotal;
+  // ── Point.A 기준값/획득량 — 판정과 동일 SoT(어드민 checkGate) 표시 전용 ──
+  // 이 카드의 success/fail 을 실제로 결정한 게이트를 그대로 읽는다(프론트 재계산·하드코딩 없음).
+  // 기준값은 조직·주차마다 다르다(recognition_count_n: 예 phalanx W2=68 / encre W2=75).
+  // 조직/mode=test/actAsTestUserId/demoUserId 무분기 — 모두 같은 DTO 필드를 읽는다.
+  const detailLogCheckGate = weeklyCardMeta?.experienceGrowth?.checkGate ?? null;
+  // 문구에 기준값을 노출할 수 있는 주차인가:
+  //   · enforced=false 또는 required=0 → 그 주차엔 Point.A 기준이 적용되지 않았다(레거시 미이관/N 부재).
+  //   · checkGate=null → 슬롯 실패로 게이트가 평가되지 않았다(기준값 자체가 없음).
+  //   · 이름 미도착 → "-님" 노출 방지.
+  // 위 경우는 기존 문구로 폴백한다. (검증: 렌더 대상 주차 전건에서 earned===points.star 이고
+  //  passed 와 주차 판정이 양방향 일치 — 문구가 판정과 어긋나는 조합 0건.)
+  const detailLogGateCrewName = ownerInfoReady ? mask.crewName(ownerPersonalInfo.name) : null;
+  const detailLogShowGate =
+    !!detailLogCheckGate &&
+    detailLogCheckGate.enforced &&
+    detailLogCheckGate.required > 0 &&
+    !!detailLogGateCrewName &&
+    detailLogGateCrewName !== "-";
   const detailLogConditions: DetailLogCondition[] = [
     {
       checked: detailLogPoaMet,
-      text: detailLogPoaMet
-        ? `이번 주 ${detailLogPoaName} ${headerDangam}개를 획득해 성장 성공 기준을 달성하셨어요!`
-        : `이번 주 ${detailLogPoaName} ${headerDangam}개를 획득하셨어요. 성장 성공 기준에는 조금 더 필요해요!`,
+      text: detailLogShowGate
+        ? `이번 주 성장 성공의 ${detailLogPoaName} 기준은 ${detailLogCheckGate!.required}개였으며, ${detailLogGateCrewName}님은 ${detailLogPoaName} ${detailLogCheckGate!.earned}개를 획득하셨어요. ${
+            detailLogPoaMet ? "이번 주 성장에 성공하셨습니다!" : "성장 성공 기준에는 조금 더 필요해요!"
+          }`
+        : detailLogPoaMet
+          ? `이번 주 ${detailLogPoaName} ${headerDangam}개를 획득해 성장 성공 기준을 달성하셨어요!`
+          : `이번 주 ${detailLogPoaName} ${headerDangam}개를 획득하셨어요. 성장 성공 기준에는 조금 더 필요해요!`,
     },
     {
       checked: detailLogExpAllEnhanced,
