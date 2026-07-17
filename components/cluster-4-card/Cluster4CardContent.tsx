@@ -8627,18 +8627,31 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 슬롯 내부 정렬: 같은 슬롯에 여러 라인이 있으면
   //  1) master 연결(lineName 보유) 라인을 대표로 우선 — master-less(line_name=null) 라인이
   //     code 알파벳 순(예: "EX02A…" < "EXBS…")으로 cards[0] 가 되어 라인명이 "-" 로 떨어지는 것을 방지.
-  //  2) 그다음 lineCode(code) → mainTitle(title) 순.
+  //  2) 소유자 배정(lineTargetId 보유) 라인 우선 — weekly-cards DTO 는 이미 카드 소유자(userId)
+  //     스코프라 lineTargetId 가 있으면 = 이 크루원에게 실제 배정/평가된 라인. 같은 카테고리(예: 도출)에
+  //     개설만 되고 이 크루원 타깃이 없는 형제 라인(lineTargetId=null, 예: "1/4 라인")이 아래 code
+  //     알파벳 tiebreak 으로 대표(cards[0]) 를 가로채 "본인 배정 2/4 · 강화 성공" 대신 "1/4 · 강화 실패"
+  //     를 보여주던 버그 방지(2026 여름 W1 T유지민 도출 사례). lineName tie 일 때만 개입 — lineName 없는
+  //     타깃 라인을 lineName 있는 라인 위로 올리지 않는다(위 (1) 우선 유지).
+  //  3) 그다음 lineCode(code) → mainTitle(title) 순.
   const hasResolvedLineName = (c: { matchedLine?: Cluster4WeeklyLineDto | null }): boolean => {
     const ln = (c.matchedLine?.lineName as string | null | undefined) ?? null;
     return !!ln && ln.trim() !== "" && ln.trim() !== "-";
   };
+  const hasOwnerLineTarget = (c: { lineTargetId?: string | null; matchedLine?: Cluster4WeeklyLineDto | null }): boolean => {
+    const lt = ((c.lineTargetId as string | null | undefined) ?? (c.matchedLine?.lineTargetId as string | null | undefined)) ?? null;
+    return typeof lt === "string" && lt.trim() !== "";
+  };
   const sortWithinExpSlot = (
-    a: { code?: string | null; title?: string | null; matchedLine?: Cluster4WeeklyLineDto | null },
-    b: { code?: string | null; title?: string | null; matchedLine?: Cluster4WeeklyLineDto | null },
+    a: { code?: string | null; title?: string | null; lineTargetId?: string | null; matchedLine?: Cluster4WeeklyLineDto | null },
+    b: { code?: string | null; title?: string | null; lineTargetId?: string | null; matchedLine?: Cluster4WeeklyLineDto | null },
   ) => {
     const an = hasResolvedLineName(a) ? 1 : 0;
     const bn = hasResolvedLineName(b) ? 1 : 0;
     if (an !== bn) return bn - an; // lineName 보유 라인 먼저
+    const at = hasOwnerLineTarget(a) ? 1 : 0;
+    const bt = hasOwnerLineTarget(b) ? 1 : 0;
+    if (at !== bt) return bt - at; // 소유자 배정(lineTargetId) 라인 먼저
     const ca = String(a.code ?? ""),
       cb = String(b.code ?? "");
     if (ca !== cb) return ca.localeCompare(cb);
