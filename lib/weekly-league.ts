@@ -533,6 +533,34 @@ export async function aggregateWeeklyLeague(
       w.resultReviewedAt = st?.resultReviewedAt ?? null;
     }
 
+    // ── [perf] 의존성 그룹 D 선행 로드 — "weeks[] 확정 후 즉시 실행 가능" 한 3건 ──
+    //   weeks[] 는 위에서 확정됐고(공표/검수 주입까지 끝), 아래 3건은 그 weekIds/seasonKeys 만
+    //   입력으로 받는다. 서로 의존 없음 — 각각 독립 Map/배열로만 소비된다.
+    //     · resolveOrgWeekThresholds        → confirmStarByWeekId (6번에서 await)
+    //     · cluster4_weekly_ranking_exceptions → exRows           (6-1번에서 await)
+    //     · loadTeamBattleContext           → teamCtx             (기존 try/catch 자리에서 await)
+    //   기존엔 셋이 직렬이라 teams 컨텍스트가 앞의 두 RTT 를 기다린 뒤에야 시작했다.
+    //   ⚠️ await·에러 처리·teamCtx 실패 시 null 폴백은 전부 원래 자리 그대로다.
+    //   weeks.map(...) 인자는 원본 호출과 완전히 동일하다.
+    const weekIdsForQuery = weeks.map((w) => w.id);
+    const thresholdsPromise = settle(resolveOrgWeekThresholds(db, { scope: weekScope, org, weekIds: weekIdsForQuery }));
+    const exRowsPromise = settle(
+      db
+        .from("cluster4_weekly_ranking_exceptions")
+        .select("week_id, user_id, exception_type, int_value")
+        .eq("organization_slug", org)
+        // 누적 리스트 — 표시 주차(week_id) 기준으로 예외 조회(시즌 무관). 봄 정합 예외는
+        // 봄 week_id 에만 매칭되어 그대로 적용되고, 다른 시즌엔 예외 행이 없으면 무영향.
+        .in("week_id", weekIdsForQuery),
+    );
+    const teamCtxPromise = settle(
+      loadTeamBattleContext(
+        db,
+        org,
+        weeks.map((w) => ({ id: w.id, seasonKey: w.seasonKey })),
+      ),
+    );
+
     // 3) 성장 상태 스냅샷(SoT) — user_week_statuses. org 유저 한정, 전 행 수집.
     //    쿼리는 위(1번 직후)에서 이미 시작됐다(preload) — await/에러 처리 위치는 원본 그대로다.
     const { data: statusRows, error: statusErr } = await statusRowsPromise;
@@ -654,27 +682,21 @@ export async function aggregateWeeklyLeague(
     }
     // org 차원 check_threshold — operating=org_week_thresholds, test=qa_org_week_thresholds overlay.
     //   check_threshold 직접 읽기는 resolver 로 일원화(Phase B). null-부재(미설정) 동작 보존.
-    const confirmStarByWeekId = await resolveOrgWeekThresholds(db, {
-      scope: weekScope,
-      org,
-      weekIds: weeks.map((w) => w.id),
-    });
+    //   쿼리는 위(2-1 직후)에서 이미 시작됐다(그룹 D preload) — 소비 위치는 원본 그대로다.
+    const thresholdsSettled = await thresholdsPromise;
+    if (!thresholdsSettled.ok) throw thresholdsSettled.e;
+    const confirmStarByWeekId = thresholdsSettled.v;
 
     // 6-1) 봄 정합 예외 보정 — cluster4_weekly_ranking_exceptions (org + season_key 한정).
     //   confirm_star_override: 주차 effectiveConfirmStar 대체(예: W1=51)
     //   cohort_exclude       : (user, week) 코호트 제외(예: 유현준 W9~11 — 점수 소급입력으로 그 주차 미달)
     //   season_key 게이트로 여름 자동 비활성. total/success 직접 override 아님(공식 입력값만).
     //   uws/uwp/개인카드/snapshot 무관(READ only).
-    const { data: exRows } = await db
-      .from("cluster4_weekly_ranking_exceptions")
-      .select("week_id, user_id, exception_type, int_value")
-      .eq("organization_slug", org)
-      // 누적 리스트 — 표시 주차(week_id) 기준으로 예외 조회(시즌 무관). 봄 정합 예외는
-      // 봄 week_id 에만 매칭되어 그대로 적용되고, 다른 시즌엔 예외 행이 없으면 무영향.
-      .in(
-        "week_id",
-        weeks.map((w) => w.id),
-      );
+    //   쿼리는 위(2-1 직후)에서 이미 시작됐다(그룹 D preload) — 소비 위치는 원본 그대로다.
+    //   원본은 에러를 검사하지 않고 data 만 썼고, reject 는 바깥 catch 로 전파됐다 → !ok 재throw 로 보존.
+    const exRowsSettled = await exRowsPromise;
+    if (!exRowsSettled.ok) throw exRowsSettled.e;
+    const { data: exRows } = exRowsSettled.v;
     const confirmStarOverrideByWeekId = new Map<string, number>();
     const cohortExcludeKey = new Set<string>(); // `${user_id}|${week_id}`
     for (const e of exRows || []) {
@@ -703,13 +725,13 @@ export async function aggregateWeeklyLeague(
 
     // ── Team Battle 컨텍스트(팀 카탈로그/파트/리더/시즌휴식/신규 SoT) — 주차 전체 batch 로드.
     //   best-effort: 실패해도 teamCtx=null 로 두고 teams[] 없이 기존 카드만 산출(무영향).
+    //   로드는 위(2-1 직후)에서 이미 시작됐다(그룹 D preload). try 안에서 재throw 하므로
+    //   실패 시 아래 catch(=warn + teamCtx null 유지)가 원본과 동일하게 실행된다.
     let teamCtx: TeamBattleContext | null = null;
     try {
-      teamCtx = await loadTeamBattleContext(
-        db,
-        org,
-        weeks.map((w) => ({ id: w.id, seasonKey: w.seasonKey })),
-      );
+      const teamCtxSettled = await teamCtxPromise;
+      if (!teamCtxSettled.ok) throw teamCtxSettled.e;
+      teamCtx = teamCtxSettled.v;
     } catch (err) {
       console.warn("[weekly-league] Team Battle 컨텍스트 로드 실패 — teams 생략", (err as Error)?.message ?? String(err));
     }

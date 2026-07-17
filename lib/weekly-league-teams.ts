@@ -77,6 +77,16 @@ export type TeamBattleContext = {
   seasonRestBySeasonKey: Map<string, Set<string>>;
 };
 
+// [perf] 프리로드한 promise 를 "원래 try/catch 의미 그대로" 소비하기 위한 어댑터.
+//   lib/weekly-league.ts 의 settle 과 동일 계약(순환 import 를 피하려 이 모듈에 별도 정의).
+//   일찍 시작한 promise 가 try 밖에서 reject 되어 unhandled rejection 이 되는 것을 막고,
+//   소비 지점에서 `if (!s.ok) throw s.e` 로 재throw 해 원래 catch/전파 경로를 보존한다.
+const settle = <T>(p: PromiseLike<T>): Promise<{ ok: true; v: T } | { ok: false; e: unknown }> =>
+  Promise.resolve(p).then(
+    (v) => ({ ok: true as const, v }),
+    (e) => ({ ok: false as const, e }),
+  );
+
 async function pageAll<T>(
   build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
 ): Promise<T[]> {
@@ -114,6 +124,25 @@ export async function loadTeamBattleContext(
   );
   const weekIds = weeks.map((w) => w.id);
   const seasonKeys = Array.from(new Set(weeks.map((w) => w.seasonKey).filter((s): s is string => !!s)));
+
+  // [perf] 그룹 D — 시즌 전체 휴식자 조회는 seasonKeys 만 입력으로 받는다(팀 카탈로그와 무관).
+  //   기존엔 이 함수 맨 끝(5번)에 있어 team_halves→parts/flow/leader 사슬을 전부 기다렸다.
+  //   여기서 "시작"만 하고 await 는 원래 자리(5번)에 그대로 둔다 — 값·grouping·실패 동작 불변.
+  const seasonRestPromise =
+    seasonKeys.length > 0
+      ? settle(
+          pageAll<{ user_id: string; season_key: string }>((from, to) =>
+            db
+              .from("user_season_statuses")
+              .select("user_id, season_key")
+              .in("season_key", seasonKeys)
+              .eq("status", "rest")
+              .order("season_key", { ascending: true })
+              .order("user_id", { ascending: true })
+              .range(from, to),
+          ),
+        )
+      : null;
 
   // 1) 반기 팀 카탈로그 — team_goal 포함(신규 컬럼). 컬럼 미적용이면 team_goal 없이 재시도.
   if (halfKeys.length > 0) {
@@ -156,16 +185,65 @@ export async function loadTeamBattleContext(
       });
     }
 
+    // ── [perf] 의존성 그룹 E 선행 로드 — halfIds / leaderIds 가 확정된 이 시점에 5건을 "시작"만 한다 ──
+    //   halfIds 와 leaderIds 는 바로 위 같은 루프에서 함께 만들어진다(:142-157) → 리더 조회를
+    //   파트/플로우 뒤로 미룰 이유가 없다. 기존엔 5건이 완전 직렬이었다.
+    //   ⚠️ 소비 순서·try/catch 위치·병합 순서는 원본 그대로 유지한다. 특히
+    //   leader educations 는 leader profiles 결과 위에 덮어쓰므로(:240 `ctx.leaderById.get(...) || {...}`)
+    //   "적용" 순서가 값에 영향을 준다 → 시작만 겹치고 적용은 profiles → educations 순서를 지킨다.
+    //   실행 조건(halfIds>0 / weekIds>0 / leaderIds>0)은 원본 게이트와 동일하다 — 조건 미충족 시
+    //   원본처럼 아예 조회하지 않는다(쿼리 0회).
+    const partsPromise =
+      halfIds.length > 0
+        ? settle(
+            pageAll<{ id: string; team_half_id: string; part_name: string; display_order: number | null }>((from, to) =>
+              db
+                .from("cluster4_team_parts")
+                .select("id, team_half_id, part_name, display_order")
+                .in("team_half_id", halfIds)
+                .order("display_order", { ascending: true })
+                .range(from, to),
+            ),
+          )
+        : null;
+    const flowPromise =
+      halfIds.length > 0 && weekIds.length > 0
+        ? settle(
+            pageAll<{ team_half_id: string; week_id: string; flow_text: string | null }>((from, to) =>
+              db.from("cluster4_team_weekly_flow").select("team_half_id, week_id, flow_text").in("team_half_id", halfIds).in("week_id", weekIds).range(from, to),
+            ),
+          )
+        : null;
+    const commentPromise =
+      halfIds.length > 0 && weekIds.length > 0
+        ? settle(
+            pageAll<{ team_half_id: string; week_id: string; comment_text: string | null }>((from, to) =>
+              db.from("cluster4_team_weekly_crew_comment").select("team_half_id, week_id, comment_text").in("team_half_id", halfIds).in("week_id", weekIds).range(from, to),
+            ),
+          )
+        : null;
+    const leaderProfilesPromise =
+      leaderIds.length > 0
+        ? settle(
+            pageAll<{ user_id: string; display_name: string | null; profile_photo_url: string | null; school_name: string | null; department_name: string | null }>((from, to) =>
+              db.from("user_profiles").select("user_id, display_name, profile_photo_url, school_name, department_name").in("user_id", leaderIds).range(from, to),
+            ),
+          )
+        : null;
+    const leaderEduPromise =
+      leaderIds.length > 0
+        ? settle(
+            pageAll<{ user_id: string; school_name: string | null; major_name_1: string | null; sort_order: number | null }>((from, to) =>
+              db.from("user_educations").select("user_id, school_name, major_name_1, sort_order").in("user_id", leaderIds).order("sort_order", { ascending: true }).range(from, to),
+            ),
+          )
+        : null;
+
     // 2) 파트 카탈로그(team_half_id).
-    if (halfIds.length > 0) {
-      const partRows = await pageAll<{ id: string; team_half_id: string; part_name: string; display_order: number | null }>((from, to) =>
-        db
-          .from("cluster4_team_parts")
-          .select("id, team_half_id, part_name, display_order")
-          .in("team_half_id", halfIds)
-          .order("display_order", { ascending: true })
-          .range(from, to),
-      );
+    if (partsPromise) {
+      const partsSettled = await partsPromise;
+      if (!partsSettled.ok) throw partsSettled.e;
+      const partRows = partsSettled.v;
       for (const p of partRows) {
         const arr = ctx.partsByHalfId.get(p.team_half_id) || [];
         arr.push({ partId: p.id, partName: p.part_name });
@@ -173,29 +251,22 @@ export async function loadTeamBattleContext(
       }
 
       // 3) 주차 플로우 / 크루 코멘트 — 신규 테이블. best-effort(미적용 시 빈 맵).
-      if (weekIds.length > 0) {
+      //    조회는 위에서 이미 시작됐다(그룹 E preload) — try/catch 위치·빈 맵 폴백은 원본 그대로다.
+      if (flowPromise) {
         try {
-          const flowRows = await pageAll<{ team_half_id: string; week_id: string; flow_text: string | null }>((from, to) =>
-            db
-              .from("cluster4_team_weekly_flow")
-              .select("team_half_id, week_id, flow_text")
-              .in("team_half_id", halfIds)
-              .in("week_id", weekIds)
-              .range(from, to),
-          );
+          const flowSettled = await flowPromise;
+          if (!flowSettled.ok) throw flowSettled.e;
+          const flowRows = flowSettled.v;
           for (const f of flowRows) ctx.flowByHalfWeek.set(`${f.team_half_id}||${f.week_id}`, f.flow_text ?? null);
         } catch {
           /* 테이블 미적용 — 무시 */
         }
+      }
+      if (commentPromise) {
         try {
-          const cmtRows = await pageAll<{ team_half_id: string; week_id: string; comment_text: string | null }>((from, to) =>
-            db
-              .from("cluster4_team_weekly_crew_comment")
-              .select("team_half_id, week_id, comment_text")
-              .in("team_half_id", halfIds)
-              .in("week_id", weekIds)
-              .range(from, to),
-          );
+          const cmtSettled = await commentPromise;
+          if (!cmtSettled.ok) throw cmtSettled.e;
+          const cmtRows = cmtSettled.v;
           for (const c of cmtRows) ctx.commentByHalfWeek.set(`${c.team_half_id}||${c.week_id}`, c.comment_text ?? null);
         } catch {
           /* 테이블 미적용 — 무시 */
@@ -204,15 +275,13 @@ export async function loadTeamBattleContext(
     }
 
     // 4) 리더 표시 정보 — user_profiles + user_educations(대표=sort_order 최소 우선).
-    if (leaderIds.length > 0) {
+    //    조회는 위에서 이미 시작됐다(그룹 E preload). 적용 순서(profiles → educations)는
+    //    educations 가 profiles 결과 위에 병합되므로 원본 그대로 지킨다.
+    if (leaderProfilesPromise) {
       try {
-        const profs = await pageAll<{ user_id: string; display_name: string | null; profile_photo_url: string | null; school_name: string | null; department_name: string | null }>((from, to) =>
-          db
-            .from("user_profiles")
-            .select("user_id, display_name, profile_photo_url, school_name, department_name")
-            .in("user_id", leaderIds)
-            .range(from, to),
-        );
+        const profsSettled = await leaderProfilesPromise;
+        if (!profsSettled.ok) throw profsSettled.e;
+        const profs = profsSettled.v;
         for (const p of profs) {
           ctx.leaderById.set(p.user_id, {
             name: p.display_name ?? null,
@@ -224,15 +293,12 @@ export async function loadTeamBattleContext(
       } catch {
         /* 무시 */
       }
+    }
+    if (leaderEduPromise) {
       try {
-        const edu = await pageAll<{ user_id: string; school_name: string | null; major_name_1: string | null; sort_order: number | null }>((from, to) =>
-          db
-            .from("user_educations")
-            .select("user_id, school_name, major_name_1, sort_order")
-            .in("user_id", leaderIds)
-            .order("sort_order", { ascending: true })
-            .range(from, to),
-        );
+        const eduSettled = await leaderEduPromise;
+        if (!eduSettled.ok) throw eduSettled.e;
+        const edu = eduSettled.v;
         const seen = new Set<string>();
         for (const e of edu) {
           if (seen.has(e.user_id)) continue; // 대표(첫) 학력만
@@ -251,19 +317,26 @@ export async function loadTeamBattleContext(
   }
 
   // 5) 시즌 전체 휴식자 — user_season_statuses(status='rest'), season_key 별.
-  for (const sk of seasonKeys) {
-    const set = new Set<string>();
-    const rows = await pageAll<{ user_id: string }>((from, to) =>
-      db
-        .from("user_season_statuses")
-        .select("user_id")
-        .eq("season_key", sk)
-        .eq("status", "rest")
-        .order("user_id", { ascending: true })
-        .range(from, to),
-    );
-    for (const r of rows) set.add(r.user_id);
-    ctx.seasonRestBySeasonKey.set(sk, set);
+  //   [perf] 시즌별 반복 조회(N+1) → season_key 배치 조회 1회. 값·grouping 불변:
+  //     · 필터 동일 — status='rest' + season_key. (원본도 org/user 조건이 없는 전역 조회다.)
+  //     · grouping — select 에 season_key 를 추가해 행을 시즌별로 되나눈다. 소비처가 Set 이라
+  //       중복 row 는 원본과 동일하게 흡수되고, 순서에도 의존하지 않는다.
+  //     · 빈 seasonKeys — 원본과 동일하게 조회 자체를 하지 않는다(쿼리 0회 + 빈 맵).
+  //     · 키 커버리지 — 원본은 행이 0건인 시즌에도 빈 Set 을 넣었다. 먼저 전 시즌을 빈 Set 으로
+  //       채워 동일하게 맞춘다(get(...)?.add 가 미등록 시즌을 조용히 버리지 않도록).
+  //     · 정렬 — range 페이지네이션 안정성 때문에 (season_key, user_id) 복합 키를 쓴다.
+  //       원본의 user_id 단독 정렬은 "시즌 1개 안에서만" 유일하므로, 여러 시즌을 한 번에
+  //       읽을 때 그대로 두면 1000행 초과 시 페이지 경계에서 행 중복/누락이 생긴다.
+  //   ⚠️ 실패 contract 차이(의도적으로 남김): pageAll 은 에러 시 [] 를 반환한다(빈 Set = 휴식자 없음).
+  //     원본은 시즌별 조회라 "특정 시즌만 실패" 가 이론상 가능했고 배치는 전 시즌이 함께 비는데,
+  //     두 경로 모두 같은 테이블·같은 형태의 조회라 선택적 실패는 실질적으로 발생하지 않는다.
+  //     fail-open 방향(빈 Set)과 맵 키 커버리지는 동일하다.
+  //   조회는 이 함수 진입부에서 이미 시작됐다(그룹 D preload) — 소비 위치는 여기 그대로다.
+  for (const sk of seasonKeys) ctx.seasonRestBySeasonKey.set(sk, new Set());
+  if (seasonRestPromise) {
+    const seasonSettled = await seasonRestPromise;
+    if (!seasonSettled.ok) throw seasonSettled.e;
+    for (const r of seasonSettled.v) ctx.seasonRestBySeasonKey.get(r.season_key)?.add(r.user_id);
   }
 
   return ctx;
