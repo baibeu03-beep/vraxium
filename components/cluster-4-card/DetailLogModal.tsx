@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { getThemeClass } from "@/lib/cluster-route";
 import { formatLineDuration } from "@/lib/lineDuration";
+// 액트 요약 산식 = 관리자 "액트 체크 내역" 탭과 공유하는 단일 SoT(두 repo 미러링).
+import { buildCrewActSummary, emptyCrewActSummary } from "@/shared/crewActSummary";
 import type {
   CrewLinePointPairDto,
   CrewWeekLineEnhancementDetailDto,
@@ -166,62 +168,17 @@ const formatPenaltyPoint = (v: number): string => (v !== 0 ? `${Math.abs(v)}` : 
  */
 const pointValueColor = (index: number): string => (index === 2 ? "#ff6b6b" : "#9dfa07");
 
-/** 획득/가능 포인트 쌍 */
-interface DetailLogPointPair {
-  earned: number;
-  available: number;
-}
-
 /**
- * 액트 내역 요약 통계 — 표시 중인 행(acts) 단일 출처로 파생.
- * 불변식: 체크 가능 = 행 개수 = 체크 성공 + 체크 실패. (UI 별도 계산/외부 데이터 없음)
- * 체크 필수/선별 = 정규(regular) 행 중 종류 필수/선별 개수.
- *
- * 추가 인덱스(2026-07):
- *  - points.pointA/B/C: 획득(earned)=행별 적립값 합, 가능(available)=행별 availableX 합(미제공 시 pointX 폴백).
- *    포인트 C(패널티)는 표(formatPenaltyPoint)와 동일하게 magnitude(양수) 기준으로 합산 — UI 부호 규칙 신설 금지.
- *  - regularActCount/variableActCount: 구분(source) 단일 기준(체크 성공/필수 여부로 정규·변동 추정 금지).
- * 모든 값은 하단 "액트 내역 목록" 과 동일한 acts 배열만 사용 — 숨겨진/타 주차 액트 미합산, DOM 재추산 없음.
+ * 액트 내역 요약 통계 — **공통 SoT `shared/crewActSummary`** 로 이관(2026-07-17).
+ *   기존 로컬 buildActSummary/EMPTY_ACT_SUMMARY 는 관리자 "액트 체크 내역" 탭과 산식이 갈라질 수 있어
+ *   두 repo 가 미러링하는 shared 모듈로 옮겼다. 산식·불변식·부호 규칙은 **바이트 동일**(이관만).
+ *   ⚠ 여기서 다시 계산하지 말 것 — 표시 중인 acts 를 그대로 buildCrewActSummary 에 넘긴다.
+ *   (DetailLogActRow 는 CrewActSummaryRow 의 상위집합이라 그대로 전달 가능.)
  */
-const buildActSummary = (acts: DetailLogActRow[]) => {
-  const total = acts.length;
-  const success = acts.filter((a) => a.result === "checked").length;
-  const fail = total - success;
-  const required = acts.filter((a) => a.source === "regular" && a.kindKey === "required").length;
-  const selective = acts.filter((a) => a.source === "regular" && a.kindKey === "selective").length;
-  const rate = total > 0 ? Math.round((success / total) * 100) : 0;
-  const regularActCount = acts.filter((a) => a.source === "regular").length;
-  const variableActCount = acts.filter((a) => a.source === "irregular").length;
-  const sum = (pick: (a: DetailLogActRow) => number) =>
-    acts.reduce((n, a) => n + (pick(a) || 0), 0);
-  const points: { pointA: DetailLogPointPair; pointB: DetailLogPointPair; pointC: DetailLogPointPair } = {
-    pointA: { earned: sum((a) => a.pointA), available: sum((a) => a.availableA ?? a.pointA) },
-    pointB: { earned: sum((a) => a.pointB), available: sum((a) => a.availableB ?? a.pointB) },
-    // C(패널티): 표시(formatPenaltyPoint=Math.abs)와 동일 magnitude 합산으로 표↔요약 parity 보장.
-    pointC: {
-      earned: sum((a) => Math.abs(a.pointC)),
-      available: sum((a) => Math.abs(a.availableC ?? a.pointC)),
-    },
-  };
-  return { total, success, fail, required, selective, rate, regularActCount, variableActCount, points };
-};
+const buildActSummary = (acts: DetailLogActRow[]) => buildCrewActSummary(acts);
 
 /** null-data 시 요약 기본값(타입 안정용 — 실제 렌더는 data 존재 분기에서만) */
-const EMPTY_ACT_SUMMARY = {
-  total: 0,
-  success: 0,
-  fail: 0,
-  required: 0,
-  selective: 0,
-  rate: 0,
-  regularActCount: 0,
-  variableActCount: 0,
-  points: {
-    pointA: { earned: 0, available: 0 },
-    pointB: { earned: 0, available: 0 },
-    pointC: { earned: 0, available: 0 },
-  },
-};
+const EMPTY_ACT_SUMMARY = emptyCrewActSummary();
 
 /**
  * 평점 표시 — 0 과 null 을 혼동하지 않는다.

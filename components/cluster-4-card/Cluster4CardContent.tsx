@@ -31,6 +31,8 @@ import confetti from "canvas-confetti";
 import HelpModalBody from "@/components/shared/HelpModalBody";
 import { Skeleton } from "@/components/ui/skeleton/Skeleton";
 import type { AdminCluster4WeeklyCardDto, Cluster4ActLogDto, Cluster4RateDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto, CrewWeekLineEnhancementDetailDto } from "@/shared/cluster4.contracts";
+// 액트 종류(필수/선별/전원/부분) 판정 = 관리자 액트 탭과 공유하는 단일 SoT(두 repo 미러링).
+import { resolveCrewActKind } from "@/shared/crewActSummary";
 
 // 주차 결과 결정 시점 = N+1주(목) 12:01 KST = N(월) 00:00 + 10일 12시간 1분
 // 이 시점에 동시에 확정:
@@ -6659,21 +6661,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     return DL_ACT_HUB_LABEL[base] ?? "-";
   };
   // 종류 — 정규: required/basic→필수, selection/optional→선별 / 변동: all→전원, partial→부분.
-  //   label(표시) + key(배지 색상 클래스) 둘 다 반환.
+  //   판정 = 공통 SoT `shared/crewActSummary.resolveCrewActKind`(관리자 액트 탭과 동일 · 두 repo 미러링).
+  //   ⚠ 여기서 자체 매핑을 다시 만들지 말 것 — kindKey 가 갈라지면 요약의 필수/선별 수가 어긋난다.
   const dlActKind = (
     source: string,
     kind: string | null | undefined,
-  ): { label: string; key: DetailLogActRow["kindKey"] } => {
-    const k = String(kind ?? "").toLowerCase();
-    if (source === "irregular") {
-      if (k === "all") return { label: "전원", key: "all" };
-      if (k === "partial") return { label: "부분", key: "partial" };
-      return { label: "-", key: "unknown" };
-    }
-    if (k === "required" || k === "basic") return { label: "필수", key: "required" };
-    if (k === "selection" || k === "optional") return { label: "선별", key: "selective" };
-    return { label: "-", key: "unknown" };
-  };
+  ): { label: string; key: DetailLogActRow["kindKey"] } => resolveCrewActKind(source, kind);
   // 발생 시점(=체크 신청 시점) — regular requestedAt 우선, 없으면(변동 등) occurredAt.
   //   테이블 정렬용 압축 포맷 "YYYY.MM.DD HH:mm"(tabular-nums 로 자릿수 정렬).
   const dlActTimeText = (iso: string | null): string => {
