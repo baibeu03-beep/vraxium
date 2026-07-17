@@ -369,6 +369,51 @@ const run = async () => {
       }),
     );
 
+  // [8-a] 전체 너비 2분할 + 중앙 정렬
+  const layout = await page.evaluate(() => {
+    const tabs = document.querySelector(".dl-tabs");
+    const tr = tabs.getBoundingClientRect();
+    const btns = [...tabs.querySelectorAll(".dl-tab")];
+    const brs = btns.map((b) => b.getBoundingClientRect());
+    // ⚠ 폭 비교는 반드시 같은 단위로 — 이 모달은 zoom:1.25 라 getBoundingClientRect(줌 적용)와
+    //   clientWidth(레이아웃 px)를 섞어 비교하면 25% 어긋나 거짓 실패한다. 본문 요소(요약/표)와
+    //   rect 끼리 비교하는 게 "본문 전체 너비를 쓰는가"의 정확한 기준이다.
+    const wrap = document.querySelector("#dl-panel-line .dl-act-table-wrap");
+    const summary = document.querySelector("#dl-panel-line .dl-act-summary");
+    return {
+      tabsWidth: +tr.width.toFixed(2),
+      containerWidth: wrap ? +wrap.getBoundingClientRect().width.toFixed(2) : null,
+      summaryWidth: summary ? +summary.getBoundingClientRect().width.toFixed(2) : null,
+      widths: brs.map((r) => +r.width.toFixed(2)),
+      // 각 탭 안에서 아이콘+텍스트 묶음이 가운데인가 = 묶음 중심 ↔ 버튼 중심 차이
+      centerOffsets: btns.map((b) => {
+        const br = b.getBoundingClientRect();
+        const icon = b.querySelector("i").getBoundingClientRect();
+        const label = b.querySelector(".dl-tab-label").getBoundingClientRect();
+        const groupCenter = (icon.left + label.right) / 2;
+        return +Math.abs(groupCenter - (br.left + br.width / 2)).toFixed(2);
+      }),
+      // 가운데 경계가 2겹으로 두꺼워지지 않았는가
+      borderLefts: btns.map((b) => getComputedStyle(b).borderLeftWidth),
+      borderRights: btns.map((b) => getComputedStyle(b).borderRightWidth),
+      overflow: btns.some((b) => b.scrollWidth > b.clientWidth + 1),
+      wrapped: new Set(brs.map((r) => Math.round(r.top))).size > 1,
+    };
+  });
+  console.log(`    탭줄 ${layout.tabsWidth}px · 본문 표 ${layout.containerWidth}px · 요약 ${layout.summaryWidth}px · 각 탭 [${layout.widths.join(", ")}]`);
+  ok("탭줄 = 본문(표) 전체 너비", Math.abs(layout.tabsWidth - layout.containerWidth) < 1,
+    `탭 ${layout.tabsWidth} vs 표 ${layout.containerWidth}`);
+  ok("탭줄 = 요약 카드 너비(본문 정렬 일치)", Math.abs(layout.tabsWidth - layout.summaryWidth) < 1,
+    `탭 ${layout.tabsWidth} vs 요약 ${layout.summaryWidth}`);
+  ok("두 탭 computed width 동일", new Set(layout.widths).size === 1, layout.widths.join(" , "));
+  ok("각 탭 = 전체의 50%", layout.widths.every((w) => Math.abs(w - layout.tabsWidth / 2) < 1),
+    `${layout.widths.join(",")} vs ${(layout.tabsWidth / 2).toFixed(2)}`);
+  ok("아이콘+텍스트 묶음이 각 탭 중앙", layout.centerOffsets.every((d) => d < 1.5), `offset=${layout.centerOffsets.join(",")}`);
+  ok("가운데 구분선 1겹(겹침 없음)", layout.borderRights.every((w) => parseFloat(w) === 0) && parseFloat(layout.borderLefts[0]) === 0 && parseFloat(layout.borderLefts[1]) > 0,
+    `left=${layout.borderLefts.join(",")} right=${layout.borderRights.join(",")}`);
+  ok("탭 텍스트 overflow 없음", !layout.overflow);
+  ok("탭 줄바꿈 없음(한 줄 2분할)", !layout.wrapped);
+
   const onLineTab = await tabMetrics();
   console.log(`    ${onLineTab.map((t) => `${t.id}[${t.active ? "active" : "idle"}] ${t.fontSize}/${t.fontWeight} h=${t.height} w=${t.width}`).join("\n    ")}`);
 
