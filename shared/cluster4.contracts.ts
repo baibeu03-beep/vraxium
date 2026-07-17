@@ -286,6 +286,98 @@ export interface Cluster4ActLogDto {
   kind: string;
 }
 
+// ── Detail Log "라인 강화 내역" 탭 (어드민 internal read-only endpoint SoT) ──
+// SoT = vraxium-admin `getCrewWeekLineSummary()` (관리자 "라인 강화 내역" 탭과 **동일 함수**) →
+//   `projectCrewLineEnhancement()` 투영 결과. 고객앱은 서버 proxy(/api/cluster4/weekly-line-enhancement)
+//   로만 조회하고 **값을 그대로 표시**한다 — 강화 결과/평점/유형/허브/포인트 재계산 금지.
+//   관리자 전용 편집 필드(2차 기입 override·편집권·mutation 키·제출 원문)는 응답에 없다.
+//
+// 불변식(백엔드 projection 이 by construction 보장 — 프론트 보정 금지):
+//   clubOpenCount = rows.length = success + failure + notApplicable + pending
+//   crewOpenCount = success + failure + pending  (확정 주차 pending=0 → = success + failure)
+//   notApplicableCount = clubOpenCount − crewOpenCount
+//   enhancementRate = round(success / crewOpen × 100), 분모 0 → 0
+//   summary.point{A,B,C}.{earned,available} = Σ rows.point{A,B,C}.{earned,available}
+export type CrewLineEnhancementResult =
+  | "success"
+  | "failure"
+  | "not_applicable"
+  | "pending"; // 미확정(집계 전) — 확정 주차엔 나오지 않음
+
+// 라인 예상 소요 시간(분) — DB CHECK(30|60|90|120)와 동일 목록. null=미설정.
+//   ⚠ vraxium-admin `lib/adminLineRegistrationsTypes.ts`(LINE_DURATION_MINUTES)의 미러다.
+//     두 레포는 별도 배포라 타입을 공유할 수 없다 — 값을 늘릴 땐 양쪽 + DB CHECK 를 함께 고칠 것.
+export const LINE_DURATION_MINUTES = [30, 60, 90, 120] as const;
+export type LineDurationMinutes = (typeof LINE_DURATION_MINUTES)[number];
+
+export type CrewLineEnhancementHub =
+  | "practical_info"
+  | "practical_experience"
+  | "practical_competency"
+  | "practical_career";
+
+export type CrewLineGrowthRequirement = "required" | "optional";
+
+// 강화 결과 배지 톤 — 어드민 enhancementStatusTone SoT(success/danger/neutral).
+export type CrewLineEnhancementTone = "success" | "danger" | "neutral";
+
+export interface CrewLinePointPairDto {
+  earned: number;
+  available: number;
+}
+
+export interface CrewWeekLineEnhancementRowDto {
+  // 렌더/정렬 안정키(응답 내 결정적). mutation 식별자 아님 — 서버가 lineId/lineTargetId 를 노출하지 않는다.
+  stableKey: string;
+  result: CrewLineEnhancementResult;
+  resultLabel: string; // 강화 성공 / 강화 실패 / 해당 없음 / 집계 전
+  resultTone: CrewLineEnhancementTone;
+  lineName: string;
+  hub: CrewLineEnhancementHub;
+  hubLabel: string; // "실무 정보" 등 (백엔드 SoT — 프론트 매핑 금지)
+  kind: string | null; // 종류(도출/분석/원리/일반 …). 미해석=null → "-"
+  // 예상 소요 시간(분) — line_registrations.estimated_duration_minutes SoT. null=미설정/브리지없음 → "-".
+  //   표시("0.5 h" 등)는 프론트 formatLineDuration(@/lib/lineDuration)이 만든다 — 백엔드는 분만 싣는다.
+  //   ⚠ 실무 경력은 원장 브리지가 없어 항상 null 이다(추정 금지).
+  estimatedDurationMinutes: LineDurationMinutes | null;
+  // 평점(0~10) — 실무 경험=활동 평점 · 실무 경력=등급(S/A/B/C/D) 환산 점수(10/8/6/4/2).
+  //   실무 정보·역량은 원천이 NULL 강제라 항상 null → "-". 없음=null → "-". 0 과 null 구분.
+  rating: number | null;
+  pointA: CrewLinePointPairDto;
+  pointB: CrewLinePointPairDto;
+  // 번개 — 원장 point_penalty / 설정 point_c. 현재 원천상 전부 0/0 이지만 컬럼·구조는 A/B 와 동형.
+  pointC: CrewLinePointPairDto;
+  growthRequirement: CrewLineGrowthRequirement; // experience=required, 그 외=optional
+}
+
+export interface CrewWeekLineEnhancementDetailDto {
+  version: number;
+  userId: string;
+  weekId: string;
+  organizationSlug: string | null;
+  confirmed: boolean;
+  isRestWeek: boolean;
+  summary: {
+    enhancementRate: number;
+    clubOpenCount: number;
+    crewOpenCount: number;
+    successCount: number;
+    failureCount: number;
+    notApplicableCount: number;
+    pendingCount: number;
+    pointA: CrewLinePointPairDto;
+    pointB: CrewLinePointPairDto;
+    pointC: CrewLinePointPairDto; // = Σ rows.pointC (값 0 이어도 숨기지 않는다)
+  };
+  rows: CrewWeekLineEnhancementRowDto[];
+}
+
+export interface CrewWeekLineEnhancementResponseDto {
+  success: boolean;
+  data: CrewWeekLineEnhancementDetailDto | null;
+  error?: { message: string; code: string } | null;
+}
+
 // statusTone — 어드민 DTO 가능 값(semantic tone): "neutral" | "info" | "success" | "warning" | "danger".
 // statusIconKey/userWeekStatus 와 별개 축 (tone 은 색상 톤, iconKey 는 아이콘/세부 상태).
 export type AdminCluster4StatusTone =

@@ -1,9 +1,14 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { getThemeClass } from "@/lib/cluster-route";
+import { formatLineDuration } from "@/lib/lineDuration";
+import type {
+  CrewLinePointPairDto,
+  CrewWeekLineEnhancementDetailDto,
+} from "@/shared/cluster4.contracts";
 
 /** 성장 결과 1줄(체크박스) — 충족/미충족 */
 export interface DetailLogCondition {
@@ -93,10 +98,33 @@ export interface DetailLogData {
   actPointNames: [string, string, string];
 }
 
+/** Detail Log 좌측 탭 — 액트 체크 내역 / 라인 강화 내역 */
+export type DetailLogTabKey = "act" | "line";
+
+/**
+ * "라인 강화 내역" 탭 데이터 상태 — 호출부(Cluster4CardContent)가 lazy 조회해 주입한다.
+ * (본 컴포넌트는 순수 표시 — fetch 하지 않는다. 탭 최초 진입 시 onLineTabOpen 으로 알리기만 한다.)
+ *   idle    = 아직 조회 전(탭 미진입)
+ *   loading = 조회 중 → skeleton
+ *   error   = 조회 실패 → 메시지 + 재시도
+ *   ready   = 백엔드 DTO 그대로 표시(값 재계산 금지)
+ */
+export type DetailLogLineEnhancementState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; data: CrewWeekLineEnhancementDetailDto };
+
 interface DetailLogModalProps {
   show: boolean;
   onHide: () => void;
   data: DetailLogData | null;
+  /** 라인 강화 내역 상태(미지정 시 idle 취급 — 탭은 표시되나 진입 시 조회 요청) */
+  lineEnhancement?: DetailLogLineEnhancementState | null;
+  /** 라인 탭 최초 진입 알림 — 호출부가 캐시 확인 후 필요할 때만 조회한다(탭 전환마다 재요청 금지) */
+  onLineTabOpen?: () => void;
+  /** 라인 탭 조회 실패 시 재시도 */
+  onLineRetry?: () => void;
   /**
    * Phase A — portal root 에 직접 부착될 theme scope class.
    * 미지정 시 usePathname() 으로 자동 추론.
@@ -195,21 +223,95 @@ const EMPTY_ACT_SUMMARY = {
   },
 };
 
+/**
+ * 평점 표시 — 0 과 null 을 혼동하지 않는다.
+ *   number(0 포함) → 그대로. null/undefined(값 없음) → "-".
+ */
+const formatLineRating = (v: number | null | undefined): string =>
+  typeof v === "number" ? String(v) : "-";
+
+/** 포인트 축 — 색을 결정하는 유일한 입력(A/B=초록, C=빨강). */
+export type LinePointKind = "a" | "b" | "c";
+
+/**
+ * 행/요약 공통 "획득 / 가능" 렌더 — 라인 탭의 표 3열(A/B/C)과 상단 요약 3카드가 **전부 이것만** 쓴다.
+ *
+ *   색 규칙(2026-07-17 확정) — 숫자 **두 개 모두** 축 색으로 칠한다. 획득/가능은 색으로 구분하지 않는다:
+ *     · A → 획득·가능 둘 다 초록   · B → 둘 다 초록   · C → 둘 다 빨강
+ *     · "/" → 기본 색상(상속) — 어떤 축이든 동일
+ *   값이 0 인지와 무관하다(0 / 0 도 같은 색). 색 정의는 SCSS(.dl-point-pair--*) 한 곳뿐이다.
+ *
+ *   ⚠ 축(kind)만이 색의 입력이다 — org·mode(일반/mode=test/actAsTestUserId/demoUserId)·값 크기에
+ *     따른 분기가 없다. 6개 표시 지점이 같은 컴포넌트를 타므로 규칙이 갈라질 수 없다(컬럼별 스타일 금지).
+ *   · 획득이 0이어도 "0 / N" 을 그대로 표시한다(0 이라고 숨기지 않음 — 요구 §2).
+ */
+const LinePointPair: React.FC<{ pair: CrewLinePointPairDto; kind: LinePointKind }> = ({
+  pair,
+  kind,
+}) => (
+  <span className={`dl-point-pair dl-point-pair--${kind}`}>
+    <span className="dl-point-earned">{pair.earned}</span>
+    <span className="dl-point-sep"> / </span>
+    <span className="dl-point-available">{pair.available}</span>
+  </span>
+);
+
+/** 주차 성장 조건 배지 문구 — 실무 경험만 필수(백엔드 growthRequirement SoT). */
+const growthRequirementLabel = (r: "required" | "optional"): string =>
+  r === "required" ? "필수" : "자율";
+
+/** 탭 순서(좌우 방향키 이동 기준) */
+const TAB_ORDER: DetailLogTabKey[] = ["act", "line"];
+
+/** 탭 라벨 — 패널 내부 제목을 제거했으므로 이 문구가 각 패널의 **유일한 제목**이다. */
+const TAB_LABEL: Record<DetailLogTabKey, string> = {
+  act: "액트 체크 내역",
+  line: "라인 강화 내역",
+};
+
 const DetailLogModal: React.FC<DetailLogModalProps> = ({
   show,
   onHide,
   data,
+  lineEnhancement,
+  onLineTabOpen,
+  onLineRetry,
   themeClassName,
 }) => {
   const pathname = usePathname();
   const resolvedThemeClass = themeClassName ?? getThemeClass(pathname);
   // 헤더 도움말 버튼 → 2차 도움말 모달(기존 도움말 규격). 본문은 비워둔다.
   const [showHelp, setShowHelp] = useState(false);
+  // 기본 탭 = 액트 체크 내역(기존 UX 유지). 닫으면 기본 탭으로 초기화.
+  const [activeTab, setActiveTab] = useState<DetailLogTabKey>("act");
+  const tabRefs = useRef<Record<DetailLogTabKey, HTMLButtonElement | null>>({
+    act: null,
+    line: null,
+  });
+  // 라인 탭 조회 요청은 "모달 1회 열림당 최초 진입 1회"만 — 탭 전환마다 재요청하지 않는다.
+  const lineTabRequestedRef = useRef(false);
 
   // 모달이 닫히면 2차 도움말 상태도 초기화.
   useEffect(() => {
     if (!show) setShowHelp(false);
   }, [show]);
+
+  // 모달이 닫히면 기본 탭으로 초기화 + 라인 조회 요청 플래그 해제.
+  useEffect(() => {
+    if (!show) {
+      setActiveTab("act");
+      lineTabRequestedRef.current = false;
+    }
+  }, [show]);
+
+  // 라인 탭 최초 진입 → 호출부에 조회 요청(실제 캐시 판단/조회는 호출부 책임).
+  //   ref 가드라 onLineTabOpen 참조가 바뀌어도 중복 호출되지 않는다.
+  useEffect(() => {
+    if (!show || activeTab !== "line") return;
+    if (lineTabRequestedRef.current) return;
+    lineTabRequestedRef.current = true;
+    onLineTabOpen?.();
+  }, [show, activeTab, onLineTabOpen]);
 
   useEffect(() => {
     if (!show) return;
@@ -231,6 +333,21 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
   const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) onHide();
   };
+
+  // 좌우 방향키로 탭 이동(WAI-ARIA tabs 관례). 이동 후 포커스도 함께 옮긴다.
+  const handleTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const i = TAB_ORDER.indexOf(activeTab);
+    const next =
+      e.key === "ArrowRight"
+        ? TAB_ORDER[(i + 1) % TAB_ORDER.length]
+        : TAB_ORDER[(i - 1 + TAB_ORDER.length) % TAB_ORDER.length];
+    setActiveTab(next);
+    tabRefs.current[next]?.focus();
+  };
+
+  const lineState: DetailLogLineEnhancementState = lineEnhancement ?? { status: "idle" };
 
   const overlayClass = `section-modal-overlay detail-log-modal-overlay${
     resolvedThemeClass ? ` ${resolvedThemeClass}` : ""
@@ -377,13 +494,56 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                 </section>
               </div>
 
-              {/* ── 액트 내역 (백엔드 snapshot DTO v30 actLogs) ── */}
+              {/* ── 내역 탭 (액트 체크 내역 / 라인 강화 내역) ── */}
               <section className="dl-card dl-act-section">
-                <header className="dl-card-head">
-                  <i className="ti ti-clipboard-list" aria-hidden="true" />
-                  <h4>액트 내역 목록</h4>
-                </header>
+                <div className="dl-tabs" role="tablist" aria-label="Detail Log 내역">
+                  <button
+                    type="button"
+                    role="tab"
+                    id="dl-tab-act"
+                    aria-selected={activeTab === "act"}
+                    aria-controls="dl-panel-act"
+                    tabIndex={activeTab === "act" ? 0 : -1}
+                    ref={(el) => {
+                      tabRefs.current.act = el;
+                    }}
+                    className={`dl-tab${activeTab === "act" ? " is-active" : ""}`}
+                    onClick={() => setActiveTab("act")}
+                    onKeyDown={handleTabKeyDown}
+                  >
+                    <i className="ti ti-clipboard-list" aria-hidden="true" />
+                    <span className="dl-tab-label">{TAB_LABEL.act}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    id="dl-tab-line"
+                    aria-selected={activeTab === "line"}
+                    aria-controls="dl-panel-line"
+                    tabIndex={activeTab === "line" ? 0 : -1}
+                    ref={(el) => {
+                      tabRefs.current.line = el;
+                    }}
+                    className={`dl-tab${activeTab === "line" ? " is-active" : ""}`}
+                    onClick={() => setActiveTab("line")}
+                    onKeyDown={handleTabKeyDown}
+                  >
+                    <i className="ti ti-chart-bar" aria-hidden="true" />
+                    <span className="dl-tab-label">{TAB_LABEL.line}</span>
+                  </button>
+                </div>
 
+                {/* ── 액트 체크 내역 (백엔드 snapshot DTO v30 actLogs) — 기존 데이터/산식 불변 ── */}
+                <div
+                  className="dl-tabpanel"
+                  role="tabpanel"
+                  id="dl-panel-act"
+                  aria-labelledby="dl-tab-act"
+                  hidden={activeTab !== "act"}
+                >
+                {/* 패널 제목 없음 — 탭 버튼(#dl-tab-act)이 이미 "액트 체크 내역"을 표시하므로 중복이다.
+                    패널의 접근성 이름은 aria-labelledby="dl-tab-act"(탭 버튼)로 유지되므로 스크린리더에도
+                    제목이 그대로 노출된다(헤더 제거로 잃는 정보 없음). 아이콘도 탭 버튼에 동일한 것이 있다. */}
                 {data.acts.length === 0 ? (
                   <div className="dl-act-empty">이번 주 수행·적립된 액트 내역이 없어요.</div>
                 ) : (
@@ -531,6 +691,193 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                     </div>
                   </>
                 )}
+                </div>
+
+                {/* ── 라인 강화 내역 (어드민 getCrewWeekLineSummary SoT — 값 그대로 표시, 재계산 금지) ── */}
+                <div
+                  className="dl-tabpanel"
+                  role="tabpanel"
+                  id="dl-panel-line"
+                  aria-labelledby="dl-tab-line"
+                  hidden={activeTab !== "line"}
+                >
+                  {/* 패널 제목 없음 — 탭 버튼(#dl-tab-line)이 이미 "라인 강화 내역"을 표시하므로 중복이다.
+                      액트 탭(#dl-panel-act)과 동일 원칙: 두 탭 모두 **탭 버튼이 제목 역할**을 한다.
+                      패널의 접근성 이름은 aria-labelledby="dl-tab-line"(탭 버튼)로 유지되므로
+                      스크린리더에는 제목이 그대로 노출된다 — 시각적 중복만 제거된다. */}
+                  {lineState.status === "idle" || lineState.status === "loading" ? (
+                    <div className="dl-line-loading" role="status" aria-live="polite">
+                      <span className="dl-line-skeleton" aria-hidden="true" />
+                      <span className="dl-line-skeleton" aria-hidden="true" />
+                      <span className="dl-line-skeleton" aria-hidden="true" />
+                      <span className="dl-line-loading-text">라인 강화 내역을 불러오는 중입니다…</span>
+                    </div>
+                  ) : lineState.status === "error" ? (
+                    <div className="dl-line-error" role="alert">
+                      <i className="ti ti-alert-circle" aria-hidden="true" />
+                      <p className="dl-line-error-text">{lineState.message}</p>
+                      {onLineRetry ? (
+                        <button type="button" className="dl-line-retry" onClick={onLineRetry}>
+                          다시 시도
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : lineState.data.rows.length === 0 ? (
+                    <div className="dl-act-empty">이 주차에 오픈된 라인이 없습니다.</div>
+                  ) : (
+                    <>
+                      {/* 상단 요약 X — 전부 백엔드 summary 값(프론트 재집계 금지). */}
+                      <div className="dl-act-summary">
+                        <div className="dl-act-summary-bar-row">
+                          <span className="dl-act-summary-title">라인 강화율</span>
+                          <div
+                            className="dl-act-progress"
+                            role="progressbar"
+                            aria-valuenow={lineState.data.summary.enhancementRate}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                          >
+                            <div
+                              className="dl-act-progress-fill"
+                              style={{ width: `${lineState.data.summary.enhancementRate}%` }}
+                            />
+                          </div>
+                          <span className="dl-act-summary-rate">
+                            {lineState.data.summary.enhancementRate}%
+                          </span>
+                        </div>
+                        <div className="dl-act-stats">
+                          <span className="dl-act-stat">
+                            <span className="dl-act-stat-label">클럽 오픈 라인</span>
+                            <span className="dl-act-stat-value">
+                              {lineState.data.summary.clubOpenCount}
+                            </span>
+                          </span>
+                          <span className="dl-act-stat">
+                            <span className="dl-act-stat-label">크루 오픈 라인</span>
+                            <span className="dl-act-stat-value">
+                              {lineState.data.summary.crewOpenCount}
+                            </span>
+                          </span>
+                          <span className="dl-act-stat dl-act-stat--success">
+                            <span className="dl-act-stat-label">강화 성공</span>
+                            <span className="dl-act-stat-value">
+                              {lineState.data.summary.successCount}
+                            </span>
+                          </span>
+                          <span className="dl-act-stat dl-act-stat--fail">
+                            <span className="dl-act-stat-label">강화 실패</span>
+                            <span className="dl-act-stat-value">
+                              {lineState.data.summary.failureCount}
+                            </span>
+                          </span>
+                          <span className="dl-act-stat">
+                            <span className="dl-act-stat-label">해당 없음</span>
+                            <span className="dl-act-stat-value">
+                              {lineState.data.summary.notApplicableCount}
+                            </span>
+                          </span>
+
+                          {/* 획득 포인트 A/B/C — "획득 / 가능". 라벨=조직 point config(액트 탭과 동일 출처).
+                              ⚠ C 는 현재 원천상 항상 0/0 이지만 **값이 0 이라는 이유로 숨기지 않는다**(요구 §2).
+                              ⚠ 색은 표 3열과 **동일 컴포넌트·동일 kind**로 결정된다(A/B 초록·C 빨강).
+                                인라인 color 를 다시 넣지 말 것 — 요약과 표가 갈라진다. */}
+                          <span className="dl-act-stat dl-act-stat--point">
+                            <span className="dl-act-stat-label">획득 {pointALabel}</span>
+                            <span className="dl-act-stat-value">
+                              <LinePointPair pair={lineState.data.summary.pointA} kind="a" />
+                            </span>
+                          </span>
+                          <span className="dl-act-stat dl-act-stat--point">
+                            <span className="dl-act-stat-label">획득 {pointBLabel}</span>
+                            <span className="dl-act-stat-value">
+                              <LinePointPair pair={lineState.data.summary.pointB} kind="b" />
+                            </span>
+                          </span>
+                          <span className="dl-act-stat dl-act-stat--point">
+                            <span className="dl-act-stat-label">획득 {pointCLabel}</span>
+                            <span className="dl-act-stat-value">
+                              <LinePointPair pair={lineState.data.summary.pointC} kind="c" />
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 하단 표 Y — 이번 주 클럽 오픈 라인 전 행. 10열이라 좁은 폭에선 가로 스크롤(wrap). */}
+                      <div className="dl-act-table-wrap">
+                        <table className="dl-act-table dl-line-table">
+                          <colgroup>
+                            <col className="dl-line-col-result" />
+                            <col className="dl-line-col-name" />
+                            <col className="dl-line-col-hub" />
+                            <col className="dl-line-col-kind" />
+                            <col className="dl-line-col-duration" />
+                            <col className="dl-line-col-rating" />
+                            <col className="dl-line-col-pt" />
+                            <col className="dl-line-col-pt" />
+                            <col className="dl-line-col-pt" />
+                            <col className="dl-line-col-req" />
+                          </colgroup>
+                          <thead>
+                            <tr>
+                              <th>결과</th>
+                              <th className="dl-act-col-name">라인명</th>
+                              <th>소속 허브</th>
+                              <th>종류</th>
+                              <th>소요 시간</th>
+                              <th>평점</th>
+                              <th className="dl-act-col-point">획득 {pointALabel}</th>
+                              <th className="dl-act-col-point">획득 {pointBLabel}</th>
+                              <th className="dl-act-col-point">획득 {pointCLabel}</th>
+                              <th>주차 성장 조건</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {lineState.data.rows.map((row) => (
+                              <tr key={row.stableKey}>
+                                <td>
+                                  <span
+                                    className={`dl-act-badge dl-line-result dl-line-result--${row.resultTone}`}
+                                  >
+                                    {row.resultLabel}
+                                  </span>
+                                </td>
+                                {/* 라인명 — 한 줄 ellipsis 금지(최대 3줄 clamp + title 전체 노출) */}
+                                <td className="dl-line-name" title={row.lineName || "-"}>
+                                  {row.lineName || "-"}
+                                </td>
+                                <td className="dl-act-cell">{row.hubLabel}</td>
+                                <td className="dl-act-cell">{row.kind || "-"}</td>
+                                {/* 소요 시간 — 분(DTO) → 표시는 공용 formatter 단일 경유. 미설정=" - ". */}
+                                <td className="dl-act-num">
+                                  {formatLineDuration(row.estimatedDurationMinutes)}
+                                </td>
+                                <td className="dl-act-num">{formatLineRating(row.rating)}</td>
+                                {/* 포인트 A/B/C — 요약 카드와 **동일 컴포넌트·동일 kind**(A/B 초록·C 빨강). */}
+                                <td className="dl-act-num">
+                                  <LinePointPair pair={row.pointA} kind="a" />
+                                </td>
+                                <td className="dl-act-num">
+                                  <LinePointPair pair={row.pointB} kind="b" />
+                                </td>
+                                <td className="dl-act-num">
+                                  <LinePointPair pair={row.pointC} kind="c" />
+                                </td>
+                                <td>
+                                  <span
+                                    className={`dl-act-badge dl-line-req dl-line-req--${row.growthRequirement}`}
+                                  >
+                                    {growthRequirementLabel(row.growthRequirement)}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
               </section>
             </>
           )}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -26,11 +26,11 @@ import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { ApiRequestError, apiErrorMessage, readJsonSafe } from "@/lib/api-response";
 import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
-import DetailLogModal, { type DetailLogData, type DetailLogCondition, type DetailLogActRow } from "./DetailLogModal";
+import DetailLogModal, { type DetailLogData, type DetailLogCondition, type DetailLogActRow, type DetailLogLineEnhancementState } from "./DetailLogModal";
 import confetti from "canvas-confetti";
 import HelpModalBody from "@/components/shared/HelpModalBody";
 import { Skeleton } from "@/components/ui/skeleton/Skeleton";
-import type { AdminCluster4WeeklyCardDto, Cluster4ActLogDto, Cluster4RateDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
+import type { AdminCluster4WeeklyCardDto, Cluster4ActLogDto, Cluster4RateDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto, CrewWeekLineEnhancementDetailDto } from "@/shared/cluster4.contracts";
 
 // 주차 결과 결정 시점 = N+1주(목) 12:01 KST = N(월) 00:00 + 10일 12시간 1분
 // 이 시점에 동시에 확정:
@@ -6723,6 +6723,101 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     // Po.A/B/C 컬럼 헤더 조직별 명칭(별/방패/번개 등) — 포인트 카드와 동일 단일 출처.
     actPointNames: detailLogPointNames,
   };
+  // ── Detail Log "라인 강화 내역" 탭 — lazy 조회(탭 최초 진입 1회) + (userId, weekId) 캐시 ──
+  // SoT = /api/cluster4/weekly-line-enhancement(서버 proxy → admin getCrewWeekLineSummary).
+  //   · 팝업 최초 진입은 액트 탭만 표시하므로 여기서 미리 받지 않는다(주차 카드 응답 비대화 방지).
+  //   · 같은 (userId, weekId) 면 탭 전환/재오픈 시 캐시 재사용 — 탭 전환마다 재요청하지 않는다.
+  //   · user/week 가 바뀌면 캐시를 버린다(다른 사람·다른 주차 데이터 잔존 금지).
+  //   · 일반/데모(demoUserId) 모두 동일 endpoint·동일 DTO — 대상 userId 만 다르다.
+  const lineTargetUserId = urlUserId || session?.user?.id || null;
+  const lineCacheKey = lineTargetUserId && weekId ? `${lineTargetUserId}|${weekId}` : null;
+  const [lineEnhancement, setLineEnhancement] = useState<DetailLogLineEnhancementState>({
+    status: "idle",
+  });
+  const lineEnhancementCacheRef = useRef<{
+    key: string;
+    data: CrewWeekLineEnhancementDetailDto;
+  } | null>(null);
+  const lineEnhancementInFlightRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // 대상(userId/weekId) 변경 → 캐시 무효화 + idle 복귀.
+    lineEnhancementCacheRef.current = null;
+    lineEnhancementInFlightRef.current = null;
+    setLineEnhancement({ status: "idle" });
+  }, [lineCacheKey]);
+
+  const fetchLineEnhancement = useCallback(
+    async (force = false) => {
+      if (!lineCacheKey || !lineTargetUserId || !weekId) {
+        setLineEnhancement({
+          status: "error",
+          message: "라인 강화 내역을 불러올 대상을 찾지 못했어요.",
+        });
+        return;
+      }
+      // 캐시 히트 → 재요청 없음.
+      const cached = lineEnhancementCacheRef.current;
+      if (!force && cached?.key === lineCacheKey) {
+        setLineEnhancement({ status: "ready", data: cached.data });
+        return;
+      }
+      // 동일 키 in-flight 중복 요청 방지.
+      if (!force && lineEnhancementInFlightRef.current === lineCacheKey) return;
+      lineEnhancementInFlightRef.current = lineCacheKey;
+      setLineEnhancement({ status: "loading" });
+
+      try {
+        // ⚠ 끝 슬래시 필수 — next.config trailingSlash:true 라 슬래시가 없으면 308 → 재요청으로
+        //   매 조회가 2 왕복이 된다(기존 weekly-cards 호출이 그 상태). 여기선 1 왕복으로 맞춘다.
+        const url =
+          `/api/cluster4/weekly-line-enhancement/?userId=${encodeURIComponent(lineTargetUserId)}` +
+          `&weekId=${encodeURIComponent(weekId)}${demoQS}`;
+        const res = await fetch(url, { cache: "no-store" });
+        const json = (await res.json().catch(() => null)) as {
+          success?: boolean;
+          data?: CrewWeekLineEnhancementDetailDto | null;
+          error?: { message?: string; code?: string } | null;
+        } | null;
+
+        if (!res.ok || !json?.success || !json?.data) {
+          // 업스트림 원문(호스트/코드)은 사용자에게 노출하지 않고 로그로만 남긴다.
+          console.warn("[line-enhancement] 조회 실패", {
+            status: res.status,
+            code: json?.error?.code ?? null,
+            detail: json?.error?.message ?? null,
+          });
+          setLineEnhancement({
+            status: "error",
+            message: "라인 강화 내역을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.",
+          });
+          return;
+        }
+
+        lineEnhancementCacheRef.current = { key: lineCacheKey, data: json.data };
+        setLineEnhancement({ status: "ready", data: json.data });
+      } catch (e) {
+        console.warn("[line-enhancement] 조회 예외", (e as Error)?.message);
+        setLineEnhancement({
+          status: "error",
+          message: "라인 강화 내역을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.",
+        });
+      } finally {
+        if (lineEnhancementInFlightRef.current === lineCacheKey) {
+          lineEnhancementInFlightRef.current = null;
+        }
+      }
+    },
+    [lineCacheKey, lineTargetUserId, weekId, demoQS],
+  );
+
+  const handleLineTabOpen = useCallback(() => {
+    void fetchLineEnhancement(false);
+  }, [fetchLineEnhancement]);
+  const handleLineRetry = useCallback(() => {
+    void fetchLineEnhancement(true);
+  }, [fetchLineEnhancement]);
+
   // 휴식(개인/공식)·전환 주차는 Detail Log 대신 안내 팝업(기존 Popup 시스템).
   const handleDetailLogOpen = () => {
     if (isRestMode || metaIsTransitionRest) {
@@ -14647,6 +14742,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         show={showDetailLogModal}
         onHide={() => setShowDetailLogModal(false)}
         data={detailLogData}
+        lineEnhancement={lineEnhancement}
+        onLineTabOpen={handleLineTabOpen}
+        onLineRetry={handleLineRetry}
       />
 
       {/* Output Link 2차 모달 — Portal로 document.body에 직접 렌더링 (1차 모달 위에 뜸) */}
