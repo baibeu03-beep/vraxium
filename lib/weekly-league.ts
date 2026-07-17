@@ -270,7 +270,11 @@ export async function aggregateWeeklyLeague(
 
     // 1) org 로스터 — user_profiles.organization_slug 기준(/api/crews 동일 SoT). 테스트 유저 제외.
     //    회원명부 모드: status·activity_started_at 추가 select 후 운영진/시즌전체휴식/graduated 제외.
-    const { data: orgProfilesRaw, error: profileErr } = await db.from("user_profiles").select("user_id, display_name, current_team_name, current_part_name, status, activity_started_at").eq("organization_slug", org).in("status", ["active", "seasonal_rest", "weekly_rest", "graduated"]);
+    //    ⚠️ [perf] superset select — 아래 5-1(a) Champion's Hall 확장 프로필이 쓰던
+    //    profile_photo_url/role/school_name/department_name 을 여기서 함께 읽는다.
+    //    5-1(a)는 `.in("user_id", orgUserIds)` 였고 orgUserIds ⊆ 본 로스터 행이므로
+    //    행 집합이 정확히 동일하다 → 같은 테이블 2회 조회를 1회로 합친다(값 불변).
+    const { data: orgProfilesRaw, error: profileErr } = await db.from("user_profiles").select("user_id, display_name, current_team_name, current_part_name, status, activity_started_at, profile_photo_url, role, school_name, department_name").eq("organization_slug", org).in("status", ["active", "seasonal_rest", "weekly_rest", "graduated"]);
 
     if (profileErr) {
       return { success: false, org, cards: [], error: `org 로스터 조회 실패: ${profileErr.message}` };
@@ -290,6 +294,39 @@ export async function aggregateWeeklyLeague(
       return { success: true, org, cards: [] };
     }
     const profileMap = new Map(orgProfiles.map((p) => [p.user_id, p] as const));
+
+    // ── [perf] 선행 로드(preload) — orgUserIds 만 의존하는 두 로드를 여기서 "시작"만 한다 ──
+    //   ⚠️ 집계/판정 로직·SoT·DTO 는 일절 불변이다. 바뀌는 것은 I/O 대기 시점뿐:
+    //     · user_weekly_points  : await 와 에러 처리는 원래 자리(4번)에 그대로 둔다 →
+    //                             에러 우선순위(주차 상태 → 주차 포인트)까지 기존과 동일.
+    //     · weekly-cards 팬아웃 : 유저당 1콜(N+1)이라 본 라우트 최대 병목(전체의 약 55%)인데,
+    //                             기존엔 supabase 워터폴이 전부 끝난 뒤에야 시작했다. points 가
+    //                             도착하는 즉시 시작해 나머지 조회와 겹친다(await 는 사용 직전).
+    //   showcaseUserIds 산출식(pointRows 의 user_id 유니크)은 원본과 동일하게 유지한다.
+    const pointRowsPromise = fetchAllRows<{
+      user_id: string;
+      week_start_date: string;
+      points: number | null;
+      advantages: number | null;
+      penalty: number | null;
+    }>((from, to) =>
+      db
+        .from("user_weekly_points")
+        .select("user_id, week_start_date, points, advantages, penalty")
+        .in("user_id", orgUserIds)
+        // 동일 사유 — 안정적 ORDER BY 로 range 페이지네이션 중복/누락 방지.
+        .order("user_id", { ascending: true })
+        .order("week_start_date", { ascending: true })
+        .range(from, to),
+    );
+    // 실패 흡수는 기존과 동일(loadGrowthMetricSnapshots 내부 per-user try/catch → 빈 Map 폴백).
+    // 여기서 .catch 를 붙이는 이유는 pointErr 조기 반환 시 floating promise 가
+    // unhandled rejection 이 되지 않게 하기 위함이다.
+    const growthMetricsPromise: Promise<Map<string, Map<string, GrowthMetricSnapshot>>> = pointRowsPromise
+      .then(({ data, error }) =>
+        error ? new Map<string, Map<string, GrowthMetricSnapshot>>() : loadGrowthMetricSnapshots(Array.from(new Set((data || []).map((row) => row.user_id))), mode),
+      )
+      .catch(() => new Map<string, Map<string, GrowthMetricSnapshot>>());
 
     // 1-1) 개인휴식 기간(회원명부 모드 전용) — crew_personal_rest_periods (restdates 격리본).
     //   user_week_statuses 무관·무수정. 개인 카드/growth/resume/snapshot 무영향.
@@ -424,22 +461,8 @@ export async function aggregateWeeklyLeague(
 
     // 4) top3/Champion's Hall 포인트 SoT — user_weekly_points.
     //    points=포인트 A(별/활동량), advantages=포인트 B(방패/집중력), penalty=포인트 C(번개, tie-break).
-    const { data: pointRows, error: pointErr } = await fetchAllRows<{
-      user_id: string;
-      week_start_date: string;
-      points: number | null;
-      advantages: number | null;
-      penalty: number | null;
-    }>((from, to) =>
-      db
-        .from("user_weekly_points")
-        .select("user_id, week_start_date, points, advantages, penalty")
-        .in("user_id", orgUserIds)
-        // 동일 사유 — 안정적 ORDER BY 로 range 페이지네이션 중복/누락 방지.
-        .order("user_id", { ascending: true })
-        .order("week_start_date", { ascending: true })
-        .range(from, to),
-    );
+    //    쿼리는 위(1번 직후)에서 이미 시작됐다(preload) — await/에러 처리 위치는 원본 그대로다.
+    const { data: pointRows, error: pointErr } = await pointRowsPromise;
     if (pointErr) {
       return { success: false, org, cards: [], error: `주차 포인트 조회 실패: ${(pointErr as Error)?.message ?? String(pointErr)}` };
     }
@@ -454,22 +477,18 @@ export async function aggregateWeeklyLeague(
     });
 
     // 5-1) Champion's Hall 확장 프로필(프로필사진/역할/학교/전공) — **격리·best-effort**.
-    //   별도 쿼리 + try/catch 로 감싸 실패해도 top10 만 축소되고 카드 본체/기존 응답은 무영향.
     //   학교/전공은 user_educations(대표=sort_order 최소) 우선, 없으면 user_profiles 폴백.
     const champProfile = new Map<string, { photo: string | null; role: string | null; school: string | null; major: string | null }>();
     // (a) user_profiles — 아바타/역할/학교/전공(폴백). 컬럼명: profile_photo_url(=/crews 동일).
-    try {
-      const { data: cp } = await db.from("user_profiles").select("user_id, profile_photo_url, role, school_name, department_name").in("user_id", orgUserIds);
-      for (const p of cp || []) {
-        champProfile.set((p as { user_id: string }).user_id, {
-          photo: (p as { profile_photo_url?: string | null }).profile_photo_url ?? null,
-          role: (p as { role?: string | null }).role ?? null,
-          school: (p as { school_name?: string | null }).school_name ?? null,
-          major: (p as { department_name?: string | null }).department_name ?? null,
-        });
-      }
-    } catch (err) {
-      console.warn("[weekly-league] champion user_profiles 조회 실패", (err as Error)?.message ?? String(err));
+    //   [perf] 1)번 로스터 조회에 컬럼을 합쳤다(superset select) → 별도 조회 없이 orgProfiles 재사용.
+    //   orgProfiles 는 구 `.in("user_id", orgUserIds)` 와 정확히 같은 행 집합이라 값·키 모두 동일하다.
+    for (const p of orgProfiles) {
+      champProfile.set(p.user_id, {
+        photo: (p as { profile_photo_url?: string | null }).profile_photo_url ?? null,
+        role: (p as { role?: string | null }).role ?? null,
+        school: (p as { school_name?: string | null }).school_name ?? null,
+        major: (p as { department_name?: string | null }).department_name ?? null,
+      });
     }
     // (b) user_educations 우선(대표=sort_order 최소) — 학교/전공 canonical. profiles 폴백 유지.
     //     (a)와 독립 try/catch — 한쪽 실패가 다른 쪽/school·major 전체를 날리지 않도록.
@@ -608,8 +627,10 @@ export async function aggregateWeeklyLeague(
     }
 
     // 고객 주차 카드와 동일한 admin snapshot DTO를 Rank Showcase에서도 사용한다.
+    //   ⚠️ growthMetricsByUser(=weekly-cards 팬아웃)는 위에서 이미 시작됐고, await 는 실제
+    //   사용 직전(카드 산출 바로 앞)으로 미뤘다 — 그 사이 weekly_reviews 조회가 겹쳐 돈다.
+    //   두 로드는 서로 독립(공유 상태 없음)이라 순서를 바꿔도 결과는 동일하다.
     const showcaseUserIds = Array.from(new Set(pointRows.map((row) => row.user_id)));
-    const growthMetricsByUser = await loadGrowthMetricSnapshots(showcaseUserIds, mode);
     const weeklyReviewByUserWeek = new Map<string, WeeklyReviewSnapshot>();
     if (showcaseUserIds.length > 0 && weeks.length > 0) {
       const { data: reviewRows, error: reviewError } = await fetchAllRows<{
@@ -650,6 +671,9 @@ export async function aggregateWeeklyLeague(
     chronologicalWeeks.forEach((week, index) => {
       previousWeekIdByWeekId.set(week.id, index > 0 ? chronologicalWeeks[index - 1].id : null);
     });
+
+    // 팬아웃 결과 수확 지점 — 여기까지의 supabase 조회가 모두 이 대기 시간 안에서 끝난다.
+    const growthMetricsByUser = await growthMetricsPromise;
 
     const cards: WeeklyCardData[] = weeks.map((week) => {
       // 주차 레벨 공식 휴식 — 전환 주차(봄·가을 17 / 여름·겨울 9)는 제외(공용 헬퍼).
