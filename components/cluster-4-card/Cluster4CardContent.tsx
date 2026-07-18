@@ -23,6 +23,7 @@ import { isFadedCardStatus } from "@/lib/cluster4-faded-card";
 // 클래스(직책) 표시 — 주차 당시 position_code → 라벨 단일 변환기(admin 미러 공통 모듈).
 import { positionCodeToClassLabel } from "@/shared/crewClassPosition";
 import { clampAdminOutputs, ADMIN_OUTPUT_IMAGE_MAX, ADMIN_OUTPUT_LINK_MAX } from "@/lib/cluster4-admin-output-clamp";
+import { RESERVED_ADMIN_IMAGE_SLOTS } from "@/lib/cluster4OutputImages";
 import { REPUTATION_KEYWORD_GROUPS } from "@/lib/reputation-keywords";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
@@ -282,6 +283,46 @@ const normalizeOutputImages = (
         : { url: image?.url ?? "", caption: image?.caption ?? "" },
     )
     .filter((image) => image.url.trim() !== "");
+
+// ── 예약 슬롯 조립/분리 헬퍼 (2026-07-18 예약 슬롯 모델 · lib/cluster4OutputImages 규칙의 캡션 동반 버전) ──
+// 화면 슬롯 = [운영진(admin) 앞쪽 reserved 슬롯] + [크루(crew) 연속 슬롯]. 운영진 이미지가 없어도 reserved 만큼은
+// 항상 예약되어 크루 이미지가 슬롯 0(1번)으로 당겨지지 않는다("크루는 2번 슬롯부터"). admin/crew URL·캡션을
+// 무손실 병합/분리한다(빈 슬롯 null/"" 보존, filter/compact 로 위치 정보를 잃지 않음).
+//   reserved   = 예약된 운영진 슬롯 수(개설 라인 존재 시 항상 RESERVED_ADMIN_IMAGE_SLOTS=1, 미개설 0).
+//   totalSlots = 카드 유형별 화면 슬롯 수(정보/역량/경험 4, 경력 3).
+// ⚠️ UI 절대 슬롯 번호(0=1번 …)와 submission 내부 배열 인덱스(크루 0=화면 2번)를 명확히 분리하기 위한 단일 경유점.
+const assembleReservedImageSlots = (
+  adminImages: ReadonlyArray<{ url?: string | null; caption?: string | null }>,
+  crewImages: ReadonlyArray<string | null>,
+  crewCaptions: ReadonlyArray<string | null>,
+  reserved: number,
+  totalSlots: number,
+): { images: (string | null)[]; captions: string[] } => {
+  const images: (string | null)[] = [];
+  const captions: string[] = [];
+  for (let i = 0; i < totalSlots; i++) {
+    if (i < reserved) {
+      images.push(adminImages[i]?.url ?? null);
+      captions.push(adminImages[i]?.caption ?? "");
+    } else {
+      const c = i - reserved;
+      images.push(crewImages[c] ?? null);
+      captions.push(crewCaptions[c] ?? "");
+    }
+  }
+  return { images, captions };
+};
+
+// 화면 슬롯 배열(admin@0..reserved-1, crew 뒤) → 저장용 크루 전용 배열. 운영진 예약 슬롯은 payload 에서 제외한다.
+//   반환값이 곧 submission.outputImages(크루 제출 이미지)로 저장된다 — 운영진/빈 운영진 슬롯을 절대 포함하지 않는다.
+const splitReservedImageSlots = (
+  slotImages: ReadonlyArray<string | null>,
+  slotCaptions: ReadonlyArray<string | null>,
+  reserved: number,
+): { crewImages: (string | null)[]; crewCaptions: string[] } => ({
+  crewImages: slotImages.slice(reserved).map((u) => u ?? null),
+  crewCaptions: slotCaptions.slice(reserved).map((c) => c ?? ""),
+});
 
 // workCareer 데모 모드 폴백 이미지 (DB 값 없을 때만 사용 — 일반 모드는 폴백 없음)
 // 실제 파일: public/images/0/cluster4/icon/실무 경력/
@@ -2961,7 +3002,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   };
   const getAbilityAdminImageCount = (matchedLine: Cluster4WeeklyLineDto | undefined, activityTypeId?: string | null): number => {
     const raw = matchedLine?.adminOutputImageCount != null ? matchedLine.adminOutputImageCount : getAbilityAdminImages(matchedLine, activityTypeId).length;
-    return Math.min(raw, ADMIN_OUTPUT_IMAGE_MAX); // 운영진 output image 정책: 최대 1
+    // 예약 슬롯 모델(2026-07-18): 운영진 슬롯 0 은 이미지 유무·라인 매칭 성패와 무관하게 **항상 예약**(크루는 2번
+    //   슬롯부터). admin DTO(v47)가 adminOutputImageCount=RESERVED_ADMIN_IMAGE_SLOTS 를 무조건 보내는 계약과 동일.
+    //   ⚠️ fail-safe: matchedLine 부재/DTO 불완전/stale snapshot(구 count=0)에서도 0 으로 떨어지지 않게 무조건 floor
+    //   한다. 라인 조회 실패를 "운영진 슬롯 없음"으로 해석하면 크루 첫 이미지가 1번 슬롯으로 밀린다.
+    const reserved = Math.max(raw, RESERVED_ADMIN_IMAGE_SLOTS);
+    return Math.min(reserved, ADMIN_OUTPUT_IMAGE_MAX); // 운영진 output image 정책: 최대 1
   };
 
   // ── 강화 상태 status-badge 이미지/라벨 (백엔드 DTO 단일 출처) ──
@@ -3861,8 +3907,21 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     // 사용자가 제출한 링크가 편집 진입 시 사라지므로, submission 까지 병합된 card.outputLinks 를 단일 출처로 사용.
     const abilitySrcLinks = card?.outputLinks;
     const initialOutputLinks = abilitySrcLinks && abilitySrcLinks.length > 0 ? abilitySrcLinks.map((l: { desc?: string | null; url?: string | null }) => ({ desc: l?.desc || "", url: l?.url || "" })) : Array(5).fill({ desc: "", url: "" });
-    const initialImages = normalizeWorkInfoImages(card?.images);
-    const initialCaptions = normalizeWorkInfoCaptions(card?.imageCaptions);
+    // 예약 슬롯 모델(2026-07-18): card.images 는 크루 전용 배열. 편집 상태(editingAbilityImages)는 보기 모드
+    //   viewImages(운영진@0 + 크루 뒤)와 동일한 절대 슬롯 병합 배열로 초기화해야 render(절대 인덱스)가 정합한다.
+    //   (초기화가 크루 전용이면 크루 첫 이미지가 운영진 슬롯 0(1번)에 표시되는 버그 발생.)
+    const abilityInitReserved = Math.min(
+      getAbilityAdminImageCount(workAbilityMatchedLine, card?.activityTypeId),
+      WORKINFO_IMAGE_SLOT_COUNT,
+    );
+    const abilityInitAdminImgs = getAbilityAdminImages(workAbilityMatchedLine, card?.activityTypeId);
+    const { images: initialImages, captions: initialCaptions } = assembleReservedImageSlots(
+      abilityInitAdminImgs,
+      normalizeWorkInfoImages(card?.images),
+      normalizeWorkInfoCaptions(card?.imageCaptions),
+      abilityInitReserved,
+      WORKINFO_IMAGE_SLOT_COUNT,
+    );
     workAbilitySnapshot.current = {
       subTitle: card?.subTitle || "",
       growthPoint: card?.growthPoint || "",
@@ -3935,9 +3994,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("개설된 라인이 없습니다.");
       return;
     }
-    // 아웃풋 이미지 ↔ 캡션 1:1 페어 검증 (이미지 1개 = 캡션 1개, 한쪽만 입력 불가)
+    // 예약 슬롯 모델(2026-07-18): editingAbilityImages 는 화면 슬롯(운영진@0 + 크루 뒤) 병합 배열이다.
+    const abilityReserved = Math.min(
+      getAbilityAdminImageCount(workAbilityMatchedLine, (selectedWorkAbilityCard?.activityTypeId as string | null | undefined) ?? null),
+      WORKINFO_IMAGE_SLOT_COUNT,
+    );
+    // 아웃풋 이미지 ↔ 캡션 1:1 페어 검증 (이미지 1개 = 캡션 1개, 한쪽만 입력 불가). 운영진 예약 슬롯은 제외.
     {
-      const mismatch = findImageCaptionMismatch(editingAbilityImages, editingAbilityImageCaptions);
+      const mismatch = findImageCaptionMismatch(editingAbilityImages, editingAbilityImageCaptions, abilityReserved);
       if (mismatch) {
         setWorkAbilityFooterNotice("error");
         await popup.alert(captionMismatchMessage(mismatch));
@@ -3971,7 +4035,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const newSubTitle = editingAbilitySubTitle.trim() || null;
       const newOutputLinks = editingAbilityOutputLinks;
       const newGrowthPoint = editingAbilityGrowthPoint.trim() || null;
-      let persistedImages: (string | null)[] = editingAbilityImages;
+      // 저장 payload = 운영진 예약 슬롯을 제외한 크루 전용 배열(운영진/빈 운영진 슬롯을 submission 에 넣지 않는다).
+      const { crewImages: abilityCrewImagesToSave, crewCaptions: abilityCrewCaptionsToSave } = splitReservedImageSlots(
+        editingAbilityImages,
+        editingAbilityImageCaptions,
+        abilityReserved,
+      );
+      const abilityAdminImgsForMerge = getAbilityAdminImages(workAbilityMatchedLine, abilityActivityTypeId || null);
+      let persistedCrewImages: (string | null)[] = abilityCrewImagesToSave;
       if (isPureAdminPreview) {
         // 일반 어드민 미리보기만 저장 스킵. 테스트 유저 모드는 실제 저장.
         console.log("[AdminPreview] workAbility 저장 — API 호출 생략, local state만 반영");
@@ -3986,21 +4057,32 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             subTitle: newSubTitle,
             outputLinks: newOutputLinks,
             growthPoint: newGrowthPoint,
-            images: editingAbilityImages,
-            imageCaptions: editingAbilityImageCaptions,
+            // 크루 전용(운영진 예약 슬롯 제외) — whole 로 넘기면 운영진 슬롯이 submission 에 누수된다.
+            images: abilityCrewImagesToSave,
+            imageCaptions: abilityCrewCaptionsToSave,
             adminLinkCount: getAbilityAdminLinkCount(workAbilityMatchedLine, abilityActivityTypeId || null),
           });
-          persistedImages = persisted.images;
+          persistedCrewImages = persisted.images;
         } catch (err) {
           console.error("workAbility 저장 실패:", err);
           await popup.alert(apiErrorMessage(err));
           return;
         }
       }
-      setEditingAbilityImages(persistedImages);
+      // 화면 상태(편집/미리보기/스냅샷)는 운영진 예약 슬롯 + 크루 슬롯 병합 배열로 복원(render 절대 인덱스와 정합).
+      const { images: abilityMergedImages, captions: abilityMergedCaptions } = assembleReservedImageSlots(
+        abilityAdminImgsForMerge,
+        persistedCrewImages,
+        abilityCrewCaptionsToSave,
+        abilityReserved,
+        WORKINFO_IMAGE_SLOT_COUNT,
+      );
+      setEditingAbilityImages(abilityMergedImages);
+      setEditingAbilityImageCaptions(abilityMergedCaptions);
       // legacy weekActivityDetails 미러는 activity_type_id 가 있을 때만 갱신한다. competency 표시는
       // cluster4Lines[].submission 단일 출처라 이 미러는 비표시용이며, "" 키로 쓰면 라인 간 충돌
       // (findIndex 가 첫 빈 키 행에 매칭)이 날 수 있어 빈 키일 땐 건너뛴다.
+      //   image_urls 는 크루 전용(운영진 슬롯 제외).
       if (abilityActivityTypeId) {
         setWeekActivityDetails((prev) => {
           const nextDetail = {
@@ -4009,8 +4091,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             sub_title: newSubTitle,
             output_links: newOutputLinks,
             growth_point: newGrowthPoint,
-            image_urls: persistedImages,
-            image_captions: editingAbilityImageCaptions,
+            image_urls: persistedCrewImages,
+            image_captions: abilityCrewCaptionsToSave,
           };
           const existingIndex = prev.findIndex((d) => d.activity_type_id === abilityActivityTypeId);
           if (existingIndex < 0) return [...prev, nextDetail];
@@ -4024,8 +4106,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               subTitle: newSubTitle || "",
               outputLinks: newOutputLinks,
               growthPoint: editingAbilityGrowthPoint,
-              images: persistedImages,
-              imageCaptions: editingAbilityImageCaptions,
+              // card.images 는 크루 전용 SoT 유지(보기 render 가 운영진과 재병합) — 편집 상태만 병합 배열.
+              images: normalizeWorkInfoImages(persistedCrewImages),
+              imageCaptions: normalizeWorkInfoCaptions(abilityCrewCaptionsToSave),
             }
           : prev,
       );
@@ -4042,10 +4125,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
           .filter((l: { url: string }) => l.url.trim() !== "");
         const savedUserImages: string[] = [];
         const savedUserCaptions: Array<string | null> = [];
-        (persistedImages || []).forEach((u, i) => {
+        // 크루 전용 배열(persistedCrewImages)만 순회 — 운영진 슬롯은 submission 에 포함하지 않는다.
+        (persistedCrewImages || []).forEach((u, i) => {
           if (u && u.trim()) {
             savedUserImages.push(u);
-            savedUserCaptions.push(editingAbilityImageCaptions[i] || "");
+            savedUserCaptions.push(abilityCrewCaptionsToSave[i] || "");
           }
         });
         setCluster4Lines((prev) =>
@@ -4070,8 +4154,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         subTitle: newSubTitle || "",
         growthPoint: editingAbilityGrowthPoint,
         outputLinks: JSON.parse(JSON.stringify(newOutputLinks)),
-        images: [...persistedImages],
-        imageCaptions: [...editingAbilityImageCaptions],
+        images: [...abilityMergedImages],
+        imageCaptions: [...abilityMergedCaptions],
       };
     }
     await popup.alert("저장되었습니다.");
@@ -4269,9 +4353,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       await popup.alert("개설된 라인이 없습니다.");
       return;
     }
-    // 아웃풋 이미지 ↔ 캡션 1:1 페어 검증 (이미지 1개 = 캡션 1개, 한쪽만 입력 불가)
+    // 예약 슬롯 모델(2026-07-18): editingExpImages 는 화면 슬롯(운영진@0 + 크루 뒤) 병합 배열이다.
+    //   운영진 예약 슬롯 수 = **항상 RESERVED_ADMIN_IMAGE_SLOTS(1)** (fail-safe — 매칭 실패에서도 0 으로 안 떨어짐).
+    //   build 단계 expAdminSlots 와 동일 계약이라야 저장 payload(slice)·읽기(assemble)가 정합한다.
+    const expReserved = Math.min(RESERVED_ADMIN_IMAGE_SLOTS, WORKINFO_IMAGE_SLOT_COUNT);
+    // 아웃풋 이미지 ↔ 캡션 1:1 페어 검증 (이미지 1개 = 캡션 1개, 한쪽만 입력 불가). 운영진 예약 슬롯은 제외.
     {
-      const mismatch = findImageCaptionMismatch(editingExpImages, editingExpImageCaptions);
+      const mismatch = findImageCaptionMismatch(editingExpImages, editingExpImageCaptions, expReserved);
       if (mismatch) {
         setWorkExpFooterNotice("error");
         await popup.alert(captionMismatchMessage(mismatch));
@@ -4300,7 +4388,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       const newSubTitle = editingExpSubTitle.trim() || null;
       const newOutputLinks = editingExpOutputLinks;
       const newGrowthPoint = editingExpGrowthPoint.trim() || null;
-      let persistedImages: (string | null)[] = editingExpImages;
+      // 저장 payload = 운영진 예약 슬롯을 제외한 크루 전용 배열(운영진/빈 운영진 슬롯을 submission 에 넣지 않는다).
+      const { crewImages: expCrewImagesToSave, crewCaptions: expCrewCaptionsToSave } = splitReservedImageSlots(
+        editingExpImages,
+        editingExpImageCaptions,
+        expReserved,
+      );
+      // 화면 복원용 운영진 슬롯 = 저장 직전 편집 배열의 앞 reserved 슬롯 그대로(크루 저장은 운영진 슬롯을 바꾸지
+      //   않는다). line.outputImages 재유도 대신 표시값을 보존해 legacy activity fallback 소스 불일치를 피한다.
+      const expAdminSlotsForMerge = editingExpImages
+        .slice(0, expReserved)
+        .map((url, i) => ({ url: url ?? null, caption: editingExpImageCaptions[i] ?? "" }));
+      let persistedCrewImages: (string | null)[] = expCrewImagesToSave;
       if (isPureAdminPreview) {
         // 일반 어드민 미리보기만 저장 스킵. 테스트 유저 모드는 실제 저장.
         console.log("[AdminPreview] workExp 저장 — API 호출 생략, local state만 반영");
@@ -4315,19 +4414,31 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             subTitle: newSubTitle,
             outputLinks: newOutputLinks,
             growthPoint: newGrowthPoint,
-            images: editingExpImages,
-            imageCaptions: editingExpImageCaptions,
+            // 크루 전용(운영진 예약 슬롯 제외) — 이걸 whole 로 넘기면 운영진 슬롯이 image_urls 에 누수되어
+            // 읽기 단계 예약 슬롯 floor 와 겹쳐 크루 이미지가 한 칸씩 밀린다(빈 운영진 슬롯일 때).
+            images: expCrewImagesToSave,
+            imageCaptions: expCrewCaptionsToSave,
             adminLinkCount: getAdminOutputLinksCount(expActivityTypeId, workExpMatchedLine),
           });
-          persistedImages = persisted.images;
+          persistedCrewImages = persisted.images;
         } catch (err) {
           console.error("workExp 저장 실패:", err);
           await popup.alert(apiErrorMessage(err));
           return;
         }
       }
-      setEditingExpImages(persistedImages);
+      // 화면 상태(편집/미리보기/스냅샷)는 운영진 예약 슬롯 + 크루 슬롯 병합 배열로 복원.
+      const { images: expMergedImages, captions: expMergedCaptions } = assembleReservedImageSlots(
+        expAdminSlotsForMerge,
+        persistedCrewImages,
+        expCrewCaptionsToSave,
+        expReserved,
+        WORKINFO_IMAGE_SLOT_COUNT,
+      );
+      setEditingExpImages(expMergedImages);
+      setEditingExpImageCaptions(expMergedCaptions);
       // legacy weekActivityDetails 미러는 activity_type_id 가 있을 때만 (competency 와 동일 — "" 키 충돌 방지).
+      //   image_urls 는 크루 전용(운영진 슬롯 제외) — 읽기 단계 병합에서 운영진 슬롯을 다시 앞에 붙인다.
       if (expActivityTypeId) {
         setWeekActivityDetails((prev) => {
           const nextDetail = {
@@ -4336,8 +4447,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             sub_title: newSubTitle,
             output_links: newOutputLinks,
             growth_point: newGrowthPoint,
-            image_urls: persistedImages,
-            image_captions: editingExpImageCaptions,
+            image_urls: persistedCrewImages,
+            image_captions: expCrewCaptionsToSave,
           };
           const existingIndex = prev.findIndex((d) => d.activity_type_id === expActivityTypeId);
           if (existingIndex < 0) return [...prev, nextDetail];
@@ -4351,8 +4462,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
               subTitle: newSubTitle || "",
               outputLinks: newOutputLinks,
               growthPoint: editingExpGrowthPoint,
-              images: persistedImages,
-              imageCaptions: editingExpImageCaptions,
+              images: expMergedImages,
+              imageCaptions: expMergedCaptions,
               // rating은 어드민(compliance-manage)에서만 갱신 — 크루 저장 시 건드리지 않음
             }
           : prev,
@@ -4361,8 +4472,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         subTitle: newSubTitle || "",
         growthPoint: editingExpGrowthPoint,
         outputLinks: JSON.parse(JSON.stringify(newOutputLinks)),
-        images: [...persistedImages],
-        imageCaptions: [...editingExpImageCaptions],
+        images: [...expMergedImages],
+        imageCaptions: [...expMergedCaptions],
         rating: editingExpRating,
       };
       // 저장 직후 미리보기 단일 출처(cluster4Lines[].submission) 패치 — canonical 우선 표시(buildExpCard)와
@@ -7806,11 +7917,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 관리자 점유 이미지 슬롯 수. (정책: 최대 1)
   // 단일 출처: matchedLine.adminOutputImageCount (백엔드 SoT). ⚠️ outputImages.length 추론 금지.
   // 필드가 없을(undefined/null) 때만 legacy(getAdminOutputImages 길이) fallback.
-  const getAdminOutputImagesCount = (activityType: string, matchedLine?: Cluster4WeeklyLineDto): number =>
-    Math.min(
-      matchedLine?.adminOutputImageCount != null ? matchedLine.adminOutputImageCount : getAdminOutputImages(activityType, matchedLine).length,
-      ADMIN_OUTPUT_IMAGE_MAX,
-    );
+  const getAdminOutputImagesCount = (activityType: string, matchedLine?: Cluster4WeeklyLineDto): number => {
+    const base =
+      matchedLine?.adminOutputImageCount != null
+        ? matchedLine.adminOutputImageCount
+        : getAdminOutputImages(activityType, matchedLine).length;
+    // 예약 슬롯 모델(2026-07-18): 운영진 슬롯 0 은 이미지 유무·라인 매칭 성패와 무관하게 **항상 예약** — 크루는
+    //   2번 슬롯부터. admin DTO(v47) adminOutputImageCount=RESERVED_ADMIN_IMAGE_SLOTS 무조건 송신 계약과 동일.
+    //   ⚠️ fail-safe: matchedLine 부재/DTO 불완전/stale snapshot(구 count=0)에서도 무조건 floor(라인 조회 실패를
+    //   "운영진 슬롯 없음"으로 해석하지 않는다 — 크루 첫 이미지가 1번으로 밀리는 걸 막는다).
+    const reserved = Math.max(base, RESERVED_ADMIN_IMAGE_SLOTS);
+    return Math.min(reserved, ADMIN_OUTPUT_IMAGE_MAX); // 운영진 output image 정책: 최대 1
+  };
 
   // 편집 모달 열 때 초기화
   const initializeEditingDetails = () => {
@@ -8554,14 +8672,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       filteredCrewImgs.push(u || null);
       filteredCrewCaps.push(rawCrewCaps[i] || "");
     }
+    // 예약 슬롯 모델(2026-07-18): 운영진 슬롯 0 은 이미지 유무·라인 매칭 성패와 무관하게 **항상 예약**(크루는 2번
+    //   슬롯부터). fail-safe 로 무조건 floor — expMatchedLine 부재(매칭 실패)에서도 크루가 1번으로 밀리지 않는다.
+    const expAdminSlots = Math.min(
+      Math.max(adminImgs.length, RESERVED_ADMIN_IMAGE_SLOTS),
+      WORKINFO_IMAGE_SLOT_COUNT,
+    );
     const mergedImages: (string | null)[] = [];
     const mergedCaptions: string[] = [];
     for (let i = 0; i < WORKINFO_IMAGE_SLOT_COUNT; i++) {
-      if (i < adminImgs.length) {
-        mergedImages.push(adminImgs[i].url);
-        mergedCaptions.push(adminImgs[i].caption || "");
+      if (i < expAdminSlots) {
+        mergedImages.push(adminImgs[i]?.url ?? null);
+        mergedCaptions.push(adminImgs[i]?.caption || "");
       } else {
-        const crewIdx = i - adminImgs.length;
+        const crewIdx = i - expAdminSlots;
         mergedImages.push(filteredCrewImgs[crewIdx] || null);
         mergedCaptions.push(filteredCrewCaps[crewIdx] || "");
       }
@@ -9012,14 +9136,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       crewImgs.push(u || null);
       crewCaps.push(subCapsRaw[i] || "");
     }
+    // 예약 슬롯 모델(2026-07-18): 개설된 라인은 운영진 슬롯 0 을 항상 예약(이미지 없어도) — 크루는 2번 슬롯부터.
+    const careerAdminSlots = Math.min(
+      Math.max(adminImgs.length, RESERVED_ADMIN_IMAGE_SLOTS),
+      WORKCAREER_IMAGE_SLOT_COUNT,
+    );
     const mergedImages: (string | null)[] = [];
     const mergedCaptions: string[] = [];
     for (let i = 0; i < WORKCAREER_IMAGE_SLOT_COUNT; i++) {
-      if (i < adminImgs.length) {
-        mergedImages.push(adminImgs[i].url);
-        mergedCaptions.push(adminImgs[i].caption || "");
+      if (i < careerAdminSlots) {
+        mergedImages.push(adminImgs[i]?.url ?? null);
+        mergedCaptions.push(adminImgs[i]?.caption || "");
       } else {
-        const c = i - adminImgs.length;
+        const c = i - careerAdminSlots;
         mergedImages.push(crewImgs[c] || null);
         mergedCaptions.push(crewCaps[c] || "");
       }
@@ -9126,18 +9255,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
             crewImgs.push(u || null);
             crewCaps.push(rawCrewCaps[i] || "");
           }
-          const mergedImages: (string | null)[] = [];
-          const mergedCaptions: string[] = [];
-          for (let i = 0; i < WORKCAREER_IMAGE_SLOT_COUNT; i++) {
-            if (i < adminImgs.length) {
-              mergedImages.push(adminImgs[i].url);
-              mergedCaptions.push(adminImgs[i].caption || "");
-            } else {
-              const crewIdx = i - adminImgs.length;
-              mergedImages.push(crewImgs[crewIdx] || null);
-              mergedCaptions.push(crewCaps[crewIdx] || "");
-            }
-          }
+          // 예약 슬롯 모델(2026-07-18): 등록된 경력 라인은 운영진 슬롯 0 을 이미지 유무와 무관하게 예약(크루는 2번 슬롯부터).
+          //   운영진 이미지가 없어도(adminImgs.length===0) 크루 이미지가 슬롯 0 으로 당겨지지 않도록 floor 한다.
+          const careerReserved = Math.min(Math.max(adminImgs.length, RESERVED_ADMIN_IMAGE_SLOTS), WORKCAREER_IMAGE_SLOT_COUNT);
+          const { images: mergedImages, captions: mergedCaptions } = assembleReservedImageSlots(
+            adminImgs,
+            crewImgs,
+            crewCaps,
+            careerReserved,
+            WORKCAREER_IMAGE_SLOT_COUNT,
+          );
           return {
             id: index + 1,
             code: record.line_code || record.career_code || "-",
