@@ -1,7 +1,7 @@
 const { chromium } = require("playwright-core");
 const UID = "bf3b4305-751a-49e3-88ad-95a20e5c4dad"; // T윤도현 encre, cur=일반
 const CASES = [
-  { label:"W2 (2025-autumn, 기대 일반(정규))",  week:"W2", weekId:"d0d60d76-3d91-49cd-ad88-c856f2ec4c15" },
+  { label:"W2 (2025-autumn, 기대 정규)",  week:"W2", weekId:"d0d60d76-3d91-49cd-ad88-c856f2ec4c15" },
   { label:"W7 (2025-autumn, 기대 심화(에이전트))", week:"W7", weekId:"355b58ba-7fad-4fd9-bbd6-a5685eacdcfc" },
 ];
 const EXTRACT = `(()=>{const e=document.querySelector('.info-badge.role span');const d=document.querySelector('.info-badge.date span');return{role:e?e.textContent.trim():null,date:d?d.textContent.trim():null};})()`;

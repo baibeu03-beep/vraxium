@@ -348,7 +348,7 @@ const Sidebar = () => {
               <div className="activity-line">
                 <span className="activity-season">25, 여름<span style={{ color: '#999' }}>시즌</span></span>
                 <span className="activity-period">12주 <span style={{ color: '#999' }}>/ 16주</span></span>
-                <span className="activity-role">일반(정규)</span>
+                <span className="activity-role">정규</span>
                 <span className="activity-badge complete">정상 완료</span>
                 <span className="activity-check approved">승인 완료</span>
               </div>
