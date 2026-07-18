@@ -13817,8 +13817,11 @@
   --dl-fs: 1.25;
   zoom: var(--dl-fs);
 
-  width: calc(min(1468px, 100vw - 48px) / var(--dl-fs)) !important;
-  max-width: calc(1468px / var(--dl-fs)) !important;
+  // 정렬 버튼/아이콘이 헤더 폭을 늘려 표 헤더가 2줄로 접히던 문제(2026-07) — 목표 폭을 넓혀
+  //   데스크톱에서 라인 강화 내역(가장 넓은 표) 헤더가 한 줄로 들어오게 한다. viewport 캡(100vw-48px)은
+  //   유지 → 좁은 화면에선 팝업이 잘리지 않고 표 래퍼(.dl-act-table-wrap)가 가로 스크롤한다.
+  width: calc(min(1560px, 100vw - 48px) / var(--dl-fs)) !important;
+  max-width: calc(1560px / var(--dl-fs)) !important;
   height: calc(855px / var(--dl-fs)) !important;
   max-height: calc(min(855px, 100dvh - 80px) / var(--dl-fs)) !important;
 
@@ -14534,17 +14537,18 @@
   .dl-line-table {
     // 10컬럼(소요 시간·포인트 C 추가) 최소 폭 = 고정열 합(약 850px) + 라인명 최소 확보분.
     //   이보다 좁아지면 래퍼(.dl-act-table-wrap)가 가로 스크롤 → 표가 팝업 밖으로 넘치지 않는다.
-    min-width: 1120px;
+    // 정렬 아이콘 추가분 반영해 고정열 합 상향(획득 XX·주차 성장 조건 헤더가 한 줄로 들어오게).
+    min-width: 1200px;
     table-layout: fixed; // colgroup 폭 확정 → 헤더와 데이터 열 정렬이 어긋나지 않는다
 
     col.dl-line-col-result { width: 92px; }
     col.dl-line-col-name { width: auto; } // 라인명 최대 폭(잔여 전부)
-    col.dl-line-col-hub { width: 90px; }
-    col.dl-line-col-kind { width: 78px; }
-    col.dl-line-col-duration { width: 84px; }
-    col.dl-line-col-rating { width: 60px; }
-    col.dl-line-col-pt { width: 84px; }
-    col.dl-line-col-req { width: 96px; }
+    col.dl-line-col-hub { width: 98px; }
+    col.dl-line-col-kind { width: 82px; }
+    col.dl-line-col-duration { width: 92px; }
+    col.dl-line-col-rating { width: 66px; }
+    col.dl-line-col-pt { width: 96px; }
+    col.dl-line-col-req { width: 122px; }
 
     // 라인명 외 열은 줄바꿈 최소화(요구 §5) — 결과·허브·종류·소요 시간·평점·성장 조건.
     //   라인명(.dl-line-name)만 아래에서 normal 로 되돌려 3줄 clamp 를 적용한다.
@@ -14739,21 +14743,23 @@
 
   .dl-act-table {
     width: 100%;
-    min-width: 880px; // 모달 폭보다 좁아지면 가로 스크롤(레이아웃 깨짐 방지)
+    // 정렬 아이콘 추가로 헤더가 넓어져 고정열 합을 상향(모달 폭보다 좁아지면 래퍼가 가로 스크롤).
+    min-width: 1000px; // 모달 폭보다 좁아지면 가로 스크롤(레이아웃 깨짐 방지)
     table-layout: fixed; // 컬럼 폭 고정 → 행 높이 균일
     border-collapse: collapse;
     font-family: "Pretendard", sans-serif;
 
     // 컬럼 폭(colgroup) — 액트명만 가변(나머지 폭 흡수), 나머지는 한 줄 고정.
-    col.dl-col-result { width: 68px; }
+    //   폭 = "헤더 문구 + 정렬 아이콘"이 한 줄로 들어오는 값(정렬 UI 추가분 반영, 데이터열은 축소 아님).
+    col.dl-col-result { width: 74px; }
     col.dl-col-name { width: auto; }
     col.dl-col-time { width: 124px; }
-    col.dl-col-hub { width: 82px; }
-    col.dl-col-line { width: 104px; }
-    col.dl-col-dur { width: 70px; }
-    col.dl-col-pt { width: 48px; }
-    col.dl-col-div { width: 66px; }
-    col.dl-col-kind { width: 66px; }
+    col.dl-col-hub { width: 98px; }
+    col.dl-col-line { width: 110px; }
+    col.dl-col-dur { width: 92px; }
+    col.dl-col-pt { width: 62px; }
+    col.dl-col-div { width: 76px; }
+    col.dl-col-kind { width: 76px; }
 
     // 모든 컬럼 Header·Body 가운데 정렬로 통일.
     th,
@@ -14774,6 +14780,7 @@
       color: color-mix(in srgb, var(--dl-accent) 70%, #fff 30%);
       font-size: 12px;
       font-weight: 800;
+      white-space: nowrap; // 헤더 문구+정렬 아이콘을 한 줄로(줄바꿈 금지 — 요구). 폭은 colgroup 이 확보.
       border-bottom: 1px solid color-mix(in srgb, var(--dl-accent) 28%, transparent);
     }
 

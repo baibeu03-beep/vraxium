@@ -6689,13 +6689,19 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     source === "regular" && durationMinutes > 0 ? `${durationMinutes}m` : "-";
   // actLogs 단일 출처 = 백엔드 weekly-cards snapshot(card.actLogs). 없으면 빈 배열 → empty state.
   const sourceActLogs: Cluster4ActLogDto[] = weeklyCardMeta?.actLogs ?? [];
-  const detailLogActs: DetailLogActRow[] = sourceActLogs.map((a) => {
+  const detailLogActs: DetailLogActRow[] = sourceActLogs.map((a, i) => {
     const source: "regular" | "irregular" = a.source === "irregular" ? "irregular" : "regular";
     const kind = dlActKind(source, a.kind);
+    // 발생 시점 정렬 원천 = 표시 문자열의 원천(requestedAt 우선, 없으면 occurredAt)과 동일 값.
+    const occurredAt = a.requestedAt ?? a.occurredAt ?? null;
+    // 소요 시간 정렬 원천 = 표시("-" 여부)와 일치 — 변동/0 은 null 로 최하단 처리.
+    const durationMinutes = source === "regular" && (a.durationMinutes ?? 0) > 0 ? (a.durationMinutes ?? 0) : null;
+    // 허브 정렬 원천 = 라벨 파생과 동일 base 코드("-line" 제거). 미상/club → null → 최하단.
+    const hubBase = a.hub ? String(a.hub).replace(/-line$/, "") : null;
     return {
       result: a.result === "checked" ? "checked" : "miss",
       actName: a.actName ?? "",
-      occurredText: dlActTimeText(a.requestedAt ?? a.occurredAt ?? null),
+      occurredText: dlActTimeText(occurredAt),
       hubLabel: dlActHubLabel(a.hub),
       lineLabel: a.lineGroupName && String(a.lineGroupName).trim() ? a.lineGroupName : "-",
       durationText: dlActDurationText(source, a.durationMinutes ?? 0),
@@ -6709,6 +6715,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       source,
       kindLabel: kind.label,
       kindKey: kind.key,
+      // 정렬용 원본값(표시 문자열 재파싱 금지) + 결정적 tie-breaker(snapshot 순서 파생 index).
+      stableKey: `act:${i}`,
+      occurredAt,
+      hubToken: hubBase,
+      durationMinutes,
     };
   });
 
