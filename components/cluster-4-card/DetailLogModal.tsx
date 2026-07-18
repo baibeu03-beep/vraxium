@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { getThemeClass } from "@/lib/cluster-route";
@@ -12,9 +12,24 @@ import {
   resolveCrewActResult,
   type CrewActCheckResult,
 } from "@/shared/crewActSummary";
+// 표 정렬 규칙 = 관리자 주차 상세와 공유하는 단일 SoT(두 repo byte-identical 미러링).
+import {
+  ariaSortValue,
+  cycleSort,
+  sortActRows,
+  sortLineRows,
+  type ActSortKey,
+  type ActSortRow,
+  type ActSortState,
+  type LineSortKey,
+  type LineSortRow,
+  type LineSortState,
+  type SortDirection,
+} from "@/shared/detailLogSort";
 import type {
   CrewLinePointPairDto,
   CrewWeekLineEnhancementDetailDto,
+  CrewWeekLineEnhancementRowDto,
 } from "@/shared/cluster4.contracts";
 
 /** 성장 결과 1줄(체크박스) — 충족/미충족 */
@@ -67,6 +82,15 @@ export interface DetailLogActRow {
   kindLabel: string;
   /** 종류 배지 색상 구분 키 */
   kindKey: "required" | "selective" | "all" | "partial" | "unknown";
+  // ── 정렬용 원본값(표시 문자열이 아니라 원본으로 정렬 — 화면 문자열 재파싱 금지) ──
+  /** 결정적 정렬 tie-breaker(행 안정키). 호출부가 award/index 파생으로 채운다. */
+  stableKey: string;
+  /** 발생 시점 원본 ISO(occurredText 의 원천). 없으면 null → 정렬 시 최하단 */
+  occurredAt: string | null;
+  /** 소속 허브 원시 코드(hubLabel 의 원천: info/experience/… 또는 null) — 공식순서 정렬용 */
+  hubToken: string | null;
+  /** 소요 시간(분) 원본값(durationText 의 원천). 없으면 null → 최하단 */
+  durationMinutes: number | null;
 }
 
 /**
@@ -245,6 +269,86 @@ const TAB_LABEL: Record<DetailLogTabKey, string> = {
   line: "라인 강화 내역",
 };
 
+// 액트 행 → 공통 정렬 정규화 행(ActSortRow). 표시 문자열이 아니라 원본값으로 정렬한다.
+//   결과 정렬은 화면 배지 라벨(공통 resolveCrewActResult 판정) 기준 — 배지와 정렬 기준이 일치.
+const toActSortRow = (a: DetailLogActRow): ActSortRow => ({
+  stableKey: a.stableKey,
+  result: crewActResultBadge(resolveCrewActResult(a)).label,
+  name: a.actName,
+  occurredAt: a.occurredAt,
+  hubToken: a.hubToken,
+  line: a.lineLabel,
+  duration: a.durationMinutes,
+  pointA: a.pointA,
+  pointB: a.pointB,
+  pointC: a.pointC,
+  source: a.source === "regular" ? "정규" : "변동",
+  kind: a.kindLabel,
+});
+
+// 라인 행 → 공통 정렬 정규화 행(LineSortRow). 허브는 원시 hub(practical_*) 로 공식순서 정렬.
+const toLineSortRow = (row: CrewWeekLineEnhancementRowDto): LineSortRow => ({
+  stableKey: row.stableKey,
+  result: row.resultLabel,
+  name: row.lineName,
+  hubToken: row.hub,
+  kind: row.kind ?? "",
+  duration: row.estimatedDurationMinutes,
+  rating: row.rating,
+  pointA: row.pointA.earned,
+  pointB: row.pointB.earned,
+  pointC: row.pointC.earned,
+  growthRequirement: growthRequirementLabel(row.growthRequirement),
+  clubOpen: true, // 크루 표는 클럽 오픈 라인만 실린다 — 컬럼 없음(정렬 대상 아님).
+});
+
+// 정렬 가능한 헤더 셀 — 크루 Detail Log 표 공용. 어드민 SortableTh 와 동일 UX 규칙.
+//   접근성: th[aria-sort] + 실제 <button>(키보드 Enter/Space) + 상태를 담은 aria-label.
+//   아이콘(▲/▼/↕)은 aria-hidden — 의미는 aria-label 로 전달한다. 표 CSS 를 건드리지 않도록
+//   버튼은 인라인 스타일로 헤더 텍스트 서식을 상속(색/폰트=inherit, 배경/테두리 제거)한다.
+const SortTh: React.FC<{
+  label: React.ReactNode;
+  labelText: string;
+  dir: SortDirection | null;
+  onSort: () => void;
+  className?: string;
+}> = ({ label, labelText, dir, onSort, className }) => {
+  const next =
+    dir === "asc"
+      ? "오름차순 정렬됨. 누르면 내림차순."
+      : dir === "desc"
+        ? "내림차순 정렬됨. 누르면 기본 정렬로."
+        : "정렬 안 됨. 누르면 오름차순.";
+  return (
+    <th className={className} aria-sort={ariaSortValue(dir)}>
+      <button
+        type="button"
+        className="dl-sort-th"
+        onClick={onSort}
+        aria-label={`${labelText} 기준 정렬 — ${next}`}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "4px",
+          whiteSpace: "nowrap", // 문구+아이콘을 한 줄로(요구 §7) — 아이콘이 다음 줄로 내려가지 않게.
+          background: "none",
+          border: 0,
+          padding: 0,
+          margin: 0,
+          font: "inherit",
+          color: "inherit",
+          cursor: "pointer",
+        }}
+      >
+        <span>{label}</span>
+        <span aria-hidden="true" style={{ opacity: dir ? 1 : 0.4, fontSize: "0.75em" }}>
+          {dir === "asc" ? "▲" : dir === "desc" ? "▼" : "↕"}
+        </span>
+      </button>
+    </th>
+  );
+};
+
 const DetailLogModal: React.FC<DetailLogModalProps> = ({
   show,
   onHide,
@@ -267,16 +371,35 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
   // 라인 탭 조회 요청은 "모달 1회 열림당 최초 진입 1회"만 — 탭 전환마다 재요청하지 않는다.
   const lineTabRequestedRef = useRef(false);
 
+  // 표 정렬 상태 — null=기본(액트: 발생 시점 ASC·null 최하단 / 라인: 공식 허브 순서 ASC).
+  //   모달을 완전히 닫으면 기본 정렬로 초기화(아래 show=false effect). 탭 전환은 유지.
+  const [actSort, setActSort] = useState<ActSortState>(null);
+  const [lineSort, setLineSort] = useState<LineSortState>(null);
+
+  // 표시 순서만 정렬(값·요약·판정 불변). 요약은 정렬 전 원본 배열로 계산한다(순서 무관).
+  //   ⚠ Hook 은 조기 return 위에서 호출한다(rules-of-hooks). 정렬 결과는 렌더에서만 쓴다.
+  const sortedActs = useMemo(
+    () => (data ? sortActRows(data.acts, actSort, toActSortRow) : []),
+    [data, actSort],
+  );
+  const sortedLineRows = useMemo(() => {
+    const st: DetailLogLineEnhancementState = lineEnhancement ?? { status: "idle" };
+    const rows: CrewWeekLineEnhancementRowDto[] = st.status === "ready" ? st.data.rows : [];
+    return sortLineRows(rows, lineSort, toLineSortRow);
+  }, [lineEnhancement, lineSort]);
+
   // 모달이 닫히면 2차 도움말 상태도 초기화.
   useEffect(() => {
     if (!show) setShowHelp(false);
   }, [show]);
 
-  // 모달이 닫히면 기본 탭으로 초기화 + 라인 조회 요청 플래그 해제.
+  // 모달이 닫히면 기본 탭으로 초기화 + 라인 조회 요청 플래그 해제 + 정렬 기본 복귀.
   useEffect(() => {
     if (!show) {
       setActiveTab("act");
       lineTabRequestedRef.current = false;
+      setActSort(null);
+      setLineSort(null);
     }
   }, [show]);
 
@@ -340,6 +463,11 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
 
   // 획득 포인트 인덱스 라벨 — 포인트 카드/표 헤더와 동일 단일 출처(조직 point config). 하드코딩 금지.
   const [pointALabel, pointBLabel, pointCLabel] = data?.actPointNames ?? ["Po.A", "Po.B", "Po.C"];
+
+  const actDir = (key: ActSortKey): SortDirection | null => (actSort?.key === key ? actSort.dir : null);
+  const onActSort = (key: ActSortKey) => setActSort((s) => cycleSort(s, key));
+  const lineDir = (key: LineSortKey): SortDirection | null => (lineSort?.key === key ? lineSort.dir : null);
+  const onLineSort = (key: LineSortKey) => setLineSort((s) => cycleSort(s, key));
 
   return createPortal(
     <div className={overlayClass} onClick={handleOverlayClick}>
@@ -611,27 +739,27 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                         </colgroup>
                         <thead>
                           <tr>
-                            <th>결과</th>
-                            <th className="dl-act-col-name">액트명</th>
-                            <th>발생 시점</th>
-                            <th>소속 허브 급</th>
-                            <th>소속 라인 급</th>
-                            <th>소요 시간</th>
-                            <th className="dl-act-col-point">{data.actPointNames[0]}</th>
-                            <th className="dl-act-col-point">{data.actPointNames[1]}</th>
-                            <th className="dl-act-col-point">{data.actPointNames[2]}</th>
-                            <th>구분</th>
-                            <th>종류</th>
+                            <SortTh label="결과" labelText="결과" dir={actDir("result")} onSort={() => onActSort("result")} />
+                            <SortTh label="액트명" labelText="액트명" dir={actDir("name")} onSort={() => onActSort("name")} className="dl-act-col-name" />
+                            <SortTh label="발생 시점" labelText="발생 시점" dir={actDir("occurredAt")} onSort={() => onActSort("occurredAt")} />
+                            <SortTh label="소속 허브 급" labelText="소속 허브 급" dir={actDir("hub")} onSort={() => onActSort("hub")} />
+                            <SortTh label="소속 라인 급" labelText="소속 라인 급" dir={actDir("line")} onSort={() => onActSort("line")} />
+                            <SortTh label="소요 시간" labelText="소요 시간" dir={actDir("duration")} onSort={() => onActSort("duration")} />
+                            <SortTh label={data.actPointNames[0]} labelText={data.actPointNames[0]} dir={actDir("pointA")} onSort={() => onActSort("pointA")} className="dl-act-col-point" />
+                            <SortTh label={data.actPointNames[1]} labelText={data.actPointNames[1]} dir={actDir("pointB")} onSort={() => onActSort("pointB")} className="dl-act-col-point" />
+                            <SortTh label={data.actPointNames[2]} labelText={data.actPointNames[2]} dir={actDir("pointC")} onSort={() => onActSort("pointC")} className="dl-act-col-point" />
+                            <SortTh label="구분" labelText="구분" dir={actDir("source")} onSort={() => onActSort("source")} />
+                            <SortTh label="종류" labelText="종류" dir={actDir("kind")} onSort={() => onActSort("kind")} />
                           </tr>
                         </thead>
                         <tbody>
-                          {data.acts.map((a, i) => {
+                          {sortedActs.map((a) => {
                             // 결과 배지 = 크루 기준 판정(공통 SoT). 원장 result 필드가 아니라 적립 포인트에서 파생 —
                             //   요약 "체크 성공/실패"와 동일 함수라 배지-포인트 모순(예: ✓ 체크 + Po.C 12)이 불가능.
                             const crewResult = resolveCrewActResult(a);
                             const resultBadge = crewActResultBadge(crewResult);
                             return (
-                            <tr key={i}>
+                            <tr key={a.stableKey}>
                               <td>
                                 <span className={`dl-act-badge dl-act-result ${resultBadge.toneClass}`}>
                                   {resultBadge.label}
@@ -802,20 +930,20 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                           </colgroup>
                           <thead>
                             <tr>
-                              <th>결과</th>
-                              <th className="dl-act-col-name">라인명</th>
-                              <th>소속 허브</th>
-                              <th>종류</th>
-                              <th>소요 시간</th>
-                              <th>평점</th>
-                              <th className="dl-act-col-point">획득 {pointALabel}</th>
-                              <th className="dl-act-col-point">획득 {pointBLabel}</th>
-                              <th className="dl-act-col-point">획득 {pointCLabel}</th>
-                              <th>주차 성장 조건</th>
+                              <SortTh label="결과" labelText="결과" dir={lineDir("result")} onSort={() => onLineSort("result")} />
+                              <SortTh label="라인명" labelText="라인명" dir={lineDir("name")} onSort={() => onLineSort("name")} className="dl-act-col-name" />
+                              <SortTh label="소속 허브" labelText="소속 허브" dir={lineDir("hub")} onSort={() => onLineSort("hub")} />
+                              <SortTh label="종류" labelText="종류" dir={lineDir("kind")} onSort={() => onLineSort("kind")} />
+                              <SortTh label="소요 시간" labelText="소요 시간" dir={lineDir("duration")} onSort={() => onLineSort("duration")} />
+                              <SortTh label="평점" labelText="평점" dir={lineDir("rating")} onSort={() => onLineSort("rating")} />
+                              <SortTh label={`획득 ${pointALabel}`} labelText={`획득 ${pointALabel}`} dir={lineDir("pointA")} onSort={() => onLineSort("pointA")} className="dl-act-col-point" />
+                              <SortTh label={`획득 ${pointBLabel}`} labelText={`획득 ${pointBLabel}`} dir={lineDir("pointB")} onSort={() => onLineSort("pointB")} className="dl-act-col-point" />
+                              <SortTh label={`획득 ${pointCLabel}`} labelText={`획득 ${pointCLabel}`} dir={lineDir("pointC")} onSort={() => onLineSort("pointC")} className="dl-act-col-point" />
+                              <SortTh label="주차 성장 조건" labelText="주차 성장 조건" dir={lineDir("growthRequirement")} onSort={() => onLineSort("growthRequirement")} />
                             </tr>
                           </thead>
                           <tbody>
-                            {lineState.data.rows.map((row) => (
+                            {sortedLineRows.map((row) => (
                               <tr key={row.stableKey}>
                                 <td>
                                   <span
