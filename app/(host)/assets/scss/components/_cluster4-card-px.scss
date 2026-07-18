@@ -681,13 +681,13 @@
     // 24) .floating-icons .edit-icon i.ti-pencil — 펜 아이콘 색.
     //
     //   JSX 인라인 style={{ color: "#1a1a1a" }} (Cluster4CardContent.tsx 6곳).
-    //   현재 PX 배경은 var(--px-accent) (#1E9503) 솔리드 → 검정 펜 대비 OK 였지만
-    //   사용자 요청: 펜 아이콘도 PX 톤(soft green) 으로 통일.
-    //   solid green BG + soft green icon → 미묘하지만 의도적 brand 일관성.
-    //   !important 로 인라인 style 위 cascade 승.
+    //   PX 배경은 var(--px-accent) (#1E9503) 솔리드 → 검정 펜 대비 OK.
+    //   사용자 요청(2026-07-18): phalanx 만 펜 아이콘 검정(#1a1a1a) 으로 되돌림
+    //   (종전 soft green 통일 철회). encre 는 soft pink 유지, oranke/기본은 인라인 검정.
+    //   !important 로 인라인 style 과 동일 값 고정.
     // =============================================================
     .floating-icons .edit-icon i.ti-pencil {
-      color: var(--px-accent-soft) !important;
+      color: #1a1a1a !important;
     }
 
     // =============================================================
