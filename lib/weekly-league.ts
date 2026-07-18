@@ -169,11 +169,56 @@ const metricFromCard = (card: AdminCluster4WeeklyCardDto): GrowthMetricSnapshot 
   careerRate: rateValue(card.careerRate),
 });
 
-async function loadGrowthMetricSnapshots(userIds: string[], mode: ScopeMode) {
+// 랭킹용 성장지표 스냅샷 로더 — 두 경로 모두 "동일 admin 카드 + 동일 metricFromCard" 로 귀결한다.
+//   ① 슬림 projection(기본): POST /api/cluster4/weekly-cards-projection 1회로 전 유저의 랭킹 필드만
+//      받는다. 어드민이 GET 단건과 동일 함수(loadFinalizedWeeklyCards)로 만든 카드에서 metricFromCard
+//      가 읽는 필드만 골라 내려주므로, 여기서 같은 metricFromCard 를 적용하면 팬아웃과 byte-identical.
+//      payload 는 유저당 ~160KB → ~1.7KB(≈99% 감소), HTTP 도 30콜 → 1콜.
+//   ② fat 팬아웃(폴백): 기존 유저당 GET /api/cluster4/weekly-cards(동시성 12). 슬림 경로가 네트워크/
+//      비200/파싱 실패 시에만 사용 — 결과 맵은 두 경로가 동일하다(회귀 검증 완료).
+//   플래그(WEEKLY_RANKING_SLIM_PROJECTION="off")는 전 사용자 공통 — mode/actAs/demo 로 분기하지 않는다.
+const USE_SLIM_RANKING_PROJECTION = process.env.WEEKLY_RANKING_SLIM_PROJECTION !== "off";
+
+type WeeklyRankingProjectionResponse = {
+  success?: boolean;
+  users?: Array<{ userId: string; ok?: boolean; cards?: AdminCluster4WeeklyCardDto[] }>;
+};
+
+async function loadGrowthMetricSnapshots(userIds: string[], mode: ScopeMode, org: string) {
   const result = new Map<string, Map<string, GrowthMetricSnapshot>>();
   const baseUrl = await resolveAdminBaseUrl();
   if (!baseUrl || userIds.length === 0) return result;
   const headers = new Headers({ "x-internal-api-key": process.env.INTERNAL_API_KEY ?? "" });
+
+  // ① 슬림 projection 배치 — 1 POST. 실패 시 아래 fat 팬아웃으로 폴백.
+  if (USE_SLIM_RANKING_PROJECTION) {
+    try {
+      const url = new URL("/api/cluster4/weekly-cards-projection", baseUrl);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: new Headers({ "x-internal-api-key": process.env.INTERNAL_API_KEY ?? "", "Content-Type": "application/json" }),
+        // mode 는 어드민 카드 계산에 영향 없음(계약상 전달만) — 팬아웃과 동일.
+        body: JSON.stringify({ userIds, organizationSlug: org, mode }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(25_000),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const body = (await response.json()) as WeeklyRankingProjectionResponse;
+      if (!body.success || !Array.isArray(body.users)) throw new Error("invalid projection response");
+      for (const u of body.users) {
+        // ok:false(단건 GET success:false/예외 대응) 유저는 팬아웃 스킵과 동일하게 맵 미기입 → emptyMetric.
+        if (!u.ok || !Array.isArray(u.cards)) continue;
+        result.set(u.userId, new Map(u.cards.map((card) => [card.weekId, metricFromCard(card)])));
+      }
+      return result;
+    } catch (error) {
+      // 슬림 경로 전체 실패 → fat 팬아웃 폴백(결과 맵 동일). 부분(유저별) 실패는 위에서 이미 격리됨.
+      console.warn("[weekly-league] slim projection failed → fat fanout fallback", { error: (error as Error)?.message ?? String(error) });
+      result.clear();
+    }
+  }
+
+  // ② fat 팬아웃(폴백/플래그 off) — 기존 동작 그대로.
   const concurrency = 12;
   for (let offset = 0; offset < userIds.length; offset += concurrency) {
     await Promise.all(
@@ -414,7 +459,7 @@ export async function aggregateWeeklyLeague(
     // unhandled rejection 이 되지 않게 하기 위함이다.
     const growthMetricsPromise: Promise<Map<string, Map<string, GrowthMetricSnapshot>>> = pointRowsPromise
       .then(({ data, error }) =>
-        error ? new Map<string, Map<string, GrowthMetricSnapshot>>() : loadGrowthMetricSnapshots(Array.from(new Set((data || []).map((row) => row.user_id))), mode),
+        error ? new Map<string, Map<string, GrowthMetricSnapshot>>() : loadGrowthMetricSnapshots(Array.from(new Set((data || []).map((row) => row.user_id))), mode, org),
       )
       .catch(() => new Map<string, Map<string, GrowthMetricSnapshot>>());
 
