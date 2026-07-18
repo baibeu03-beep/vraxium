@@ -14866,6 +14866,12 @@
     border-color: rgba(255, 107, 107, 0.5);
     color: #ff6b6b;
   }
+  // 미판정(pending) — 원장 미적립. 현 원천에선 미발생이나 톤 안전장치(중립 회색).
+  .dl-act-result--pending {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.16);
+    color: rgba(255, 255, 255, 0.7);
+  }
 
   // 구분 — 정규(조직 accent) / 변동(시안)
   .dl-act-source--regular {

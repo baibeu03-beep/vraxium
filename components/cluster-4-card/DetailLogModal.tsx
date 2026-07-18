@@ -6,7 +6,12 @@ import { usePathname } from "next/navigation";
 import { getThemeClass } from "@/lib/cluster-route";
 import { formatLineDuration } from "@/lib/lineDuration";
 // 액트 요약 산식 = 관리자 "액트 체크 내역" 탭과 공유하는 단일 SoT(두 repo 미러링).
-import { buildCrewActSummary, emptyCrewActSummary } from "@/shared/crewActSummary";
+import {
+  buildCrewActSummary,
+  emptyCrewActSummary,
+  resolveCrewActResult,
+  type CrewActCheckResult,
+} from "@/shared/crewActSummary";
 import type {
   CrewLinePointPairDto,
   CrewWeekLineEnhancementDetailDto,
@@ -176,6 +181,20 @@ const pointValueColor = (index: number): string => (index === 2 ? "#ff6b6b" : "#
  *   (DetailLogActRow 는 CrewActSummaryRow 의 상위집합이라 그대로 전달 가능.)
  */
 const buildActSummary = (acts: DetailLogActRow[]) => buildCrewActSummary(acts);
+
+/**
+ * 크루 액트 결과 → 행 배지 표시(라벨·톤 클래스). **판정은 공통 resolveCrewActResult** 가 하고
+ * 여기서는 표시만 매핑한다 — 프론트가 포인트를 보고 라벨을 따로 추정하지 않는다(요구).
+ *   success → "✓ 체크"(초록, --checked) · fail → "✕ 미스"(빨강, --miss) · pending → "· 대기"(중립)
+ * ⚠ 배지와 요약(체크 성공/실패)이 **같은 함수**를 타므로 "결과 ✓ 체크 + Point.C 12" 같은 모순이 불가능하다.
+ */
+const crewActResultBadge = (
+  result: CrewActCheckResult,
+): { label: string; toneClass: string } => {
+  if (result === "fail") return { label: "✕ 미스", toneClass: "dl-act-result--miss" };
+  if (result === "pending") return { label: "· 대기", toneClass: "dl-act-result--pending" };
+  return { label: "✓ 체크", toneClass: "dl-act-result--checked" };
+};
 
 /** null-data 시 요약 기본값(타입 안정용 — 실제 렌더는 data 존재 분기에서만) */
 const EMPTY_ACT_SUMMARY = emptyCrewActSummary();
@@ -606,11 +625,16 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                           </tr>
                         </thead>
                         <tbody>
-                          {data.acts.map((a, i) => (
+                          {data.acts.map((a, i) => {
+                            // 결과 배지 = 크루 기준 판정(공통 SoT). 원장 result 필드가 아니라 적립 포인트에서 파생 —
+                            //   요약 "체크 성공/실패"와 동일 함수라 배지-포인트 모순(예: ✓ 체크 + Po.C 12)이 불가능.
+                            const crewResult = resolveCrewActResult(a);
+                            const resultBadge = crewActResultBadge(crewResult);
+                            return (
                             <tr key={i}>
                               <td>
-                                <span className={`dl-act-badge dl-act-result dl-act-result--${a.result}`}>
-                                  {a.result === "checked" ? "✓ 체크" : "✕ 미스"}
+                                <span className={`dl-act-badge dl-act-result ${resultBadge.toneClass}`}>
+                                  {resultBadge.label}
                                 </span>
                               </td>
                               <td className="dl-act-name" title={a.actName || "-"}>
@@ -642,7 +666,8 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                                 </span>
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
