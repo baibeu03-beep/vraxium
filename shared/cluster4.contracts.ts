@@ -1,3 +1,5 @@
+import type { PositionCode } from "@/shared/crewClassPosition";
+
 export interface Cluster4RateDto {
   rate: number;
   count: number;
@@ -440,6 +442,11 @@ export interface AdminCluster4WeeklyCardDto {
   teamName?: string | null;
   partName?: string | null;
   roleLabel?: string | null;
+  // 클래스(직책) = 그 카드 "주차 당시" position_code(원시 코드). roleLabel(멤버십 등급)과 별개 SoT.
+  //   SoT = user_position_histories.position_code → 없으면 현재 role/level freeze → 없으면 null.
+  //   표시는 shared/crewClassPosition.positionCodeToClassLabel 단일 함수로만 변환(디테일 로그 클래스).
+  //   신규 필드 — 기존 스냅샷엔 없어 null. 프론트는 null 시 roleLabel 로 과도기 fallback.
+  crewClassPositionCode?: PositionCode | null;
   membershipStatusLabel?: string | null;
   // 포인트 표시 정책(2026-07 통일): 방패(B)=net(adv−pen) · C(패널티)=양수 magnitude(빨강).
   points?: {
@@ -509,7 +516,9 @@ export interface AdminCluster4WeeklyCardDto {
   //   passed   : earned >= required.
   //   enforced : 게이트 강제 여부. false 면 그 주차엔 기준이 적용되지 않았고 required 는 무의미(0)다
   //              → 기준값을 문구에 노출하지 말 것.
-  // ⚠ checkGate 는 슬롯 verdict 가 pass 일 때만 채워진다(슬롯 실패로 주차 실패한 경우 null).
+  // ⚠ checkGate 는 확정 카드(status=pass·fail) 에 채워진다(DTO v45+, 2026-07-18). 실패 카드도
+  //   required/earned/passed(표시 전용)를 실어 Detail Log 가 실패 카드에서도 기준값을 노출한다.
+  //   pending(현재주 미판정)·not_applicable(미오픈·휴식) 은 null(게이트 무의미). 판정 로직 불변.
   experienceGrowth?: {
     status?: "pass" | "fail" | "pending" | "not_applicable" | string | null;
     checkGate?: {
