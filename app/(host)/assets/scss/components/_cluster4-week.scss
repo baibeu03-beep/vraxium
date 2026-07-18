@@ -11022,7 +11022,15 @@
 
       &.disabled {
         .image-preview {
-          opacity: 0.3;
+          // disabled/admin 예약 슬롯은 interaction만 잠근다. 이미지 자체는 일반 슬롯과
+          // 동일한 밝기로 유지하고, 업로드·삭제 버튼만 아래 규칙으로 비활성화한다.
+          opacity: 1;
+          filter: none;
+
+          img {
+            opacity: 1;
+            filter: none;
+          }
         }
         .image-actions-overlay .image-action-btn {
           opacity: 0.3;
