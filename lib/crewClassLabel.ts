@@ -9,9 +9,9 @@
 //   두 소비처(이력서 season role_in_season / crews user_profiles.role)의 코드 체계를 모두 흡수.
 // super_admin·null·미지 코드는 맵에 없음 → resolveResumeClassLabel 이 null 반환(배지 미표시).
 export const RESUME_ROLE_CLASS_LABELS: Record<string, string> = {
-  crew: "일반(정규)",
-  crew_regular: "일반(정규)",
-  crew_normal: "일반(정규)",
+  crew: "정규",
+  crew_regular: "정규",
+  crew_normal: "정규",
   crew_advanced: "심화(파트장)",
   crew_partleader: "심화(파트장)",
   crew_advanced_part_leader: "심화(파트장)",

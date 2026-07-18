@@ -387,7 +387,7 @@ const WEEKLY_RANKING_DISPLAY_MAP = CLUSTER4_WEEKLY_RAW.map((entry) => ({
 
 // Champion's Hall 데모용 Top10 풀 — 실제는 aggregateWeeklyLeague 가 top10 을 채운다.
 const CH_NAMES = ['홍길동', '김서연', '이준호', '박민지', '최유진', '정하늘', '강도현', '윤채원', '임서준', '한지우', '오세훈', '문가영'];
-const CH_CLASSES = ['심화(에이전트)', '심화(파트장)', '일반(정규)', '운영진(팀장)', '운영진(앰배서더)'];
+const CH_CLASSES = ['심화(에이전트)', '심화(파트장)', '정규', '운영진(팀장)', '운영진(앰배서더)'];
 const CH_SCHOOLS = ['순천향 대학교', '성균관 대학교', '한양 대학교', '중앙 대학교', '경희 대학교', '동국 대학교'];
 const CH_MAJORS = ['헤어디자인', '시각디자인', '경영학', '컴퓨터공학', '미디어커뮤니케이션', '뷰티메이크업'];
 const CH_TEAMS = ['라이프', '크리에이티브', '커머스', '데이터', '브랜드'];

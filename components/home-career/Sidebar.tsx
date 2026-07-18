@@ -481,7 +481,7 @@ const Sidebar = () => {
       if (roleKorean[c]) { displayRoleLabel = roleKorean[c]; break; }
       if (/[가-힣]/.test(c)) { displayRoleLabel = c; break; } // 이미 한글 라벨이면 그대로
     }
-    if (!displayRoleLabel) displayRoleLabel = "일반(정규)";
+    if (!displayRoleLabel) displayRoleLabel = "정규";
 
     return { displaySeasonYear, displaySeasonName, displayTotalWeeks, displayRoleLabel };
   };
@@ -2795,7 +2795,7 @@ const Sidebar = () => {
                     <span className="sub-text">
                       {/* 기존 "{gpa} /{gpaMax}" 자리 → "{part_name} /{membership_level 단축형}" 매핑.
                           UI 구조/슬래시 위치/className 미변경. 단축 라벨은 roleKorean 맵
-                          (line 99-) 의 "(...)" 앞부분만 사용 — 예: "일반(정규)" → "일반". */}
+                          (line 99-) 의 "(...)" 앞부분만 사용 — 예: "심화(파트장)" → "심화". */}
                       <span style={{ color: currentProfile.lightColor }}>·</span> {currentProfile.part || "-"} <span style={{ color: currentProfile.lightColor }}>/{(roleKorean[currentProfile.membershipLevel] || currentProfile.membershipLevel || "-").split("(")[0] || "-"}</span>
                     </span>
                   </div>

@@ -37,7 +37,7 @@ interface UserProfileRow {
   current_team_name: string | null;
   current_part_name: string | null;
   // 직급/역할 코드(crew/team_leader/part_leader/agent/ambassador/super_admin/null).
-  //   → 표시용 클래스명 라벨(일반(정규)/심화(파트장)/운영진(팀장) …)로 변환해 DTO className 으로
+  //   → 표시용 클래스명 라벨(정규/심화(파트장)/운영진(팀장) …)로 변환해 DTO className 으로
   //     노출(resolveResumeClassLabel, 이력서 카드와 동일 라벨 SoT).
   role: string | null;
 }
@@ -319,7 +319,7 @@ function stripSeasonRestSentinel(value: string | null | undefined): string | nul
 // 클래스명(표시용 역할/직급 라벨) resolver.
 //   source = user_profiles.role. 라벨 SoT = lib/crewClassLabel.RESUME_ROLE_CLASS_LABELS
 //   (이력서 카드 home-career/Sidebar 활동이력 역할 라벨과 동일 정의소를 공유):
-//     · crew        → 일반(정규)
+//     · crew        → 정규
 //     · part_leader → 심화(파트장)
 //     · agent       → 심화(에이전트)
 //     · team_leader → 운영진(팀장)
@@ -386,7 +386,7 @@ function mergeRow(
     //   rest 사용자는 '-' 고정(isSeasonRest), active 도 '시즌전체휴식' 센티넬은 제거(위 계산).
     team: teamDisplay ?? "-",
     part: partDisplay ?? "-",
-    // 클래스명(표시용 역할 라벨 — 일반(정규)/심화(파트장)/운영진(팀장) …) — user_profiles.role.
+    // 클래스명(표시용 역할 라벨 — 정규/심화(파트장)/운영진(팀장) …) — user_profiles.role.
     //   이력서 카드와 동일 라벨 SoT(resolveResumeClassLabel). 팀명 배지 옆 동일 디자인 표시(프론트).
     //   값이 비면(null) 프론트가 배지를 숨긴다. rest 마스킹 대상 아님(직급은 시즌 휴식과 무관).
     className: resolveResumeClassLabel(profile.role),

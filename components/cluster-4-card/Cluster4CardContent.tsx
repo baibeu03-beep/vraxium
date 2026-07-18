@@ -20,6 +20,8 @@ import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getGraduationWeeksFro
 import { formatSeasonLabel, formatSeasonWeekTitle, resolveSeasonWeekText } from "@/lib/cluster4-types";
 import { isTransitionWeek, isOfficialRestWeek, TRANSITION_WEEK_LABEL } from "@/lib/cluster4-transition-week";
 import { isFadedCardStatus } from "@/lib/cluster4-faded-card";
+// 클래스(직책) 표시 — 주차 당시 position_code → 라벨 단일 변환기(admin 미러 공통 모듈).
+import { positionCodeToClassLabel } from "@/shared/crewClassPosition";
 import { clampAdminOutputs, ADMIN_OUTPUT_IMAGE_MAX, ADMIN_OUTPUT_LINK_MAX } from "@/lib/cluster4-admin-output-clamp";
 import { REPUTATION_KEYWORD_GROUPS } from "@/lib/reputation-keywords";
 import { isAdminEmail } from "@/lib/admin";
@@ -6587,9 +6589,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const detailLogExpTotal = detailLogExpHasDto ? Number(detailLogExpRate!.total) || 0 : experienceStats.total;
   const detailLogExpSuccess = detailLogExpHasDto ? Number(detailLogExpRate!.count) || 0 : experienceStats.success;
   // 두 성장 조건 충족 여부 — [성장 성공 조건 체크]·[이번 주 도움말 4분기] 공통 단일 출처.
-  //   ① 포인트 기준 달성 = 주차 성장 성공(detailLogStatusClass success)
+  //   ① 투구(Point.A) 기준 달성 — checkGate 있으면 그 게이트 passed(획득>=기준)로, 없으면 주차 성공으로 판정(아래).
   //   ② [실무 경험] 필수 라인 강화 완료 = 오픈 라인 전부 강화(total>0 && success>=total)
-  const detailLogPoaMet = detailLogStatusClass.includes("success");
   const detailLogExpAllEnhanced = detailLogExpTotal > 0 && detailLogExpSuccess >= detailLogExpTotal;
   // ── Point.A 기준값/획득량 — 판정과 동일 SoT(어드민 checkGate) 표시 전용 ──
   // 이 카드의 success/fail 을 실제로 결정한 게이트를 그대로 읽는다(프론트 재계산·하드코딩 없음).
@@ -6598,10 +6599,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const detailLogCheckGate = weeklyCardMeta?.experienceGrowth?.checkGate ?? null;
   // 문구에 기준값을 노출할 수 있는 주차인가:
   //   · enforced=false 또는 required=0 → 그 주차엔 Point.A 기준이 적용되지 않았다(레거시 미이관/N 부재).
-  //   · checkGate=null → 슬롯 실패로 게이트가 평가되지 않았다(기준값 자체가 없음).
+  //   · checkGate=null → 게이트가 부착되지 않았다(pending=현재주 미판정 / not_applicable=미오픈·휴식).
+  //     ⚠ DTO v45+ 부터 실패 카드(슬롯 fail)에도 checkGate 가 채워진다 — 실패 카드도 기준값을 노출한다.
   //   · 이름 미도착 → "-님" 노출 방지.
-  // 위 경우는 기존 문구로 폴백한다. (검증: 렌더 대상 주차 전건에서 earned===points.star 이고
-  //  passed 와 주차 판정이 양방향 일치 — 문구가 판정과 어긋나는 조합 0건.)
+  // 위 경우는 기존 문구로 폴백한다. (검증: earned===points.star, required===recognition_count_n.)
   const detailLogGateCrewName = ownerInfoReady ? mask.crewName(ownerPersonalInfo.name) : null;
   const detailLogShowGate =
     !!detailLogCheckGate &&
@@ -6609,6 +6610,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     detailLogCheckGate.required > 0 &&
     !!detailLogGateCrewName &&
     detailLogGateCrewName !== "-";
+  // ① 투구(Point.A) 달성 여부. checkGate 가 있으면 그 게이트 passed(=투구 획득>=기준)로 판정한다 —
+  //   주차가 실무경험 슬롯 미달로 실패했어도 투구 자체는 달성했을 수 있으므로, 조건 ①(투구)과 주차
+  //   성공을 분리한다(그 경우 ①=✓ 투구 달성, ②=✗ 실무경험). checkGate 부재(레거시/미강제/현재주 등)면
+  //   종전대로 주차 성공 여부로 폴백. 주차 판정(success/fail 배지)은 이와 무관하게 불변(표시 전용).
+  const detailLogPoaMet = detailLogShowGate
+    ? detailLogCheckGate!.passed
+    : detailLogStatusClass.includes("success");
   const detailLogConditions: DetailLogCondition[] = [
     {
       checked: detailLogPoaMet,
@@ -6716,11 +6724,16 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       name: mask.crewName(ownerPersonalInfo.name),
       team: headerTeamName ? `${headerTeamName} 팀` : "-",
       part: headerPartName ? `${headerPartName} 파트` : "-",
+      // 클래스(직책) = 그 카드 "주차 당시" position_code(신규 SoT: weeklyCardMeta.crewClassPositionCode)를
+      //   공통 변환기로 라벨화(운영진(팀장)/심화(파트장)/… ). 이 필드가 없는 기존 스냅샷(=null)에서만
+      //   과도기로 기존 roleLabel(멤버십 등급) 기반 표기로 폴백한다.
+      //   ⚠ roleLabel(등급)을 클래스로 쓰지 않는다 — 팀장이 "일반"으로 표시되던 회귀 방지.
       level:
-        (ownerPersonalInfo.membershipLevel || "") +
-        (headerRoleLabel && headerRoleLabel !== "-" && headerRoleLabel !== ownerPersonalInfo.membershipLevel
-          ? `(${headerRoleLabel})`
-          : ""),
+        positionCodeToClassLabel(weeklyCardMeta?.crewClassPositionCode ?? null) ??
+        ((ownerPersonalInfo.membershipLevel || "") +
+          (headerRoleLabel && headerRoleLabel !== "-" && headerRoleLabel !== ownerPersonalInfo.membershipLevel
+            ? `(${headerRoleLabel})`
+            : "")),
     },
     statusText: headerStatusText || "-",
     statusClass: detailLogStatusClass,
@@ -8682,9 +8695,9 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   //  - "심화" / "운영진" → 관리 슬롯 open
   //  - "일반" / 미확정(membership_level 없음) → 관리 슬롯 locked (보수적)
   const EXP_MEMBERSHIP_ROLE_KOREAN: Record<string, string> = {
-    crew: "일반(정규)",
-    crew_regular: "일반(정규)",
-    crew_normal: "일반(정규)",
+    crew: "정규",
+    crew_regular: "정규",
+    crew_normal: "정규",
     crew_advanced: "심화(파트장)",
     crew_partleader: "심화(파트장)",
     crew_advanced_part_leader: "심화(파트장)",
