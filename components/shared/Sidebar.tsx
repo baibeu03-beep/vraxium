@@ -1,13 +1,15 @@
 "use client";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Autoplay } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { getHeaderThemeAccent } from "@/lib/cluster-route";
 import { appendDemoQuery } from "@/lib/appendDemoQuery";
-import { buildOrgNavHref } from "@/lib/orgNav";
+import { buildOrgNavHref, resolveCurrentOrgSlug } from "@/lib/orgNav";
+import { prefetchWeeklyLeague, weeklyLeagueUrl } from "@/lib/weeklyLeagueClient";
+import { isDemoMode } from "@/utils/isDemoMode";
 // Define the type for the game object
 interface Game {
   id: number;
@@ -31,6 +33,7 @@ const games: Game[] = [
 ];
 const Sidebar = () => {
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
 
   // 조직 선택 슬라이더 육각형 테두리 색 — 현재 org(쿼리>cluster slug>없음)에 따라 결정.
@@ -58,6 +61,34 @@ const Sidebar = () => {
   // 값은 cosmetic(클릭 시 이동 안 함)이라 nav href 를 그대로 재사용한다.
   const crewsHref = crewsNavHref;
   const weeklyRankingHref = weeklyRankingNavHref;
+  const normalizedPath = (pathname ?? "/").replace(/\/+$/, "");
+  const isFirstEntryHome = normalizedPath === "" || normalizedPath === "/home";
+  const applyCustomNav = !isFirstEntryHome;
+  const prefetchedWeeklyHref = useRef<string | null>(null);
+  const prefetchWeeklyRanking = useCallback(() => {
+    const org = resolveCurrentOrgSlug(pathname, searchParams?.get("org") ?? null);
+    if (!org || isDemoMode() || prefetchedWeeklyHref.current === weeklyRankingNavHref) return;
+    prefetchedWeeklyHref.current = weeklyRankingNavHref;
+    router.prefetch(weeklyRankingNavHref);
+    prefetchWeeklyLeague(weeklyLeagueUrl(org, searchParams?.get("seasonKey")));
+  }, [pathname, router, searchParams, weeklyRankingNavHref]);
+
+  useEffect(() => {
+    if (!applyCustomNav) return;
+    const windowWithIdle = window as typeof window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    let idleId: number | undefined;
+    const delayId = window.setTimeout(() => {
+      if (windowWithIdle.requestIdleCallback) {
+        idleId = windowWithIdle.requestIdleCallback(prefetchWeeklyRanking, { timeout: 2_000 });
+      } else {
+        prefetchWeeklyRanking();
+      }
+    }, 1_500);
+    return () => {
+      window.clearTimeout(delayId);
+      if (idleId != null) windowWithIdle.cancelIdleCallback?.(idleId);
+    };
+  }, [applyCustomNav, prefetchWeeklyRanking]);
 
   // 첫 진입 화면(/ · /home)을 제외한 모든 고객 앱 페이지에서 상단 4개 링크 아이콘을 원본
   // 템플릿 아이콘으로 복원하고 1·2번째만 실제 이동을 허용한다. / · /home 에서는 기존 동작
@@ -66,10 +97,6 @@ const Sidebar = () => {
   //   · 2번째(크루 라벨)      → /weekly-ranking/?org={org}
   //   · 3·4번째              → 이동 없음(hover 만, preventDefault 유지)
   // trailingSlash:true 라 pathname 이 "/home/" 로 올 수 있어 후행 슬래시를 정규화해 비교한다.
-  const normalizedPath = (pathname ?? "/").replace(/\/+$/, "");
-  const isFirstEntryHome = normalizedPath === "" || normalizedPath === "/home";
-  const applyCustomNav = !isFirstEntryHome;
-
   return (
     <aside
       className="nftg-sidebar"
@@ -108,6 +135,10 @@ const Sidebar = () => {
                     {/* 2번째: 크루 라벨 → 첫 진입 화면 외 모든 페이지에서 /weekly-ranking/?org= 로 이동(원본 아이콘 chart-bar). */}
                     <Link
                       href={applyCustomNav ? weeklyRankingNavHref : crewsHref}
+                      prefetch={true}
+                      onMouseEnter={applyCustomNav ? prefetchWeeklyRanking : undefined}
+                      onFocus={applyCustomNav ? prefetchWeeklyRanking : undefined}
+                      onTouchStart={applyCustomNav ? prefetchWeeklyRanking : undefined}
                       onClick={applyCustomNav ? undefined : (e) => e.preventDefault()}
                       aria-label="크루"
                       title="크루"
