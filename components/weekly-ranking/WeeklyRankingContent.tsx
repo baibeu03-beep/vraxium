@@ -13,6 +13,7 @@ import {
   getRankingTheme,
   getRankingThemeVars,
 } from "@/lib/rankingTheme";
+import { loadWeeklyLeague, peekWeeklyLeague, weeklyLeagueUrl } from "@/lib/weeklyLeagueClient";
 
 const SORT_OPTIONS = [
   { value: "latest", label: "최신 순" },
@@ -73,10 +74,14 @@ const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
   const [seasonValue, setSeasonValue] = useState<string>("");
   const [leagueValue, setLeagueValue] = useState<string>("");
   const [demo, setDemo] = useState(false);
-  const [fetchedCards, setFetchedCards] = useState<WeeklyCardData[]>([]);
+  const dataUrl = weeklyLeagueUrl(org, seasonKeyParam);
+  const initialResponse = peekWeeklyLeague(dataUrl);
+  const [fetchedCards, setFetchedCards] = useState<WeeklyCardData[]>(
+    () => initialResponse?.success && Array.isArray(initialResponse.cards) ? initialResponse.cards : [],
+  );
   // 로딩/빈 상태 분리 — 초기 진입(API 응답 전)에는 true. 데모/일반 모드 공통.
   // loading=true → 로딩 UI, loading=false && cards=0 → 빈 상태, loading=false && cards>0 → 카드.
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialResponse);
 
   // localStorage는 SSR 접근 불가 — 마운트 후 한 번 체크
   useEffect(() => {
@@ -104,10 +109,7 @@ const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
         // 프론트는 응답 카드를 그대로 렌더(프론트 시즌 하드코딩 필터 없음).
         // QA(mode=test) API URL generation disabled.
         // let url = appendModeQuery(`/api/weekly-league?org=${encodeURIComponent(org)}`, mode);
-        let url = `/api/weekly-league?org=${encodeURIComponent(org)}`;
-        if (seasonKeyParam) url += `&seasonKey=${encodeURIComponent(seasonKeyParam)}`;
-        const res = await fetch(url, { cache: "no-store" });
-        const json = await res.json();
+        const json = await loadWeeklyLeague(dataUrl);
         if (!cancelled && json?.success && Array.isArray(json.cards)) {
           setFetchedCards(json.cards as WeeklyCardData[]);
         }
@@ -121,7 +123,7 @@ const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
     return () => {
       cancelled = true;
     };
-  }, [demo, org, seasonKeyParam]);
+  }, [dataUrl, demo, org]);
 
   const allCards = useMemo<WeeklyCardData[]>(
     () => (demo ? WEEKLY_CARD_DUMMY : fetchedCards),
