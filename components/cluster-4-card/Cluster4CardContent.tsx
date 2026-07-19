@@ -12803,7 +12803,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const crewSlotIdx = imageIdx - adminCount;
                       const effectiveIdx = isPureAdminPreview ? imageIdx : crewSlotIdx;
                       return (
-                        <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${(effectiveIsAdmin || isFirstSlotLocked) && !image ? " disabled" : ""}${effectiveIsAdmin || isFirstSlotLocked ? " admin-slot" : ""}`} style={{ position: "relative" }}>
+                        <div key={imageIdx} className={`workinfo-image-slot image-slot${(effectiveIsAdmin || isFirstSlotLocked) && !image ? " disabled" : ""}${effectiveIsAdmin || isFirstSlotLocked ? " admin-slot" : ""}`} style={{ position: "relative" }}>
                           {image ? (
                             <div className="image-preview" onClick={() => { if (image) setPreviewImageUrl(image); }}>
                               <img src={image} alt={`이미지 ${imageIdx + 1}`} />
@@ -13315,7 +13315,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const isFirstSlotLocked = !isPureAdminPreview && imageIdx === 0;
                       const isRequired = imageIdx < 2;
                       return (
-                        <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${!isEnabled ? " disabled" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
+                        <div key={imageIdx} className={`workinfo-image-slot image-slot${!isEnabled ? " disabled" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
                           {image ? (
                             <div className="image-preview" onClick={() => { if (image) setPreviewExpImageUrl(image); }}>
                               <img src={image} alt={`이미지 ${imageIdx + 1}`} />
@@ -13829,7 +13829,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                       const isFirstSlotLocked = !isPureAdminPreview && imageIdx === 0;
                       const isRequired = imageIdx < 2;
                       return (
-                        <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${!isEnabled ? " disabled" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
+                        <div key={imageIdx} className={`workinfo-image-slot image-slot${!isEnabled ? " disabled" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
                           {image ? (
                             <div className="image-preview" onClick={() => { if (image) setPreviewAbilityImageUrl(image); }}>
                               <img src={image} alt={`이미지 ${imageIdx + 1}`} />
@@ -14317,7 +14317,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                         const isAdminLocked = !isPureAdminPreview && imageIdx < adminImgCountForLock;
                         const showEditingActions = workCareerViewIsEditing && !isAdminLocked && !isFirstSlotLocked;
                         return (
-                          <div key={imageIdx} className={`workinfo-image-slot image-slot${imageIdx === 0 ? " large" : " small"}${!isEnabled ? " disabled" : ""}${isAdminLocked ? " admin-locked" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
+                          <div key={imageIdx} className={`workinfo-image-slot image-slot${!isEnabled ? " disabled" : ""}${isAdminLocked ? " admin-locked" : ""}`} {...(isRequired ? { "data-field": `image${imageIdx}` } : {})}>
                             {image ? (
                               <div className="image-preview" onClick={() => handleCareerImagePreview(imageIdx)}>
                                 <img src={image} alt={`이미지 ${imageIdx + 1}`} />

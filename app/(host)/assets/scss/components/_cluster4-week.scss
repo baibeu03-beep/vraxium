@@ -10995,8 +10995,9 @@
   // 洹몃━???쒖꽌: 醫뚯긽=1, ?곗긽=2, 醫뚰븯=3, ?고븯=4
   .workinfo-image-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    grid-auto-flow: row;
     gap: 8px;
     // 4媛?紐⑤떖 怨듯넻: ?곗륫 而щ읆 ?⑥? 怨듦컙 ?꾨? 李⑥? (520px 怨좎젙 ?댁젣 ??醫뚯륫 ?꾩껜 ?믪씠? ?곕룞)
     flex: 1 1 0 !important;
@@ -11011,10 +11012,25 @@
       border-radius: 0 !important;
       position: relative;
       overflow: hidden;
+      grid-column: auto !important;
+      grid-row: auto !important;
+      min-width: 0;
+      min-height: 0;
+      margin: 0 !important;
+      transform: none !important;
+      z-index: auto;
 
       &.disabled {
         .image-preview {
-          opacity: 0.3;
+          // disabled/admin 예약 슬롯은 interaction만 잠근다. 이미지 자체는 일반 슬롯과
+          // 동일한 밝기로 유지하고, 업로드·삭제 버튼만 아래 규칙으로 비활성화한다.
+          opacity: 1;
+          filter: none;
+
+          img {
+            opacity: 1;
+            filter: none;
+          }
         }
         .image-actions-overlay .image-action-btn {
           opacity: 0.3;
@@ -14872,6 +14888,12 @@
     background: rgba(255, 107, 107, 0.14);
     border-color: rgba(255, 107, 107, 0.5);
     color: #ff6b6b;
+  }
+  // 미판정(pending) — 원장 미적립. 현 원천에선 미발생이나 톤 안전장치(중립 회색).
+  .dl-act-result--pending {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.16);
+    color: rgba(255, 255, 255, 0.7);
   }
 
   // 구분 — 정규(조직 accent) / 변동(시안)

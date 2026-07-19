@@ -212,6 +212,128 @@ function clampAdminOutputsBody(rawBody: string): string {
   return JSON.stringify(root);
 }
 
+// ── 조직 내부 상태(aggregating/reviewing) → 기존 '성장(집계 중)' 환원 ──────────────
+// 정책(2026-07-19): /cluster-4-card 에는 사용자 노출 상태로 '검수 중'이 존재하지 않는다.
+// 조직별 내부 상태 reviewing/aggregating 은 서버·어드민 처리 단계일 뿐이므로, 고객 카드
+// DTO/화면에는 신규 UI 상태·문구('검수 중')나 신규 CSS 상태를 만들지 않고 기존 상태 체계로만 매핑한다.
+//   · aggregating                      → 성장(집계 중)
+//   · reviewing                        → 성장(집계 중)
+//   · statusLabel 에 '검수' 문구가 새면  → 성장(집계 중)  (방어적 — 신규 문구 노출 원천 차단)
+//   · published(주차 공표) + 해당 유저 UWS 없음 → 카드 삭제 없이 성장(집계 중) 유지 + 데이터 불일치 로그
+// ⚠ 확정 상태(success/fail/휴식)는 절대 강등하지 않는다 — 위 내부 상태로 내려온 카드만 환원한다.
+// 이 프록시는 일반/mode=test/actAsTestUserId/demoUserId 가 공통으로 통과하는 단일 지점이라,
+// 여기서 환원하면 모든 열람 모드가 동일한 카드 DTO·기존 상태 문구를 쓴다.
+const TALLYING_LABEL = "성장(집계 중)";
+const TALLYING_TONE = "counting";
+const TALLYING_ICON_KEY = "tallying";
+const TALLYING_ICON_URL = "/images/0/cluster4/icon/icon-growth-tallying.png";
+const INTERNAL_ORG_STATUSES = new Set(["aggregating", "reviewing"]);
+
+function isInternalOrgStatusCard(card: Record<string, unknown>): boolean {
+  const iconKey = String(card.statusIconKey ?? "").toLowerCase();
+  const weekStatus = String(card.userWeekStatus ?? "").toLowerCase();
+  const label = String(card.statusLabel ?? "");
+  return (
+    INTERNAL_ORG_STATUSES.has(iconKey) ||
+    INTERNAL_ORG_STATUSES.has(weekStatus) ||
+    label.includes("검수")
+  );
+}
+
+function applyTallyingStatus(card: Record<string, unknown>): void {
+  card.statusLabel = TALLYING_LABEL;
+  card.statusTone = TALLYING_TONE;
+  card.statusIconKey = TALLYING_ICON_KEY;
+  card.statusIconUrl = TALLYING_ICON_URL;
+  card.userWeekStatus = TALLYING_ICON_KEY;
+}
+
+async function normalizeInternalOrgStatuses(rawBody: string, userId: string | null): Promise<string> {
+  let json: unknown;
+  try {
+    json = JSON.parse(rawBody);
+  } catch {
+    return rawBody; // 비 JSON 응답(에러 등) → 그대로
+  }
+  const root = json as { success?: boolean; data?: Array<Record<string, unknown>> };
+  const cards = Array.isArray(root?.data) ? root.data : null;
+  if (!cards) return rawBody;
+
+  const remapped: Array<Record<string, unknown>> = [];
+  for (const card of cards) {
+    if (isInternalOrgStatusCard(card)) {
+      applyTallyingStatus(card);
+      remapped.push(card);
+    }
+  }
+  if (remapped.length === 0) return rawBody; // 내부 상태 카드 없음 → 원본 그대로(추가 DB 조회 없음)
+
+  console.log("[weekly-cards proxy] 내부 조직 상태(aggregating/reviewing)→성장(집계 중) 환원", {
+    userId,
+    remappedWeeks: remapped.length,
+  });
+
+  // ── published + 해당 유저 UWS 없음 데이터 불일치 로그 ──
+  // 환원된(=미확정 상태로 내려온) 카드 중, 주차가 이미 공표(weeks.result_published_at)됐는데도
+  // 해당 유저의 user_weekly_points(키: user_id+week_start_date) 가 없으면 데이터 불일치로 warn 을 남긴다.
+  // 표시는 이미 성장(집계 중) 으로 유지되므로 카드는 삭제하지 않는다(진단용 로그 전용).
+  if (userId) {
+    const weekIds = Array.from(
+      new Set(remapped.map((c) => (typeof c.weekId === "string" ? c.weekId : null)).filter((v): v is string => !!v)),
+    );
+    const startDates = Array.from(
+      new Set(remapped.map((c) => (typeof c.startDate === "string" ? c.startDate : null)).filter((v): v is string => !!v)),
+    );
+    if (weekIds.length > 0) {
+      try {
+        const supabase = createAdminClient();
+        const [publishedRes, uwsRes] = await Promise.all([
+          supabase.from("weeks").select("id, start_date, result_published_at").in("id", weekIds),
+          startDates.length > 0
+            ? supabase
+                .from("user_weekly_points")
+                .select("week_start_date")
+                .eq("user_id", userId)
+                .in("week_start_date", startDates)
+            : Promise.resolve({ data: [] as Array<{ week_start_date: string }>, error: null }),
+        ]);
+        if (publishedRes.error) {
+          console.warn("[weekly-cards proxy] published 조회 실패 — 불일치 로그 스킵", publishedRes.error.message);
+        } else {
+          const publishedByStart = new Map<string, boolean>();
+          for (const w of (publishedRes.data ?? []) as Array<{ start_date: string | null; result_published_at: string | null }>) {
+            if (w?.start_date) publishedByStart.set(w.start_date, !!w.result_published_at);
+          }
+          const hasUws = new Set<string>();
+          if (uwsRes.error) {
+            console.warn("[weekly-cards proxy] UWS 조회 실패 — 불일치 판정 보류", uwsRes.error.message);
+          } else {
+            for (const r of (uwsRes.data ?? []) as Array<{ week_start_date: string }>) {
+              if (r?.week_start_date) hasUws.add(r.week_start_date);
+            }
+          }
+          if (!uwsRes.error) {
+            for (const card of remapped) {
+              const start = typeof card.startDate === "string" ? card.startDate : null;
+              if (!start) continue;
+              if (publishedByStart.get(start) === true && !hasUws.has(start)) {
+                console.warn(
+                  "[weekly-cards proxy] 데이터 불일치 — 주차 공표(published)됐으나 해당 유저 UWS 없음 → 카드 유지·성장(집계 중) 표시",
+                  { userId, weekId: card.weekId ?? null, startDate: start },
+                );
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[weekly-cards proxy] published/UWS 불일치 검사 예외 — 로그 스킵", (e as Error)?.message);
+      }
+    }
+  }
+
+  return JSON.stringify(root);
+}
+
 export async function GET(request: NextRequest) {
   // QA 모드 게이트(Phase C): mode=test 에서 실사용자 세션/대상이면 upstream 프록시 전 차단.
   const qaBlock = await enforceQaMode(request, {
@@ -289,7 +411,12 @@ export async function GET(request: NextRequest) {
     const userId = sourceUrl.searchParams.get("userId");
     const enrichedBody =
       upstream.ok && contentType.includes("application/json")
-        ? clampAdminOutputsBody(await enrichCardHeaders(await enrichLineRatings(body, userId), userId))
+        ? clampAdminOutputsBody(
+            await enrichCardHeaders(
+              await enrichLineRatings(await normalizeInternalOrgStatuses(body, userId), userId),
+              userId,
+            ),
+          )
         : body;
 
     return new NextResponse(enrichedBody, {
