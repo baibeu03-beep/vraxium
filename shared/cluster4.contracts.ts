@@ -406,6 +406,8 @@ export type AdminCluster4StatusTone =
 export type AdminCluster4StatusIconKey =
   | "running"
   | "tallying"
+  | "aggregating"
+  | "reviewing"
   | "success"
   | "fail"
   | "personal_rest"
