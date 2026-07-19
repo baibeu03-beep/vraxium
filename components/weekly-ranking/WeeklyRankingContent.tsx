@@ -104,20 +104,30 @@ const WeeklyRankingContent = ({ org }: WeeklyRankingContentProps) => {
     let cancelled = false;
     setLoading(true);
     (async () => {
-      try {
-        // 시즌 게이트/확정(공표) 게이트는 서버(aggregateWeeklyLeague)에서 단일 적용한다 —
-        // 프론트는 응답 카드를 그대로 렌더(프론트 시즌 하드코딩 필터 없음).
-        // QA(mode=test) API URL generation disabled.
-        // let url = appendModeQuery(`/api/weekly-league?org=${encodeURIComponent(org)}`, mode);
-        const json = await loadWeeklyLeague(dataUrl);
-        if (!cancelled && json?.success && Array.isArray(json.cards)) {
-          setFetchedCards(json.cards as WeeklyCardData[]);
+      // 시즌 게이트/확정(공표) 게이트는 서버(aggregateWeeklyLeague)에서 단일 적용한다 —
+      // 프론트는 응답 카드를 그대로 렌더(프론트 시즌 하드코딩 필터 없음).
+      // loadWeeklyLeague 는 성공(success:true+cards)만 반환하고, 비2xx/degraded 는 throw 한다.
+      //   · 성공(빈 배열 포함)      → valid data / valid-empty 로 렌더(재시도 없음).
+      //   · throw(cold 실패/degraded) → 잘못된 빈 화면으로 위장하지 않고, 서버가 warm 될 때까지
+      //     짧게 백오프 재시도한다(첫 prefetch 가 cold 로 실패해도 navigation 에서 자연 복구).
+      const MAX_ATTEMPTS = 3;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+        try {
+          const json = await loadWeeklyLeague(dataUrl);
+          if (cancelled) return;
+          setFetchedCards(Array.isArray(json.cards) ? (json.cards as WeeklyCardData[]) : []);
+          setLoading(false);
+          return;
+        } catch {
+          if (cancelled) return;
+          if (attempt === MAX_ATTEMPTS) {
+            // 최종 실패 — 스피너는 멈추되 카드는 건드리지 않는다(직전 성공 데이터가 있으면 유지).
+            setLoading(false);
+            return;
+          }
+          // 백오프(800ms, 1600ms) 후 fresh 재시도 — 실패는 캐시되지 않으므로 재요청이 발생한다.
+          await new Promise((resolve) => setTimeout(resolve, attempt * 800));
         }
-      } catch {
-        if (!cancelled) setFetchedCards([]);
-      } finally {
-        // 응답 완료(성공/실패 무관) 후에만 로딩 종료 → 빈 상태 문구는 응답 이후에만 노출.
-        if (!cancelled) setLoading(false);
       }
     })();
     return () => {
