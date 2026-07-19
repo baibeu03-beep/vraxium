@@ -27,6 +27,13 @@ import type { ScopeMode } from "@/lib/userScopeShared";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import type { AdminCluster4WeeklyCardDto, Cluster4RateDto } from "@/shared/cluster4.contracts";
 import { resolveWeekResultStates, resolveOrgWeekThresholds, type WeekResultScope } from "@/lib/weekResultState";
+import {
+  loadWeekOrgResultStates,
+  resolveWeekOrgResultState,
+  resolveOrgResultScope,
+  rankingLabelForOrgStatus,
+  type WeekOrgResultState,
+} from "@/lib/weekOrgResultState";
 import type { WeeklyCardData, WeeklyCardCrew, ChampionCrew, RestReason, WeeklyLeagueTeamBattle, WeeklyLeagueMvp, CrewRankShowcase } from "@/constants/dummyData/weekly-card-dummy";
 import { loadTeamBattleContext, buildTeamBattles, type CrewVerdict, type TeamBattleContext } from "@/lib/weekly-league-teams";
 
@@ -578,6 +585,15 @@ export async function aggregateWeeklyLeague(
       w.resultReviewedAt = st?.resultReviewedAt ?? null;
     }
 
+    // 2-2) 조직별 검수 상태 (week_id, organization_slug, scope) — /cluster-4-card 와 **동일 SoT**.
+    //   과거엔 leagueRecordStatus 를 전역 weeks.result_published_at/reviewed_at 로만 산정해, 특정 조직이
+    //   미검수(집계 중)여도 다른 조직 검수로 세팅된 전역 플래그 때문에 '검수 완료' 로 잘못 표기됐다.
+    //   이제 cluster4_week_org_result_states 를 (org, scope) 로 읽어 조직·코호트별 상태를 도출한다.
+    //   scope = resolveOrgResultScope(mode)(열람 deploy 코호트) — 카드(대상 사용자 코호트)와 같은 scope 축.
+    //   legacy(2026-06-29 이전, org row 없음) 주차는 source==='legacy' → 기존 전역 폴드 100% 보존.
+    const orgResultScope = resolveOrgResultScope(mode);
+    const orgResultStates = await loadWeekOrgResultStates(db, weeks.map((w) => w.id), org, orgResultScope);
+
     // ── [perf] 의존성 그룹 D 선행 로드 — "weeks[] 확정 후 즉시 실행 가능" 한 3건 ──
     //   weeks[] 는 위에서 확정됐고(공표/검수 주입까지 끝), 아래 3건은 그 weekIds/seasonKeys 만
     //   입력으로 받는다. 서로 의존 없음 — 각각 독립 Map/배열로만 소비된다.
@@ -843,6 +859,17 @@ export async function aggregateWeeklyLeague(
       const isPublished = !!week.resultPublishedAt;
       const isReviewed = !!week.resultReviewedAt;
 
+      // 조직·코호트별 검수 상태(위 orgResultStates). legacy 주차는 source==='legacy' 로 폴백.
+      const orgResultState: WeekOrgResultState = resolveWeekOrgResultState(
+        orgResultStates.get(week.id),
+        week.startDate,
+        isPublished,
+      );
+      const orgResultPublished =
+        orgResultState.source === "organization"
+          ? orgResultState.status === "published"
+          : isPublished;
+
       const dateRangeText = `${fmtDate(week.startDate)} - ${fmtDate(week.endDate)}`;
 
       // ── 공식 휴식 주차 ──
@@ -983,8 +1010,20 @@ export async function aggregateWeeklyLeague(
         }
       }
 
-      // 진행 중=대전 중 · 종료+미공표=대전 집계 · 공표+미검수=공표 중 · 공표+검수=검수 완료.
-      const leagueRecordStatus: WeeklyCardData["leagueRecordStatus"] = !isEnded ? "대전 중" : isReviewed ? "검수 완료" : isPublished ? "공표 중" : "대전 집계";
+      // leagueRecordStatus 산정:
+      //   · 진행 중(미종료) → 대전 중
+      //   · 종료 + org-state(2026-06-29~) → 상태 매핑: aggregating→집계 중 / reviewing→검수 중 / published→검수 완료
+      //   · 종료 + legacy(org row 없음) → 기존 전역 폴드 보존: 검수→검수 완료 / 공표→공표 중 / 그외→대전 집계
+      //   (/cluster-4-card 와 같은 org-state 에서 STATE 를 도출 — 라벨만 화면별 상이.)
+      const leagueRecordStatus: WeeklyCardData["leagueRecordStatus"] = !isEnded
+        ? "대전 중"
+        : orgResultState.source === "organization"
+          ? rankingLabelForOrgStatus(orgResultState.status)
+          : isReviewed
+            ? "검수 완료"
+            : isPublished
+              ? "공표 중"
+              : "대전 집계";
 
       // 별점(points=포인트 A) DESC 정렬본 — top3/top10 공용. 동점은 user_id tie-break.
       //   (전체 랭킹 규칙의 상위 키 = 포인트 A. 하위 키(B/C·강화·주차)는 별도 데이터라 미적용.)
@@ -1197,13 +1236,13 @@ export async function aggregateWeeklyLeague(
         weekNumber: week.weekNumber,
         dateRangeText,
         // 코어스 status(필터/표시 비사용) — 집계 중만 '대전 집계', 그 외 '정상 진행'.
-        status: isEnded && !isPublished ? "대전 집계" : "정상 진행",
+        status: isEnded && !orgResultPublished ? "대전 집계" : "정상 진행",
         leagueResultStatus: "정상 진행",
         leagueRecordStatus,
-        // 결과 확정(공표) 여부 — 집계 SoT 신호. 공표(operating result_published_at) 전에는 false →
-        //   소비처(카드/상세)가 성공/실패/휴식을 확정값으로 노출하지 않고 '집계 중'(N)으로 표시한다.
-        //   실행 취소로 공표가 내려가면 다시 false 가 되어 두 화면이 함께 '집계 중'으로 복귀한다.
-        resultConfirmed: isPublished,
+        // 결과 확정(공표) 여부 — 조직·코호트별 org-state 'published'(2026-06-29~) 또는 legacy 공표.
+        //   확정 전에는 false → 소비처(카드/상세)가 성공/실패/휴식을 확정값으로 노출하지 않고
+        //   '집계 중'(N)으로 표시한다. 검수 취소로 published 가 내려가면 다시 false 로 복귀.
+        resultConfirmed: orgResultPublished,
         imageUrl: week.imageUrl,
         growthSuccessRate,
         growthChallengeRate,

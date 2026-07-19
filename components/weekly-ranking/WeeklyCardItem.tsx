@@ -48,6 +48,7 @@ const getStatusTone = (status: string): string => {
       return 'status-green';
     case '심화 진행':
     case '대전 집계':
+    case '집계 중':
       return 'status-yellow';
     case '공식 휴식':
       return 'status-muted';
@@ -56,6 +57,7 @@ const getStatusTone = (status: string): string => {
     case '대전 휴식':
       return 'status-muted';
     case '공표 중':
+    case '검수 중':
       return 'status-purple';
     default:
       return 'status-neutral';
@@ -68,6 +70,8 @@ const STATUS_ICON_MAP: Record<string, string> = {
   '공식 휴식': 'ti ti-bed',
   '대전 중': 'ti ti-swords',
   '대전 집계': 'ti ti-chart-bar',
+  '집계 중': 'ti ti-chart-bar',
+  '검수 중': 'ti ti-search',
   '공표 중': 'ti ti-speakerphone',
   '검수 완료': 'ti ti-shield-check',
   '대전 휴식': 'ti ti-zzz',
@@ -158,6 +162,8 @@ export default function WeeklyCardItem({ data, org = null }: Props) {
   const shouldForceCrewPlaceholder =
     data.leagueRecordStatus === '대전 중' ||
     data.leagueRecordStatus === '대전 집계' ||
+    data.leagueRecordStatus === '집계 중' ||
+    data.leagueRecordStatus === '검수 중' ||
     data.leagueResultStatus === '공식 휴식';
 
   // 확정(공표) 전에는 성공/실패/휴식 인원·비율을 확정값처럼 보여주지 않고 '집계 중'(N)으로 표시한다.
@@ -351,10 +357,14 @@ export default function WeeklyCardItem({ data, org = null }: Props) {
                 const stageMod =
                   data.leagueRecordStatus === '대전 중'   ? 'battle' :
                   data.leagueRecordStatus === '대전 집계' ? 'aggregate' :
+                  data.leagueRecordStatus === '집계 중'   ? 'aggregate' :
+                  data.leagueRecordStatus === '검수 중'   ? 'announce' :
                   data.leagueRecordStatus === '공표 중'   ? 'announce' : '';
                 const stageLabel =
                   data.leagueRecordStatus === '대전 중'   ? '대전 중' :
                   data.leagueRecordStatus === '대전 집계' ? '집계 중' :
+                  data.leagueRecordStatus === '집계 중'   ? '집계 중' :
+                  data.leagueRecordStatus === '검수 중'   ? '검수 중' :
                   data.leagueRecordStatus === '공표 중'   ? '공표 중' :
                   '우승';
                 const winnerClass = isFinal

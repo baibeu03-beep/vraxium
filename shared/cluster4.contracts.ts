@@ -403,11 +403,15 @@ export type AdminCluster4StatusTone =
 
 // status-badge 아이콘 키 (어드민 DTO userWeekStatus 와 1:1 동일):
 // "running" | "tallying" | "success" | "fail" | "personal_rest" | "official_rest"
+// ⚠ "aggregating" / "reviewing" 은 조직별 내부 처리 상태(서버·어드민 전용)일 뿐, 고객 노출
+//   상태가 아니다. /cluster-4-card 에는 '검수 중' 같은 사용자 노출 상태가 없다. 업스트림이 이
+//   값으로 내려주더라도 weekly-cards 프록시(normalizeInternalOrgStatuses)가 전부 기존
+//   'tallying'(성장(집계 중))으로 환원하므로, 고객 DTO/화면엔 신규 UI 상태·문구·CSS 를 추가하지 말 것.
 export type AdminCluster4StatusIconKey =
   | "running"
   | "tallying"
-  | "aggregating"
-  | "reviewing"
+  | "aggregating" // 내부 전용 — 고객 DTO 에서 tallying(성장(집계 중))으로 환원
+  | "reviewing" // 내부 전용 — 고객 DTO 에서 tallying(성장(집계 중))으로 환원
   | "success"
   | "fail"
   | "personal_rest"
