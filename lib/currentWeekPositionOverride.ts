@@ -1,4 +1,4 @@
-import type { createAdminClient } from "@/lib/supabase-server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PositionCode } from "@/shared/crewClassPosition";
 import { isPositionCode } from "@/shared/crewClassPosition";
 
@@ -29,7 +29,9 @@ export type OverridePosition = {
   positionCode: PositionCode;
 };
 
-type SupabaseAdmin = ReturnType<typeof createAdminClient>;
+// 두 종류의 service-role 클라이언트가 존재한다 — createAdminClient()(/api/crews) 와
+//   lib/supabase.supabaseAdmin(/api/profile). 둘 다 createClient() 산출물이므로 공통 타입으로 받는다.
+type SupabaseAdmin = SupabaseClient<any, any, any>;
 
 const SELECT_COLS = "user_id,organization,week_start_date,raw_team,raw_part,position_code";
 

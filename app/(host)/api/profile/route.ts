@@ -15,6 +15,7 @@ import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confir
 import { resolveWeekScopeForUser, resolveWeekResultStates, statesByStartDate } from "@/lib/weekResultState";
 import { enforceQaMode } from "@/lib/qaModeGate";
 import { isTransitionWeek, getTransitionSeasonSpan } from "@/lib/cluster4-transition-week";
+import { loadCurrentWeekPositionOverrides } from "@/lib/currentWeekPositionOverride";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -784,44 +785,31 @@ export async function GET(request: NextRequest) {
       // 관리자가 팀 상세 [B] 에서 **현재 주차**의 소속 파트/클래스를 바꾸면, 사이드바 인적사항
       //   (part /등급)도 그 값을 따라야 한다. admin 의 회원 목록·팀 상세 [A] 와 동일 정책이다.
       //   · SoT = cluster4_team_week_position_overrides (admin 과 같은 Supabase DB).
-      //   · 현재 주차 = weeks.start_date ≤ today ≤ end_date. 과거 주차 override 는 영향 없음.
+      //   · 로더 = lib/currentWeekPositionOverride (/api/crews·admin 과 **동일 SoT·동일 주차 판정**).
+      //     ⚠ 여기서 자체 날짜 계산을 하지 않는다. 종전에는 이 블록만 UTC 날짜
+      //     (new Date().toISOString())로 현재 주차를 잡아, 매주 월요일 00:01~09:00 KST 9시간 동안
+      //     사이드바만 "지난 주차"를 현재 주차로 오인했다(/crews 는 새 주차 → 두 화면 불일치).
+      //     공통 경계 = 월요일 00:01 KST (currentActivityDateIso).
+      //   · 과거 주차 override 는 영향 없음(로더가 오늘 주차 1건만 조회).
+      //   · 일반/mode=test/demoUserId/actAsTestUserId 모두 이 경로를 지난다 — 대상 userId 만 다르고
+      //     로더·DTO 의미는 동일하다(정책값이라 항상 operating 기준).
       //   · 테이블/행 없음 · 조회 실패 = 종전 멤버십 값 유지(무회귀, 조용히 폴백).
       try {
-        const todayIso = new Date().toISOString().slice(0, 10);
-        const { data: weekRow } = await supabaseAdmin
-          .from("weeks")
-          .select("start_date")
-          .lte("start_date", todayIso)
-          .gte("end_date", todayIso)
-          .order("start_date", { ascending: false })
-          .limit(1);
-        const weekStart = (weekRow ?? [])[0]?.start_date
-          ? String((weekRow as Array<{ start_date: string }>)[0].start_date).slice(0, 10)
-          : null;
-        if (weekStart) {
-          const { data: ovrRows } = await supabaseAdmin
-            .from("cluster4_team_week_position_overrides")
-            .select("raw_team, raw_part, position_code")
-            .eq("user_id", profile.user_id)
-            .eq("week_start_date", weekStart)
-            .limit(1);
-          const ovr = (ovrRows ?? [])[0] as
-            | { raw_team: string; raw_part: string | null; position_code: string }
-            | undefined;
-          if (ovr) {
-            // 라벨 어휘는 사이드바가 쓰는 membership_level 어휘("일반"/"심화(파트장)"…)에 맞춘다.
-            //   admin lib/adminMembersTypes.positionCodeToStatusLabel 과 동일 매핑.
-            const LABEL: Record<string, string> = {
-              regular: "일반",
-              advanced_agent: "심화(에이전트)",
-              advanced_part_leader: "심화(파트장)",
-              operating_team_leader: "운영진(팀장)",
-              operating_ambassador: "운영진(앰배서더)",
-            };
-            profile.team_name = ovr.raw_team ?? profile.team_name;
-            profile.part_name = ovr.raw_part ?? profile.part_name;
-            profile.membership_level = LABEL[ovr.position_code] ?? profile.membership_level;
-          }
+        const ovrMap = await loadCurrentWeekPositionOverrides(supabaseAdmin, [profile.user_id]);
+        const ovr = ovrMap.get(profile.user_id);
+        if (ovr) {
+          // 라벨 어휘는 사이드바가 쓰는 membership_level 어휘("일반"/"심화(파트장)"…)에 맞춘다.
+          //   (클래스 배지 어휘 "정규/…" 는 shared/crewClassPosition — 별개 축이라 섞지 않는다.)
+          const LABEL: Record<string, string> = {
+            regular: "일반",
+            advanced_agent: "심화(에이전트)",
+            advanced_part_leader: "심화(파트장)",
+            operating_team_leader: "운영진(팀장)",
+            operating_ambassador: "운영진(앰배서더)",
+          };
+          profile.team_name = ovr.rawTeam || profile.team_name;
+          profile.part_name = ovr.rawPart ?? profile.part_name;
+          profile.membership_level = LABEL[ovr.positionCode] ?? profile.membership_level;
         }
       } catch (e) {
         console.warn("[profile] 주차 override 조회 실패 → 현재 멤버십 유지", String(e).slice(0, 120));

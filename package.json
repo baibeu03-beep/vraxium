@@ -13,6 +13,7 @@
     "test:zone-a-modals": "node scripts/zone-a-modal-diagnostics.js",
     "test:crew-act-summary": "npx tsx scripts/test-crew-act-summary.ts",
     "test:detail-log-sort": "npx tsx scripts/test-detail-log-sort.ts",
+    "test:week-boundary": "npx tsx scripts/test-current-week-boundary.ts",
     "verify:popups": "node scripts/verify-no-native-popups.mjs",
     "lint": "next lint"
   },
