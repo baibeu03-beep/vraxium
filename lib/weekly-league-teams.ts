@@ -13,6 +13,15 @@
 // 유일한 예외는 memberRosterMode 의 성공수 override(주차 집계 표시 보정, 사람별 verdict 아님)로,
 //   이 경우 override 총합에 맞게 팀 success 를 결정적으로 재배분(reconcileSuccess)해 불변식을 유지한다.
 //
+// parts[]/partCount 정의(2026-07-22 확정) — **운용 파트**만 센다:
+//   "해당 주차의 집계 대상 크루가 1명 이상 배정된 distinct 파트".
+//   · 카탈로그(cluster4_team_parts)에만 있고 배정 0명 → 제외. '일반'도 예외 없이 동일 규칙.
+//   · '일반' 파트라도 배정 1명 이상 → 포함(이름으로 특별 취급하지 않는다).
+//   · 카탈로그에 없는 파트명이라도 배정 1명 이상이면 포함(합성 partId) — 실제 운용 중이므로.
+//   과거엔 카탈로그 전체를 그대로 실었고(partCount = 카탈로그 수), 프론트가 표시할 때만 '일반'을
+//   걸러내 KPI(Σ partCount)와 카드 태그 목록이 어긋났다(실측 oranke: KPI 11 vs 화면 8).
+//   → 산출 시점에 한 번만 판정해 두 경로가 같은 집합을 쓴다.
+//
 // teamGoal/weeklyFlow/crewComment 는 신규 SoT(2026-07-04_team_battle_sot.sql). 입력 UI 전이라 값은
 //   대부분 null. best-effort read — 컬럼/테이블 미적용(마이그레이션 전)이어도 폴백해 teams[] 는 산출된다.
 // =============================================================
@@ -391,10 +400,13 @@ export function buildTeamBattles(params: {
   week: { id: string; seasonKey: string | null };
   verdicts: Map<string, CrewVerdict>;
   teamNameOf: (userId: string) => string;
+  // 파트 배정 — teamNameOf 와 **같은 resolver·같은 티어**여야 한다(as-of-week effective).
+  //   팀만 override, 파트만 멤버십 식으로 티어가 갈리면 팀↔파트가 어긋난 조합이 만들어진다.
+  partNameOf: (userId: string) => string | null;
   levelOf: (userId: string) => string | null;
   overrideSuccess: number | null;
 }): WeeklyLeagueTeamBattle[] {
-  const { ctx, week, verdicts, teamNameOf, levelOf, overrideSuccess } = params;
+  const { ctx, week, verdicts, teamNameOf, partNameOf, levelOf, overrideSuccess } = params;
   const halfKey = seasonKeyToHalfKey(week.seasonKey);
   const seasonRestSet = week.seasonKey ? ctx.seasonRestBySeasonKey.get(week.seasonKey) ?? null : null;
 
@@ -406,12 +418,14 @@ export function buildTeamBattles(params: {
     personalRestCrew: number;
     advancedCrew: number;
     regularCrew: number;
+    // 파트명(정규화) → 배정 인원. 1명 이상인 키만 운용 파트로 센다.
+    partCrewByName: Map<string, number>;
   };
   const buckets = new Map<string, Bucket>();
   const bucketOf = (name: string): Bucket => {
     let b = buckets.get(name);
     if (!b) {
-      b = { teamName: name, successCrew: 0, failCrew: 0, seasonRestCrew: 0, personalRestCrew: 0, advancedCrew: 0, regularCrew: 0 };
+      b = { teamName: name, successCrew: 0, failCrew: 0, seasonRestCrew: 0, personalRestCrew: 0, advancedCrew: 0, regularCrew: 0, partCrewByName: new Map() };
       buckets.set(name, b);
     }
     return b;
@@ -421,6 +435,11 @@ export function buildTeamBattles(params: {
     const rawName = teamNameOf(userId);
     const teamName = !rawName || rawName === "-" ? "미배정" : rawName;
     const b = bucketOf(teamName);
+    // 파트 배정 누적 — 미배정 표기('-'/'미배정'/공백)는 파트가 아니므로 계수 제외.
+    const rawPart = (partNameOf(userId) ?? "").trim();
+    if (rawPart && rawPart !== "-" && rawPart !== "미배정") {
+      b.partCrewByName.set(rawPart, (b.partCrewByName.get(rawPart) ?? 0) + 1);
+    }
     if (verdict === "success") b.successCrew++;
     else if (verdict === "fail") b.failCrew++;
     else {
@@ -474,7 +493,32 @@ export function buildTeamBattles(params: {
     const battleResult: BattleResult = successCrew > failCrew ? "win" : successCrew < failCrew ? "lose" : "draw";
     const leader = catalog?.leaderUserId ? ctx.leaderById.get(catalog.leaderUserId) ?? null : null;
     const teamHalfId = catalog?.id ?? null;
-    const parts = teamHalfId ? ctx.partsByHalfId.get(teamHalfId) ?? [] : [];
+
+    // ── 운용 파트 = 배정 1명 이상인 distinct 파트 ──────────────────────────
+    //   표시 순서: 카탈로그 등록분(display_order asc — partsByHalfId 가 이미 그 순서) →
+    //   카탈로그 밖(운용 중이나 미등록) 이름 가나다순. 카탈로그 0명 파트는 여기서 탈락한다.
+    const catalogParts = teamHalfId ? ctx.partsByHalfId.get(teamHalfId) ?? [] : [];
+    const assigned = b.partCrewByName;
+    const parts: WeeklyLeagueTeamPart[] = [];
+    const taken = new Set<string>();
+    for (const p of catalogParts) {
+      const name = (p.partName ?? "").trim();
+      if (!name || taken.has(name)) continue;
+      if ((assigned.get(name) ?? 0) < 1) continue; // 생성만 되고 배정 0명 → 제외
+      taken.add(name);
+      parts.push({ partId: p.partId, partName: name });
+    }
+    // 카탈로그 등록 팀에 한해, 카탈로그에 없지만 실제 배정된 파트도 운용 파트로 인정(합성 partId).
+    //   ⚠️ 카탈로그 미등록 팀(teamHalfId=null — '미배정'·시즌 휴식 플레이스홀더 등 레거시 팀명)은
+    //   제외한다. 이들은 반기 팀 운용 단위가 아니라서 여기서 파트를 만들면 KPI 가 실제 운용
+    //   규모를 넘어 부풀고, 카드에도 정체불명 태그가 붙는다.
+    if (teamHalfId) {
+      for (const name of Array.from(assigned.keys()).sort((x, y) => x.localeCompare(y, "ko"))) {
+        if (taken.has(name)) continue;
+        taken.add(name);
+        parts.push({ partId: `adhoc:${teamHalfId}:${name}`, partName: name });
+      }
+    }
     return {
       teamId: teamHalfId,
       teamName: b.teamName,

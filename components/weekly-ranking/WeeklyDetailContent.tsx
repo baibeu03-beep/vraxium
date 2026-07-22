@@ -837,10 +837,10 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
               모든 섹션을 항상 렌더(값 없으면 '-'/placeholder) → 카드마다 내부 y좌표 동일. */}
           <div className="wd-tb__grid">
             {teams.map((t) => {
-              // 파트명/파트 수 — 기본 노이즈 파트('일반') 제외. 수·명(Tag)을 같은 집합으로 산출(불일치 방지).
-              const partNames = t.parts
-                .map((p) => p.partName)
-                .filter((n) => n && n.trim() && n.trim() !== "일반"); // class-label-allow (클래스가 아니라 파트 이름)
+              // 파트명/파트 수 — DTO parts[] 를 그대로 쓴다(프론트 재필터 금지).
+              //   운용 파트(배정 1명 이상) 판정은 집계에서 끝났다 — lib/weekly-league-teams.ts.
+              //   과거엔 여기서 '일반'을 걸러내 상단 KPI(Σ partCount)와 카드 태그 수가 어긋났다.
+              const partNames = t.parts.map((p) => p.partName);
               const partShownCount = partNames.length;
 
               // 대전 결과 마크(승/패/무). 승만 왕관, 그 외는 아이콘 자리(placeholder) 확보.

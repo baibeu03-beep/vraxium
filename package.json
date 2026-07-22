@@ -16,6 +16,8 @@
     "test:week-boundary": "npx tsx scripts/test-current-week-boundary.ts",
     "verify:popups": "node scripts/verify-no-native-popups.mjs",
     "verify:class-label": "node scripts/verify-crew-class-display-label.mjs",
+    "verify:week-effective-position": "npx tsx scripts/verify-week-effective-position.ts",
+    "verify:weekly-league-parts": "node scripts/verify-weekly-league-parts.mjs",
     "lint": "next lint"
   },
   "dependencies": {

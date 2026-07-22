@@ -36,6 +36,12 @@ import {
 } from "@/lib/weekOrgResultState";
 import type { WeeklyCardData, WeeklyCardCrew, ChampionCrew, RestReason, WeeklyLeagueTeamBattle, WeeklyLeagueMvp, CrewRankShowcase } from "@/constants/dummyData/weekly-card-dummy";
 import { loadTeamBattleContext, buildTeamBattles, type CrewVerdict, type TeamBattleContext } from "@/lib/weekly-league-teams";
+import {
+  loadWeekEffectivePositionIndex,
+  resolveEffectivePosition,
+  EMPTY_WEEK_EFFECTIVE_POSITION_INDEX,
+  type WeekEffectivePositionIndex,
+} from "@/lib/weekEffectivePosition";
 
 // 운영 데이터 시작(이관 정책 경계) = 2026 봄 시즌 시작일.
 //   기본(누적) 노출은 이 날짜 이후 시작 주차만 노출한다 — 그 이전(2023~2026 겨울)은
@@ -625,6 +631,10 @@ export async function aggregateWeeklyLeague(
         weeks.map((w) => ({ id: w.id, seasonKey: w.seasonKey })),
       ),
     );
+    // as-of-week 소속 인덱스(override + UPH) — 입력이 weeks[] 뿐이라 같은 그룹 D.
+    const effPosPromise = settle(
+      loadWeekEffectivePositionIndex(db, { org, weekStartDates: weeks.map((w) => w.startDate) }),
+    );
 
     // 3) 성장 상태 스냅샷(SoT) — user_week_statuses. org 유저 한정, 전 행 수집.
     //    쿼리는 위(1번 직후)에서 이미 시작됐다(preload) — await/에러 처리 위치는 원본 그대로다.
@@ -778,13 +788,40 @@ export async function aggregateWeeklyLeague(
     const pointsByUserWeek = new Map<string, number>();
     for (const r of pointRows) pointsByUserWeek.set(`${r.user_id}|${r.week_start_date}`, Number(r.points) || 0);
 
-    const teamPartFor = (userId: string): { team: string; part: string } => {
+    // 멤버십 폴백(티어 ③) — override/UPH 가 없는 (유저, 주차)에만 쓰인다.
+    const teamPartFromMembership = (userId: string): { team: string; part: string } => {
       const primary = pickPrimaryMembership(membershipByUser.get(userId) || []);
       const profile = profileMap.get(userId);
       const team = primary?.team_name || profile?.current_team_name || "-";
       const part = primary?.part_name || profile?.current_part_name || "-";
       return { team, part };
     };
+
+    // ── as-of-week 소속 — /weekly-ranking 은 주차별 이력 화면이므로 "그 주차 시점" 값을 쓴다 ──
+    //   effective(W) = (W 이하 최신 override) ?? UPH(W) ?? 현재 멤버십.  lib/weekEffectivePosition.ts
+    //   ⚠️ 팀과 파트는 **반드시 같은 티어**에서 나와야 한다(resolver 가 티어를 통째로 고른다).
+    //   파트만 override 로 바꾸고 팀은 현재 멤버십을 두면 팀↔파트가 어긋난 조합이 생긴다.
+    //   인덱스 로드 실패/테이블 부재 → 빈 인덱스 → 전부 멤버십 폴백(종전 동작, 무회귀).
+    let effPosIdx: WeekEffectivePositionIndex = EMPTY_WEEK_EFFECTIVE_POSITION_INDEX;
+    try {
+      const effSettled = await effPosPromise;
+      if (!effSettled.ok) throw effSettled.e;
+      effPosIdx = effSettled.v;
+    } catch (err) {
+      console.warn("[weekly-league] as-of-week 소속 인덱스 로드 실패 — 멤버십 SoT 폴백", (err as Error)?.message ?? String(err));
+    }
+    // (주차, 유저) 캐시 — 한 주차 안에서 top3/챔피언/MVP/Team Battle 이 같은 유저를 반복 조회한다.
+    const teamPartCache = new Map<string, { team: string; part: string }>();
+    const teamPartAt = (userId: string, weekStartDate: string): { team: string; part: string } => {
+      const key = `${weekStartDate}|${userId}`;
+      const hit = teamPartCache.get(key);
+      if (hit) return hit;
+      const eff = resolveEffectivePosition(effPosIdx, userId, weekStartDate);
+      const val = eff ? { team: eff.team || "-", part: eff.part || "-" } : teamPartFromMembership(userId);
+      teamPartCache.set(key, val);
+      return val;
+    };
+
     // 심화/정규 분류용 — 대표 멤버십의 membership_level.
     const levelOf = (userId: string): string | null => pickPrimaryMembership(membershipByUser.get(userId) || [])?.membership_level ?? null;
 
@@ -1005,7 +1042,9 @@ export async function aggregateWeeklyLeague(
             ctx: teamCtx,
             week: { id: week.id, seasonKey: week.seasonKey },
             verdicts,
-            teamNameOf: (uid) => teamPartFor(uid).team,
+            // 팀·파트 모두 **이 주차 시점**의 effective 값(같은 resolver·같은 티어).
+            teamNameOf: (uid) => teamPartAt(uid, week.startDate).team,
+            partNameOf: (uid) => teamPartAt(uid, week.startDate).part,
             levelOf,
             overrideSuccess,
           });
@@ -1034,7 +1073,7 @@ export async function aggregateWeeklyLeague(
       const rankedByPoints = (pointsByWeek.get(week.startDate) || []).filter((p) => p.points > 0).sort((a, b) => b.points - a.points || a.user_id.localeCompare(b.user_id));
 
       const top3: WeeklyCardCrew[] = rankedByPoints.slice(0, 3).map((p, i) => {
-        const { team, part } = teamPartFor(p.user_id);
+        const { team, part } = teamPartAt(p.user_id, week.startDate);
         return {
           rank: (i + 1) as 1 | 2 | 3,
           name: profileMap.get(p.user_id)?.display_name || "-",
@@ -1051,7 +1090,7 @@ export async function aggregateWeeklyLeague(
 
       // Champion's Hall 크루 매퍼 — 포인트 엔트리 → 표시 카드(포인트 A/B + 주차 성장률 동시 보유).
       const championFor = (p: { user_id: string; points: number; advantages: number }, rank: number): ChampionCrew => {
-        const { team, part } = teamPartFor(p.user_id);
+        const { team, part } = teamPartAt(p.user_id, week.startDate);
         const primary = pickPrimaryMembership(membershipByUser.get(p.user_id) || []);
         const cp = champProfile.get(p.user_id);
         const className = resolveMembershipRoleLabel({
@@ -1102,7 +1141,7 @@ export async function aggregateWeeklyLeague(
       if (teams && teams.length > 0) {
         const bestByTeam = new Map<string, { user_id: string; points: number; advantages: number }>();
         for (const p of rankedByPoints) {
-          const { team } = teamPartFor(p.user_id);
+          const { team } = teamPartAt(p.user_id, week.startDate);
           const teamName = !team || team === "-" ? "미배정" : team;
           if (!bestByTeam.has(teamName)) bestByTeam.set(teamName, p);
         }
