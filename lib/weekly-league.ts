@@ -108,6 +108,113 @@ async function loadActiveRunSnapshots(
   return out;
 }
 
+// 공표 팀 결과 snapshot — 어드민 [공표] 가 저장한 cluster4_week_finalize_run_team_results.
+//   공표된 주차의 Team Battle 은 live buildTeamBattles 결과가 아니라 이 값을 그대로 쓴다
+//   (공표 후 팀 구성/프로필/휴식이 바뀌어도 값이 변하면 안 되므로). 정렬은 display_order asc.
+//   ⚠ legacy run(snapshot 미보유)은 여기서 빈 배열 → 호출부가 live 로 폴백하지 않고 미노출 처리한다.
+async function loadActiveRunTeamSnapshots(
+  db: SupabaseClientLike2,
+  org: string,
+  weekIds: string[],
+  scope: string,
+): Promise<Map<string, WeeklyLeagueTeamBattle[]>> {
+  const out = new Map<string, WeeklyLeagueTeamBattle[]>();
+  if (weekIds.length === 0) return out;
+  // 활성 run(week_id 별 1건) → run_id 로 팀 행을 읽는다.
+  const { data: runs, error: runErr } = await db
+    .from("cluster4_week_finalize_runs")
+    .select("id,week_id,snapshot_captured")
+    .eq("organization_slug", org)
+    .eq("scope", toRunScope(scope))
+    .in("week_id", weekIds)
+    .is("reverted_at", null);
+  if (runErr) {
+    console.warn("[weekly-league] 팀 snapshot run 조회 실패", runErr.message);
+    return out;
+  }
+  const runIdToWeek = new Map<string, string>();
+  for (const r of (runs ?? []) as Array<Record<string, unknown>>) {
+    if (r.snapshot_captured !== true) continue;
+    runIdToWeek.set(r.id as string, r.week_id as string);
+  }
+  if (runIdToWeek.size === 0) return out;
+
+  const { data: rows, error } = await db
+    .from("cluster4_week_finalize_run_team_results")
+    .select(
+      "run_id,team_id,team_name,display_order,battle_result,leader_user_id,leader_display_name," +
+        "leader_school_name,leader_major_name,part_count,total_crew,advanced_crew,regular_crew," +
+        "challenge_crew,rest_crew,season_rest_crew,personal_rest_crew,success_crew,fail_crew," +
+        "match_count,win_count,loss_count,win_rate_percent",
+    )
+    .in("run_id", Array.from(runIdToWeek.keys()));
+  if (error) {
+    console.warn("[weekly-league] 팀 snapshot 행 조회 실패", error.message);
+    return out;
+  }
+  for (const r of (rows ?? []) as Array<Record<string, unknown>>) {
+    const weekId = runIdToWeek.get(r.run_id as string);
+    if (!weekId) continue;
+    if (!out.has(weekId)) out.set(weekId, []);
+    out.get(weekId)!.push({
+      teamId: (r.team_id as string | null) ?? null,
+      teamName: r.team_name as string,
+      leader: {
+        name: (r.leader_display_name as string | null) ?? null,
+        school: (r.leader_school_name as string | null) ?? null,
+        major: (r.leader_major_name as string | null) ?? null,
+        profileImageUrl: null, // snapshot 은 표시 최소 필드만 보존한다(이름/학교/전공).
+      },
+      // 파트 상세 목록은 snapshot 대상이 아니다(표에 파트 "수"만 필요). 카운트만 신뢰한다.
+      parts: [],
+      partCount: (r.part_count as number | null) ?? 0,
+      teamGoal: null,
+      weeklyFlow: null,
+      crewComment: null,
+      battleResult: r.battle_result as WeeklyLeagueTeamBattle["battleResult"],
+      matchCount: (r.match_count as number | null) ?? 0,
+      winCount: (r.win_count as number | null) ?? 0,
+      loseCount: (r.loss_count as number | null) ?? 0,
+      winRate: (r.win_rate_percent as number | null) ?? 0,
+      totalCrew: (r.total_crew as number | null) ?? 0,
+      challengeCrew: (r.challenge_crew as number | null) ?? 0,
+      restCrew: (r.rest_crew as number | null) ?? 0,
+      seasonRestCrew: (r.season_rest_crew as number | null) ?? 0,
+      personalRestCrew: (r.personal_rest_crew as number | null) ?? 0,
+      advancedCrew: (r.advanced_crew as number | null) ?? 0,
+      regularCrew: (r.regular_crew as number | null) ?? 0,
+      successCrew: (r.success_crew as number | null) ?? 0,
+      failCrew: (r.fail_crew as number | null) ?? 0,
+      _order: (r.display_order as number | null) ?? 9999,
+    } as unknown as WeeklyLeagueTeamBattle);
+  }
+  // 고객 앱 정렬 = display_order asc(어드민의 ko-KR 가나다순과 별개).
+  Array.from(out.values()).forEach((list: WeeklyLeagueTeamBattle[]) => {
+    list.sort(
+      (a: WeeklyLeagueTeamBattle, b: WeeklyLeagueTeamBattle) =>
+        ((a as unknown as { _order: number })._order ?? 9999) -
+          ((b as unknown as { _order: number })._order ?? 9999) ||
+        a.teamName.localeCompare(b.teamName, "ko"),
+    );
+  });
+  return out;
+}
+
+type SupabaseClientLike2 = {
+  from: (t: string) => {
+    select: (c: string) => {
+      eq: (k: string, v: unknown) => {
+        eq: (k: string, v: unknown) => {
+          in: (k: string, v: unknown[]) => {
+            is: (k: string, v: unknown) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>;
+          };
+        };
+      };
+      in: (k: string, v: unknown[]) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>;
+    };
+  };
+};
+
 type SupabaseClientLike = {
   from: (t: string) => {
     select: (c: string) => {
@@ -684,6 +791,8 @@ export async function aggregateWeeklyLeague(
     const orgResultStates = await loadWeekOrgResultStates(db, weeks.map((w) => w.id), org, orgResultScope);
     // 공표 snapshot(활성 run) — 공표된 주차의 종합 지표 원천. 어드민과 동일.
     const runSnapshots = await loadActiveRunSnapshots(db as never, org, weeks.map((w) => w.id), orgResultScope);
+    // 공표 팀 결과 snapshot — 공표된 주차의 Team Battle 원천(어드민과 동일 run).
+    const runTeamSnapshots = await loadActiveRunTeamSnapshots(db as never, org, weeks.map((w) => w.id), orgResultScope);
 
     // ── [perf] 의존성 그룹 D 선행 로드 — "weeks[] 확정 후 즉시 실행 가능" 한 3건 ──
     //   weeks[] 는 위에서 확정됐고(공표/검수 주입까지 끝), 아래 3건은 그 weekIds/seasonKeys 만
@@ -1155,7 +1264,17 @@ export async function aggregateWeeklyLeague(
       // ── Team Battle(팀별 주차 결과) — 조직 카운트와 같은 per-user verdict 를 팀별로 재버킷팅.
       //   불변식: Σ teams.successCrew/failCrew/challengeCrew/restCrew == 위 조직 수치. best-effort.
       let teams: WeeklyLeagueTeamBattle[] | undefined;
-      if (teamCtx) {
+      // ── 공표된 주차는 **공표 팀 snapshot** 을 그대로 쓴다(live buildTeamBattles 미사용) ──
+      //   어드민 팀 표와 완전히 같은 값을 보게 하기 위함. 값은 동일, 순서만 화면별 정책이 다르다
+      //   (고객 앱=display_order asc · 어드민=ko-KR 가나다순).
+      //   ⚠ 공표 상태인데 snapshot 이 없으면(legacy run) live 로 폴백하지 않는다 —
+      //     위 publishedWithoutSnapshot 가 resultConfirmed 를 내려 '집계 중'으로 미노출 처리한다.
+      const teamSnapshot = runTeamSnapshots.get(week.id) ?? null;
+      if (teamSnapshot && teamSnapshot.length > 0) {
+        teams = teamSnapshot;
+      } else if (publishedWithoutSnapshot) {
+        teams = undefined; // 공표됐지만 snapshot 없음 → 확정 결과를 지어내지 않는다.
+      } else if (teamCtx) {
         try {
           teams = buildTeamBattles({
             ctx: teamCtx,
