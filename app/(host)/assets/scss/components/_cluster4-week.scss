@@ -13946,6 +13946,71 @@
     }
   }
 
+  // 메타 줄 좌우 배치 — 좌: 시즌/주차·기간 · 우: 주차 성장 성공 {조직 포인트명} 기준.
+  //   본문(dl-modal-body) 안이라 헤더의 도움말/닫기 버튼과 물리적으로 겹치지 않는다.
+  //   좁은 폭에서는 wrap 으로 A 기준이 아래 줄로 내려간다(억지 압축 금지).
+  .dl-modal-meta-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px 16px;
+    flex-wrap: wrap;
+
+    .dl-modal-meta {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+  }
+
+  // 주차 성장 성공 {조직 포인트명} 기준 — 숫자를 크게, 단, 모달 제목(dl-modal-title)보다 크지 않게.
+  .dl-modal-growth-standard {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+
+    &__label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: "Pretendard", sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.58);
+      white-space: nowrap;
+      word-break: keep-all;
+    }
+
+    // 조직별 포인트 아이콘 — 주차 카드 배지·주차 상세와 동일 이미지(lib/orgPointMeta).
+    &__icon {
+      flex-shrink: 0;
+      width: 16px;
+      height: 16px;
+      object-fit: contain;
+    }
+
+    &__value {
+      font-size: 20px;
+      font-weight: 800;
+      line-height: 1.1;
+      color: #fff;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap; // "403개" 가 숫자/단위 사이에서 끊기지 않게.
+
+      &--empty {
+        color: rgba(255, 255, 255, 0.45);
+      }
+    }
+
+    // 숫자와 단위는 붙여 쓴다("403개") — margin 없음.
+    &__unit {
+      font-size: 12px;
+      font-weight: 700;
+      color: rgba(255, 255, 255, 0.6);
+    }
+  }
+
   .dl-header-actions {
     display: flex;
     align-items: center;

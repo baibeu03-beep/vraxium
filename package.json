@@ -18,6 +18,7 @@
     "verify:class-label": "node scripts/verify-crew-class-display-label.mjs",
     "verify:week-effective-position": "npx tsx scripts/verify-week-effective-position.ts",
     "verify:weekly-league-parts": "node scripts/verify-weekly-league-parts.mjs",
+    "verify:point-a-criterion": "node scripts/browser-verify-point-a-criterion.mjs",
     "lint": "next lint"
   },
   "dependencies": {

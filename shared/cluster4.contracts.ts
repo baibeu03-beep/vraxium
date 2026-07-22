@@ -525,6 +525,16 @@ export interface AdminCluster4WeeklyCardDto {
   // ⚠ checkGate 는 확정 카드(status=pass·fail) 에 채워진다(DTO v45+, 2026-07-18). 실패 카드도
   //   required/earned/passed(표시 전용)를 실어 Detail Log 가 실패 카드에서도 기준값을 노출한다.
   //   pending(현재주 미판정)·not_applicable(미오픈·휴식) 은 null(게이트 무의미). 판정 로직 불변.
+  // ── 주차 성장 성공 Point.A 기준 개수(표시 전용) — **고객앱 프록시가 주입하는 필드** ──
+  // admin 원본 DTO 에는 없다. app/(host)/api/cluster4/weekly-cards 프록시가
+  // cluster4_week_opening_configs.recognition_count_n(week × org)을 붙인다.
+  //   · checkGate.required 와 같은 컬럼이지만 checkGate 는 **사용자별 스냅샷**이라 재계산 시점에 따라
+  //     같은 주차에서도 유저마다 값이 갈릴 수 있다(2026-07-22 실측). 화면 표시는 주차×조직 단위인
+  //     이 필드만 쓴다 → 위클리 리그 주차 카드/상세와 항상 같은 숫자가 된다.
+  //   · 판정에는 쓰지 않는다(성공/실패 로직은 종전대로 experienceGrowth.checkGate).
+  //   · 미확정(설정 행 없음/NULL/0, org 미상, 조회 실패) = null → 화면은 "0개"가 아니라 "-".
+  pointACriterion?: number | null;
+
   experienceGrowth?: {
     status?: "pass" | "fail" | "pending" | "not_applicable" | string | null;
     checkGate?: {

@@ -6,6 +6,7 @@ import type { Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
 import { resolveMembershipDisplay } from "@/lib/membership";
 import { clampAdminOutputs } from "@/lib/cluster4-admin-output-clamp";
 import { enforceQaMode } from "@/lib/qaModeGate";
+import { resolveWeekPointACriteria } from "@/lib/cluster4-week-point-a-criterion";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -107,6 +108,64 @@ async function enrichLineRatings(rawBody: string, userId: string | null): Promis
     weeks: weekIds.size,
   });
   return JSON.stringify(root);
+}
+
+// 주차 성장 성공 Point.A 기준 개수(pointACriterion) 주입 — **표시 전용 신규 필드**.
+// ─────────────────────────────────────────────────────────────────────
+// admin 카드 DTO 에는 이 필드가 없다(experienceGrowth.checkGate 는 **사용자별 스냅샷**이라
+// 같은 주차·같은 조직인데도 유저마다 값이 갈린다 — 2026-07-22 실측: encre 2026-summer W1 이
+// 스냅샷 재계산 시점에 따라 required=81(287명) / 45(41명) 로 공존). 화면 3곳이 "같은 주차면
+// 같은 숫자"를 보장해야 하므로, 주차×조직 단위 원천 한 곳에서만 읽는다:
+//   SoT = cluster4_week_opening_configs.recognition_count_n  (= checkGate 가 읽는 바로 그 컬럼)
+//   구현 = lib/cluster4-week-point-a-criterion.resolveWeekPointACriteria (weekly-league 와 공용)
+//
+// ⚠ 기존 admin 필드를 덮지 않는다(checkGate 불변 — 판정/문구 로직 무영향). 새 필드만 추가하는
+//   비파괴 보강이며, 실패 시 원본을 그대로 반환한다(lineRating/헤더 보강과 동일 패턴).
+// ⚠ 이 프록시는 일반/mode=test/actAsTestUserId/demoUserId 가 모두 통과하는 단일 지점이라,
+//   여기서 주입하면 전 열람 모드가 동일 필드·동일 값을 쓴다(경로별 계산식 분기 없음).
+async function enrichPointACriteria(rawBody: string, userId: string | null): Promise<string> {
+  if (!userId) return rawBody;
+  let json: unknown;
+  try {
+    json = JSON.parse(rawBody);
+  } catch {
+    return rawBody;
+  }
+  const root = json as { success?: boolean; data?: Array<Record<string, unknown>> };
+  const cards = Array.isArray(root?.data) ? root.data : null;
+  if (!cards || cards.length === 0) return rawBody;
+
+  const weekIds = Array.from(
+    new Set(cards.map((c) => (typeof c.weekId === "string" ? c.weekId : null)).filter((v): v is string => !!v)),
+  );
+  if (weekIds.length === 0) return rawBody;
+
+  try {
+    const supabase = createAdminClient();
+    // 카드 DTO 에 org 필드가 없으므로 소유자 프로필에서 1회 해석한다(/crews·weekly-league 와 동일 SoT).
+    const { data: profile, error: profileError } = await supabase
+      .from("user_profiles")
+      .select("organization_slug")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (profileError) {
+      console.warn("[weekly-cards proxy] pointACriterion — org 해석 실패, 원본 반환", profileError.message);
+      return rawBody;
+    }
+    const org = (profile as { organization_slug?: string | null } | null)?.organization_slug ?? null;
+    if (!org) return rawBody; // org 미상 → 값을 지어내지 않는다(소비처가 "-").
+
+    const criteria = await resolveWeekPointACriteria(supabase, { org, weekIds });
+    for (const card of cards) {
+      const weekId = typeof card.weekId === "string" ? card.weekId : null;
+      // 미확정(행 없음/NULL/0) → null. 소비처는 "0개"가 아니라 "-" 로 표시한다.
+      card.pointACriterion = weekId ? (criteria.get(weekId) ?? null) : null;
+    }
+    return JSON.stringify(root);
+  } catch (e) {
+    console.warn("[weekly-cards proxy] pointACriterion 주입 예외 — 원본 반환", (e as Error)?.message);
+    return rawBody;
+  }
 }
 
 // 카드 헤더(teamName/partName) 보강 — team/part 식별값 전용.
@@ -406,14 +465,18 @@ export async function GET(request: NextRequest) {
       elapsedMs,
     });
 
-    // 정상 JSON 응답에 한해 (1) experience line lineRating, (2) 카드 헤더 team/part/membership
-    // 을 비파괴 보강한다 (실패 시 각 단계에서 원본 반환).
+    // 정상 JSON 응답에 한해 (1) experience line lineRating, (2) 카드 헤더 team/part/membership,
+    // (3) 주차 성장 성공 Point.A 기준 개수(pointACriterion) 를 비파괴 보강한다
+    // (실패 시 각 단계에서 원본 반환).
     const userId = sourceUrl.searchParams.get("userId");
     const enrichedBody =
       upstream.ok && contentType.includes("application/json")
         ? clampAdminOutputsBody(
-            await enrichCardHeaders(
-              await enrichLineRatings(await normalizeInternalOrgStatuses(body, userId), userId),
+            await enrichPointACriteria(
+              await enrichCardHeaders(
+                await enrichLineRatings(await normalizeInternalOrgStatuses(body, userId), userId),
+                userId,
+              ),
               userId,
             ),
           )

@@ -8,6 +8,12 @@ import { WEEKLY_CARD_DUMMY, type WeeklyCardData, type ChampionCrew, type WeeklyL
 import { isDemoMode } from "@/utils/isDemoMode";
 import { getRankingThemeForSeason, getRankingThemeVars } from "@/lib/rankingTheme";
 import {
+  POINT_A_CRITERION_UNIT,
+  POINT_A_CRITERION_EMPTY_LABEL,
+  normalizePointACriterion,
+} from "@/lib/pointACriterionLabel";
+import { resolveOrgPointMeta, resolveGrowthStandardPoint, growthStandardLabel } from "@/lib/orgPointMeta";
+import {
   WeeklyFilterSelect,
   getSelectWidthByLongestLabel,
   type FilterOption,
@@ -21,15 +27,9 @@ const DEFAULT_REPRESENTATIVE_IMAGE = "/images/0/weekly-b-2.png";
 //   포인트 A = 성장 활동량 / 포인트 B = 성장 집중력. 탭 아이콘과 카드 내부 아이콘이 동일 매핑 사용.
 const GROWTH_RATE_ICON = "/images/0/cluster4/icon/icon - 시즌 성장률.png"; // 주차 성장률(공통)
 
-// 조직별 포인트 아이콘(웹 경로 = public 기준). 경로 대소문자·공백을 정확히 유지.
-//   a=활동량(별) · b=집중력(방패) · c=번개/화살(penalty). Cluster4CardContent 헤더 맵과 동일 세트.
-const ORG_POINT_ICONS: Record<string, { a: string; b: string; c: string }> = {
-  encre: { a: "/images/0/Graphic10.png", b: "/images/0/Shield.png", c: "/images/0/Graphic13.png" },
-  oranke: { a: "/images/0/cluster 1/Ok01.png", b: "/images/0/cluster 1/OK02.png", c: "/images/0/cluster 1/Ok03.png" },
-  phalanx: { a: "/images/0/cluster 1/PX01.png", b: "/images/0/cluster 1/pX02.png", c: "/images/0/cluster 1/PX03.png" },
-};
-// 기본값(org 미지정/미매칭) — encre 세트로 폴백.
-const DEFAULT_POINT_ICONS = ORG_POINT_ICONS.encre;
+// 조직별 포인트 아이콘 — 명칭/아이콘 SoT 는 lib/orgPointMeta(주차 카드·Detail Log 와 공용).
+//   여기선 기존 호출부 형태({a,b,c})만 유지하고 값은 공용 메타에서 가져온다(경로 동일 · 중복 정의 제거).
+//   a=활동량 · b=집중력 · c=패널티. 미매칭 org 는 공용 폴백(encre 세트)을 그대로 따른다.
 
 // org slug(phalanx·encre·oranke) 또는 한글 클럽명을 정규화(공용 헬퍼).
 function normalizeOrgKey(org: string | null): "encre" | "oranke" | "phalanx" | null {
@@ -40,10 +40,10 @@ function normalizeOrgKey(org: string | null): "encre" | "oranke" | "phalanx" | n
   return null;
 }
 
-// org → 포인트 아이콘 세트(A/B/C). 미매칭 시 encre 폴백.
+// org → 포인트 아이콘 세트. 값·폴백 정책은 lib/orgPointMeta 단일 출처.
 function resolvePointIcons(org: string | null): { a: string; b: string; c: string } {
-  const k = normalizeOrgKey(org);
-  return k ? ORG_POINT_ICONS[k] : DEFAULT_POINT_ICONS;
+  const [a, b, c] = resolveOrgPointMeta(org);
+  return { a: a.icon, b: b.icon, c: c.icon };
 }
 
 // org → cluster-3 품계 이미지 base(정 N 품.png). encre=ec · phalanx=px · oranke/기타=기본.
@@ -381,6 +381,15 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
     { tone: "green", label: "성장 성공률", value: successRate },
   ];
 
+  // 주차 성장 성공 Point.A 기준 개수 — 집계 DTO(card.pointACriterion) 값 **그대로**.
+  //   · 그 주차·그 조직에 귀속된 값이라 과거 주차도 당시 확정 기준을 그대로 보여준다.
+  //   · 프론트 재계산/추정 금지. 미확정(null)이면 '0개'가 아니라 '-'.
+  //   · isTallying('집계 중') 과 무관하다 — 기준값은 결과 공표 전에도 확정되어 있는 입력값이다.
+  const pointACriterion = normalizePointACriterion(card.pointACriterion);
+  // 라벨/아이콘은 조직별 실제 포인트명 — 내부 코드("A")를 화면에 쓰지 않는다.
+  //   주차 카드 배지·Detail Log 와 **같은 lib/orgPointMeta** 를 타므로 세 화면 명칭·아이콘이 일치한다.
+  const growthStandardPoint = resolveGrowthStandardPoint(org);
+
   // Champion's Hall — DTO(card.top10 / card.top10Focus)에서 수신(하드코딩 없음).
   const activeTab = championTabs.find((t) => t.key === champTab) ?? championTabs[0];
   // 탭별 표시 데이터: 리스트 / 포인트 아이콘 / 값 getter / 단위. 카드 컴포넌트는 완전 공용.
@@ -601,8 +610,31 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
             ))}
           </div>
 
-          {/* 우측 — Progress 2개 */}
+          {/* 우측 — [A 기준] + Progress 2개 */}
           <div className="wd-dash__progress">
+            {/* 주차 성장 성공 기준 — 성장 도전율 위(기존 빈 공간)에 배치.
+                문구는 조직별 실제 포인트명("주차 성장 성공 별 기준") + 같은 조직 아이콘.
+                라벨(작게) ↔ 숫자(크게) 위계는 wd-kpi/wd-prog 와 같은 토큰(--wd-accent 계열)을 쓴다. */}
+            <div className="wd-week-growth-standard">
+              <span className="wd-week-growth-standard__label">
+                <img
+                  className="wd-week-growth-standard__icon"
+                  src={growthStandardPoint.icon}
+                  alt={growthStandardPoint.name}
+                />
+                {growthStandardLabel(growthStandardPoint.name)}
+              </span>
+              {pointACriterion == null ? (
+                <strong className="wd-week-growth-standard__value wd-week-growth-standard__value--empty">
+                  {POINT_A_CRITERION_EMPTY_LABEL}
+                </strong>
+              ) : (
+                <strong className="wd-week-growth-standard__value">
+                  {pointACriterion.toLocaleString()}
+                  <span className="wd-week-growth-standard__unit">{POINT_A_CRITERION_UNIT}</span>
+                </strong>
+              )}
+            </div>
             {progresses.map((p) => (
               <div key={p.label} className={`wd-prog wd-prog--${p.tone}`}>
                 <div className="wd-prog__head">

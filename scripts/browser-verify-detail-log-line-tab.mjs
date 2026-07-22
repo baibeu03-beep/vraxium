@@ -94,13 +94,14 @@ const run = async () => {
   for (const label of ["클럽 오픈 라인", "크루 오픈 라인", "강화 성공", "강화 실패", "해당 없음"]) {
     ok(`요약 지표 "${label}"`, statText.includes(label));
   }
-  ok("라인 강화율 표시", (await page.locator("#dl-panel-line .dl-act-summary-title").innerText()).includes("라인 강화율"));
-  ok("강화율 progressbar", (await page.locator("#dl-panel-line .dl-act-progress").count()) === 1);
-  // 포인트 C 는 현재 원천상 0/0 이지만 **값이 0 이라는 이유로 숨기지 않는다**(요구 §2).
+  ok("주차 성장률 표시", (await page.locator("#dl-panel-line .dl-act-summary-title").innerText()).includes("주차 성장률"));
+  ok("성장률 progressbar", (await page.locator("#dl-panel-line .dl-act-progress").count()) === 1);
+  // 포인트 C 는 현재 원천상 0 / 0 이지만 **값이 0 이라는 이유로 숨기지 않는다**(요구 §2).
   ok("획득 포인트 3종(A/B/C)", (await page.locator("#dl-panel-line .dl-act-stat--point").count()) === 3);
   const pointStats = await page.locator("#dl-panel-line .dl-act-stat--point").allInnerTexts();
-  ok("포인트 '획득 / 가능' 형식", pointStats.every((t) => /\d+\s*\/\s*\d+/.test(t)), pointStats.join(" ; ").replace(/\n/g, " "));
-  ok("상단 포인트 C 지표 표시(값 0 이어도)", pointStats.length === 3 && /\d+\s*\/\s*\d+/.test(pointStats[2]), pointStats[2]?.replace(/\n/g, " "));
+  // 숫자 쌍 표기 = "숫자 + 공백 + / + 공백 + 숫자" 고정(0/2·0 /2·0/ 2 금지) — RATIO_SEPARATOR SoT.
+  ok("포인트 '획득 / 가능' 형식", pointStats.every((t) => /\d+ \/ \d+/.test(t) && !/\d\/|\/\d/.test(t)), pointStats.join(" ; ").replace(/\n/g, " "));
+  ok("상단 포인트 C 지표 표시(값 0 이어도)", pointStats.length === 3 && /\d+ \/ \d+/.test(pointStats[2]), pointStats[2]?.replace(/\n/g, " "));
 
   console.log("\n[5] 표 Y");
   const headers = await page.locator("#dl-panel-line thead th").allInnerTexts();
@@ -177,13 +178,14 @@ const run = async () => {
   console.log(`    소요 시간 설정 행: ${durSet}/${rowData.length} (원장 estimated_duration_minutes 전 행 NULL → 전부 '-'가 정상)`);
 
   // 포인트 A/B/C 셀 형식 + C 열 존재(값 0 이어도 표시).
+  //   형식은 "숫자 + 공백 + / + 공백 + 숫자" 고정 — \s* 가 아니라 공백 1칸을 강제한다("0/2" 회귀 차단).
   ok(
-    "포인트 A/B/C 셀 '획득 / 가능' 형식",
+    "포인트 A/B/C 셀 '획득 / 가능' 형식(공백 1칸 고정)",
     rowData.every(
       (r) =>
-        /^\d+\s*\/\s*\d+$/.test(r.pA ?? "") &&
-        /^\d+\s*\/\s*\d+$/.test(r.pB ?? "") &&
-        /^\d+\s*\/\s*\d+$/.test(r.pC ?? ""),
+        /^\d+ \/ \d+$/.test(r.pA ?? "") &&
+        /^\d+ \/ \d+$/.test(r.pB ?? "") &&
+        /^\d+ \/ \d+$/.test(r.pC ?? ""),
     ),
     JSON.stringify(rowData.slice(0, 2)),
   );

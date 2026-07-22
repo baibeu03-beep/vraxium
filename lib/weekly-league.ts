@@ -27,6 +27,7 @@ import type { ScopeMode } from "@/lib/userScopeShared";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import type { AdminCluster4WeeklyCardDto, Cluster4RateDto } from "@/shared/cluster4.contracts";
 import { resolveWeekResultStates, resolveOrgWeekThresholds, type WeekResultScope } from "@/lib/weekResultState";
+import { resolveWeekPointACriteria } from "@/lib/cluster4-week-point-a-criterion";
 import {
   loadWeekOrgResultStates,
   resolveWeekOrgResultState,
@@ -42,6 +43,84 @@ import {
   EMPTY_WEEK_EFFECTIVE_POSITION_INDEX,
   type WeekEffectivePositionIndex,
 } from "@/lib/weekEffectivePosition";
+
+// ── 공표 결과 snapshot(활성 finalize run) ──────────────────────────────────
+// 어드민 [클럽 활동 검수(공표)] 가 저장한 **공표 당시 결과**. 공표된 주차의 종합 지표는
+//   live 재계산이 아니라 이 snapshot 을 읽는다 — 공표 후 소속/휴식/override 가 바뀌어도
+//   고객 화면 값이 변하면 안 되기 때문(어드민과 동일 원천 보장).
+//   · 활성 = reverted_at IS NULL. 공표 취소하면 즉시 비노출로 돌아간다.
+//   · snapshot_captured=false(legacy run, 2026-07-22 이전)는 snapshot 미지원 → **live 폴백 금지**.
+//     공표 상태인데 snapshot 이 없으면 확정값을 지어내지 않고 집계 중처럼 미노출로 처리한다.
+export type WeeklyLeagueRunSnapshot = {
+  runId: string;
+  memberCount: number | null;
+  seasonRestCount: number | null;
+  personalRestCount: number | null;
+  growthChallengeCount: number | null;
+  growthSuccessCount: number | null;
+  growthFailureCount: number | null;
+  growthSuccessRatePercent: number | null;
+  growthChallengeRatePercent: number | null;
+  criterionPointA: number | null;
+};
+
+// admin OrgResultScope('operating'|'test') → run scope('operating'|'qa'). 어휘가 다르므로 변환한다.
+const toRunScope = (scope: string): string => (scope === "test" ? "qa" : "operating");
+
+async function loadActiveRunSnapshots(
+  db: SupabaseClientLike,
+  org: string,
+  weekIds: string[],
+  scope: string,
+): Promise<Map<string, WeeklyLeagueRunSnapshot>> {
+  const out = new Map<string, WeeklyLeagueRunSnapshot>();
+  if (weekIds.length === 0) return out;
+  const { data, error } = await db
+    .from("cluster4_week_finalize_runs")
+    .select(
+      "id,week_id,snapshot_captured,criterion_point_a,member_count,season_rest_count," +
+        "personal_rest_count,growth_challenge_count,growth_success_count,growth_failure_count," +
+        "growth_success_rate_percent,growth_challenge_rate_percent",
+    )
+    .eq("organization_slug", org)
+    .eq("scope", toRunScope(scope))
+    .in("week_id", weekIds)
+    .is("reverted_at", null);
+  if (error) {
+    console.warn("[weekly-league] 공표 snapshot 조회 실패 — 확정 결과 미노출", error.message);
+    return out;
+  }
+  for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+    if (r.snapshot_captured !== true) continue; // legacy run = snapshot 미지원(폴백 금지)
+    out.set(r.week_id as string, {
+      runId: r.id as string,
+      memberCount: (r.member_count as number | null) ?? null,
+      seasonRestCount: (r.season_rest_count as number | null) ?? null,
+      personalRestCount: (r.personal_rest_count as number | null) ?? null,
+      growthChallengeCount: (r.growth_challenge_count as number | null) ?? null,
+      growthSuccessCount: (r.growth_success_count as number | null) ?? null,
+      growthFailureCount: (r.growth_failure_count as number | null) ?? null,
+      growthSuccessRatePercent: (r.growth_success_rate_percent as number | null) ?? null,
+      growthChallengeRatePercent: (r.growth_challenge_rate_percent as number | null) ?? null,
+      criterionPointA: (r.criterion_point_a as number | null) ?? null,
+    });
+  }
+  return out;
+}
+
+type SupabaseClientLike = {
+  from: (t: string) => {
+    select: (c: string) => {
+      eq: (k: string, v: unknown) => {
+        eq: (k: string, v: unknown) => {
+          in: (k: string, v: unknown[]) => {
+            is: (k: string, v: unknown) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>;
+          };
+        };
+      };
+    };
+  };
+};
 
 // 운영 데이터 시작(이관 정책 경계) = 2026 봄 시즌 시작일.
 //   기본(누적) 노출은 이 날짜 이후 시작 주차만 노출한다 — 그 이전(2023~2026 겨울)은
@@ -603,6 +682,8 @@ export async function aggregateWeeklyLeague(
     //   legacy(2026-06-29 이전, org row 없음) 주차는 source==='legacy' → 기존 전역 폴드 100% 보존.
     const orgResultScope = resolveOrgResultScope(mode);
     const orgResultStates = await loadWeekOrgResultStates(db, weeks.map((w) => w.id), org, orgResultScope);
+    // 공표 snapshot(활성 run) — 공표된 주차의 종합 지표 원천. 어드민과 동일.
+    const runSnapshots = await loadActiveRunSnapshots(db as never, org, weeks.map((w) => w.id), orgResultScope);
 
     // ── [perf] 의존성 그룹 D 선행 로드 — "weeks[] 확정 후 즉시 실행 가능" 한 3건 ──
     //   weeks[] 는 위에서 확정됐고(공표/검수 주입까지 끝), 아래 3건은 그 weekIds/seasonKeys 만
@@ -615,6 +696,11 @@ export async function aggregateWeeklyLeague(
     //   weeks.map(...) 인자는 원본 호출과 완전히 동일하다.
     const weekIdsForQuery = weeks.map((w) => w.id);
     const thresholdsPromise = settle(resolveOrgWeekThresholds(db, { scope: weekScope, org, weekIds: weekIdsForQuery }));
+    // 주차 성장 성공 Point.A 기준 개수(표시 전용) — 주차 목록 전체를 1회 조회한다(카드당 추가 호출 0).
+    //   SoT = cluster4_week_opening_configs.recognition_count_n = Detail Log 의 checkGate.required 와 동일 컬럼.
+    //   ⚠ 바로 위 confirmStarByWeekId(org_week_thresholds.check_threshold)와 **다른 값**이다 —
+    //     집계 판정은 종전대로 check_threshold 를 쓰고(로직 불변), 표시 기준값만 이 맵에서 온다.
+    const pointACriteriaPromise = settle(resolveWeekPointACriteria(db, { org, weekIds: weekIdsForQuery }));
     const exRowsPromise = settle(
       db
         .from("cluster4_weekly_ranking_exceptions")
@@ -761,6 +847,13 @@ export async function aggregateWeeklyLeague(
     const thresholdsSettled = await thresholdsPromise;
     if (!thresholdsSettled.ok) throw thresholdsSettled.e;
     const confirmStarByWeekId = thresholdsSettled.v;
+    // Point.A 기준 개수(표시 전용) — 조회 실패도 "미확정"과 동일 취급(빈 맵 → 카드에서 "-").
+    //   집계/판정 경로에 전혀 개입하지 않으므로 여기서 throw 하지 않는다.
+    const pointACriteriaSettled = await pointACriteriaPromise;
+    const pointACriterionByWeekId = pointACriteriaSettled.ok ? pointACriteriaSettled.v : new Map<string, number>();
+    if (!pointACriteriaSettled.ok) {
+      console.warn("[weekly-league] Point.A 기준 개수 조회 실패 — 카드에 '-' 표시", (pointACriteriaSettled.e as Error)?.message ?? String(pointACriteriaSettled.e));
+    }
 
     // 6-1) 봄 정합 예외 보정 — cluster4_weekly_ranking_exceptions (org + season_key 한정).
     //   confirm_star_override: 주차 effectiveConfirmStar 대체(예: W1=51)
@@ -823,6 +916,9 @@ export async function aggregateWeeklyLeague(
     };
 
     // 심화/정규 분류용 — 대표 멤버십의 membership_level.
+    //   ⚠️ 소속(team/part)과 달리 클래스는 아직 현재 멤버십 기준이다. as-of-week 전환은
+    //   심화/정규 크루 수를 바꾸는 별개 변경이라 이번 범위에서 분리했다(resolver 는 positionCode 를
+    //   이미 같은 티어로 제공하므로, 전환 시 teamPartAt 과 같은 자리에서 꺼내 쓰면 된다).
     const levelOf = (userId: string): string | null => pickPrimaryMembership(membershipByUser.get(userId) || [])?.membership_level ?? null;
 
     // ── Team Battle 컨텍스트(팀 카탈로그/파트/리더/시즌휴식/신규 SoT) — 주차 전체 batch 로드.
@@ -1026,12 +1122,35 @@ export async function aggregateWeeklyLeague(
           }
         }
       } // end memberRosterMode 분기
-      const growthChallenge = growthSuccess + growthFail; // 휴식 제외, 도전 인원
-      const totalCrews = growthChallenge + personalRest;
+      let growthChallenge = growthSuccess + growthFail; // 휴식 제외, 도전 인원
+      let seasonRest = 0;
+      let totalCrews = growthChallenge + personalRest;
 
       // 성장 도전율 = 도전 인원 / 전체 크루, 성장 성공율 = 성공 인원 / 도전 인원.
-      const growthChallengeRate = totalCrews > 0 ? Math.round((growthChallenge / totalCrews) * 100) : 0;
-      const growthSuccessRate = growthChallenge > 0 ? Math.round((growthSuccess / growthChallenge) * 100) : 0;
+      let growthChallengeRate = totalCrews > 0 ? Math.round((growthChallenge / totalCrews) * 100) : 0;
+      let growthSuccessRate = growthChallenge > 0 ? Math.round((growthSuccess / growthChallenge) * 100) : 0;
+
+      // ── 공표된 주차는 **공표 snapshot 을 그대로 표시**한다(live 재계산 결과로 덮지 않는다) ──
+      //   어드민 [클럽 활동 검수(공표)] 가 저장한 활성 run 값 = 어드민 화면과 동일 원천.
+      //   공표 후 소속/휴식/override 가 바뀌어도 값이 변하지 않는다.
+      //   ⚠ 공표 상태인데 snapshot 이 없으면(legacy run 등) live 값을 확정처럼 쓰지 않는다 —
+      //     아래 resultConfirmed 를 false 로 낮춰 '집계 중'(N)으로 안전하게 미노출 처리한다.
+      const runSnapshot = runSnapshots.get(week.id) ?? null;
+      const publishedWithoutSnapshot = orgResultPublished && !runSnapshot;
+      if (runSnapshot) {
+        growthSuccess = runSnapshot.growthSuccessCount ?? growthSuccess;
+        growthFail = runSnapshot.growthFailureCount ?? growthFail;
+        personalRest = runSnapshot.personalRestCount ?? personalRest;
+        seasonRest = runSnapshot.seasonRestCount ?? 0;
+        growthChallenge = runSnapshot.growthChallengeCount ?? growthSuccess + growthFail;
+        totalCrews = runSnapshot.memberCount ?? seasonRest + personalRest + growthChallenge;
+        growthChallengeRate =
+          runSnapshot.growthChallengeRatePercent ??
+          (totalCrews > 0 ? Math.round((growthChallenge / totalCrews) * 100) : 0);
+        growthSuccessRate =
+          runSnapshot.growthSuccessRatePercent ??
+          (growthChallenge > 0 ? Math.round((growthSuccess / growthChallenge) * 100) : 0);
+      }
 
       // ── Team Battle(팀별 주차 결과) — 조직 카운트와 같은 per-user verdict 를 팀별로 재버킷팅.
       //   불변식: Σ teams.successCrew/failCrew/challengeCrew/restCrew == 위 조직 수치. best-effort.
@@ -1285,7 +1404,13 @@ export async function aggregateWeeklyLeague(
         // 결과 확정(공표) 여부 — 조직·코호트별 org-state 'published'(2026-06-29~) 또는 legacy 공표.
         //   확정 전에는 false → 소비처(카드/상세)가 성공/실패/휴식을 확정값으로 노출하지 않고
         //   '집계 중'(N)으로 표시한다. 검수 취소로 published 가 내려가면 다시 false 로 복귀.
-        resultConfirmed: orgResultPublished,
+        // ⚠ 공표됐더라도 snapshot 이 없으면 확정으로 취급하지 않는다 — live 값이 확정 결과처럼
+        //   조용히 노출되는 것을 막는다(UI 는 isTallying 으로 'N' 표시).
+        resultConfirmed: orgResultPublished && !publishedWithoutSnapshot,
+        // 주차 성장 성공 Point.A 기준 개수 — 그 주차(week.id)·그 조직(org)에 귀속된 값.
+        //   ⚠ "현재 주차/최신 설정값"을 전 주차에 반복 적용하지 않는다 — week.id 로 조회한 per-week 값이다.
+        //   미확정(행 없음/NULL/0) → null → 소비처가 "0개"가 아니라 "-" 로 표시.
+        pointACriterion: pointACriterionByWeekId.get(week.id) ?? null,
         imageUrl: week.imageUrl,
         growthSuccessRate,
         growthChallengeRate,
@@ -1294,6 +1419,7 @@ export async function aggregateWeeklyLeague(
         growthSuccess,
         growthFail,
         personalRest,
+        seasonRest,
         winningTeamImage: null,
         top3,
         top10,

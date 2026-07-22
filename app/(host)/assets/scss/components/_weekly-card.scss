@@ -224,6 +224,7 @@
 
   /* ---------- 메인 이미지 ---------- */
   .weekly-card__thumb {
+    position: relative; // 우상단 A 기준 배지의 컨테이닝 블록.
     width: 100%;
     aspect-ratio: 16 / 10;
     border: 1px solid #505d6a;
@@ -253,6 +254,60 @@
     color: #555;
     font-size: 18px;
     font-weight: 600;
+  }
+
+  /* 주차 성장 성공 기준 — 썸네일 우상단 오버레이 배지(조직 포인트 아이콘 + 기준 개수).
+     문구("A 기준" 같은 내부 코드)는 넣지 않는다 — 포인트명은 아이콘 alt/배지 aria-label 로만 전달.
+     배경 이미지가 밝든 어둡든 읽히도록 딥 톤 + 외곽선 + 그림자 + blur 로 대비를 확보한다.
+     썸네일이 overflow:hidden 이라 긴 숫자에서도 카드 밖으로 새지 않는다. */
+  .weekly-card__growth-standard {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: calc(100% - 16px);
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: rgba(9, 15, 22, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    white-space: nowrap;          // "[아이콘] 403개" 를 한 줄로.
+    overflow: hidden;
+    pointer-events: none;         // 썸네일 링크 클릭을 가로채지 않는다.
+  }
+
+  // 조직별 포인트 아이콘 — 원본 비율 유지(썸네일 hover 회전은 이미지 형제라 영향 없음).
+  .weekly-card__growth-standard-icon {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+  }
+
+  .weekly-card__growth-standard-value {
+    font-size: 14px;
+    font-weight: 800;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  }
+
+  // 모바일 — 썸네일이 작아지므로 배지도 함께 축소(잘림/겹침 방지, 한 줄 유지).
+  @media (max-width: 575.98px) {
+    .weekly-card__growth-standard {
+      top: 6px;
+      right: 6px;
+      gap: 4px;
+      padding: 4px 8px;
+      max-width: calc(100% - 12px);
+    }
+    .weekly-card__growth-standard-icon { width: 15px; height: 15px; }
+    .weekly-card__growth-standard-value { font-size: 12px; }
   }
 
   /* ---------- 통계 1: resume-stats typography + compact horizontal row ---------- */

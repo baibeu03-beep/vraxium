@@ -7,6 +7,8 @@ import { usePathname, useSearchParams } from "next/navigation";
 import Tilt from "react-parallax-tilt";
 import type { WeeklyCardCrew, WeeklyCardData, RestReason } from "@/constants/dummyData/weekly-card-dummy";
 import { buildOrgNavHref, type OrgSlug } from "@/lib/orgNav";
+import { formatPointACriterion } from "@/lib/pointACriterionLabel";
+import { resolveGrowthStandardPoint } from "@/lib/orgPointMeta";
 
 type CrewRow = WeeklyCardCrew & { isPlaceholder?: boolean };
 
@@ -149,6 +151,10 @@ export default function WeeklyCardItem({ data, org = null }: Props) {
     searchParams,
     { org: org as OrgSlug | null },
   );
+  // 썸네일 배지에 쓸 조직 포인트(명칭·아이콘) — 링크와 동일하게 org prop → ?org= 순으로 해석한다.
+  //   주차 상세·Detail Log 와 같은 lib/orgPointMeta 를 타므로 세 화면 아이콘이 항상 일치한다.
+  //   미매칭 조직도 임의 문자로 대체하지 않고 공용 폴백 아이콘을 그대로 쓴다.
+  const growthStandardPoint = resolveGrowthStandardPoint(org ?? searchParams?.get("org") ?? null);
   // 썸네일 이미지 로드 실패(매칭된 경로가 디스크에 없음) → placeholder 폴백 유지.
   const [thumbError, setThumbError] = useState(false);
   const isOfficialRest =
@@ -234,6 +240,24 @@ export default function WeeklyCardItem({ data, org = null }: Props) {
         </div>
 
         <Link href={detailHref} className="weekly-card__thumb" aria-label={`${data.seasonName} 상세 보기`}>
+          {/* 주차 성장 성공 기준 — **이 카드(data)의 주차** 값이다(카드마다 다르다).
+              카드에서는 문구 없이 **조직 포인트 아이콘 + 기준 개수**만 표시한다(내부 코드 "A" 노출 금지).
+              포인트명은 아이콘 alt + 배지 aria-label 로 스크린리더에 전달한다.
+              집계 DTO(pointACriterion) 를 그대로 표시하며 미확정이면 "-"(0개로 오인 금지).
+              시즌/주차 텍스트·상태 배지는 썸네일 밖(상단 헤더)에 있어 가리지 않는다. */}
+          <span
+            className="weekly-card__growth-standard"
+            aria-label={`주차 성장 성공 ${growthStandardPoint.name} 기준 ${formatPointACriterion(data.pointACriterion)}`}
+          >
+            <img
+              className="weekly-card__growth-standard-icon"
+              src={growthStandardPoint.icon}
+              alt={growthStandardPoint.name}
+            />
+            <strong className="weekly-card__growth-standard-value">
+              {formatPointACriterion(data.pointACriterion)}
+            </strong>
+          </span>
           {data.imageUrl && !thumbError ? (
             <Image
               src={data.imageUrl}

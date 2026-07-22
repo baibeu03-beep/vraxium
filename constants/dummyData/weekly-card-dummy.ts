@@ -148,6 +148,11 @@ export type WeeklyCardData = {
   //   false = 미확정(집계 중) → 성공/실패/휴식을 확정값처럼 노출하지 않는다. 미설정(더미) 시
   //   소비처는 leagueRecordStatus('대전 중'/'대전 집계')로 동일 판정(하위호환).
   resultConfirmed?: boolean;
+  // 주차 성장 성공 Point.A 기준 개수 — 그 주차·그 조직에 귀속된 값(표시 전용, 집계 로직 미사용).
+  //   SoT = cluster4_week_opening_configs.recognition_count_n (lib/cluster4-week-point-a-criterion).
+  //   /cluster-4-card Detail Log 의 checkGate.required 와 **같은 컬럼** → 세 화면 값이 일치한다.
+  //   null/미설정(더미 포함) = 미확정 → 소비처는 "0개"가 아니라 "-" 로 표시한다.
+  pointACriterion?: number | null;
   imageUrl: string | null;
   growthSuccessRate: number;
   growthChallengeRate: number;

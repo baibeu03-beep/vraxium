@@ -6836,8 +6836,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       headerStartDate && headerEndDate
         ? `${formatDetailLogDate(headerStartDate)} ~ ${formatDetailLogDate(headerEndDate)}`
         : "-",
-    // 주차 성장 성공 Point.A 기준 개수 — 판정 게이트(checkGate.required) 원값. 미확정이면 null("-").
+    // 주차 성장 성공 기준 개수 — 주차×조직 SoT 값. 미확정이면 null("-").
     pointACriterion: detailLogPointACriterion,
+    // 기준 문구의 포인트 명칭·아이콘 해석용 org — 위클리 리그 두 화면과 같은 메타를 타게 한다.
+    org: detailLogOrgSlug,
     crew: {
       // 비로그인 열람 시 이름 마스킹 — 크루 이름 공통 규칙(useDataMasking.mask.crewName = 마지막 글자만).
       //   로그인/데모(localStorage) 시 원문, 비로그인만 마스킹. ownerPersonalInfo.name 은 raw 라 1회 적용(멱등이라 이중 마스킹 무해).

@@ -5,6 +5,13 @@ import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { getThemeClass } from "@/lib/cluster-route";
 import { formatLineDuration } from "@/lib/lineDuration";
+// 주차 성장 성공 기준 표기 = 위클리 리그 두 화면과 공유하는 단일 SoT(포맷 + 조직별 명칭·아이콘).
+import {
+  POINT_A_CRITERION_UNIT,
+  POINT_A_CRITERION_EMPTY_LABEL,
+  normalizePointACriterion,
+} from "@/lib/pointACriterionLabel";
+import { resolveGrowthStandardPoint, growthStandardLabel } from "@/lib/orgPointMeta";
 // 액트 요약 산식 = 관리자 "액트 체크 내역" 탭과 공유하는 단일 SoT(두 repo 미러링).
 import {
   buildCrewActSummary,
@@ -103,6 +110,18 @@ export interface DetailLogData {
   seasonWeekTitle: string;
   /** "2026.06.29(월) ~ 2026.07.05(일)" */
   periodText: string;
+  /**
+   * 주차 성장 성공 기준 개수(표시 전용) — 그 주차·그 조직에 귀속된 값.
+   * 호출부가 weekly-cards DTO(card.pointACriterion)에서 그대로 넘긴다.
+   * 미확정(설정 없음·org 미상·조회 실패) = null → "-" 표시(0개로 오인 금지).
+   */
+  pointACriterion?: number | null;
+  /**
+   * 조직 slug(encre·oranke·phalanx) — 기준 문구의 포인트 명칭·아이콘 해석용.
+   * 위클리 리그 두 화면과 같은 lib/orgPointMeta 를 타므로 세 화면 표기가 일치한다.
+   * 미지정/미매칭이면 공용 폴백 세트(임의의 "A" 문자 대체 금지).
+   */
+  org?: string | null;
   crew: {
     name: string;
     team: string;
@@ -234,6 +253,15 @@ const formatLineRating = (v: number | null | undefined): string =>
 export type LinePointKind = "a" | "b" | "c";
 
 /**
+ * 숫자 쌍 표기 SoT — Detail Log 팝업의 **모든** "A/B" 표기는 이 구분자만 쓴다.
+ *   형식 = `숫자 + 공백 + / + 공백 + 숫자` (예: "0 / 2", "12 / 18").
+ *   ⚠ 호출부에서 "/" 를 직접 쓰지 말 것 — "0/2", "0 /2" 처럼 갈라지는 원인이다.
+ */
+export const RATIO_SEPARATOR = " / ";
+/** 획득/가능 등 숫자 쌍 표시 문자열 — 구분자는 RATIO_SEPARATOR 단일 출처. */
+export const formatRatio = (a: number, b: number): string => `${a}${RATIO_SEPARATOR}${b}`;
+
+/**
  * 행/요약 공통 "획득 / 가능" 렌더 — 라인 탭의 표 3열(A/B/C)과 상단 요약 3카드가 **전부 이것만** 쓴다.
  *
  *   색 규칙(2026-07-17 확정) — 숫자 **두 개 모두** 축 색으로 칠한다. 획득/가능은 색으로 구분하지 않는다:
@@ -251,7 +279,7 @@ const LinePointPair: React.FC<{ pair: CrewLinePointPairDto; kind: LinePointKind 
 }) => (
   <span className={`dl-point-pair dl-point-pair--${kind}`}>
     <span className="dl-point-earned">{pair.earned}</span>
-    <span className="dl-point-sep"> / </span>
+    <span className="dl-point-sep">{RATIO_SEPARATOR}</span>
     <span className="dl-point-available">{pair.available}</span>
   </span>
 );
@@ -452,6 +480,10 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
     resolvedThemeClass ? ` ${resolvedThemeClass}` : ""
   }`;
 
+  // 주차 성장 성공 기준의 포인트 명칭·아이콘 — 조직별 실제 표기(내부 코드 노출 금지).
+  //   주차 카드 배지·주차 상세와 동일한 lib/orgPointMeta 를 탄다.
+  const growthStandardPoint = resolveGrowthStandardPoint(data?.org ?? null);
+
   const crewSegments = data
     ? [data.crew.name, data.crew.team, data.crew.part, data.crew.level].filter(
         (s) => s && s.trim() && s.trim() !== "-",
@@ -500,12 +532,37 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
             <div className="dl-empty">데이터를 불러오는 중입니다…</div>
           ) : (
             <>
-              {/* 주차 메타(시즌/주차 · 기간) — 헤더에서 본문 상단(크루 배지 바로 위)으로 이동. 원천/포맷 불변. */}
-              <p className="dl-modal-meta">
-                <span className="dl-meta-strong">{data.seasonWeekTitle}</span>
-                <span className="dl-meta-dot">·</span>
-                <span className="dl-meta-period">{data.periodText}</span>
-              </p>
+              {/* 주차 메타(시즌/주차 · 기간) — 헤더에서 본문 상단(크루 배지 바로 위)으로 이동. 원천/포맷 불변.
+                  우측에 주차 성장 성공 Point.A 기준 개수를 붙인다(좁은 폭에서는 아래 줄로 자연 이동). */}
+              <div className="dl-modal-meta-row">
+                <p className="dl-modal-meta">
+                  <span className="dl-meta-strong">{data.seasonWeekTitle}</span>
+                  <span className="dl-meta-dot">·</span>
+                  <span className="dl-meta-period">{data.periodText}</span>
+                </p>
+                {/* 값은 호출부가 주차×조직 SoT 에서 그대로 넘긴 것 — 재계산·추정 없음.
+                    문구는 조직별 실제 포인트명("주차 성장 성공 별 기준") — 내부 코드("A") 노출 금지. */}
+                <div className="dl-modal-growth-standard">
+                  <span className="dl-modal-growth-standard__label">
+                    <img
+                      className="dl-modal-growth-standard__icon"
+                      src={growthStandardPoint.icon}
+                      alt={growthStandardPoint.name}
+                    />
+                    {growthStandardLabel(growthStandardPoint.name)}
+                  </span>
+                  {normalizePointACriterion(data.pointACriterion) == null ? (
+                    <strong className="dl-modal-growth-standard__value dl-modal-growth-standard__value--empty">
+                      {POINT_A_CRITERION_EMPTY_LABEL}
+                    </strong>
+                  ) : (
+                    <strong className="dl-modal-growth-standard__value">
+                      {normalizePointACriterion(data.pointACriterion)!.toLocaleString()}
+                      <span className="dl-modal-growth-standard__unit">{POINT_A_CRITERION_UNIT}</span>
+                    </strong>
+                  )}
+                </div>
+              </div>
 
               {/* 크루 프로필 (Badge) */}
               <div className="dl-crew-badge">
@@ -694,19 +751,19 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                         <span className="dl-act-stat dl-act-stat--point">
                           <span className="dl-act-stat-label">획득 {pointALabel}</span>
                           <span className="dl-act-stat-value" style={{ color: pointValueColor(0) }}>
-                            {actSummary.points.pointA.earned} / {actSummary.points.pointA.available}
+                            {formatRatio(actSummary.points.pointA.earned, actSummary.points.pointA.available)}
                           </span>
                         </span>
                         <span className="dl-act-stat dl-act-stat--point">
                           <span className="dl-act-stat-label">획득 {pointBLabel}</span>
                           <span className="dl-act-stat-value" style={{ color: pointValueColor(1) }}>
-                            {actSummary.points.pointB.earned} / {actSummary.points.pointB.available}
+                            {formatRatio(actSummary.points.pointB.earned, actSummary.points.pointB.available)}
                           </span>
                         </span>
                         <span className="dl-act-stat dl-act-stat--point">
                           <span className="dl-act-stat-label">획득 {pointCLabel}</span>
                           <span className="dl-act-stat-value" style={{ color: pointValueColor(2) }}>
-                            {actSummary.points.pointC.earned} / {actSummary.points.pointC.available}
+                            {formatRatio(actSummary.points.pointC.earned, actSummary.points.pointC.available)}
                           </span>
                         </span>
 
@@ -839,7 +896,7 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                       {/* 상단 요약 X — 전부 백엔드 summary 값(프론트 재집계 금지). */}
                       <div className="dl-act-summary">
                         <div className="dl-act-summary-bar-row">
-                          <span className="dl-act-summary-title">라인 강화율</span>
+                          <span className="dl-act-summary-title">주차 성장률</span>
                           <div
                             className="dl-act-progress"
                             role="progressbar"
@@ -889,7 +946,7 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                           </span>
 
                           {/* 획득 포인트 A/B/C — "획득 / 가능". 라벨=조직 point config(액트 탭과 동일 출처).
-                              ⚠ C 는 현재 원천상 항상 0/0 이지만 **값이 0 이라는 이유로 숨기지 않는다**(요구 §2).
+                              ⚠ C 는 현재 원천상 항상 0 / 0 이지만 **값이 0 이라는 이유로 숨기지 않는다**(요구 §2).
                               ⚠ 색은 표 3열과 **동일 컴포넌트·동일 kind**로 결정된다(A/B 초록·C 빨강).
                                 인라인 color 를 다시 넣지 말 것 — 요약과 표가 갈라진다. */}
                           <span className="dl-act-stat dl-act-stat--point">
