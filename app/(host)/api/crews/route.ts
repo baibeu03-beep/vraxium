@@ -5,6 +5,11 @@ import { maskCrewName } from "@/lib/dataMasking";
 import { createAdminClient } from "@/lib/supabase-server";
 import { resolveMembershipDisplay } from "@/lib/membership";
 import { resolveResumeClassLabel } from "@/lib/crewClassLabel";
+import { positionCodeToClassLabel } from "@/shared/crewClassPosition";
+import {
+  loadCurrentWeekPositionOverrides,
+  type OverridePosition,
+} from "@/lib/currentWeekPositionOverride";
 import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confirmed-success-weeks";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import { resolveUserScopeFromParams } from "@/lib/userScope";
@@ -343,6 +348,11 @@ function mergeRow(
   confirmedWeeks: number | null,
   growthResolution: GrowthStatusResolutionRow | null,
   seasonStatus: string | null,
+  // 현재 주차 파트/클래스 override(cluster4_team_week_position_overrides) — 있으면 클래스 배지·
+  //   소속(팀/파트)이 이 값을 따른다. 없으면 종전 멤버십/role SoT. 과거 주차 override 는
+  //   로더가 오늘 주차 1건으로 제한하므로 여기 도달하지 않는다([[currentWeekPositionOverride]]).
+  //   admin lib/adminMembersData.toDto 와 동일 규칙 — 어드민 회원 목록/팀 상세와 값이 일치한다.
+  weekOverride: OverridePosition | null,
 ) {
   // 팀/파트/등급 — 공용 resolver(resolveMembershipDisplay)로 통일.
   //   team_name 보유 row 우선(is_current 단독 신뢰 금지) + user_profiles.current_*_name 폴백.
@@ -355,13 +365,18 @@ function mergeRow(
   // rest(시즌전체휴식) 사용자는 팀명/파트명을 노출하지 않는다 → '-' (요구 3).
   //   active 사용자는 실제 팀/파트를 표시하되, team_name 에 누수된 '시즌전체휴식'
   //   센티넬은 stripSeasonRestSentinel 로 제거(요구 4) → 그 경우도 '-'.
+  //   ⚠ 현재 주차 override 가 있으면 팀/파트도 그 값이 이긴다(admin toDto: currentTeamName =
+  //     weekOverride?.rawTeam ?? row.current_team_name, currentPartName = weekOverride ?
+  //     weekOverride.rawPart : row.current_part_name). rest 마스킹은 그대로 상위 규칙으로 유지.
   const isSeasonRest = seasonStatus === "rest";
-  const teamDisplay = isSeasonRest
-    ? null
-    : stripSeasonRestSentinel(resolved.teamName ?? view?.team_name ?? view?.team);
-  const partDisplay = isSeasonRest
-    ? null
-    : stripSeasonRestSentinel(resolved.partName ?? view?.part_name ?? view?.part);
+  const teamSource = weekOverride?.rawTeam?.trim()
+    ? weekOverride.rawTeam
+    : (resolved.teamName ?? view?.team_name ?? view?.team);
+  const partSource = weekOverride
+    ? weekOverride.rawPart
+    : (resolved.partName ?? view?.part_name ?? view?.part);
+  const teamDisplay = isSeasonRest ? null : stripSeasonRestSentinel(teamSource);
+  const partDisplay = isSeasonRest ? null : stripSeasonRestSentinel(partSource);
   // 우선순위: user_educations(최종학력 sort_order=0) > user_profiles > crew_list_view(legacy) > "-".
   // user_educations 가 truth source — educations PUT(educations/route.ts:297-374)이
   // user_educations 만 갱신하고 user_profiles.school_name/department_name 은 sync 하지
@@ -386,10 +401,14 @@ function mergeRow(
     //   rest 사용자는 '-' 고정(isSeasonRest), active 도 '시즌전체휴식' 센티넬은 제거(위 계산).
     team: teamDisplay ?? "-",
     part: partDisplay ?? "-",
-    // 클래스명(표시용 역할 라벨 — 정규/심화(파트장)/운영진(팀장) …) — user_profiles.role.
-    //   이력서 카드와 동일 라벨 SoT(resolveResumeClassLabel). 팀명 배지 옆 동일 디자인 표시(프론트).
+    // 클래스명(표시용 역할 라벨 — 정규/심화(파트장)/운영진(팀장) …).
+    //   ① 현재 주차 override(position_code) 가 있으면 그 클래스 — 라벨 SoT = shared/crewClassPosition
+    //      (admin lib/positionHistory POSITION_CODE_TO_LABEL 와 byte-identical 미러).
+    //   ② 없으면 종전대로 user_profiles.role → 이력서 카드와 동일 라벨 SoT(resolveResumeClassLabel).
     //   값이 비면(null) 프론트가 배지를 숨긴다. rest 마스킹 대상 아님(직급은 시즌 휴식과 무관).
-    className: resolveResumeClassLabel(profile.role),
+    className:
+      (weekOverride ? positionCodeToClassLabel(weekOverride.positionCode) : null) ??
+      resolveResumeClassLabel(profile.role),
     nickname: profile.vision ?? view?.vision ?? view?.nickname ?? "-",
     // 한줄소개 체인(profile_tagline → profile_keyword → vision) — 연계동료/평판 카드의
     // "닉네임" 칸 표시값과 동일 규칙(personProfiles.buildPersonProfileMap mirror). additive 필드.
@@ -598,7 +617,7 @@ export async function GET(request: Request) {
     // 6) 페이지(≤pageSize) 전용 enrichment — 무거운 per-user 스캔(별/주차 success)을 보이는
     //    행에만 한정한다(요구 4·7). crew_list_view·memberships 도 페이지 한정.
     const STAR_PAGE = 1000;
-    const [viewRes, membershipRes, starsByUser, confirmedWeeksByUser] = await Promise.all([
+    const [viewRes, membershipRes, starsByUser, confirmedWeeksByUser, weekOverrideMap] = await Promise.all([
       // crew_list_view (rich fields: club / total_stars 폴백)
       supabase.from("crew_list_view").select("*").in("id", pageIds).returns<CrewListViewRow[]>(),
       // memberships (team/part 표시 + rest 마스킹용)
@@ -649,6 +668,13 @@ export async function GET(request: Request) {
         for (const id of pageIds) counts.set(id, countConfirmedSuccessWeeks(rowsByUser.get(id) ?? [], metaByStart));
         return counts;
       })(),
+      // 현재 주차 파트/클래스 override(관리자 팀 상세 [B] write) — 페이지 한정 배치 로드.
+      //   "현재 시점" 화면(= /crews 크루 카드)이 어드민 회원 목록/팀 상세와 같은 값을 보이게 한다.
+      //   과거 주차 override 는 로더가 오늘 주차 1건으로 제한하므로 목록에 영향이 없다.
+      //   테이블 부재/조회 실패/현재 주차 미확정 → 빈 Map = 종전 멤버십 SoT(무회귀).
+      //   ⚠ 정책값이므로 operating 기준 — mode=test/actAsTestUserId/demoUserId 모두 동일 경로·동일
+      //     DTO 를 쓴다(QA 워크백: 비즈니스 로직은 항상 operating).
+      loadCurrentWeekPositionOverrides(supabase, pageIds),
     ]);
     const { data: viewData, error: viewError } = viewRes;
     if (viewError) console.error("crew_list_view enrichment failed:", JSON.stringify(viewError));
@@ -678,6 +704,7 @@ export async function GET(request: Request) {
         confirmedWeeksByUser?.get(p.user_id) ?? null,
         growthResolutionMap?.get(p.user_id) ?? null,
         season?.statusByUser.get(p.user_id) ?? null,
+        weekOverrideMap.get(p.user_id) ?? null,
       );
       return { ...row, name: maskCrewName(row.name, isLoggedIn) };
     });

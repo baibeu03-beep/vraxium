@@ -780,6 +780,53 @@ export async function GET(request: NextRequest) {
         profile.membership_level = "운영진(앰배서더)";
       }
 
+      // ── 현재 주차 파트/클래스 override (2026-07-22) ────────────────────────────
+      // 관리자가 팀 상세 [B] 에서 **현재 주차**의 소속 파트/클래스를 바꾸면, 사이드바 인적사항
+      //   (part /등급)도 그 값을 따라야 한다. admin 의 회원 목록·팀 상세 [A] 와 동일 정책이다.
+      //   · SoT = cluster4_team_week_position_overrides (admin 과 같은 Supabase DB).
+      //   · 현재 주차 = weeks.start_date ≤ today ≤ end_date. 과거 주차 override 는 영향 없음.
+      //   · 테이블/행 없음 · 조회 실패 = 종전 멤버십 값 유지(무회귀, 조용히 폴백).
+      try {
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const { data: weekRow } = await supabaseAdmin
+          .from("weeks")
+          .select("start_date")
+          .lte("start_date", todayIso)
+          .gte("end_date", todayIso)
+          .order("start_date", { ascending: false })
+          .limit(1);
+        const weekStart = (weekRow ?? [])[0]?.start_date
+          ? String((weekRow as Array<{ start_date: string }>)[0].start_date).slice(0, 10)
+          : null;
+        if (weekStart) {
+          const { data: ovrRows } = await supabaseAdmin
+            .from("cluster4_team_week_position_overrides")
+            .select("raw_team, raw_part, position_code")
+            .eq("user_id", profile.user_id)
+            .eq("week_start_date", weekStart)
+            .limit(1);
+          const ovr = (ovrRows ?? [])[0] as
+            | { raw_team: string; raw_part: string | null; position_code: string }
+            | undefined;
+          if (ovr) {
+            // 라벨 어휘는 사이드바가 쓰는 membership_level 어휘("일반"/"심화(파트장)"…)에 맞춘다.
+            //   admin lib/adminMembersTypes.positionCodeToStatusLabel 과 동일 매핑.
+            const LABEL: Record<string, string> = {
+              regular: "일반",
+              advanced_agent: "심화(에이전트)",
+              advanced_part_leader: "심화(파트장)",
+              operating_team_leader: "운영진(팀장)",
+              operating_ambassador: "운영진(앰배서더)",
+            };
+            profile.team_name = ovr.raw_team ?? profile.team_name;
+            profile.part_name = ovr.raw_part ?? profile.part_name;
+            profile.membership_level = LABEL[ovr.position_code] ?? profile.membership_level;
+          }
+        }
+      } catch (e) {
+        console.warn("[profile] 주차 override 조회 실패 → 현재 멤버십 유지", String(e).slice(0, 120));
+      }
+
       // weeks counters
       profile.approved_weeks = growthResult.data?.approved_weeks ?? 0;
       profile.cumulative_weeks = growthResult.data?.cumulative_weeks ?? 0;

@@ -192,15 +192,22 @@ const resolvePersonalInfo = (sources: PersonalInfoSourceBag): ResolvedPersonalIn
       p.department, p.departmentName, p.department_name, p.major, p.major1, p.major_first,
       u.department, u.departmentName, u.department_name, u.major, u.major1, u.major_first,
     ),
+    // 소속(팀/파트) = 그 카드 "주차 당시" 소속. membershipLevel(바로 아래)과 동일하게
+    //   weeklyCardMeta(주차 핀 snapshot SoT)를 **최우선**으로 둔다.
+    //   종전에는 profile(현재 소속)이 먼저라, 관리자가 팀 상세 [B]에서 그 주차의 소속 파트를 바꿔도
+    //   카드에는 영원히 현재 파트가 보였다(2026-07-22 실측: 클래스는 반영, 소속만 미반영).
+    //   meta 를 넘기지 않는 모달(연계동료/평판)은 meta={} 라 종전 profile 폴백 그대로 동작한다.
     team: pickPersonalValue(
+      meta.teamName,
       p.team, p.teamName, p.team_name, u.team, u.teamName, u.team_name,
       p.currentTeamName, p.current_team_name, u.currentTeamName, u.current_team_name,
-      meta.teamName, extras.teamName,
+      extras.teamName,
     ),
     part: pickPersonalValue(
+      meta.partName,
       p.part, p.partName, p.part_name, u.part, u.partName, u.part_name,
       p.currentPartName, p.current_part_name, u.currentPartName, u.current_part_name,
-      meta.partName, extras.partName,
+      extras.partName,
     ),
     // 멤버십 등급(badge-status) = 그 카드 "주차 당시 단계"(meta.roleLabel = 백엔드 snapshot SoT,
     //   user_position_histories 주차단위). 과거 주차 카드가 최신 profile 등급으로 덮이면 안 되므로

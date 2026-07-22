@@ -126,19 +126,28 @@ const resolvePersonalInfo = (sources: PersonalInfoSourceBag): ResolvedPersonalIn
       u.department, u.departmentName, u.department_name, u.major, u.major1, u.major_first,
       fp.department, fp.departmentName, fp.department_name, fp.major, fp.major1, fp.major_first, fp.major_name_1,
     ),
+    // 소속(팀/파트)·등급 = 그 카드 "주차 당시" 값. weeklyCardMeta(주차 핀 snapshot SoT)를 **최우선**.
+    //   종전에는 profile(현재 소속/등급)이 먼저라, 관리자가 팀 상세 [B] 에서 그 주차의 소속 파트·
+    //   클래스를 바꿔도 크루 화면에는 영원히 현재값이 보였다(2026-07-22 실측).
+    //   ⚠ membershipLevel 은 meta 를 아예 참조하지 않아 **클래스가 전혀 반영되지 않았다** —
+    //     meta.roleLabel 을 1순위로 추가한다(Cluster4CardContent 와 동일 규칙).
+    //   meta 를 넘기지 않는 호출부는 meta={} 라 종전 profile 폴백 그대로 동작한다.
     team: pickPersonalValue(
+      meta.teamName,
       p.team, p.teamName, p.team_name, u.team, u.teamName, u.team_name,
       p.currentTeamName, p.current_team_name, u.currentTeamName, u.current_team_name,
-      meta.teamName, extras.teamName,
+      extras.teamName,
       fp.team, fp.teamName, fp.team_name,
     ),
     part: pickPersonalValue(
+      meta.partName,
       p.part, p.partName, p.part_name, u.part, u.partName, u.part_name,
       p.currentPartName, p.current_part_name, u.currentPartName, u.current_part_name,
-      meta.partName, extras.partName,
+      extras.partName,
       fp.part, fp.partName, fp.part_name,
     ),
     membershipLevel: pickPersonalValue(
+      meta.roleLabel,
       p.membershipLevel, p.membership_level, u.membershipLevel, u.membership_level,
       p.role, u.role, p.status, u.status,
       fp.membershipLevel, fp.membership_level, fp.role,
