@@ -4,6 +4,7 @@ import { seasonLabel, type GrowthStatusKey } from "@/lib/cluster4-types";
 import { isRegularActivityWeek, weekNumberLabel } from "@/lib/cluster4-transition-week";
 import { pickPrimaryMembership, type MembershipRow } from "@/lib/membership";
 import { resolveMembershipRoleLabel } from "@/lib/cluster4-role-label";
+import { formatCrewClassDisplayLabel, CREW_CLASS_REGULAR } from "@/lib/crewClassDisplayLabel";
 import { readScopeMode } from "@/lib/userScopeShared";
 import { fetchTestUserMarkerIds } from "@/lib/userScope";
 import { enforceQaMode } from "@/lib/qaModeGate";
@@ -511,22 +512,8 @@ export async function GET(request: NextRequest) {
     const profileMap = new Map<string, typeof profiles[0]>();
     profiles.forEach(p => profileMap.set(p.id, p));
 
-    // 역할 라벨 매핑
-    const roleLabels: { [key: string]: string } = {
-      'crew_regular': '일반',
-      'crew_normal': '일반',
-      'part_leader': '심화(파트장)',
-      'crew_partleader': '심화(파트장)',
-      'crew_advanced_part_leader': '심화(파트장)',
-      'crew_agent': '심화(에이전트)',
-      'crew_advanced_agent': '심화(에이전트)',
-      'crew_ambassador': '운영진(앰배서더)',
-      'admin_ambassador': '운영진(앰배서더)',
-      'operations_ambassador': '운영진(앰배서더)',
-      'crew_team_leader': '운영진(팀장)',
-      'admin_team_leader': '운영진(팀장)',
-      'operations_teamleader': '운영진(팀장)',
-    };
+    // 역할 라벨 매핑 SoT = lib/crewClassDisplayLabel (로컬 사본 금지 — 종전 사본은
+    // 내부 어휘 '일반'을 그대로 DTO 로 내보냈다).
 
     // 멤버십 등급 Map — 상태 표기 SoT (user_memberships.membership_level).
     // 유저당 여러 row 가능 → 공용 픽 규칙(lib/membership.ts pickPrimaryMembership)으로 단일 선택.
@@ -633,8 +620,8 @@ export async function GET(request: NextRequest) {
       // 등급 SoT = membership_level. role 코드 단독으로 "심화(파트장)" 매핑 금지 (cluster4-role-label 정책).
       const roleCode = userRole?.role ?? profile.role ?? null;
       const roleBasedLabel = userRole
-        ? (roleLabels[userRole.role] || userRole.role)
-        : (profile.role ? roleLabels[profile.role] || profile.role : '일반');
+        ? formatCrewClassDisplayLabel(userRole.role, userRole.role)
+        : (profile.role ? formatCrewClassDisplayLabel(profile.role, profile.role) : CREW_CLASS_REGULAR);
       const roleLabel = resolveMembershipRoleLabel({
         role: roleCode,
         membershipLevel: membershipLevelMap.get(userId) ?? null,

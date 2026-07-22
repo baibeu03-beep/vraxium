@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton/Skeleton";
 import { isTransitionWeekDto, isRegularActivityWeekDto, weekNumberLabel } from "@/lib/cluster4-transition-week";
 import { resolveSeasonWeekText } from "@/lib/cluster4-types";
 import { getGrowthBadgeText } from "@/lib/cluster4-status-label";
+import { toCrewClassDisplayLabel } from "@/lib/crewClassDisplayLabel";
 // QA(mode=test) API/link suffix is temporarily disabled. Keep for future QA deployment reuse.
 // import { parseScopeMode } from "@/lib/userScopeShared";
 
@@ -1543,9 +1544,11 @@ const Cluster41Content = () => {
               const partName = week.partName && week.partName.trim() ? week.partName : "-";
 
               // 활동 상태: roleLabel 우선, 없으면 membershipStatusLabel (null → "-")
+              // 표시 어휘 SoT = lib/crewClassDisplayLabel — 어드민 스냅샷이 내부 어휘("일반")를
+              //   들고 있어도 화면에는 정규 / 심화(에이전트) / 심화(파트장) / 운영진(…) 만 나간다.
               const membership =
-                (week.roleLabel && week.roleLabel.trim()) ||
-                (week.membershipStatusLabel && week.membershipStatusLabel.trim()) ||
+                toCrewClassDisplayLabel(week.roleLabel) ??
+                toCrewClassDisplayLabel(week.membershipStatusLabel) ??
                 "-";
 
               // 포인트: card.points?.star / card.points?.pointC (null → 0)

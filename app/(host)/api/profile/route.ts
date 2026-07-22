@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getCachedTeams, getCachedParts, getCachedActivityTypes } from "@/lib/cached-data";
 import { getProfileLookupKey, resolveUserProfileAccess } from "@/lib/user-profile-access";
 import { seasonLabel } from "@/lib/cluster4-types";
+import { positionCodeToClassLabel } from "@/shared/crewClassPosition";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import { pageSlugFromReferer, applyPageSlug } from "@/lib/pageSlugForward";
 import { DemoModeError, resolveDemoProfileUserId } from "@/lib/demoMode";
@@ -805,18 +806,13 @@ export async function GET(request: NextRequest) {
         const ovrMap = await loadCurrentWeekPositionOverrides(supabaseAdmin, [profile.user_id]);
         const ovr = ovrMap.get(profile.user_id);
         if (ovr) {
-          // 라벨 어휘는 사이드바가 쓰는 membership_level 어휘("일반"/"심화(파트장)"…)에 맞춘다.
-          //   (클래스 배지 어휘 "정규/…" 는 shared/crewClassPosition — 별개 축이라 섞지 않는다.)
-          const LABEL: Record<string, string> = {
-            regular: "일반",
-            advanced_agent: "심화(에이전트)",
-            advanced_part_leader: "심화(파트장)",
-            operating_team_leader: "운영진(팀장)",
-            operating_ambassador: "운영진(앰배서더)",
-          };
+          // 표시 어휘 = 정규 / 심화(에이전트) / 심화(파트장) / 운영진(…) 단일 축
+          //   (2026-07-22 통일. 종전엔 사이드바 전용으로 "일반"을 내려보내 화면에 그대로 노출됐다.)
+          //   position_code → 라벨 변환 SoT = shared/crewClassPosition.
           profile.team_name = ovr.rawTeam || profile.team_name;
           profile.part_name = ovr.rawPart ?? profile.part_name;
-          profile.membership_level = LABEL[ovr.positionCode] ?? profile.membership_level;
+          profile.membership_level =
+            positionCodeToClassLabel(ovr.positionCode) ?? profile.membership_level;
         }
       } catch (e) {
         console.warn("[profile] 주차 override 조회 실패 → 현재 멤버십 유지", String(e).slice(0, 120));

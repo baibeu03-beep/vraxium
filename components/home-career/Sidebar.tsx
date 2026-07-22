@@ -10,6 +10,7 @@ import { dedupedJson } from "@/lib/fetch-dedupe";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { resolvePointC, resolveFinalPointB } from "@/lib/cluster4-points";
+import { toCrewClassDisplayLabel, formatCrewClassDisplayLabel, CREW_CLASS_REGULAR } from "@/lib/crewClassDisplayLabel";
 import { DUMMY_USER_PROFILE, DUMMY_SIDEBAR_EXTRA } from "@/constants/dummyData";
 import { SECTION2_SLOGAN_DEFAULTS } from "@/constants/dummyData/cluster2-section2-default";
 import { useResumeCardHeight } from "@/hooks/useResumeCardHeight";
@@ -478,10 +479,10 @@ const Sidebar = () => {
     ].filter((v: unknown): v is string => typeof v === "string" && v.trim() !== "");
     let displayRoleLabel = "";
     for (const c of roleCandidates) {
-      if (roleKorean[c]) { displayRoleLabel = roleKorean[c]; break; }
-      if (/[가-힣]/.test(c)) { displayRoleLabel = c; break; } // 이미 한글 라벨이면 그대로
+      const normalized = toCrewClassDisplayLabel(c);
+      if (normalized) { displayRoleLabel = normalized; break; }
     }
-    if (!displayRoleLabel) displayRoleLabel = "정규";
+    if (!displayRoleLabel) displayRoleLabel = CREW_CLASS_REGULAR;
 
     return { displaySeasonYear, displaySeasonName, displayTotalWeeks, displayRoleLabel };
   };
@@ -2793,10 +2794,12 @@ const Sidebar = () => {
                   <div className="detail-row">
                     <span style={{ width: "16px" }}></span>
                     <span className="sub-text">
-                      {/* 기존 "{gpa} /{gpaMax}" 자리 → "{part_name} /{membership_level 단축형}" 매핑.
-                          UI 구조/슬래시 위치/className 미변경. 단축 라벨은 roleKorean 맵
-                          (line 99-) 의 "(...)" 앞부분만 사용 — 예: "심화(파트장)" → "심화". */}
-                      <span style={{ color: currentProfile.lightColor }}>·</span> {currentProfile.part || "-"} <span style={{ color: currentProfile.lightColor }}>/{(roleKorean[currentProfile.membershipLevel] || currentProfile.membershipLevel || "-").split("(")[0] || "-"}</span>
+                      {/* 기존 "{gpa} /{gpaMax}" 자리 → "{part_name} /{클래스 라벨}" 매핑.
+                          UI 구조/슬래시 위치/className 미변경.
+                          ⚠ 2026-07-22: 종전엔 "(...)" 앞부분만 잘라("심화(파트장)" → "심화") 표시했는데,
+                          그 축약형("일반"/"심화")은 사용자 노출 금지 어휘다. 표시 어휘 SoT
+                          (lib/crewClassDisplayLabel) 전체 라벨을 그대로 쓴다. */}
+                      <span style={{ color: currentProfile.lightColor }}>·</span> {currentProfile.part || "-"} <span style={{ color: currentProfile.lightColor }}>/{formatCrewClassDisplayLabel(currentProfile.membershipLevel, "-")}</span>
                     </span>
                   </div>
                 </div>

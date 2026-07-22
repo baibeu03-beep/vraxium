@@ -441,9 +441,9 @@ const buildChampionLists = (
 //   실제 API 는 aggregateWeeklyLeague 가 채우며, teamGoal/weeklyFlow/crewComment 는
 //   입력 기능 전이라 null. 데모는 표시 확인용 샘플 문구를 넣는다.
 const DUMMY_TEAM_META = [
-  { name: '프로듀싱', leader: '김프로', school: '순천향 대학교', major: '실용음악', parts: ['일반', '작곡', '편곡'] },
-  { name: 'A&R', leader: '이에이', school: '성균관 대학교', major: '경영학', parts: ['일반', '기획'] },
-  { name: '비주얼', leader: '박비주', school: '한양 대학교', major: '시각디자인', parts: ['일반', '디자인', '영상'] },
+  { name: '프로듀싱', leader: '김프로', school: '순천향 대학교', major: '실용음악', parts: ['일반', '작곡', '편곡'] }, // class-label-allow (클래스가 아니라 파트 이름)
+  { name: 'A&R', leader: '이에이', school: '성균관 대학교', major: '경영학', parts: ['일반', '기획'] }, // class-label-allow (클래스가 아니라 파트 이름)
+  { name: '비주얼', leader: '박비주', school: '한양 대학교', major: '시각디자인', parts: ['일반', '디자인', '영상'] }, // class-label-allow (클래스가 아니라 파트 이름)
 ];
 
 const splitInto = (total: number, n: number, seed: number): number[] => {

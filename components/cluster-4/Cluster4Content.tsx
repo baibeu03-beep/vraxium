@@ -21,6 +21,7 @@ import { formatSeasonLabel, formatSeasonWeekTitle } from "@/lib/cluster4-types";
 import { getGrowthBadgeText, progressStatusToSeasonKey, seasonSummaryToSeasonKey, SEASON_STATUS_TEXT, type SeasonStatusKey } from "@/lib/cluster4-status-label";
 import { isOfficialRestWeek, isTransitionWeek, resolveTransitionSpan } from "@/lib/cluster4-transition-week";
 import { REPUTATION_KEYWORDS } from "@/lib/reputation-keywords";
+import { formatCrewClassDisplayLabel, toCrewClassDisplayLabel, CREW_CLASS_TEAM_LEADER, CREW_CLASS_AMBASSADOR } from "@/lib/crewClassDisplayLabel";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
@@ -168,43 +169,12 @@ const resolvePersonalInfo = (sources: PersonalInfoSourceBag): ResolvedPersonalIn
 
 // 멤버십/역할/상태 라벨 공통 표시 헬퍼 — DB 원본값(membership_level / role 코드 / status)을
 // 화면 친화적 한글 라벨로 변환한다. 모든 인적사항 카드 badge(tag-role)는 이 헬퍼만 사용한다.
-//   ⚠ DB 원본은 변경하지 않으며(표시 시점에만 변환), 다음 fallback 규칙을 따른다:
-//   - 값 없음(null/undefined/공백/"-"/"—")  → "-"  (하드코딩 "일반" 금지)
-//   - 알 수 없는 신규 값                      → 원본값 그대로
-//   - 이미 한글 라벨(일반/심화/운영진 …)        → 매핑 미스 → 원본 유지 (멱등)
-const MEMBERSHIP_ROLE_LABEL_MAP: Record<string, string> = {
-  // membership_level 단축값 / status
-  active: "일반",
-  advanced: "심화",
-  agent: "심화(에이전트)",
-  part_leader: "심화(파트장)",
-  team_leader: "운영진(팀장)",
-  ambassador: "운영진(앰배서더)",
-  // role 코드 (user_role_history.role / profile.role 등) — 기존 ROLE_LABELS 통합
-  crew: "일반",
-  crew_regular: "일반",
-  crew_normal: "일반",
-  crew_advanced_agent: "심화(에이전트)",
-  crew_agent: "심화(에이전트)",
-  crew_advanced_part_leader: "심화(파트장)",
-  crew_partleader: "심화(파트장)",
-  operations_partleader: "심화(파트장)",
-  admin_team_leader: "운영진(팀장)",
-  crew_team_leader: "운영진(팀장)",
-  operations_teamleader: "운영진(팀장)",
-  admin_ambassador: "운영진(앰배서더)",
-  crew_ambassador: "운영진(앰배서더)",
-  operations_ambassador: "운영진(앰배서더)",
-  operations_clubleader: "운영진(클럽장)",
-};
-
-const formatMembershipRoleLabel = (value: string | null | undefined): string => {
-  if (value === null || value === undefined) return "-";
-  const v = String(value).trim();
-  if (v === "" || v === "-" || v === "—") return "-";
-  // 정확 매칭 우선 → 소문자 정규화 매칭 → 그래도 없으면 원본 그대로(신규 값 보호).
-  return MEMBERSHIP_ROLE_LABEL_MAP[v] ?? MEMBERSHIP_ROLE_LABEL_MAP[v.toLowerCase()] ?? v;
-};
+//   ⚠ DB 원본은 변경하지 않는다(표시 시점에만 변환).
+//   ⚠ 표시 어휘 SoT = lib/crewClassDisplayLabel — 화면에는 정규 / 심화(에이전트) /
+//     심화(파트장) / 운영진(…) 만 나간다. 종전 로컬 MEMBERSHIP_ROLE_LABEL_MAP·ROLE_LABELS 는
+//     내부 어휘("일반"·홑겹 "심화")를 그대로 노출해 폐기했다.
+const formatMembershipRoleLabel = (value: string | null | undefined): string =>
+  formatCrewClassDisplayLabel(value, "-");
 
 // 기본 시즌 데이터 — seasonHistories 가 비었을 때(=비-데모 API 로딩 전/무데이터) 쓰이는
 //   render-safe 빈 상태(empty-state) 구조. currentSeason 이 항상 non-null 이어야 하므로
@@ -263,24 +233,8 @@ const SEASON_HISTORY_UUID_RE =
 const isRealSeasonHistoryId = (id: unknown): id is string =>
   typeof id === "string" && SEASON_HISTORY_UUID_RE.test(id);
 
-// 역할 라벨 매핑
-const ROLE_LABELS: { [key: string]: string } = {
-  crew: "일반",
-  crew_regular: "일반",
-  crew_normal: "일반",
-  crew_advanced_agent: "심화(에이전트)",
-  crew_agent: "심화(에이전트)",
-  crew_advanced_part_leader: "심화(파트장)",
-  crew_partleader: "심화(파트장)",
-  operations_partleader: "심화(파트장)",
-  part_leader: "심화(파트장)",
-  admin_team_leader: "운영진(팀장)",
-  crew_team_leader: "운영진(팀장)",
-  operations_teamleader: "운영진(팀장)",
-  admin_ambassador: "운영진(앰배서더)",
-  crew_ambassador: "운영진(앰배서더)",
-  operations_ambassador: "운영진(앰배서더)",
-};
+// 역할 라벨 매핑은 lib/crewClassDisplayLabel 단일 SoT 로 이관(구 ROLE_LABELS 사본 삭제 —
+// 미사용 + 내부 어휘 "일반" 노출원).
 
 const ADMIN_ROLES = new Set([
   "admin_team_leader",
@@ -1937,7 +1891,7 @@ const Cluster4Content = () => {
     const fromSelectedRoles = (currentSeason.seasonRoles || []).map((r) => ({
       teamLabel: r.isAdmin ? `운영진(${r.adminGeneration ?? ""}기)` : (r.teamName || "-"),
       partLabel: r.isAdmin ? "클럽 단위" : (r.partName || "-"),
-      statusLabel: r.roleLabel || "-",
+      statusLabel: formatCrewClassDisplayLabel(r.roleLabel, "-"),
     }));
 
     // 선택 시즌 기준(snapshot-only) — area-6/7 과 동일 정책: 선택 시즌의 상태 구간만 쓰고,
@@ -2459,23 +2413,7 @@ const Cluster4Content = () => {
         relevantTeamParts.forEach((tp) => changePoints.add(tp.joined_at));
         const sortedChangePoints = Array.from(changePoints).sort();
 
-        // 역할 라벨 매핑 (함수 내부용)
-        const roleLabelMap: { [key: string]: string } = {
-          crew: "일반",
-          crew_regular: "일반",
-          crew_normal: "일반",
-          crew_advanced_agent: "심화(에이전트)",
-          crew_agent: "심화(에이전트)",
-          crew_advanced_part_leader: "심화(파트장)",
-          crew_partleader: "심화(파트장)",
-          part_leader: "심화(파트장)",
-          admin_team_leader: "운영진(팀장)",
-          crew_team_leader: "운영진(팀장)",
-          operations_teamleader: "운영진(팀장)",
-          admin_ambassador: "운영진(앰배서더)",
-          crew_ambassador: "운영진(앰배서더)",
-          operations_ambassador: "운영진(앰배서더)",
-        };
+        // 역할 라벨 매핑은 표시 어휘 SoT(lib/crewClassDisplayLabel)만 사용한다 — 로컬 사본 금지.
 
         // 운영진 역할 확인 함수
         const checkIsAdmin = (role: string): boolean => {
@@ -2506,7 +2444,7 @@ const Cluster4Content = () => {
             const partName = activeTeamPart ? partsData.find((p) => p.id === activeTeamPart.part_id)?.name || null : null;
 
             // 운영진 역할의 경우 특별 처리
-            let roleLabel = roleLabelMap[role] || role;
+            let roleLabel = formatCrewClassDisplayLabel(role, role);
             let adminGeneration: number | null = null;
 
             if (isAdmin) {
@@ -2515,10 +2453,11 @@ const Cluster4Content = () => {
               adminGeneration = seasonYear >= 2026 ? seasonYear - 2022 : seasonYear - 2022;
 
               // 팀장의 경우 팀 이름 포함
-              if (role.includes("team_leader") && teamName) {
-                roleLabel = `팀장(${teamName})`;
+              // 표시 어휘 통일 — 팀명은 teamLabel 컬럼이 따로 보여주므로 라벨에 중복 표기하지 않는다.
+              if (role.includes("team_leader")) {
+                roleLabel = CREW_CLASS_TEAM_LEADER;
               } else if (role.includes("ambassador")) {
-                roleLabel = "앰배서더";
+                roleLabel = CREW_CLASS_AMBASSADOR;
               }
             }
 
@@ -2548,7 +2487,7 @@ const Cluster4Content = () => {
         if (seasonRoleItems.length === 0 && sh.role_in_season) {
           const role = sh.role_in_season;
           const isAdmin = checkIsAdmin(role);
-          let roleLabel = roleLabelMap[role] || role;
+          let roleLabel = formatCrewClassDisplayLabel(role, role);
           let adminGeneration: number | null = null;
 
           // 시즌 기간 중 유효한 팀/파트 찾기 (가장 최근 것)
@@ -2559,9 +2498,9 @@ const Cluster4Content = () => {
           if (isAdmin) {
             adminGeneration = seasonYear >= 2026 ? seasonYear - 2022 : seasonYear - 2022;
             if (role.includes("ambassador")) {
-              roleLabel = "앰배서더";
-            } else if (role.includes("team_leader") && teamName) {
-              roleLabel = `팀장(${teamName})`;
+              roleLabel = CREW_CLASS_AMBASSADOR;
+            } else if (role.includes("team_leader")) {
+              roleLabel = CREW_CLASS_TEAM_LEADER;
             }
 
             // 운영진은 팀/파트 없어도 추가
@@ -3797,7 +3736,7 @@ const Cluster4Content = () => {
                                 </span>
                               </div>
                               <span className="badge-status yellow" style={{ display: "inline-block", width: "fit-content", whiteSpace: "nowrap", fontFamily: "'Pretendard', sans-serif", fontSize: "13px", padding: "4px 10px", marginLeft: "-4px" }}>
-                                {truncate(statusItem.statusLabel, 9)}
+                                {truncate(formatCrewClassDisplayLabel(statusItem.statusLabel, "-"), 9)}
                               </span>
                             </div>
                           );
@@ -4602,9 +4541,9 @@ const Cluster4Content = () => {
                     //   이미 한글) → ② 시즌 대표 역할(currentSeason.roleInSeason = season_histories.role_in_season,
                     //   해당 시즌 값) → ③ 최신값(pi.membershipLevel/userDefaultRole)은 시즌 핀이 전무할 때만 폴백.
                     //   ⚠ 과거 시즌을 "현재 멤버십 등급"으로 덮지 않기 위해 최신값을 시즌 핀보다 뒤에 둔다.
-                    const roleLabel = latest?.roleLabel
-                      ? latest.roleLabel
-                      : formatMembershipRoleLabel(currentSeason.roleInSeason || pi.membershipLevel || userDefaultRole || "");
+                    const roleLabel =
+                      toCrewClassDisplayLabel(latest?.roleLabel) ??
+                      formatMembershipRoleLabel(currentSeason.roleInSeason || pi.membershipLevel || userDefaultRole || "");
                     return (
                       <>
                         <div className="personal-photo">

@@ -5,6 +5,7 @@
 import { seasonLabel, formatSeasonLabel } from "@/lib/cluster4-types";
 import { pickPrimaryMembership } from "@/lib/membership";
 import { resolveMembershipRoleLabel } from "@/lib/cluster4-role-label";
+import { formatCrewClassDisplayLabel } from "@/lib/crewClassDisplayLabel";
 import type { Cluster4WeeklyCardDto } from "@/shared/cluster4.contracts";
 
 export type WeeklyCardDto = Cluster4WeeklyCardDto;
@@ -13,16 +14,8 @@ const SEASON_MAP: Record<string, string> = {
   spring: "봄", summer: "여름", fall: "가을", winter: "겨울",
 };
 
-const ROLE_LABELS: Record<string, string> = {
-  crew: "일반", crew_regular: "일반", crew_normal: "일반",
-  part_leader: "심화(파트장)", crew_partleader: "심화(파트장)",
-  crew_advanced_part_leader: "심화(파트장)", operations_partleader: "심화(파트장)",
-  crew_agent: "심화(에이전트)", crew_advanced_agent: "심화(에이전트)",
-  crew_ambassador: "운영진(앰배서더)", admin_ambassador: "운영진(앰배서더)",
-  operations_ambassador: "운영진(앰배서더)",
-  crew_team_leader: "운영진(팀장)", admin_team_leader: "운영진(팀장)",
-  operations_teamleader: "운영진(팀장)",
-};
+// role 코드 → 표시 라벨. 매핑 SoT = lib/crewClassDisplayLabel (로컬 사본 금지 — 종전 사본이
+// 내부 어휘 "일반"을 그대로 내보내 화면에 노출됐다).
 
 const ADMIN_ROLES = new Set([
   "admin_team_leader", "crew_team_leader", "operations_teamleader",
@@ -397,7 +390,7 @@ export async function buildWeeklyCards(supabase: any, userId: string, opts: {
     const role = resolveRole(w.start_date, isBreakSeason && !isOnboarding);
     // 등급 SoT = membership_level. role 코드 단독으로 "심화(파트장)" 매핑 금지 (cluster4-role-label 정책).
     const roleLbl = role
-      ? resolveMembershipRoleLabel({ role, membershipLevel, roleBasedLabel: ROLE_LABELS[role] || role })
+      ? resolveMembershipRoleLabel({ role, membershipLevel, roleBasedLabel: formatCrewClassDisplayLabel(role, role) })
       : null;
 
     const isPersonalRest = status === "휴식(개인)";

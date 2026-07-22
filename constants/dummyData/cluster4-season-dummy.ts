@@ -259,7 +259,7 @@ export const DUMMY_SEASON_HISTORIES = [
       { profileImage: randomCrewProfile(), teamName: "일이삼사오육칠팔구십", partName: "일이삼사오육칠팔구십", roleLabel: "팀장(헬스케어 팀)", isAdmin: true, adminGeneration: 3 },
       { profileImage: randomCrewProfile(), teamName: null, partName: null, roleLabel: "앰배서더", isAdmin: true, adminGeneration: 4 },
       { profileImage: randomCrewProfile(), teamName: "사랑은아무나하나", partName: "태진아", roleLabel: "하느님이보우하사", isAdmin: false, adminGeneration: null },
-      { profileImage: randomCrewProfile(), teamName: null, partName: "웹", roleLabel: "일반", isAdmin: false, adminGeneration: null },
+      { profileImage: randomCrewProfile(), teamName: null, partName: "웹", roleLabel: "정규", isAdmin: false, adminGeneration: null },
     ],
     // 시즌 평판: 1개 (최소)
     seasonReputations: [
@@ -321,10 +321,10 @@ export const DUMMY_SEASON_HISTORIES = [
     seasonRoles: [
       { profileImage: randomCrewProfile(), teamName: "엔터테인먼트", partName: "글로벌마케팅", roleLabel: "팀장(미디어 팀)", isAdmin: false, adminGeneration: null },
       { profileImage: randomCrewProfile(), teamName: "일이삼사오육칠팔구십", partName: "브랜드콘텐츠", roleLabel: "운영진(앰배서더)", isAdmin: true, adminGeneration: 4 },
-      { profileImage: randomCrewProfile(), teamName: "개발", partName: "백엔드", roleLabel: "일반", isAdmin: false, adminGeneration: null },
+      { profileImage: randomCrewProfile(), teamName: "개발", partName: "백엔드", roleLabel: "정규", isAdmin: false, adminGeneration: null },
       { profileImage: randomCrewProfile(), teamName: "디자인", partName: "UI", roleLabel: "파트장", isAdmin: false, adminGeneration: null },
-      { profileImage: randomCrewProfile(), teamName: "기획", partName: "전략", roleLabel: "일반", isAdmin: false, adminGeneration: null },
-      { profileImage: randomCrewProfile(), teamName: "미디어", partName: "웹툰드라마", roleLabel: "일반", isAdmin: false, adminGeneration: null },
+      { profileImage: randomCrewProfile(), teamName: "기획", partName: "전략", roleLabel: "정규", isAdmin: false, adminGeneration: null },
+      { profileImage: randomCrewProfile(), teamName: "미디어", partName: "웹툰드라마", roleLabel: "정규", isAdmin: false, adminGeneration: null },
     ],
     // 시즌 평판: 5개 (많음)
     seasonReputations: [
@@ -397,7 +397,7 @@ export const DUMMY_SEASON_HISTORIES = [
     approvedWeeks: 0,
     totalWeeks: 5,
     isQualified: false,
-    roleInSeason: "일반",
+    roleInSeason: "정규",
     stats: { dangam: 0, injeolmi: 0, eoheung: 0 },
     rating: 0,
     review: "",
@@ -421,7 +421,7 @@ export const DUMMY_SEASON_HISTORIES = [
     approvedWeeks: 2,
     totalWeeks: 16,
     isQualified: false,
-    roleInSeason: "일반",
+    roleInSeason: "정규",
     stats: { dangam: 5, injeolmi: 12, eoheung: 0 }, // 1자리/2자리/1자리
     rating: 2,
     review: "아쉬운점도있었지만좋은경험이었다",
@@ -430,8 +430,8 @@ export const DUMMY_SEASON_HISTORIES = [
     progress: { info: { total: 20, completed: 2, rate: 10 }, competency: { total: 3, completed: 0, rate: 0 }, experience: { total: 5, completed: 1, rate: 20 }, career: { total: 10, completed: 0, rate: 0 } },
     // 시즌 상태: 2개
     seasonRoles: [
-      { profileImage: randomCrewProfile(), teamName: "마케팅", partName: "콘텐츠", roleLabel: "일반", isAdmin: false, adminGeneration: null },
-      { profileImage: randomCrewProfile(), teamName: "운영", partName: "총무", roleLabel: "일반", isAdmin: false, adminGeneration: null },
+      { profileImage: randomCrewProfile(), teamName: "마케팅", partName: "콘텐츠", roleLabel: "정규", isAdmin: false, adminGeneration: null },
+      { profileImage: randomCrewProfile(), teamName: "운영", partName: "총무", roleLabel: "정규", isAdmin: false, adminGeneration: null },
     ],
     // 시즌 평판: 2개
     seasonReputations: [

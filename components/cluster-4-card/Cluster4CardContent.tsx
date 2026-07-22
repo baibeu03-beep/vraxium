@@ -22,6 +22,8 @@ import { isTransitionWeek, isTransitionWeekDto, isOfficialRestWeek, weekNumberLa
 import { isFadedCardStatus } from "@/lib/cluster4-faded-card";
 // 클래스(직책) 표시 — 주차 당시 position_code → 라벨 단일 변환기(admin 미러 공통 모듈).
 import { positionCodeToClassLabel } from "@/shared/crewClassPosition";
+import { formatCrewClassDisplayLabel, toCrewClassDisplayLabel, CREW_CLASS_REGULAR, CREW_CLASS_AMBASSADOR } from "@/lib/crewClassDisplayLabel";
+import { normalizePointACriterion } from "@/lib/pointACriterionLabel";
 import { clampAdminOutputs, ADMIN_OUTPUT_IMAGE_MAX, ADMIN_OUTPUT_LINK_MAX } from "@/lib/cluster4-admin-output-clamp";
 import { RESERVED_ADMIN_IMAGE_SLOTS } from "@/lib/cluster4OutputImages";
 import { REPUTATION_KEYWORD_GROUPS } from "@/lib/reputation-keywords";
@@ -231,36 +233,12 @@ const resolvePersonalInfo = (sources: PersonalInfoSourceBag): ResolvedPersonalIn
 // 멤버십/역할/상태 라벨 공통 표시 헬퍼 — DB 원본값(membership_level / role 코드 등)을
 // 화면 친화적 한글 라벨로 변환한다. cluster-4-card 의 "모든" 모달 인적사항 카드의
 // badge(tag-role)·역할 표시는 이 단일 헬퍼만 사용한다.
-//   ⚠ DB 원본은 변경하지 않으며(표시 시점에만 변환), 다음 fallback 규칙을 따른다:
-//   - 값 없음(null/undefined/공백/"-"/"—")  → "-"
-//   - 알 수 없는 신규 값                      → 원본값 그대로 표시
-//   - 이미 한글 라벨(일반/심화/운영진 …)        → 매핑 미스 → 원본 유지 (멱등)
-const MEMBERSHIP_ROLE_LABEL_MAP: Record<string, string> = {
-  // membership_level 단축값 (Cluster4PersonProfileDto.membershipLevel 등)
-  active: "일반",
-  advanced: "심화",
-  agent: "심화(에이전트)",
-  part_leader: "심화(파트장)",
-  team_leader: "운영진(팀장)",
-  ambassador: "운영진(앰배서더)",
-  // role 코드 (user_role_history.role / profile.role 등) — 기존 roleLabels 통합 단일화
-  crew: "일반",
-  crew_regular: "일반",
-  crew_partleader: "심화(파트장)",
-  operations_partleader: "심화(파트장)",
-  crew_agent: "심화(에이전트)",
-  operations_ambassador: "운영진(앰배서더)",
-  operations_teamleader: "운영진(팀장)",
-  operations_clubleader: "운영진(클럽장)",
-};
-
-const formatMembershipRoleLabel = (value: string | null | undefined): string => {
-  if (value === null || value === undefined) return "-";
-  const v = String(value).trim();
-  if (v === "" || v === "-" || v === "—") return "-";
-  // 정확 매칭 우선 → 소문자 정규화 매칭 → 그래도 없으면 원본 그대로(신규 값 보호).
-  return MEMBERSHIP_ROLE_LABEL_MAP[v] ?? MEMBERSHIP_ROLE_LABEL_MAP[v.toLowerCase()] ?? v;
-};
+//   ⚠ DB 원본은 변경하지 않으며(표시 시점에만 변환) 한다.
+//   ⚠ 표시 어휘 SoT = lib/crewClassDisplayLabel — 화면에는 정규 / 심화(에이전트) /
+//     심화(파트장) / 운영진(…) 만 나간다("일반"·홑겹 "심화" 는 내부 어휘라 노출 금지).
+//     종전의 로컬 MEMBERSHIP_ROLE_LABEL_MAP 은 "일반"/"심화" 를 그대로 뱉어 폐기했다.
+const formatMembershipRoleLabel = (value: string | null | undefined): string =>
+  formatCrewClassDisplayLabel(value, "-");
 
 const WORKINFO_IMAGE_SLOT_COUNT = 4;
 
@@ -6467,11 +6445,14 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 역할 배지: 주차 카드 목록(membership)과 동일 규칙 = roleLabel || membershipStatusLabel || "-".
   //   기존(roleLabel 만, ?? 로 폴백)은 roleLabel 이 빈 문자열("")이면 membershipStatusLabel 로 못 넘어가
   //   카드 목록과 어긋났다. 카드 목록처럼 truthy 검사 + membershipStatusLabel 폴백을 둔다.
+  //   ⚠ 표시 어휘는 반드시 lib/crewClassDisplayLabel 를 경유한다 — 어드민 weekly-cards 스냅샷은
+  //     과거에 baking 된 "일반"(내부 어휘)을 그대로 들고 있을 수 있어(2026-07-22 실측: 같은 유저의
+  //     주차별 roleLabel 이 "정규"/"일반" 혼재) 소비 측이 마지막 게이트가 되어야 한다.
   const headerRoleLabel = weeklyCardMeta
-    ? ((weeklyCardMeta.roleLabel && weeklyCardMeta.roleLabel.trim()) ||
-       (weeklyCardMeta.membershipStatusLabel && weeklyCardMeta.membershipStatusLabel.trim()) ||
+    ? (toCrewClassDisplayLabel(weeklyCardMeta.roleLabel) ??
+       toCrewClassDisplayLabel(weeklyCardMeta.membershipStatusLabel) ??
        "-")
-    : (roleLabel ?? "-");
+    : formatCrewClassDisplayLabel(roleLabel, "-");
 
   // 팀/파트
   const headerTeamName = weeklyCardMeta?.teamName ?? teamName;
@@ -6491,7 +6472,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         department: "경영",
         team: "마케팅",
         part: "바이럴",
-        membershipLevel: "심화",
+        membershipLevel: "심화(에이전트)",
         profileImageUrl: null,
         tagline: "엔비디아 구글 테슬라",
       };
@@ -6527,26 +6508,27 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   // 페이지 주인 역할 배지(tag-role) 단일 출처.
   //   우선순위: 명시 role(roleLabel: user_role_history/profile.role) → 멤버십 등급
-  //   (ownerPersonalInfo.membershipLevel = user_memberships.membership_level) → 최종 "일반".
+  //   (ownerPersonalInfo.membershipLevel = user_memberships.membership_level) → 최종 "정규".
   //   이관 실사용자는 role 이 NULL 이라 roleLabel 이 비어 "—" 로 떨어지던 문제를, 등급(전원 보유)으로
   //   폴백해 메운다. badge 등급 SoT = membership_level 정책(연계동료/평판 카드와 동일)과 일치.
   //   빈 문자열·"-"·"—" 는 무효로 보고 다음 후보로 넘어간다(placeholder 노출 방지).
   const ownerRoleBadge = useMemo(() => {
-    if (isDemoMode) return "앰배서더";
+    if (isDemoMode) return CREW_CLASS_AMBASSADOR;
     // 카드(시즌) 기준 단계 우선 — weeklyCardMeta.roleLabel 은 백엔드 snapshot SoT
     //   (user_position_histories, 이력서 resume-activities 와 동일 SoT). 그 카드 시즌 "당시 단계"를
     //   담으므로 현재 role/membership(roleLabel·membershipLevel)보다 우선해야 과거 주차 카드가
     //   현재 단계로 덮이지 않는다. 헤더 배지(headerRoleLabel)와 동일 source.
+    // 각 후보는 표시 어휘(lib/crewClassDisplayLabel)로 정규화한 뒤 첫 유효값을 고른다.
     const candidates = [
       weeklyCardMeta?.roleLabel,
       roleLabel,
-      formatMembershipRoleLabel(ownerPersonalInfo.membershipLevel),
+      ownerPersonalInfo.membershipLevel,
     ];
     for (const c of candidates) {
-      const s = (c ?? "").trim();
-      if (s && s !== "-" && s !== "—") return s;
+      const s = toCrewClassDisplayLabel(c);
+      if (s) return s;
     }
-    return "일반";
+    return CREW_CLASS_REGULAR;
   }, [isDemoMode, weeklyCardMeta, roleLabel, ownerPersonalInfo.membershipLevel]);
 
   // 팀/파트 특수 표기(운영진·온보딩·팀장(managedTeam)) 분기 입력값: 어드민 DTO 우선, null/undefined 면 로컬 상태 fallback.
@@ -6722,13 +6704,20 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   //     ⚠ DTO v45+ 부터 실패 카드(슬롯 fail)에도 checkGate 가 채워진다 — 실패 카드도 기준값을 노출한다.
   //   · 이름 미도착 → "-님" 노출 방지.
   // 위 경우는 기존 문구로 폴백한다. (검증: earned===points.star, required===recognition_count_n.)
-  const detailLogGateCrewName = ownerInfoReady ? mask.crewName(ownerPersonalInfo.name) : null;
   const detailLogShowGate =
     !!detailLogCheckGate &&
     detailLogCheckGate.enforced &&
-    detailLogCheckGate.required > 0 &&
-    !!detailLogGateCrewName &&
-    detailLogGateCrewName !== "-";
+    detailLogCheckGate.required > 0;
+  // 팝업 상단에 노출할 "주차 성장 성공 A 기준 개수" — **주차×조직 단위 단일 값**.
+  //   SoT = weekly-cards 프록시가 주입한 card.pointACriterion
+  //        (= cluster4_week_opening_configs.recognition_count_n, 위클리 리그 두 화면과 같은 컬럼).
+  //   ⚠ checkGate.required 를 쓰지 않는다 — 그건 사용자별 스냅샷이라 같은 주차인데도 스냅샷
+  //     재계산 시점에 따라 유저마다 값이 갈린다(2026-07-22 실측: encre 여름 W1 = 81/45 공존).
+  //     판정(detailLogPoaMet)은 종전대로 checkGate 로 하고, **표시 숫자만** 이 필드에서 온다.
+  //   미확정(설정 없음/org 미상/조회 실패) → null → 팝업이 "0개"가 아니라 "-" 로 표시.
+  const detailLogPointACriterion = normalizePointACriterion(
+    (weeklyCardMeta as { pointACriterion?: number | null } | null)?.pointACriterion,
+  );
   // ① 투구(Point.A) 달성 여부. checkGate 가 있으면 그 게이트 passed(=투구 획득>=기준)로 판정한다 —
   //   주차가 실무경험 슬롯 미달로 실패했어도 투구 자체는 달성했을 수 있으므로, 조건 ①(투구)과 주차
   //   성공을 분리한다(그 경우 ①=✓ 투구 달성, ②=✗ 실무경험). checkGate 부재(레거시/미강제/현재주 등)면
@@ -6739,13 +6728,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const detailLogConditions: DetailLogCondition[] = [
     {
       checked: detailLogPoaMet,
-      text: detailLogShowGate
-        ? `이번 주 성장 성공의 ${detailLogPoaName} 기준은 ${detailLogCheckGate!.required}개였으며, ${detailLogGateCrewName}님은 ${detailLogPoaName} ${detailLogCheckGate!.earned}개를 획득하셨어요. ${
-            detailLogPoaMet ? "이번 주 성장에 성공하셨습니다!" : "성장 성공 기준에는 조금 더 필요해요!"
-          }`
-        : detailLogPoaMet
-          ? `이번 주 ${detailLogPoaName} ${headerDangam}개를 획득해 성장 성공 기준을 달성하셨어요!`
-          : `이번 주 ${detailLogPoaName} ${headerDangam}개를 획득하셨어요. 성장 성공 기준에는 조금 더 필요해요!`,
+      // 기준 개수(N)는 **팝업 상단 [주차 성장 성공 A 기준]** 에서만 노출한다 —
+      //   여기서 다시 "…기준은 N개였으며" 로 반복하지 않는다(2026-07-22 중복 제거).
+      //   획득 수·성공 여부 안내는 그대로 유지하며, 판정(detailLogPoaMet)은 종전 게이트 로직 불변.
+      text: detailLogPoaMet
+        ? `이번 주 ${detailLogPoaName} ${headerDangam}개를 획득해 성장 성공 기준을 달성하셨어요!`
+        : `이번 주 ${detailLogPoaName} ${headerDangam}개를 획득하셨어요. 성장 성공 기준에는 조금 더 필요해요!`,
     },
     {
       checked: detailLogExpAllEnhanced,
@@ -6848,6 +6836,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       headerStartDate && headerEndDate
         ? `${formatDetailLogDate(headerStartDate)} ~ ${formatDetailLogDate(headerEndDate)}`
         : "-",
+    // 주차 성장 성공 Point.A 기준 개수 — 판정 게이트(checkGate.required) 원값. 미확정이면 null("-").
+    pointACriterion: detailLogPointACriterion,
     crew: {
       // 비로그인 열람 시 이름 마스킹 — 크루 이름 공통 규칙(useDataMasking.mask.crewName = 마지막 글자만).
       //   로그인/데모(localStorage) 시 원문, 비로그인만 마스킹. ownerPersonalInfo.name 은 raw 라 1회 적용(멱등이라 이중 마스킹 무해).
@@ -6857,13 +6847,13 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       // 클래스(직책) = 그 카드 "주차 당시" position_code(신규 SoT: weeklyCardMeta.crewClassPositionCode)를
       //   공통 변환기로 라벨화(운영진(팀장)/심화(파트장)/… ). 이 필드가 없는 기존 스냅샷(=null)에서만
       //   과도기로 기존 roleLabel(멤버십 등급) 기반 표기로 폴백한다.
-      //   ⚠ roleLabel(등급)을 클래스로 쓰지 않는다 — 팀장이 "일반"으로 표시되던 회귀 방지.
+      //   ⚠ roleLabel(등급)을 클래스로 쓰지 않는다 — 팀장이 "정규"로 표시되던 회귀 방지.
+      //   ⚠ 폴백도 표시 어휘 SoT 를 경유한다. 종전엔 "등급(역할)" 을 문자열 연결해
+      //     "일반(정규)" 같은 금지 어휘 혼합 문구가 나왔다.
       level:
         positionCodeToClassLabel(weeklyCardMeta?.crewClassPositionCode ?? null) ??
-        ((ownerPersonalInfo.membershipLevel || "") +
-          (headerRoleLabel && headerRoleLabel !== "-" && headerRoleLabel !== ownerPersonalInfo.membershipLevel
-            ? `(${headerRoleLabel})`
-            : "")),
+        toCrewClassDisplayLabel(ownerPersonalInfo.membershipLevel) ??
+        formatCrewClassDisplayLabel(headerRoleLabel, "-"),
     },
     statusText: headerStatusText || "-",
     statusClass: detailLogStatusClass,
@@ -8837,32 +8827,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   //  본 주차 role 이 null/일반이면 이력서는 "심화"인데 관리 슬롯은 잠겨 불일치가 났다.)
   //  - "심화" / "운영진" → 관리 슬롯 open
   //  - "일반" / 미확정(membership_level 없음) → 관리 슬롯 locked (보수적)
-  const EXP_MEMBERSHIP_ROLE_KOREAN: Record<string, string> = {
-    crew: "정규",
-    crew_regular: "정규",
-    crew_normal: "정규",
-    crew_advanced: "심화(파트장)",
-    crew_partleader: "심화(파트장)",
-    crew_advanced_part_leader: "심화(파트장)",
-    part_leader: "심화(파트장)",
-    crew_agent: "심화(에이전트)",
-    crew_advanced_agent: "심화(에이전트)",
-    admin: "운영진(앰베서더)",
-    admin_team_leader: "운영진(팀장)",
-    crew_team_leader: "운영진(팀장)",
-    admin_ambassador: "운영진(앰배서더)",
-    crew_ambassador: "운영진(앰배서더)",
-    operations_ambassador: "운영진(앰배서더)",
-  };
+  //   ⚠ 매핑 SoT = lib/crewClassDisplayLabel(표시 어휘와 동일 테이블). 종전의 로컬 사본은
+  //     "일반"/"심화" 흡수 규칙이 달라 판정이 갈릴 수 있었다 — 단일화한다(판정 결과 동일).
   // 관리(5) 슬롯 단계 판정 = 그 카드 "주차 당시 단계". SoT = weeklyCardMeta.roleLabel(백엔드 snapshot,
   //   user_position_histories 주차단위 — 이력서 resume-activities 와 동일). 과거 주차 카드가 최신 profile
   //   membershipLevel 로 덮이면 안 되므로 주차 핀 값을 최우선으로 쓴다. 카드 메타 미수신(레거시/오류) 시에만
   //   로컬 membershipLevel state(현재값) 폴백 — 무회귀.
   const weekStageLabel = (weeklyCardMeta?.roleLabel && weeklyCardMeta.roleLabel.trim()) || "";
   const expMembershipRaw = weekStageLabel || (membershipLevel ?? "");
-  const expStageFull = EXP_MEMBERSHIP_ROLE_KOREAN[expMembershipRaw] || expMembershipRaw || "";
-  const expStagePrefix = expStageFull.split("(")[0] || ""; // "일반" | "심화" | "운영진" | ""
-  const isExpAdvancedStage = expStagePrefix === "심화" || expStagePrefix === "운영진";
+  const expStageFull = toCrewClassDisplayLabel(expMembershipRaw) ?? "";
+  const expStagePrefix = expStageFull.split("(")[0] || ""; // "정규" | "심화" | "운영진" | ""
+  const isExpAdvancedStage = expStagePrefix === "심화" || expStagePrefix === "운영진"; // class-label-allow (표시 아님 — 라벨 접두 비교)
   // 관리 아이콘(에이전트/파트장) 분기 — 매핑된 라벨에 "에이전트"가 포함되면 에이전트 대상.
   const isExpAgentRole = expStageFull.includes("에이전트");
   const managementSlotLocked = !isExpAdvancedStage;
@@ -9957,7 +9932,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                           flexShrink: 0,
                                         }}
                                       >
-                                        {(user.role || "일반").length > 7 ? (user.role || "일반").slice(0, 7) + ".." : user.role || "일반"}
+                                        {(() => { const v = formatCrewClassDisplayLabel(user.role, CREW_CLASS_REGULAR); return v.length > 7 ? v.slice(0, 7) + ".." : v; })()}
                                       </span>
                                     </span>
                                     <span style={{ width: "3px", flexShrink: 0 }}></span>
@@ -10094,7 +10069,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                                   marginRight: "8px",
                                 }}
                               >
-                                {(user.role || "일반").length > 10 ? (user.role || "일반").slice(0, 10) + ".." : user.role || "일반"}
+                                {(() => { const v = formatCrewClassDisplayLabel(user.role, CREW_CLASS_REGULAR); return v.length > 10 ? v.slice(0, 10) + ".." : v; })()}
                               </span>
                             )}
                             <span className="date">{isEmpty ? "0000 - 00 - 00 (일)" : user.date}</span>
@@ -12284,7 +12259,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   </div>
 
                   <div className="personal-tags">
-                    <span className="tag-badge tag-role">{selectedReputationCard.role || "일반"}</span>
+                    <span className="tag-badge tag-role">{formatCrewClassDisplayLabel(selectedReputationCard.role, CREW_CLASS_REGULAR)}</span>
                     <span className="tag-badge tag-keyword">{selectedReputationCard.nickname || selectedReputationCard.keyword || "키워드"}</span>
                   </div>
                 </div>
@@ -12449,7 +12424,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     </div>
                   </div>
                   <div className="personal-tags">
-                    <span className="tag-badge tag-role">{selectedColleagueCard.role || "일반"}</span>
+                    <span className="tag-badge tag-role">{formatCrewClassDisplayLabel(selectedColleagueCard.role, CREW_CLASS_REGULAR)}</span>
                     <span className="tag-badge tag-keyword">{selectedColleagueCard.nickname || selectedColleagueCard.keyword || "—"}</span>
                   </div>
                 </div>
@@ -12544,7 +12519,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           <span className="personal-age">{ownerInfoReady ? <>{ownerPersonalInfo.age != null ? mask.age(ownerPersonalInfo.age) : "—"} 세</> : <Skeleton width={30} height={15} />}</span>
                           <div className="personal-tags">
                             {/* TODO: [백엔드 작업 필요] role 필드 (운영진/앰배서더/일반 등) — profile API에 추가 필요 */}
-                            <span className="tag-badge tag-role">{compactPersonalTag(ownerRoleBadge, "일반")}</span>
+                            <span className="tag-badge tag-role">{compactPersonalTag(ownerRoleBadge, CREW_CLASS_REGULAR)}</span>
                             <span className="tag-badge tag-keyword">{compactPersonalTag(ownerPersonalInfo.tagline ?? "-", "-")}</span>
                           </div>
                         </div>
@@ -13098,7 +13073,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           <span className="personal-separator">|</span>
                           <span className="personal-age">{ownerInfoReady ? <>{ownerPersonalInfo.age != null ? mask.age(ownerPersonalInfo.age) : "—"} 세</> : <Skeleton width={30} height={15} />}</span>
                           <div className="personal-tags">
-                            <span className="tag-badge tag-role">{compactPersonalTag(ownerRoleBadge, "일반")}</span>
+                            <span className="tag-badge tag-role">{compactPersonalTag(ownerRoleBadge, CREW_CLASS_REGULAR)}</span>
                             <span className="tag-badge tag-keyword">{compactPersonalTag(ownerPersonalInfo.tagline ?? "-", "-")}</span>
                           </div>
                         </div>
@@ -13615,7 +13590,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           <span className="personal-separator">|</span>
                           <span className="personal-age">{ownerInfoReady ? <>{ownerPersonalInfo.age != null ? mask.age(ownerPersonalInfo.age) : "—"} 세</> : <Skeleton width={30} height={15} />}</span>
                           <div className="personal-tags">
-                            <span className="tag-badge tag-role">{compactPersonalTag(ownerRoleBadge, "일반")}</span>
+                            <span className="tag-badge tag-role">{compactPersonalTag(ownerRoleBadge, CREW_CLASS_REGULAR)}</span>
                             <span className="tag-badge tag-keyword">{compactPersonalTag(ownerPersonalInfo.tagline ?? "-", "-")}</span>
                           </div>
                         </div>
@@ -14090,7 +14065,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                           <span className="personal-separator">|</span>
                           <span className="personal-age">{ownerInfoReady ? <>{ownerPersonalInfo.age != null ? mask.age(ownerPersonalInfo.age) : "—"} 세</> : <Skeleton width={30} height={15} />}</span>
                           <div className="personal-tags">
-                            <span className="tag-badge tag-role">{compactPersonalTag(ownerRoleBadge, "일반")}</span>
+                            <span className="tag-badge tag-role">{compactPersonalTag(ownerRoleBadge, CREW_CLASS_REGULAR)}</span>
                             <span className="tag-badge tag-keyword">{compactPersonalTag(ownerPersonalInfo.tagline ?? "-", "-")}</span>
                           </div>
                         </div>

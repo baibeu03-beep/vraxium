@@ -44,7 +44,7 @@ export function seasonKeyToHalfKey(seasonKey: string | null | undefined): string
 export function isAdvancedLevel(level: string | null | undefined): boolean {
   if (!level) return false;
   const v = level.trim();
-  return v.startsWith("심화") || v.includes("에이전트");
+  return v.startsWith("심화") || v.includes("에이전트"); // class-label-allow (DB 원본값 판정 입력)
 }
 
 type HalfTeamRow = {

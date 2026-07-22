@@ -3,6 +3,7 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { resolvePointC, resolveFinalPointB } from "@/lib/cluster4-points";
+import { formatCrewClassDisplayLabel } from "@/lib/crewClassDisplayLabel";
 
 const Sidebar = () => {
   const { data: session } = useSession();
@@ -65,21 +66,7 @@ const Sidebar = () => {
     'winter': '겨울'
   };
 
-  // 역할 한글 변환
-  const roleKorean: { [key: string]: string } = {
-    'crew': '정규',
-    'crew_regular': '정규',
-    'crew_advanced': '심화(파트장)',
-
-
-    'part_leader': '심화(파트장)',
-    'crew_agent': '심화(에이전트)',
-    'crew_ambassador': '운영진(앰배서더)',
-    'crew_team_leader': '운영진(팀장)',
-
-
-
-  };
+  // 역할 한글 변환 — 표시 어휘 SoT = lib/crewClassDisplayLabel (로컬 사본 금지).
 
   // 진행 상태 변환
   // status 는 두 소스에서 올 수 있다: 고객 로컬(영문 key: in_progress/completed…)과
@@ -525,7 +512,7 @@ const Sidebar = () => {
               const reviewStatus = getReviewStatus(history.review_status);
               const yearShort = String(history.seasons.year).slice(-2);
               const seasonKorean = seasonNameKorean[history.seasons.name] || history.seasons.name;
-              const roleText = roleKorean[history.role_in_season] || history.role_in_season;
+              const roleText = formatCrewClassDisplayLabel(history.role_in_season, history.role_in_season);
 
               return (
                 <div className="activity-row" key={history.id}>

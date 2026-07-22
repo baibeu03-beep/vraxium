@@ -52,7 +52,7 @@ export const DUMMY_WEEK_EXTRA: Record<string, Cluster4WeekExtra> = {
     // 휴식(개인) — 모두 0
     points: { star: 400, shield: 10, lightning: 1 },
     teamPart: { teamName: "엔터테인먼트", partName: "팬마케팅" },
-    roleLabel: "일반",
+    roleLabel: "정규",
     growthRate: { rate: 0, count: 0, total: 1 },
     infoRate: { rate: 0, count: 0, total: 0 },
     competencyRate: { rate: 0, count: 0, total: 1 },
@@ -276,7 +276,7 @@ export const DUMMY_WEEK_EXTRA: Record<string, Cluster4WeekExtra> = {
     // 실패
     points: { star: 8, shield: 20, lightning: 5 },
     teamPart: { teamName: "디자인", partName: "UI" },
-    roleLabel: "일반",
+    roleLabel: "정규",
     growthRate: { rate: 15, count: 1, total: 11 },
     infoRate: { rate: 20, count: 1, total: 5 },
     competencyRate: { rate: 0, count: 0, total: 1 },
@@ -318,7 +318,7 @@ export const DUMMY_WEEK_EXTRA: Record<string, Cluster4WeekExtra> = {
     // 성공
     points: { star: 120, shield: 140, lightning: 60 },
     teamPart: { teamName: "사업", partName: "제휴" },
-    roleLabel: "심화",
+    roleLabel: "심화(에이전트)",
     growthRate: { rate: 70, count: 14, total: 23 },
     infoRate: { rate: 65, count: 6, total: 10 },
     competencyRate: { rate: 50, count: 1, total: 2 },
@@ -332,7 +332,7 @@ export const DUMMY_WEEK_EXTRA: Record<string, Cluster4WeekExtra> = {
   "dw-21": {
     points: { star: 180, shield: 90, lightning: 35 },
     teamPart: { teamName: "엔터테인먼트", partName: "팬마케팅" },
-    roleLabel: "일반",
+    roleLabel: "정규",
     growthRate: { rate: 65, count: 11, total: 17 },
     infoRate: { rate: 80, count: 8, total: 10 },
     competencyRate: { rate: 0, count: 0, total: 1 },
@@ -414,7 +414,7 @@ export const DUMMY_WEEK_EXTRA: Record<string, Cluster4WeekExtra> = {
     // 실패
     points: { star: 45, shield: 30, lightning: 10 },
     teamPart: { teamName: "디자인", partName: "UI" },
-    roleLabel: "일반",
+    roleLabel: "정규",
     growthRate: { rate: 20, count: 3, total: 15 },
     infoRate: { rate: 30, count: 3, total: 10 },
     competencyRate: { rate: 0, count: 0, total: 1 },
@@ -455,7 +455,7 @@ export const DUMMY_WEEK_EXTRA: Record<string, Cluster4WeekExtra> = {
     // 진행 중
     points: { star: 80, shield: 50, lightning: 20 },
     teamPart: { teamName: "엔터테인먼트", partName: "팬마케팅" },
-    roleLabel: "일반",
+    roleLabel: "정규",
     growthRate: { rate: 0, count: 0, total: 18 },
     infoRate: { rate: 0, count: 0, total: 10 },
     competencyRate: { rate: 0, count: 0, total: 1 },

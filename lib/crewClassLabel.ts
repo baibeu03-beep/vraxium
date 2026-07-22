@@ -20,7 +20,7 @@ export const RESUME_ROLE_CLASS_LABELS: Record<string, string> = {
   crew_agent: "심화(에이전트)",
   crew_advanced_agent: "심화(에이전트)",
   agent: "심화(에이전트)",
-  admin: "운영진(앰베서더)",
+  admin: "운영진(앰배서더)",
   admin_team_leader: "운영진(팀장)",
   crew_team_leader: "운영진(팀장)",
   operations_teamleader: "운영진(팀장)",
