@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { seasonLabel, type GrowthStatusKey } from "@/lib/cluster4-types";
+import { isRegularActivityWeek, weekNumberLabel } from "@/lib/cluster4-transition-week";
 import { pickPrimaryMembership, type MembershipRow } from "@/lib/membership";
 import { resolveMembershipRoleLabel } from "@/lib/cluster4-role-label";
 import { readScopeMode } from "@/lib/userScopeShared";
@@ -78,9 +79,14 @@ export async function GET(request: NextRequest) {
         holidayName: week.holiday_name,
         label: isBreak
           ? `${sd?.year}년, ${displayName} 시즌, 전환 주차`
-          : `${sd?.year}년, ${displayName} 시즌, ${week.week_number}주차`
+          : `${sd?.year}년, ${displayName} 시즌, ${weekNumberLabel(sType, week.week_number)}`
       };
-    });
+    })
+    // 주차 선택 목록 / 주차별 결과 조회 대상 = **정규 활동 주차만**.
+    //   전환 주차(DB raw 0주차 = 다음 시즌 소속 / admin 표현 17·9주차)는 대전 결과가 없는
+    //   시즌 사이 주차라 드롭다운 옵션·기본 선택·주차별 랭킹 대상에서 제외한다.
+    //   ⚠️ 집계용 원본 배열(allWeeks)은 건드리지 않는다 — 누적/시즌 계산은 종전과 동일하다.
+    .filter((w) => isRegularActivityWeek(w.seasonName, w.weekNumber));
 
     // default=true인 경우, 기본 주차를 자동 선택 = 현재 진행 주차의 직전 주차(n-1).
     // filteredWeeks 는 .lt('end_date', today) + start_date desc 정렬이므로 [0] 이 가장 최근에 종료된 주차.

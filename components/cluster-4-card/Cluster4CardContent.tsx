@@ -18,7 +18,7 @@ import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
 import { DUMMY_WEEKLY_LIST, DUMMY_WEEK_EXTRA, DUMMY_WEEK_CARD } from "@/constants/dummyData";
 import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getGraduationWeeksFromPathname, getRouteOrg, getCurrentOrganizationFromPathname, getOrganizationConfig } from "@/lib/cluster-route";
 import { formatSeasonLabel, formatSeasonWeekTitle, resolveSeasonWeekText } from "@/lib/cluster4-types";
-import { isTransitionWeek, isOfficialRestWeek, TRANSITION_WEEK_LABEL } from "@/lib/cluster4-transition-week";
+import { isTransitionWeek, isTransitionWeekDto, isOfficialRestWeek, weekNumberLabel, TRANSITION_WEEK_LABEL } from "@/lib/cluster4-transition-week";
 import { isFadedCardStatus } from "@/lib/cluster4-faded-card";
 // 클래스(직책) 표시 — 주차 당시 position_code → 라벨 단일 변환기(admin 미러 공통 모듈).
 import { positionCodeToClassLabel } from "@/shared/crewClassPosition";
@@ -6307,10 +6307,11 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     const m = label.match(/(봄|여름|가을|겨울)/);
     return m ? m[1] : null;
   })();
-  // 전환 주차(봄·가을 17주차 / 여름·겨울 9주차)는 어드민 DTO 가 '휴식(공식)'으로 와도 휴식으로 보지 않는다.
+  // 전환 주차는 어드민 DTO 가 '휴식(공식)'으로 와도 휴식으로 보지 않는다.
+  //   판정 SoT = isTransitionWeekDto (DTO isTransition 플래그 우선 + DB raw 0주차 / admin 17·9주차).
   const metaIsTransitionRest = !!weeklyCardMeta
     && cardBadgeClassFromLabel(weeklyCardMeta.statusLabel ?? "", cardStatusToneClass(weeklyCardMeta.statusTone)) === "rest-official"
-    && isTransitionWeek(metaSeasonRaw, typeof weeklyCardMeta.weekNumber === "number" ? weeklyCardMeta.weekNumber : null);
+    && isTransitionWeekDto(weeklyCardMeta as unknown as Record<string, unknown>, metaSeasonRaw, typeof weeklyCardMeta.weekNumber === "number" ? weeklyCardMeta.weekNumber : null);
 
   // ── 휴식 모드 체크 — 휴식(공식) SoT = 로컬 weeks.is_official_rest 최우선 (정책 개정 2026-06-03) ──
   // weekData.isOfficialRest = isOfficialRestWeek(...) 결과(전환 주차 제외 + weeks.is_official_rest 반영).
@@ -6404,12 +6405,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     let season = "";
     if (typeof card.seasonName === "string" && (card.seasonName as string).trim()) season = card.seasonName as string;
     else { const m = label.match(/(봄|여름|가을|겨울)/); if (m) season = m[1]; }
-    // 전환 주차 판정: DTO 플래그/라벨 + 시즌별 전환 주차 번호(봄·가을 17주차/여름·겨울 9주차).
+    // 전환 주차 판정: DTO 플래그(isTransition/isBreakSeason/isRestSeason)/라벨 + 공용 번호 SoT.
     const isBreak =
       card.isBreakSeason === true ||
       card.isRestSeason === true ||
       /전환|break/i.test(label) ||
-      isTransitionWeek(season, typeof weeklyCardMeta.weekNumber === "number" ? weeklyCardMeta.weekNumber : null);
+      isTransitionWeekDto(card, season, typeof weeklyCardMeta.weekNumber === "number" ? weeklyCardMeta.weekNumber : null);
     // 시즌 내 주차만 표시 — 카드 목록(Cluster41Content.parseWeekTitle)과 동일한 공용
     // resolveSeasonWeekText 사용: seasonWeek/weekInSeason 우선, 시즌 범위(봄/가을 1~16,
     // 여름/겨울 1~8) 밖 누적 주차 값은 다음 출처로 폴백.
@@ -12608,7 +12609,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     {/* 1열: 시즌/주차/날짜 + 카테고리/강화상태 */}
                     <div className="workinfo-mid-col1">
                       <div className="workinfo-date-badge">
-                        <span className="date-badge-text">{weekData ? `${weekData.seasonYear}년 ${weekData.seasonName} 시즌, ${weekData.weekNumber}주차` : "시즌 정보 로딩 중..."}</span>
+                        <span className="date-badge-text">{weekData ? `${weekData.seasonYear}년 ${weekData.seasonName} 시즌, ${weekNumberLabel(weekData.seasonType ?? weekData.seasonName, weekData.weekNumber)}` : "시즌 정보 로딩 중..."}</span>
                         <span className="date-range-text">{weekDateRange}</span>
                       </div>
                       <div className="workinfo-line-info">
@@ -13174,7 +13175,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   <div className="workinfo-mid-section">
                     <div className="workinfo-mid-col1">
                       <div className="workinfo-date-badge">
-                        <span className="date-badge-text">{weekData ? `${weekData.seasonYear}년 ${weekData.seasonName} 시즌, ${weekData.weekNumber}주차` : "시즌 정보 로딩 중..."}</span>
+                        <span className="date-badge-text">{weekData ? `${weekData.seasonYear}년 ${weekData.seasonName} 시즌, ${weekNumberLabel(weekData.seasonType ?? weekData.seasonName, weekData.weekNumber)}` : "시즌 정보 로딩 중..."}</span>
                         <span className="date-range-text">{weekDateRange}</span>
                       </div>
                       <div className="workinfo-line-info">
@@ -13681,7 +13682,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   <div className="workinfo-mid-section">
                     <div className="workinfo-mid-col1">
                       <div className="workinfo-date-badge">
-                        <span className="date-badge-text">{weekData ? `${weekData.seasonYear}년 ${weekData.seasonName} 시즌, ${weekData.weekNumber}주차` : "시즌 정보 로딩 중..."}</span>
+                        <span className="date-badge-text">{weekData ? `${weekData.seasonYear}년 ${weekData.seasonName} 시즌, ${weekNumberLabel(weekData.seasonType ?? weekData.seasonName, weekData.weekNumber)}` : "시즌 정보 로딩 중..."}</span>
                         <span className="date-range-text">{weekDateRange}</span>
                       </div>
                       <div className="workinfo-line-info">
@@ -14158,7 +14159,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                   <div className="workinfo-mid-section">
                     <div className="workinfo-mid-col1">
                       <div className="workinfo-date-badge">
-                        <span className="date-badge-text">{weekData ? `${weekData.seasonYear}년 ${weekData.seasonName} 시즌, ${weekData.weekNumber}주차` : "시즌 정보 로딩 중..."}</span>
+                        <span className="date-badge-text">{weekData ? `${weekData.seasonYear}년 ${weekData.seasonName} 시즌, ${weekNumberLabel(weekData.seasonType ?? weekData.seasonName, weekData.weekNumber)}` : "시즌 정보 로딩 중..."}</span>
                         <span className="date-range-text">{weekDateRange}</span>
                       </div>
                       <div className="workinfo-line-info">
@@ -14692,7 +14693,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                 <div className="weekly-review-row weekly-review-row-1">
                   {/* 1열: 주차 정보 */}
                   <div className="review-week-info">
-                    <span className="week-info-text">{weekData ? `${weekData.seasonYear}년 ${weekData.seasonName} 시즌, ${weekData.weekNumber}주차` : "시즌 정보 로딩 중..."}</span>
+                    <span className="week-info-text">{weekData ? `${weekData.seasonYear}년 ${weekData.seasonName} 시즌, ${weekNumberLabel(weekData.seasonType ?? weekData.seasonName, weekData.weekNumber)}` : "시즌 정보 로딩 중..."}</span>
                   </div>
 
                   {/* 2열: 리뷰 평점 */}

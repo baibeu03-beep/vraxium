@@ -14,7 +14,7 @@ import { resolveMembershipDisplay } from "@/lib/membership";
 import { countConfirmedSuccessWeeks, type ConfirmedWeekMeta } from "@/lib/confirmed-success-weeks";
 import { resolveWeekScopeForUser, resolveWeekResultStates, statesByStartDate } from "@/lib/weekResultState";
 import { enforceQaMode } from "@/lib/qaModeGate";
-import { isTransitionWeek, getTransitionSeasonSpan } from "@/lib/cluster4-transition-week";
+import { isTransitionWeek, resolveTransitionSpan, weekNumberLabel } from "@/lib/cluster4-transition-week";
 import { loadCurrentWeekPositionOverrides } from "@/lib/currentWeekPositionOverride";
 
 export const dynamic = "force-dynamic";
@@ -99,7 +99,11 @@ async function resolveGrowthStartWeek(client: any, profile: any) {
 
     if (week) {
       const season = week.season_definitions;
-      isBreak = String(season?.season_type || "").includes("break");
+      // 전환 주차(DB raw 0주차 / admin 17·9주차)도 break 와 동일하게 "전환 주차"로 표기한다 —
+      //   숫자를 그대로 내리면 프론트가 "0주차"로 렌더한다(현재 시기 안내 영역).
+      isBreak =
+        String(season?.season_type || "").includes("break") ||
+        isTransitionWeek(String(season?.season_type || ""), week.week_number);
       growthStartWeek = {
         seasonKey: week.season_key || season?.season_key || null,
         seasonLabel: toGrowthStartDisplayLabel(season),
@@ -120,7 +124,10 @@ async function resolveGrowthStartWeek(client: any, profile: any) {
 
     if (week) {
       const season = week.season_definitions;
-      isBreak = String(season?.season_type || "").includes("break");
+      // 위와 동일 — 전환 주차는 숫자 대신 "전환 주차" 표기 경로로 보낸다.
+      isBreak =
+        String(season?.season_type || "").includes("break") ||
+        isTransitionWeek(String(season?.season_type || ""), week.week_number);
       growthStartWeek = {
         seasonKey: week.season_key || season?.season_key || null,
         seasonLabel: toGrowthStartDisplayLabel(season),
@@ -1279,8 +1286,13 @@ export async function GET(request: NextRequest) {
       year: number;
       name: string;
       currentWeek: number;
+      // 현재 주차 표시 문자열 — 전환 주차면 "전환 주차", 그 외 "N주차".
+      //   프론트가 currentWeek 숫자를 직접 렌더하면 전환 주차에서 "0주차"가 노출되므로
+      //   표시 문자열은 서버(공용 weekNumberLabel)에서 확정해 내려준다.
+      currentWeekLabel: string;
       isClubBreak: boolean;
-      // 전환 주차(봄·가을 17주 / 여름·겨울 9주) 여부 — 고객 문구를 고정/정제 텍스트로 분기하기 위함.
+      // 전환 주차 여부 — 고객 문구를 고정/정제 텍스트로 분기하기 위함.
+      //   판정 SoT = lib/cluster4-transition-week.isTransitionWeek (DB raw 0주차 + admin 17/9).
       isTransition: boolean;
       isBreakSeason: boolean;
       fromSeason: string | null;
@@ -1316,12 +1328,13 @@ export async function GET(request: NextRequest) {
         toYear = seasonYear;
         displayName = "시즌 전환";
       } else if (transition) {
-        // 전환 주차(봄·가을 17주 / 여름·겨울 9주): season_type 은 break 가 아닌 단일 시즌
-        //   (spring 등)이라 fromSeason/toSeason 이 비어 있다. 고객 문구
-        //   "{현재시즌}에서, {다음시즌}으로 전환하는, 휴식(전환 준비)…" 을 구성하기 위해
-        //   현재 시즌 → 다음 시즌(연도 포함)을 공용 유틸(getTransitionSeasonSpan)로 계산한다.
-        //   시즌명은 절대 하드코딩하지 않으며, 겨울→다음 연도 봄 처럼 연도가 달라질 수 있다.
-        const span = getTransitionSeasonSpan(rawSeasonType, seasonYear);
+        // 전환 주차: season_type 은 break 가 아닌 단일 시즌(spring 등)이라 fromSeason/toSeason 이
+        //   비어 있다. 고객 문구 "{현재시즌}에서, {다음시즌}으로 전환 준비 중…" 을 구성하기 위해
+        //   공용 유틸(resolveTransitionSpan)로 계산한다. 시즌명은 절대 하드코딩하지 않는다.
+        //   ⚠️ weeks 는 전환 주차를 "다음 시즌의 0주차"로 저장하므로(예: 2026-06-22 = 0주차 /
+        //      season_key '2026-summer'), 여기서 읽는 season/year 는 **도착(to) 시즌**이다.
+        //      resolveTransitionSpan 이 weekNumber 로 표현을 식별해 from/to·연도를 바로잡는다.
+        const span = resolveTransitionSpan(rawSeasonType, seasonYear, rawWeekNumber);
         if (span) {
           fromSeason = span.fromSeason;
           toSeason = span.toSeason;
@@ -1333,6 +1346,7 @@ export async function GET(request: NextRequest) {
         year: seasonYear,
         name: displayName,
         currentWeek: rawWeekNumber,
+        currentWeekLabel: weekNumberLabel(rawSeasonType, rawWeekNumber),
         isClubBreak: transition ? false : rawOfficialRest,
         isTransition: transition,
         // 운영 비고(weeks.holiday_name)는 고객 노출 문구에 사용하지 않는다 —
@@ -2147,14 +2161,15 @@ export async function GET(request: NextRequest) {
       if (hit) weekStartToSeasonUuid.set(w.start_date, hit.id);
     });
 
-    // 전환 주차(시즌 정규 주수+1) 판정 — weeks.week_number 는 시즌 상대 주차.
-    // admin isTransitionWeekStart 와 동일 정책: 여름/겨울 8주·봄/가을 16주 초과분 = 전환.
-    // 전환 주차는 admin seasonRecords 와 동일하게 인정/총 주차 집계에서 제외한다.
+    // 전환 주차 판정 — 공용 SoT(lib/cluster4-transition-week.isTransitionWeek) 경유.
+    //   구 로컬 규칙은 "week_number > 정규주수"(=17/9)만 봐서, weeks 의 캐노니컬 저장형인
+    //   **다음 시즌 0주차**(예: 2026-06-22 = 0주차 / '2026-summer')를 정규 주차로 셌다
+    //   → 시즌 총 주차가 16 대신 17, 0주차 success 가 인정 주차로 가산되던 문제.
+    //   전환 주차는 admin seasonRecords 와 동일하게 인정/총 주차 집계에서 제외한다.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const isTransitionWeekMeta = (w: any): boolean => {
       if (!w?.season_key || typeof w.week_number !== "number") return false;
-      const regularWeeks = /-(summer|winter)$/.test(String(w.season_key)) ? 8 : 16;
-      return w.week_number > regularWeeks;
+      return isTransitionWeek(String(w.season_key), w.week_number);
     };
 
     // 온보딩 시즌 id 도 seasons.id(uuid) 키 체계로 통일 (seasonSuccessWeeksMap 과 동일).

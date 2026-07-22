@@ -110,7 +110,11 @@ export function formatSeasonWeekTitle(input: {
     year: input.year,
   });
   if (input.weekNumber == null) return label;
-  return label ? `${label}, ${input.weekNumber}주차` : `${input.weekNumber}주차`;
+  // weekNumber 0 = 전환 주차(DB raw 표현). 정규 주차처럼 "0주차"로 렌더하지 않는다.
+  //   (전환 주차 판정 SoT = lib/cluster4-transition-week. 순환 import 를 피하려고
+  //    여기서는 상수 0 만 직접 본다 — 시즌 무관하게 0 은 정규 주차가 아니다.)
+  const weekText = input.weekNumber === 0 ? "전환 주차" : `${input.weekNumber}주차`;
+  return label ? `${label}, ${weekText}` : weekText;
 }
 
 // ── 시즌 내 주차 검증 (2026-06-05) ───────────────────────────────────────────

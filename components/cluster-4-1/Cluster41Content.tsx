@@ -12,7 +12,7 @@ import { isPxRoute, isEcRoute, withPxRoute, getOrgConfigFromPathname, getGraduat
 import type { AdminCluster4WeeklyCardDto, Cluster4WeeklyCardsResponseDto, Cluster4WeeklyLineDto } from "@/shared/cluster4.contracts";
 import type { Cluster3StatsCards } from "@/lib/cluster3StatsCardsTypes";
 import { Skeleton } from "@/components/ui/skeleton/Skeleton";
-import { isTransitionWeek } from "@/lib/cluster4-transition-week";
+import { isTransitionWeekDto, isRegularActivityWeekDto, weekNumberLabel } from "@/lib/cluster4-transition-week";
 import { resolveSeasonWeekText } from "@/lib/cluster4-types";
 import { getGrowthBadgeText } from "@/lib/cluster4-status-label";
 // QA(mode=test) API/link suffix is temporarily disabled. Keep for future QA deployment reuse.
@@ -51,12 +51,13 @@ const parseWeekTitle = (card: AdminCluster4WeeklyCardDto): { year: number | null
     if (m) season = m[1];
   }
 
-  // 전환 주차 판정: DTO 플래그/라벨 + 시즌별 전환 주차 번호(봄·가을 17주차/여름·겨울 9주차).
+  // 전환 주차 판정: DTO 플래그(isTransition/isBreakSeason/isRestSeason)/라벨 + 공용 번호 SoT
+  //   (DB raw 0주차 / admin 17·9주차 양쪽 표현 흡수 — lib/cluster4-transition-week).
   const isBreak =
     rec.isBreakSeason === true ||
     rec.isRestSeason === true ||
     /전환|break/i.test(label) ||
-    isTransitionWeek(season, typeof card.weekNumber === "number" ? card.weekNumber : null);
+    isTransitionWeekDto(rec, season, typeof card.weekNumber === "number" ? card.weekNumber : null);
 
   // 시즌 내 주차만 표시 — 공용 resolveSeasonWeekText(lib/cluster4-types):
   // seasonWeek/weekInSeason(API 제공 시 우선) → weekNumber → label 정규식 순으로,
@@ -400,6 +401,9 @@ const Cluster41Content = () => {
     year: number;
     name: string;
     currentWeek: number;
+    // 현재 주차 표시 문자열 — 서버(/api/profile)가 확정한 값("N주차" 또는 "전환 주차").
+    //   숫자(currentWeek)를 직접 렌더하면 전환 주차에서 "0주차"가 노출된다.
+    currentWeekLabel?: string;
     isClubBreak: boolean;
     // 전환 주차 여부 — 서버(/api/profile) canonical 값. 고객 문구를 고정 텍스트로 분기한다.
     isTransition: boolean;
@@ -714,30 +718,39 @@ const Cluster41Content = () => {
     };
   }, [seasonDropdownOpen, resultDropdownOpen]);
 
+  // 정규 활동 주차 집합 — 카드 목록/개수/페이지네이션과 **필터 옵션**의 공통 소스.
+  //   전환 주차(admin DTO 17·9주차 / DB raw 0주차)는 결과 집계 대상이 아니므로 여기서 제외한다
+  //   (판정 SoT = lib/cluster4-transition-week.isRegularActivityWeek).
+  //   옵션까지 같은 배열에서 뽑아야, 전환 주차에만 존재하는 시즌·상태가 드롭다운에 남지 않는다.
+  const regularWeeklyData = React.useMemo(
+    () =>
+      dbWeeklyData.filter((week) =>
+        isRegularActivityWeekDto(week as unknown as Record<string, unknown>, seasonFromCard(week), week.weekNumber),
+      ),
+    [dbWeeklyData],
+  );
+
   const seasonOptions = React.useMemo(() => {
     const unique = new Map<string, string>();
-    dbWeeklyData.forEach((w) => {
+    regularWeeklyData.forEach((w) => {
       const s = seasonOfLabel(w.weekLabel);
       if (s && !unique.has(s)) unique.set(s, s);
     });
     return ["역대 시즌", ...Array.from(unique.values())];
-  }, [dbWeeklyData]);
+  }, [regularWeeklyData]);
 
   // result 필터는 백엔드 statusLabel 값을 그대로 사용한다.
   // 옵션 목록도 응답에서 발견된 statusLabel 들로 자동 구성.
   const resultOptions = React.useMemo(() => {
     const set = new Set<string>();
-    dbWeeklyData.forEach((w) => {
+    regularWeeklyData.forEach((w) => {
       if (w.statusLabel) set.add(w.statusLabel);
     });
     return ["전체 (all)", ...Array.from(set)];
-  }, [dbWeeklyData]);
+  }, [regularWeeklyData]);
 
   // 필터 결과를 매 렌더마다 재계산하지 않도록 메모이즈(입력/계산식 동일 — 출력 불변).
-  const filteredDbData = React.useMemo(() => dbWeeklyData.filter((week) => {
-    // 전환 주차(봄·가을 17주차 / 여름·겨울 9주차)는 주차 카드 목록에서 아예 제외한다.
-    // → 목록/카드 개수/페이지네이션/필터 결과 모두에서 빠진다(이 배열이 단일 소스).
-    if (isTransitionWeek(seasonFromCard(week), week.weekNumber)) return false;
+  const filteredDbData = React.useMemo(() => regularWeeklyData.filter((week) => {
     const seasonMatch =
       selectedSeason === "역대 시즌" || seasonOfLabel(week.weekLabel) === selectedSeason;
     const resultMatch =
@@ -745,7 +758,7 @@ const Cluster41Content = () => {
       selectedResult === "전체 (all)" ||
       week.statusLabel === selectedResult;
     return seasonMatch && resultMatch;
-  }), [dbWeeklyData, selectedSeason, selectedResult]);
+  }), [regularWeeklyData, selectedSeason, selectedResult]);
 
   const itemsPerPage = 10;
   const totalPages = Math.max(1, Math.ceil(filteredDbData.length / itemsPerPage));
@@ -918,7 +931,9 @@ const Cluster41Content = () => {
                     // 문구는 카드 폭(739px) 1줄에 18px 폰트로 들어가도록 "…전환 준비 중입니다"로 축약.
                     <>현재 클럽은, <strong>{String((currentSeasonInfo.fromYear ?? currentSeasonInfo.year) % 100).padStart(2, "0")}년 {currentSeasonInfo.fromSeason} 시즌</strong>에서, <strong>{String((currentSeasonInfo.toYear ?? currentSeasonInfo.year) % 100).padStart(2, "0")}년 {currentSeasonInfo.toSeason} 시즌</strong>으로 전환 준비 중입니다.</>
                   ) : (
-                    <>현재 클럽은, <strong>{currentSeasonInfo ? `${currentSeasonInfo.year}년 ${currentSeasonInfo.name} 시즌, ${currentSeasonInfo.currentWeek}주차` : '로딩 중...'}</strong>를 {currentSeasonInfo?.isClubBreak ? '휴식 (공식)' : '진행'} 중에 있습니다.</>
+                    // 주차 표기는 서버 확정 문자열(currentWeekLabel) 우선 — 전환 주차면 "전환 주차".
+                    //   구버전 DTO(필드 부재) 대비 폴백은 공용 weekNumberLabel 로 동일 규칙 재현.
+                    <>현재 클럽은, <strong>{currentSeasonInfo ? `${currentSeasonInfo.year}년 ${currentSeasonInfo.name} 시즌, ${currentSeasonInfo.currentWeekLabel ?? weekNumberLabel(currentSeasonInfo.name, currentSeasonInfo.currentWeek)}` : '로딩 중...'}</strong>를 {currentSeasonInfo?.isTransition ? '준비' : currentSeasonInfo?.isClubBreak ? '휴식 (공식)' : '진행'} 중에 있습니다.</>
                   )}
                   </span>
                 </p>
@@ -942,7 +957,9 @@ const Cluster41Content = () => {
                     ) : startWeekInfo && startWeekInfo.year
                       ? startWeekInfo.isBreak
                         ? `${startWeekInfo.year}년, ${startWeekInfo.seasonName} 시즌, 전환 주차`
-                        : `${startWeekInfo.year}년, ${startWeekInfo.seasonName} 시즌, ${startWeekInfo.weekNumber}주차`
+                        // 서버가 전환 주차를 isBreak 로 넘기지만, 숫자 경로에도 공용 라벨러를 둬
+                        // "0주차"가 어떤 경우에도 노출되지 않게 한다.
+                        : `${startWeekInfo.year}년, ${startWeekInfo.seasonName} 시즌, ${weekNumberLabel(startWeekInfo.seasonName, startWeekInfo.weekNumber)}`
                       : '-'}
                   </span>
                 </div>

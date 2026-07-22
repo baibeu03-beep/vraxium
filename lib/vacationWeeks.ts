@@ -43,11 +43,16 @@ export function seasonWeekCount(
   return t ? SEASON_WEEKS_BY_TYPE[t] : null;
 }
 
-// 전환 주차 여부(봄·가을 17주차 / 여름·겨울 9주차 = 정규 주수 + 1).
+// 전환 주차 여부.
+//   · DB raw    : week_number === 0 (전환 주차는 "다음 시즌의 0주차"로 저장된다).
+//   · admin DTO : 정규 주수 + 1 (봄·가을 17주차 / 여름·겨울 9주차).
+// 두 표현 모두 흡수 — 판정 의미는 lib/cluster4-transition-week.isTransitionWeek 와 동일하다
+// (이 파일은 browser-safe·DB 무관 유지가 목적이라 규칙만 동형으로 둔다).
 export function isTransitionWeekNumber(
   seasonType: string | null | undefined,
   weekNumber: number,
 ): boolean {
+  if (weekNumber === 0) return true;
   const count = seasonWeekCount(seasonType);
   return count != null && weekNumber === count + 1;
 }

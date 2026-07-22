@@ -17,7 +17,7 @@
 
 import { supabaseAdmin } from "@/lib/supabase";
 import { seasonLabel } from "@/lib/cluster4-types";
-import { isOfficialRestWeek, isTransitionWeek, normalizeSeason } from "@/lib/cluster4-transition-week";
+import { isOfficialRestWeek, isRegularActivityWeek, normalizeSeason } from "@/lib/cluster4-transition-week";
 import { getWeekImageUrl } from "@/lib/cluster4-week-image";
 import { operationalSeasonDbKey } from "@/lib/seasonCalendar";
 import { pickPrimaryMembership, type MembershipRow } from "@/lib/membership";
@@ -559,9 +559,13 @@ export async function aggregateWeeklyLeague(
           imageUrl: getWeekImageUrl({ seasonName: displayName, weekNumber: w.week_number }),
         };
       })
-      // 전환 주차(봄·가을 17 / 여름·겨울 9)는 '대전'이 없는 시즌 사이 주차 → 목록 제외
-      //   (기존엔 미공표라 자연히 숨겨졌던 주차 — 공표/종료 게이트 제거 후 명시 제외로 동작 보존).
-      .filter((w) => !isTransitionWeek(w.seasonName, w.weekNumber));
+      // 정규 활동 주차만 랭킹 카드로 만든다 — 전환 주차는 '대전'이 없는 시즌 사이 주차라
+      //   결과 카드/순위/점수 집계 대상이 아니다(현재 시기 안내에서만 "전환 주차"로 표시).
+      //   ⚠️ weeks 의 전환 주차 캐노니컬 저장형은 **다음 시즌의 0주차**다(예: 2026-06-22 =
+      //      week_number 0 / season_key '2026-summer'). 구 필터는 17/9(admin DTO 표현)만 봐서
+      //      "2026년, 여름 시즌, 0주차" 카드가 정규 주차처럼 노출됐다.
+      //   판정 SoT = lib/cluster4-transition-week.isRegularActivityWeek (두 표현 모두 흡수).
+      .filter((w) => isRegularActivityWeek(w.seasonName, w.weekNumber));
 
     if (weeks.length === 0) {
       return { success: true, org, cards: [] };

@@ -19,7 +19,7 @@ import LoadingPanel from "@/components/ui/loading/LoadingPanel";
 import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getOrgConfigFromPathname } from "@/lib/cluster-route";
 import { formatSeasonLabel, formatSeasonWeekTitle } from "@/lib/cluster4-types";
 import { getGrowthBadgeText, progressStatusToSeasonKey, seasonSummaryToSeasonKey, SEASON_STATUS_TEXT, type SeasonStatusKey } from "@/lib/cluster4-status-label";
-import { isOfficialRestWeek } from "@/lib/cluster4-transition-week";
+import { isOfficialRestWeek, isTransitionWeek, resolveTransitionSpan } from "@/lib/cluster4-transition-week";
 import { REPUTATION_KEYWORDS } from "@/lib/reputation-keywords";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
@@ -1384,6 +1384,8 @@ const Cluster4Content = () => {
     isClubBreak: boolean;
     holidayName: string | null;
     isBreakSeason: boolean;
+    // 전환 주차 여부 — 현재 시기 안내 문구를 "전환 과정" 으로 분기한다(break 시즌과 동일 취급).
+    isTransition?: boolean;
     fromSeason: string | null;
     toSeason: string | null;
   } | null>(
@@ -1395,6 +1397,7 @@ const Cluster4Content = () => {
           isClubBreak: false,
           holidayName: null,
           isBreakSeason: true,
+          isTransition: false,
           fromSeason: "겨울",
           toSeason: "봄",
         }
@@ -2069,16 +2072,29 @@ const Cluster4Content = () => {
           displayName = "시즌 전환";
         }
 
+        // 전환 주차(현재 시기 안내) — weeks 는 전환 주차를 "다음 시즌의 0주차"로 저장한다.
+        //   이 화면은 주차 번호를 노출하지 않으므로, break 시즌과 같은 "전환 과정" 문구로
+        //   분기시키기 위해 도착 시즌(toSeason)만 공용 span 으로 채운다(시즌명 하드코딩 없음).
+        const isTransition = isTransitionWeek(rawSeasonName, currentWeekData.week_number);
+        if (!isBreakSeason && isTransition) {
+          const span = resolveTransitionSpan(rawSeasonName, seasonData?.year || 0, currentWeekData.week_number);
+          if (span) {
+            fromSeason = span.fromSeason;
+            toSeason = span.toSeason;
+          }
+        }
+
         setCurrentSeasonInfo({
           year: seasonData?.year || 0,
           name: displayName,
           seasonLabel: seasonData?.season_label || null,
           seasonType: seasonData?.season_type || rawSeasonName || null,
           currentWeek: currentWeekData.week_number,
-          // 전환 주차(봄·가을 17주차 / 여름·겨울 9주차)는 휴식(공식)으로 계산·표시하지 않는다.
+          // 전환 주차는 휴식(공식)으로 계산·표시하지 않는다.
           isClubBreak: isOfficialRestWeek(rawSeasonName, currentWeekData.week_number, currentWeekData.is_official_rest || false),
           holidayName: currentWeekData.holiday_name || null,
           isBreakSeason,
+          isTransition,
           fromSeason,
           toSeason,
         });
@@ -3297,7 +3313,8 @@ const Cluster4Content = () => {
                 <p className="collection-text">
                   {demoCollectionMessage ? (
                     demoCollectionMessage
-                  ) : currentSeasonInfo?.isBreakSeason ? (
+                  ) : currentSeasonInfo?.isBreakSeason || currentSeasonInfo?.isTransition ? (
+                    // break 시즌과 전환 주차(다음 시즌 0주차)는 동일한 "전환 과정" 안내 문구를 쓴다.
                     <>
                       현재 클럽은,{" "}
                       <span style={{ color: "#FF9C9C", fontSize: 20, fontFamily: "Pretendard", fontWeight: "800", lineHeight: "30px", wordWrap: "break-word" }}>
