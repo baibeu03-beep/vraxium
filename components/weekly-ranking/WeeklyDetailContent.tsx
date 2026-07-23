@@ -1331,28 +1331,51 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
           <div className="wd-ac__card wd-ac__card--notice">
             <h3 className="wd-ac__card-title">안내 사항</h3>
             <ol className="wd-ac__notice-list">
-              <li className="wd-ac__notice-item">
-                지난 주 자신의 활동 내역에서 이상사항이 있는 경우, 하단의 버튼을 이용하여 수정/요청을 진행해주세요.
+              <li className="wd-ac__notice-item wd-ac__notice-item--stacked">
+                <span className="wd-ac__notice-main">
+                  {"하단의 "}
+                  <strong className="wd-ac__notice-em">{"[주차 성장 내역 확인] 버튼"}</strong>
+                  {"을 누르면, 이 주차 성장 과정의 마지막 행동이 안내되오니, 이를 참고해주세요. 😊"}
+                </span>
+                <span className="wd-ac__notice-sub">
+                  {"(나의 한 주의 성장 활동을 최종 마감하고, 결과를 확인하는 아주 ‘뜻깊은 행동’ 으로서, 방패 + 1개를 아주 손쉽게 획득할 수 있어요!)"}
+                </span>
               </li>
               <li className="wd-ac__notice-item">
-                별다른 이상 사항이 없는 크루의 경우, 별도의 후속 절차 없이 위에 공표된 해당 주차의 성장 내역이 확정됩니다.
+                <span className="wd-ac__notice-main">
+                  {"주차 활동 내역 중 문의하고 싶은 사항이 있는 경우, 아래 "}
+                  <strong className="wd-ac__notice-em">{"[주차 성장 내역 확인] 버튼"}</strong>
+                  {"을 눌러, 안내되는 가이드를 따라 문의해주세요."}
+                </span>
               </li>
               <li className="wd-ac__notice-item">
-                주차 내역 수정/요청은 위클리 리그 발표 후 24시간 이내 신청 가능하며, N+2주 월요일 이후에는 모든 데이터가 최종 확정되어 수정되지 않습니다. (N주가 활동 주차인 경우)
+                <span className="wd-ac__notice-main">
+                  {"주차 활동 내역에 대한 수정 요청은 하단의 "}
+                  <strong className="wd-ac__notice-em">{"[주차 성장 내역 확인] 버튼"}</strong>
+                  {"을 눌러 안내되는 가이드에 따라 진행되며, "}
+                  <strong className="wd-ac__notice-em">{"행정 공표 후 24시간 내"}</strong>
+                  {"에 신청 가능합니다."}
+                </span>
               </li>
               <li className="wd-ac__notice-item">
-                주차 내역 수정/요청은 하단 버튼을 눌러 안내되는 가이드를 기준으로 진행됩니다.
+                <span className="wd-ac__notice-main">
+                  {"신청된 수정 요청에 대한 데이터 확인 및 관련 커뮤니케이션은, 최초 신청 후 "}
+                  <strong className="wd-ac__notice-em">{"최대 72시간 (3일) 동안에만 진행"}</strong>
+                  {"되오니 그 기간 안에 신속하고 자세한 회신을 통해, 해당 사항이 완전히 처리 완료되도록 유의해주세요!"}
+                </span>
               </li>
               <li className="wd-ac__notice-item">
-                정규 일정이 아닌 별도 주차 과정은 클럽 공지를 참고해주세요. 😊
+                <span className="wd-ac__notice-main">
+                  {"정규 일정이 아닌 별도의 주차 과정이 진행되었을 때는, 클럽 내 인프라를 통해 안내되는 별도의 공지를 참고하실 수 있습니다."}
+                </span>
               </li>
             </ol>
           </div>
 
           {/* [4] CTA — 좌측 이미지 바로 아래(같은 컬럼). 현재 임시 링크(추후 URL 연결 예정) */}
-          <a className="wd-ac__cta" href="#" aria-label="주차 내역 수정/요청">
+          <a className="wd-ac__cta" href="#" aria-label="주차 성장 내역 확인">
             <i className="ti ti-clipboard-check" aria-hidden="true" />
-            주차 내역 수정/요청
+            주차 성장 내역 확인
           </a>
 
           {/* [5] 마지막 멘트(길게) + 맨 우측 org 대표 캐릭터(자동 변경) — 버튼 오른쪽 한 줄 */}

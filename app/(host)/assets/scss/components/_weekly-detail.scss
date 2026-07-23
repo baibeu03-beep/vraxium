@@ -3097,13 +3097,19 @@
       gap: 14px;
     }
     &__notice-item {
+      // 배지(::before)를 첫 줄 중앙에 맞추기 위해 폰트/줄높이를 변수로 노출한다.
+      // ::before 는 자체 font-size 를 가지므로 em 계산이 불가 → px 변수로 넘긴다.
+      --wd-ac-notice-fs: clamp(17.23px, 1.29vw, 19.6px);
+      --wd-ac-notice-lh: 1.72;
+      --wd-ac-notice-badge: 26px;
       counter-increment: wd-ac-notice;
       position: relative;
       padding-left: 42px;
-      min-height: 26px;
+      min-height: var(--wd-ac-notice-badge);
       font-family: var(--wd-font-body);
-      font-size: clamp(18.46px, 1.35vw, 20.52px);
-      line-height: 1.72;
+      // 안내 사항 본문 — 가독성 위해 확대(제목/버튼/마무리 문구는 기존 크기 유지).
+      font-size: var(--wd-ac-notice-fs);
+      line-height: var(--wd-ac-notice-lh);
       color: rgba(255, 255, 255, 0.82);
       word-break: keep-all;
       overflow-wrap: break-word;
@@ -3114,8 +3120,10 @@
         position: absolute;
         left: 0;
         top: 0;
-        width: 26px;
-        height: 26px;
+        // 첫 줄 줄상자(폰트×줄높이) 중앙에 배지를 정렬 — 숫자와 텍스트 시각 높이 일치.
+        margin-top: calc((var(--wd-ac-notice-fs) * var(--wd-ac-notice-lh) - var(--wd-ac-notice-badge)) / 2);
+        width: var(--wd-ac-notice-badge);
+        height: var(--wd-ac-notice-badge);
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -3127,6 +3135,45 @@
         font-size: 18.88px;
         font-weight: 800;
       }
+      // 본문 + 부연(괄호) 2줄 구성인 항목 — 배지 기준 상단 정렬로 전환.
+      &--stacked {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+      }
+    }
+    // 항목 내 강조(버튼명·기한 등)
+    &__notice-em {
+      font-size: inherit;
+      line-height: inherit;
+      font-weight: 800;
+      color: var(--wd-accent-soft);
+    }
+    // 항목 본문 래퍼 — flex 컨테이너 안에서 텍스트/강조가 조각조각 나뉘지 않도록
+    // 반드시 단일 아이템으로 묶어 일반 인라인 줄바꿈 흐름을 유지한다.
+    // ⚠️ 전역 템플릿 CSS 의 `span { font-size:16px; line-height:26px; font-weight:400; color:… }`
+    //    가 이 span 에 직접 매칭돼 li 상속을 덮는다(상속값은 어떤 매칭 규칙에도 패배).
+    //    → inherit 로 명시 복원해야 항목 폰트 크기 조정이 실제로 반영된다.
+    &__notice-main {
+      display: block;
+      flex: 1 1 auto;
+      width: 100%;
+      min-width: 0;
+      font-size: inherit;
+      line-height: inherit;
+      font-weight: inherit;
+      color: inherit;
+    }
+    // 항목 본문 아래 괄호 부연 — 한 단계 작고 흐리게(전역 span 규칙 방어 포함)
+    &__notice-sub {
+      display: block;
+      width: 100%;
+      min-width: 0;
+      // 본문과 독립 조정 — 상대(em) 대신 절대 clamp 로 고정.
+      font-size: clamp(19.32px, 1.42vw, 21.5px);
+      line-height: 1.7;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.62);
     }
 
     /* [4] CTA — 좌측 이미지 바로 아래(row3, image 컬럼 폭 채움). 큰 accent-fill 버튼(프리미엄).
