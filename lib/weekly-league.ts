@@ -1267,13 +1267,15 @@ export async function aggregateWeeklyLeague(
       // ── 공표된 주차는 **공표 팀 snapshot** 을 그대로 쓴다(live buildTeamBattles 미사용) ──
       //   어드민 팀 표와 완전히 같은 값을 보게 하기 위함. 값은 동일, 순서만 화면별 정책이 다르다
       //   (고객 앱=display_order asc · 어드민=ko-KR 가나다순).
-      //   ⚠ 공표 상태인데 snapshot 이 없으면(legacy run) live 로 폴백하지 않는다 —
-      //     위 publishedWithoutSnapshot 가 resultConfirmed 를 내려 '집계 중'으로 미노출 처리한다.
+      //   ⚠ snapshot 이 없으면(legacy run·미캡처) **live 집계로 폴백한다**(2026-07-23 정책 전환).
+      //     종전엔 publishedWithoutSnapshot 이면 teams=undefined 로 미노출이었는데, 활성 run 중
+      //     snapshot_captured=true 가 한 건도 없어 공표 주차 Team Battle 이 전량 사라졌다.
+      //     → 표시 우선. snapshot 이 있으면 여전히 snapshot 이 원천이다(어드민과 값 동일).
+      //     ⚠ snapshot 생성·조회(loadActiveRunTeamSnapshots) 로직은 무변경 — 폴백 분기만 바뀐다.
+      //     ⚠ publishedWithoutSnapshot 은 resultConfirmed(종합 KPI 'N' 게이트)에서는 그대로 쓰인다.
       const teamSnapshot = runTeamSnapshots.get(week.id) ?? null;
       if (teamSnapshot && teamSnapshot.length > 0) {
         teams = teamSnapshot;
-      } else if (publishedWithoutSnapshot) {
-        teams = undefined; // 공표됐지만 snapshot 없음 → 확정 결과를 지어내지 않는다.
       } else if (teamCtx) {
         try {
           teams = buildTeamBattles({

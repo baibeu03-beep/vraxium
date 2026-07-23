@@ -557,5 +557,12 @@ export function buildTeamBattles(params: {
     return ao - bo || a.teamName.localeCompare(b.teamName);
   });
 
-  return out;
+  // ── 카탈로그 미매칭 버킷 제외(2026-07-23) ─────────────────────────────────
+  //   '미배정'(effective 팀이 비었거나 '-')은 실제 팀이 아니라 크루를 담아 둔 가상 버킷이다.
+  //   팀 카드·팀 수·파트 수·전적에 섞이면 실제 운용 규모가 부풀어 보인다(실측: 3팀인데 팀 수 4·0승 4패).
+  //   ⚠ 어드민 주차 결과(크루) 팀 표(`lib/crewWeekTeamProjection.buildCrewWeekTeamResults`)와 **동일 기준**
+  //     (teamId != null). 공표된 주차는 어드민 snapshot 을 그대로 받으므로 live/공표 값이 갈리지 않는다.
+  //   ⚠ 크루 자체는 버리지 않는다 — 크루 단위 결과·조직 카운트는 그대로다(여기서만 제외).
+  //     따라서 Σ teams.* 는 조직 카운트보다 미매칭 인원만큼 작을 수 있다(위 불변식 주석의 예외).
+  return out.filter((t) => t.teamId != null);
 }

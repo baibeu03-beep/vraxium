@@ -1278,6 +1278,17 @@
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 22px;
     }
+
+    /* 빈 상태 — 팀 데이터가 실제로 없을 때만(Champion's Hall 빈 상태와 동일 규격) */
+    &__empty {
+      min-height: 160px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.42);
+      font-family: var(--wd-font-body);
+      font-size: 19.14px;
+    }
   }
 
   /* 요약 KPI 카드 — Dashboard(아이콘 | label/value) */

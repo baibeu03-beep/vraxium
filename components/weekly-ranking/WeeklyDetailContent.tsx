@@ -833,9 +833,12 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
         )}
       </section>
 
-      {/* [9] Team Battle — 팀별 주차 결과(Champion's Hall 아래). 휴식/무팀 주차는 섹션 숨김.
-          미확정(집계 중) 주차도 숨긴다 — 팀별 전적·성공/실패는 확정(공표) 후에만 노출(상단 KPI 와 일관). */}
-      {!isRestWeek && !isTallying && teams.length > 0 && (
+      {/* [9] Team Battle — 팀별 주차 결과(Champion's Hall 아래). 휴식 주차만 섹션 숨김.
+          ⚠ 공표/집계(isTallying)·snapshot 유무는 더 이상 노출 조건이 아니다(2026-07-23) —
+            공표 snapshot 이 없는 주차까지 통째로 사라지던 문제 때문에 표시 우선으로 전환했다.
+            (상단 KPI 의 '집계 중' N 처리는 종전 그대로 — 여기만 분리된 정책이다.)
+          팀 데이터가 실제로 비었을 때만 빈 상태 문구를 보여준다. */}
+      {!isRestWeek && (
         <section className="wd-tb" data-fadeup aria-label="Team Battle">
           {/* 장식 헤더 — Champion's Hall 과 동일 위계(데코 라인 + 글로우 타이틀) */}
           <header className="wd-tb__head">
@@ -848,6 +851,12 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
           </header>
           <p className="wd-tb__subtitle">{card.seasonName} · 팀별 이번 주 성장 대전 결과</p>
 
+          {/* 팀 데이터 부재 — 유일한 빈 상태(집계/공표 단계와 무관). */}
+          {teams.length === 0 && (
+            <div className="wd-tb__empty">이번 주 팀 대전 데이터가 없습니다.</div>
+          )}
+
+          {teams.length > 0 && (<>
           {/* 요약 KPI — 팀 수 / 파트 수 / 통합 전적 (Dashboard: 아이콘 + Label + Value) */}
           <div className="wd-tb__summary">
             <div className="wd-tb-kpi wd-tb-kpi--accent">
@@ -1048,6 +1057,7 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
               );
             })}
           </div>
+          </>)}
         </section>
       )}
 
