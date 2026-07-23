@@ -376,9 +376,13 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
     { tone: "red", icon: "ti ti-circle-x", label: "성장 실패", value: failCount },
   ];
   // 공식(formula)은 화면 비노출 — 값은 위에서 계산 완료. 카드에는 제목/퍼센트/바만 표시.
-  const progresses: Array<{ tone: string; label: string; value: number }> = [
-    { tone: "blue", label: "성장 도전율", value: challengeRate },
-    { tone: "green", label: "성장 성공률", value: successRate },
+  // 아이콘 = public 의 기존 PNG(위 성장 기준 행의 조직 포인트 아이콘과 같은 <img> 방식).
+  //   · 도전율 = 불꽃(/images/fire.png, 39×45·979B), 성공률 = 금장 트로피(/images/0/Star Badge.png, 25×25·812B).
+  //   · 둘 다 **알파 채널이 있는** 소형 PNG 라 어두운 유리 카드 위에서 사각 배경이 보이지 않는다.
+  //     (같은 계열의 badge.png·treasure.png·first.png 등은 체커보드/검정 배경이 픽셀에 구워져 있어 부적합)
+  const progresses: Array<{ tone: string; icon: string; label: string; value: number }> = [
+    { tone: "blue", icon: "/images/fire.png", label: "성장 도전율", value: challengeRate },
+    { tone: "green", icon: "/images/0/Star Badge.png", label: "성장 성공률", value: successRate },
   ];
 
   // 주차 성장 성공 Point.A 기준 개수 — 집계 DTO(card.pointACriterion) 값 **그대로**.
@@ -638,7 +642,11 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
             {progresses.map((p) => (
               <div key={p.label} className={`wd-prog wd-prog--${p.tone}`}>
                 <div className="wd-prog__head">
-                  <span className="wd-prog__label">{p.label}</span>
+                  <span className="wd-prog__label">
+                    {/* 장식용 — 라벨 텍스트가 바로 옆에 있으므로 alt 는 빈 문자열 + aria-hidden */}
+                    <img className="wd-prog__icon" src={p.icon} alt="" aria-hidden="true" />
+                    {p.label}
+                  </span>
                   <span className="wd-prog__value">
                     {isTallying ? 'N' : p.value}
                     <span className="wd-prog__unit">%</span>

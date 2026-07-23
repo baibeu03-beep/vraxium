@@ -295,6 +295,9 @@
     color: #fff;
     font-variant-numeric: tabular-nums;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+    // 숫자 line-box 가 아이콘보다 높게 앉아 보이는 것을 보정 — 광학적 수직 정렬.
+    //   레이아웃(배지 높이·flex 정렬)에 영향을 주지 않도록 transform 으로만 내린다.
+    transform: translateY(2px);
   }
 
   // 모바일 — 썸네일이 작아지므로 배지도 함께 축소(잘림/겹침 방지, 한 줄 유지).
@@ -307,7 +310,7 @@
       max-width: calc(100% - 12px);
     }
     .weekly-card__growth-standard-icon { width: 15px; height: 15px; }
-    .weekly-card__growth-standard-value { font-size: 12px; }
+    .weekly-card__growth-standard-value { font-size: 12px; transform: translateY(1px); }
   }
 
   /* ---------- 통계 1: resume-stats typography + compact horizontal row ---------- */

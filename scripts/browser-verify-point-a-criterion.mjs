@@ -8,7 +8,8 @@
  *   ① 위클리 리그 주차 카드   — 썸네일 우상단 = 조직 포인트 아이콘 + 기준 개수(문구 없음), 카드별 값
  *   ② 위클리 리그 주차 상세   — 성장 도전율 **위**, "주차 성장 성공 {포인트명} 기준" + 아이콘,
  *                              3행(기준/도전율/성공률) 바깥 높이 동일
- *   ③ Detail Log 팝업        — 같은 문구·같은 아이콘·같은 값, 하단 안내 문구엔 기준 개수 중복 없음
+ *   ③ Detail Log 팝업        — 첫 포인트 카드(별) **우측 상단 배지**("기준 N개", 전체 문구는 title/aria-label),
+ *                              같은 값·같은 포인트 아이콘, 하단 안내 문구엔 기준 개수 중복 없음
  *   공통: 내부 코드(A/pointA/point_a) 노출 금지 / "403 개"(공백) 금지 / 미확정은 "-" / 모바일 무붕괴
  */
 import { chromium } from "playwright";
@@ -223,39 +224,44 @@ const run = async () => {
   await page.click(".detail-log-btn");
   await page.waitForSelector(".section-modal-detail-log", { state: "visible", timeout: 30000 });
 
+  // [배치 변경 2026-07-23] 기준은 메타 줄 우측 → **첫 포인트 카드(별) 우측 상단 배지**로 이동했다.
+  //   카드 폭(약 191px) 제약으로 화면 문구는 "기준"으로 축약하고, 전체 문구("주차 성장 성공 별 기준")는
+  //   컨테이너의 title/aria-label 에 보존한다. 아이콘은 같은 카드 본문의 34px 포인트 아이콘이 대신한다.
   const dlLabel = (await page.locator(".dl-modal-growth-standard__label").innerText()).replace(/\s+/g, " ").trim();
   const dlValue = (await page.locator(".dl-modal-growth-standard__value").innerText()).replace(/\s+/g, "").trim();
-  const dlIcon = await page.locator(".dl-modal-growth-standard__icon").getAttribute("src");
-  const dlIconAlt = await page.locator(".dl-modal-growth-standard__icon").getAttribute("alt");
-  console.log(`    ${dlLabel} = ${dlValue}  (icon alt=${dlIconAlt})`);
-  ok(`라벨 = '${expectedLabel}'`, dlLabel === expectedLabel, dlLabel);
-  ok("라벨에 내부 코드(A 기준) 없음", !INTERNAL_CODE_RE.test(dlLabel));
-  ok("아이콘 alt = 조직 포인트명", dlIconAlt === pointName, String(dlIconAlt));
-  ok("아이콘 = 리그 두 화면과 동일 이미지", dlIcon === cardIcon && dlIcon === wdIcon, `detailLog=${dlIcon} card=${cardIcon} detail=${wdIcon}`);
+  const dlFull = (await page.locator(".dl-modal-growth-standard").getAttribute("aria-label"))?.replace(/\s+/g, " ").trim();
+  const dlTitle = (await page.locator(".dl-modal-growth-standard").getAttribute("title"))?.replace(/\s+/g, " ").trim();
+  console.log(`    [배지] ${dlLabel} = ${dlValue}  (전체 문구=${dlFull})`);
+  ok("배지 축약 라벨 = '기준'", dlLabel === "기준", dlLabel);
+  ok(`전체 문구(aria-label) = '${expectedLabel} ${expectedValueText}'`, dlFull === `${expectedLabel} ${expectedValueText}`, String(dlFull));
+  ok("전체 문구(title) = aria-label 과 동일", dlTitle === dlFull, `${dlTitle} / ${dlFull}`);
+  ok("라벨에 내부 코드(A 기준) 없음", !INTERNAL_CODE_RE.test(dlLabel) && !INTERNAL_CODE_RE.test(String(dlFull)));
   ok("값 = 리그 화면과 동일", dlValue === expectedValueText, `value=${dlValue} expected=${expectedValueText}`);
 
-  // 메타(시즌·기간)는 좌, 기준은 우.
-  const metaLayout = await page.evaluate(() => {
-    const m = document.querySelector(".dl-modal-meta");
-    const a = document.querySelector(".dl-modal-growth-standard");
-    if (!m || !a) return null;
-    return { mRight: m.getBoundingClientRect().right, aLeft: a.getBoundingClientRect().left, sameRow: Math.abs(m.getBoundingClientRect().top - a.getBoundingClientRect().top) < 30 };
+  // 배지는 첫 포인트 카드 **안의 우측 상단** — 카드 밖으로 새지 않고, 카드 본문(아이콘/값)과 겹치지 않는다.
+  const badgeLayout = await page.evaluate(() => {
+    const card = document.querySelector(".dl-point-card");
+    const a = card?.querySelector(".dl-modal-growth-standard");
+    const body = card?.querySelector(".dl-point-text");
+    if (!card || !a || !body) return null;
+    const cb = card.getBoundingClientRect(), ab = a.getBoundingClientRect(), bb = body.getBoundingClientRect();
+    return {
+      insideCard: ab.left >= cb.left - 1 && ab.right <= cb.right + 1 && ab.top >= cb.top - 1 && ab.bottom <= cb.bottom + 1,
+      // 우측 상단 — 카드의 오른쪽 절반 & 위쪽 절반에 걸쳐 있다.
+      topRight: ab.right > cb.left + cb.width / 2 && ab.top < cb.top + cb.height / 2,
+      noOverlapBody: ab.bottom <= bb.top + 1,
+    };
   });
-  ok("데스크톱 — 주차/기간(좌) · 기준(우) 한 줄", metaLayout?.sameRow === true && metaLayout.aLeft >= metaLayout.mRight - 1, JSON.stringify(metaLayout));
-  // 헤더(제목/닫기)와 겹치지 않음.
-  const noOverlap = await page.evaluate(() => {
-    const h = document.querySelector(".dl-modal-header");
-    const a = document.querySelector(".dl-modal-growth-standard");
-    if (!h || !a) return false;
-    return a.getBoundingClientRect().top >= h.getBoundingClientRect().bottom - 1;
-  });
-  ok("헤더(제목·닫기)와 겹치지 않음", noOverlap);
-  // 제목보다 과하게 크지 않음.
+  ok("배지 = 첫 포인트 카드 안 우측 상단, 본문과 미겹침", badgeLayout?.insideCard === true && badgeLayout.topRight === true && badgeLayout.noOverlapBody === true, JSON.stringify(badgeLayout));
+  // 같은 카드의 포인트 아이콘/값이 리그 화면과 동일 이미지인지는 카드 본문 아이콘으로 확인한다.
+  const dlCardIcon = await page.locator(".dl-point-card .dl-point-icon img").first().getAttribute("src");
+  ok("포인트 아이콘 = 리그 두 화면과 동일 이미지", dlCardIcon === cardIcon && dlCardIcon === wdIcon, `detailLog=${dlCardIcon} card=${cardIcon} detail=${wdIcon}`);
+  // 카드 본문 값(보유 개수)보다 배지 숫자가 크지 않다 — 카드의 주인공은 보유 개수다.
   const dlSizes = await page.evaluate(() => {
     const px = (s) => { const el = document.querySelector(s); return el ? parseFloat(getComputedStyle(el).fontSize) : null; };
-    return { value: px(".dl-modal-growth-standard__value"), title: px(".dl-modal-title") };
+    return { badge: px(".dl-modal-growth-standard__value"), cardValue: px(".dl-point-card .dl-point-value"), title: px(".dl-modal-title") };
   });
-  ok("숫자 크기 ≤ 모달 제목", dlSizes.value != null && dlSizes.title != null && dlSizes.value <= dlSizes.title, JSON.stringify(dlSizes));
+  ok("배지 숫자 ≤ 카드 보유 개수 · ≤ 모달 제목", dlSizes.badge != null && dlSizes.cardValue != null && dlSizes.badge <= dlSizes.cardValue && dlSizes.badge <= dlSizes.title, JSON.stringify(dlSizes));
 
   // §4 — 하단 안내 문구에서 기준 개수 중복 노출 제거.
   const checkTexts = (await page.locator(".dl-check-text").allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim());
@@ -273,17 +279,22 @@ const run = async () => {
     JSON.stringify(pairTexts),
   );
 
-  // 좁은 화면 — 기준이 아래 줄로 내려가되 잘리지 않음.
+  // 좁은 화면 — 배지가 카드 밖으로 새거나 본문을 덮지 않음.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(500);
   const dlMobile = await page.evaluate(() => {
-    const row = document.querySelector(".dl-modal-meta-row");
-    const a = document.querySelector(".dl-modal-growth-standard");
-    if (!row || !a) return null;
-    const rb = row.getBoundingClientRect(), ab = a.getBoundingClientRect();
-    return { inside: ab.left >= rb.left - 1 && ab.right <= rb.right + 1, visible: ab.width > 0 && ab.height > 0 };
+    const card = document.querySelector(".dl-point-card");
+    const a = card?.querySelector(".dl-modal-growth-standard");
+    const body = card?.querySelector(".dl-point-text");
+    if (!card || !a || !body) return null;
+    const cb = card.getBoundingClientRect(), ab = a.getBoundingClientRect(), bb = body.getBoundingClientRect();
+    return {
+      inside: ab.left >= cb.left - 1 && ab.right <= cb.right + 1 && ab.bottom <= cb.bottom + 1,
+      noOverlapBody: ab.bottom <= bb.top + 1,
+      visible: ab.width > 0 && ab.height > 0,
+    };
   });
-  ok("모바일 — 기준이 잘리지 않고 표시", dlMobile?.inside === true && dlMobile.visible === true, JSON.stringify(dlMobile));
+  ok("모바일 — 배지가 카드 안에서 잘리지 않고 본문과 미겹침", dlMobile?.inside === true && dlMobile.noOverlapBody === true && dlMobile.visible === true, JSON.stringify(dlMobile));
 
   ok("콘솔 에러 없음", consoleErrors.length === 0, consoleErrors.slice(0, 3).join(" | "));
 

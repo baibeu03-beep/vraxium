@@ -264,9 +264,11 @@ export const formatRatio = (a: number, b: number): string => `${a}${RATIO_SEPARA
 /**
  * 행/요약 공통 "획득 / 가능" 렌더 — 라인 탭의 표 3열(A/B/C)과 상단 요약 3카드가 **전부 이것만** 쓴다.
  *
- *   색 규칙(2026-07-17 확정) — 숫자 **두 개 모두** 축 색으로 칠한다. 획득/가능은 색으로 구분하지 않는다:
- *     · A → 획득·가능 둘 다 초록   · B → 둘 다 초록   · C → 둘 다 빨강
- *     · "/" → 기본 색상(상속) — 어떤 축이든 동일
+ *   색 규칙 — **구분자를 포함한 쌍 전체**를 축 색으로 칠한다. 획득/가능은 색으로 구분하지 않는다:
+ *     · A → "0 / 2" 전체 초록   · B → 전체 초록   · C → 전체 빨강
+ *     · [2026-07-23] "/" 만 기본 색으로 남기던 규칙(2026-07-17) 폐기 — 액트 탭 요약 칩은
+ *       "0 / 0" 전체가 축 색이라 같은 모달 안에서 라인 탭만 다른 폰트처럼 보이던 원인이었다.
+ *       폰트(14px·800·tabular-nums)는 양쪽 다 .dl-act-stat-value 상속이라 원래 동일하다.
  *   값이 0 인지와 무관하다(0 / 0 도 같은 색). 색 정의는 SCSS(.dl-point-pair--*) 한 곳뿐이다.
  *
  *   ⚠ 축(kind)만이 색의 입력이다 — org·mode(일반/mode=test/actAsTestUserId/demoUserId)·값 크기에
@@ -533,35 +535,13 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
           ) : (
             <>
               {/* 주차 메타(시즌/주차 · 기간) — 헤더에서 본문 상단(크루 배지 바로 위)으로 이동. 원천/포맷 불변.
-                  우측에 주차 성장 성공 Point.A 기준 개수를 붙인다(좁은 폭에서는 아래 줄로 자연 이동). */}
+                  ※ 주차 성장 성공 기준은 여기(메타 줄 우측)에서 아래 포인트 카드(별) 우측 상단으로 이동했다. */}
               <div className="dl-modal-meta-row">
                 <p className="dl-modal-meta">
                   <span className="dl-meta-strong">{data.seasonWeekTitle}</span>
                   <span className="dl-meta-dot">·</span>
                   <span className="dl-meta-period">{data.periodText}</span>
                 </p>
-                {/* 값은 호출부가 주차×조직 SoT 에서 그대로 넘긴 것 — 재계산·추정 없음.
-                    문구는 조직별 실제 포인트명("주차 성장 성공 별 기준") — 내부 코드("A") 노출 금지. */}
-                <div className="dl-modal-growth-standard">
-                  <span className="dl-modal-growth-standard__label">
-                    <img
-                      className="dl-modal-growth-standard__icon"
-                      src={growthStandardPoint.icon}
-                      alt={growthStandardPoint.name}
-                    />
-                    {growthStandardLabel(growthStandardPoint.name)}
-                  </span>
-                  {normalizePointACriterion(data.pointACriterion) == null ? (
-                    <strong className="dl-modal-growth-standard__value dl-modal-growth-standard__value--empty">
-                      {POINT_A_CRITERION_EMPTY_LABEL}
-                    </strong>
-                  ) : (
-                    <strong className="dl-modal-growth-standard__value">
-                      {normalizePointACriterion(data.pointACriterion)!.toLocaleString()}
-                      <span className="dl-modal-growth-standard__unit">{POINT_A_CRITERION_UNIT}</span>
-                    </strong>
-                  )}
-                </div>
               </div>
 
               {/* 크루 프로필 (Badge) */}
@@ -584,8 +564,41 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                     {data.points.map((p, i) => {
                       // 요약 포인트: index 2 = C(패널티) — 양수 magnitude 를 부호없이 빨강. A/B(0,1)=초록.
                       const isPointC = i === 2;
+                      // index 0 = 주차 성장 성공 기준이 걸린 포인트(조직별 "별" 등) — 이 카드 우측 상단에만 기준 배지를 얹는다.
+                      //   같은 포인트의 "이번 주 보유 개수 ↔ 성공 기준 개수" 를 한 칸에서 바로 대조할 수 있게 하기 위함.
+                      const isGrowthStandardPoint = i === 0;
+                      const criterion = normalizePointACriterion(data.pointACriterion);
                       return (
                         <div className="dl-point-card" key={i}>
+                          {isGrowthStandardPoint && (
+                            /* 카드 폭(약 191px)이 좁아 화면 문구는 "기준"으로 줄인다 — 바로 옆 카드 라벨이
+                               포인트명(별)을 이미 말하고 있어 "별 기준"으로 읽힌다. 전체 문구는
+                               title/aria-label 로 그대로 보존한다(내부 코드 "A" 노출 금지는 동일). */
+                            <div
+                              className="dl-modal-growth-standard"
+                              title={`${growthStandardLabel(growthStandardPoint.name)} ${
+                                criterion == null ? POINT_A_CRITERION_EMPTY_LABEL : `${criterion.toLocaleString()}${POINT_A_CRITERION_UNIT}`
+                              }`}
+                              aria-label={`${growthStandardLabel(growthStandardPoint.name)} ${
+                                criterion == null ? POINT_A_CRITERION_EMPTY_LABEL : `${criterion.toLocaleString()}${POINT_A_CRITERION_UNIT}`
+                              }`}
+                            >
+                              <span className="dl-modal-growth-standard__label" aria-hidden="true">기준</span>
+                              {criterion == null ? (
+                                <strong
+                                  className="dl-modal-growth-standard__value dl-modal-growth-standard__value--empty"
+                                  aria-hidden="true"
+                                >
+                                  {POINT_A_CRITERION_EMPTY_LABEL}
+                                </strong>
+                              ) : (
+                                <strong className="dl-modal-growth-standard__value" aria-hidden="true">
+                                  {criterion.toLocaleString()}
+                                  <span className="dl-modal-growth-standard__unit">{POINT_A_CRITERION_UNIT}</span>
+                                </strong>
+                              )}
+                            </div>
+                          )}
                           <span className="dl-point-icon">
                             {p.icon ? <img src={p.icon} alt={p.label} /> : null}
                           </span>
@@ -709,10 +722,10 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                   <div className="dl-act-empty">이번 주 수행·적립된 액트 내역이 없어요.</div>
                 ) : (
                   <>
-                    {/* Activity Summary — 활동 완료율 + 요약 통계(표시 행 단일 출처) */}
+                    {/* Activity Summary — 액트 체크율 + 요약 통계(표시 행 단일 출처) */}
                     <div className="dl-act-summary">
                       <div className="dl-act-summary-bar-row">
-                        <span className="dl-act-summary-title">활동 완료율</span>
+                        <span className="dl-act-summary-title">액트 체크율</span>
                         <div
                           className="dl-act-progress"
                           role="progressbar"

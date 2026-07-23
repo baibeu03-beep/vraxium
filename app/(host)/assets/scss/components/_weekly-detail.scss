@@ -506,12 +506,29 @@
     }
 
     &__label {
+      // 아이콘 + 문구를 한 덩어리로 — 위 .wd-week-growth-standard__label 과 동일한 정렬/간격.
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
       font-family: var(--wd-font-heading);
       font-size: clamp(19.14px, 1.5vw, 21.88px);
       font-weight: 700;
       letter-spacing: 0.02em;
       text-transform: uppercase;
       color: rgba(255, 255, 255, 0.82);
+    }
+
+    // 라벨 앞 아이콘(PNG) — 위 .wd-week-growth-standard__icon 과 **같은 24px 박스**라
+    //   우측 3행의 라벨 시작선이 세로로 정확히 맞는다.
+    //   KPI 카드(42px 타일)와 달리 배경/테두리 없이 이미지만 — 같은 열에서 위계가 겹치지 않게.
+    //   원본이 25~45px 소형 PNG 라 24px 에서 거의 1:1 — 확대 뭉개짐 없음.
+    &__icon {
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      object-fit: contain;
+      // 톤 글로우는 이미지 실루엣을 따라가게 drop-shadow 로(사각 박스 그림자 방지).
+      filter: drop-shadow(0 0 6px var(--tone-glow));
     }
 
     &__value {

@@ -275,7 +275,10 @@
       "Bash(echo \"exit:$?\")",
       "Bash(echo \"tsc-done:$?\")",
       "Bash(echo \"=== EXIT $? \\(no lines above = clean\\) ===\")",
-      "PowerShell(git diff -- app/\\(host\\)/api/educations/route.ts components/cluster-2/Cluster2Content.tsx)"
+      "PowerShell(git diff -- app/\\(host\\)/api/educations/route.ts components/cluster-2/Cluster2Content.tsx)",
+      "PowerShell(git config *)",
+      "PowerShell(git credential-manager *)",
+      "PowerShell(git fetch *)"
     ],
     "deny": [],
     "ask": []
