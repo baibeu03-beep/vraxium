@@ -82,7 +82,9 @@ const Banner = ({ heroThumbSrc, bannerSlideSrcs }: BannerProps) => {
                   단 한번 뿐이라더군
                 </h1>
                 <p className="text-xl mt-6 hero-desc">
-                  “놀만큼 놀았잖아..<span className="line-through">(따흑ㅠ)</span> 이제 우리의 꿈과 커리어를 향해 달려보자구?”
+                  “놀만큼 놀았잖아..<span className="line-through">(따흑ㅠ)</span>
+                  <br />
+                  이제 우리의 꿈과 커리어를 향해 달려보자구?”
                 </p>
                 <div className="section__cta mt-40">
                   <div className="btn-wrapper">
