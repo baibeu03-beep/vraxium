@@ -12,6 +12,11 @@ import {
   canEditWithQaOwnerOverride,
   QA_OWNER_EDIT_ENABLED,
 } from "@/lib/qa-owner-edit-permission";
+import {
+  orderEducationsByPrimaryRule,
+  pickPrimaryEducation,
+} from "@/lib/primaryEducation";
+import { resolveCluster2UserScope } from "@/lib/cluster2UserScope";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -49,7 +54,7 @@ const TAG = "[api/educations]";
 const PRIMARY_EDU_RESOURCE_KEY = "cluster2.primary_education";
 
 const EDU_SELECT_COLUMNS =
-  "id, school_name, major_name_1, major_name_2, major_name_3, education_level, status, major_category, admission_year, admission_month, graduation_year, graduation_month, grade_max_type, grade_value, note, sort_order, is_primary";
+  "id, school_name, major_name_1, major_name_2, major_name_3, education_level, status, major_category, admission_year, admission_month, graduation_year, graduation_month, grade_max_type, grade_value, note, sort_order, is_primary, updated_at";
 
 type EducationInputUI = {
   // client 가 보내는 UI 키 (legacy + 확장)
@@ -106,6 +111,7 @@ type EducationRow = {
   note: string | null;
   sort_order: number | null;
   is_primary: boolean | null;
+  updated_at: string | null;
 };
 
 const ADMISSION_MONTHS = ["03", "09"] as const;
@@ -187,12 +193,12 @@ function buildPeriod(
   return `${a} -`;
 }
 
-function toUiDto(row: EducationRow) {
+function toUiDto(row: EducationRow, primaryId: string | number | null) {
   const sortOrder =
     typeof row.sort_order === "number"
       ? row.sort_order
       : Number(row.sort_order ?? 0);
-  const isPrimary = Boolean(row.is_primary) || sortOrder === 0;
+  const isPrimary = primaryId !== null && String(row.id) === String(primaryId);
 
   const startYear = yearToStr(row.admission_year);
   const endYear = yearToStr(row.graduation_year);
@@ -290,14 +296,12 @@ function buildEducationRecord(
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// GET — user_educations 의 14 컬럼 select.
-//   target user_educations 가 비어 있고 targetUserId 가 주어진 경우에 한해
-//   legacy crew_list_view 에서 1행 합성 (legacy data 호환, 유지).
+// GET — user_educations canonical rows only.
 // ─────────────────────────────────────────────────────────────────────
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const targetUserId = searchParams.get("userId");
+    const { targetUserId } = resolveCluster2UserScope(searchParams);
 
     const qaBlock = await enforceQaMode(request, { targetUserId });
     if (qaBlock) return qaBlock;
@@ -329,11 +333,8 @@ export async function GET(request: Request) {
 
     const { data: educations, error: eduError } = await supabaseAdmin
       .from("user_educations")
-      .select(
-        "id, school_name, major_name_1, major_name_2, major_name_3, education_level, status, major_category, admission_year, admission_month, graduation_year, graduation_month, grade_max_type, grade_value, note, sort_order, is_primary",
-      )
-      .eq("user_id", userId)
-      .order("sort_order", { ascending: true });
+      .select(EDU_SELECT_COLUMNS)
+      .eq("user_id", userId);
 
     if (eduError) {
       console.error(TAG, "GET user_educations failed", eduError);
@@ -343,52 +344,14 @@ export async function GET(request: Request) {
       );
     }
 
-    if ((!educations || educations.length === 0) && targetUserId) {
-      // legacy fallback — crew_list_view 에 행이 있으면 1개 합성
-      const { data: legacy, error: legacyError } = await supabaseAdmin
-        .from("crew_list_view")
-        .select("school_name, university, major_name_1, major")
-        .eq("id", targetUserId)
-        .maybeSingle();
-      if (legacyError) {
-        console.warn(TAG, "GET crew_list_view fallback failed", legacyError);
-      }
-
-      const schoolName = legacy?.school_name ?? legacy?.university ?? null;
-      const majorName = legacy?.major_name_1 ?? legacy?.major ?? null;
-
-      if (schoolName || majorName) {
-        return NextResponse.json({
-          success: true,
-          data: [
-            toUiDto({
-              id: `legacy-${targetUserId}`,
-              school_name: schoolName,
-              major_name_1: majorName,
-              major_name_2: null,
-              major_name_3: null,
-              education_level: null,
-              status: null,
-              major_category: null,
-              admission_year: null,
-              admission_month: null,
-              graduation_year: null,
-              graduation_month: null,
-              grade_max_type: null,
-              grade_value: null,
-              note: null,
-              sort_order: 0,
-              is_primary: true,
-            }),
-          ],
-          _legacy: true,
-        });
-      }
-    }
+    const ordered = orderEducationsByPrimaryRule(
+      (educations ?? []) as EducationRow[],
+    );
+    const primaryId = ordered[0]?.id ?? null;
 
     return NextResponse.json({
       success: true,
-      data: (educations ?? []).map((row) => toUiDto(row as EducationRow)),
+      data: ordered.map((row) => toUiDto(row, primaryId)),
     });
   } catch (error) {
     console.error(TAG, "GET unexpected error", error);
@@ -481,8 +444,7 @@ export async function PUT(request: Request) {
       const { data: existingRows, error: existingError } = await supabaseAdmin
         .from("user_educations")
         .select(EDU_SELECT_COLUMNS)
-        .eq("user_id", userId)
-        .order("sort_order", { ascending: true });
+        .eq("user_id", userId);
 
       if (existingError) {
         console.error(TAG, "PUT existing educations lookup failed", existingError);
@@ -497,10 +459,7 @@ export async function PUT(request: Request) {
       }
 
       const rows = (existingRows ?? []) as EducationRow[];
-      existingPrimary =
-        rows.find((r) => r.is_primary === true) ??
-        rows.find((r) => Number(r.sort_order) === 0) ??
-        null;
+      existingPrimary = pickPrimaryEducation(rows);
     }
 
     // 1) user 의 모든 user_educations row 삭제
@@ -554,8 +513,6 @@ export async function PUT(request: Request) {
         if (byIsPrimary >= 0) return byIsPrimary;
         const byIsFinal = educations.findIndex((e) => e.isFinal === true);
         if (byIsFinal >= 0) return byIsFinal;
-        const bySortZero = educations.findIndex((e) => Number(e.sort_order) === 0);
-        if (bySortZero >= 0) return bySortZero;
         return 0;
       })();
 

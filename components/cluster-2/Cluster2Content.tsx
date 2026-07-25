@@ -197,7 +197,7 @@ const Cluster2Content = () => {
   // 이동했다 돌아왔을 때 Sidebar 가 stale 캐시(이전 사진)로 되돌아가지 않는다.
   const { clearCache: clearProfileCache } = useProfile();
   // 조회/표시/저장 대상: admin-view(userId) 우선 → 테스트 유저(demoUserId).
-  const urlUserId = searchParams.get("userId") || searchParams.get("userID") || demo.demoUserId;
+  const urlUserId = demo.targetUserId;
   const demoNameParam = searchParams.get("demoName");
   const demoLookupName = demoNameParam || urlUserId;
 
@@ -212,13 +212,23 @@ const Cluster2Content = () => {
     isDemo || (!!session?.user && (!urlUserId || session?.user?.id === urlUserId));
   // 로컬 더미(localStorage demoMode)는 테스트 유저(?demoUserId=) 모드에서는 끈다 —
   // 테스트 모드는 실제 DB 를 source of truth 로 읽어야 하므로 더미 분기가 응답을 덮으면 안 된다.
-  const isDemoMode = checkDemoMode() && !isDemo;
+  const isDemoMode =
+    process.env.NODE_ENV !== "production" &&
+    checkDemoMode() &&
+    !demo.hasTestUserTarget;
+  const readScopeSuffix = demo.actAsTestUserId
+    ? `&mode=test&actAsTestUserId=${encodeURIComponent(demo.actAsTestUserId)}`
+    : demo.demoQS;
 
   // 저장/조회 API URL 빌더.
   //   - 테스트 유저 모드: demoUserId 부착(백엔드가 test_user_markers 검증 후 대상 고정).
   //   - 어드민 타유저 편집: targetUserId 부착.
   const apiUrl = (path: string) => {
     if (isDemo) return demo.appendDemoUserParams(path);
+    if (demo.actAsTestUserId && urlUserId) {
+      const separator = path.includes('?') ? '&' : '?';
+      return `${path}${separator}targetUserId=${encodeURIComponent(urlUserId)}&mode=test&actAsTestUserId=${encodeURIComponent(demo.actAsTestUserId)}`;
+    }
     if (urlUserId && session?.user?.isAdmin) {
       const separator = path.includes('?') ? '&' : '?';
       return `${path}${separator}targetUserId=${urlUserId}`;
@@ -529,7 +539,7 @@ const Cluster2Content = () => {
       // 비소유자인 경우 userId 쿼리 파라미터로 조회 (URL=캐시 키 — userId/demoUserId 포함)
       // org=<slug> 전달 → GET DTO 가 org별 기본 이미지(data.defaultPhotos)를 동일 SoT 로 반환.
       const orgSlug = getOrgConfigFromPathname(pathname).orgSlug;
-      const url = urlUserId ? `/api/photos?userId=${urlUserId}&org=${orgSlug}` : `/api/photos?org=${orgSlug}`;
+      const url = urlUserId ? `/api/photos?userId=${urlUserId}&org=${orgSlug}${readScopeSuffix}` : `/api/photos?org=${orgSlug}`;
       const result = await dedupedJson<any>(url);
 
       // 사용자 전환 후 도착한 이전 대상 응답은 폐기 (stale overwrite 방지)
@@ -792,7 +802,7 @@ const Cluster2Content = () => {
     }
     const epoch = loadEpochRef.current;
     try {
-      const url = urlUserId ? `/api/slogans?userId=${urlUserId}` : "/api/slogans";
+      const url = urlUserId ? `/api/slogans?userId=${urlUserId}${readScopeSuffix}` : "/api/slogans";
       const result = await dedupedJson<any>(url);
 
       if (epoch !== loadEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
@@ -955,7 +965,7 @@ const Cluster2Content = () => {
     }
     const epoch = loadEpochRef.current;
     try {
-      const url = urlUserId ? `/api/videos?userId=${urlUserId}` : "/api/videos";
+      const url = urlUserId ? `/api/videos?userId=${urlUserId}${readScopeSuffix}` : "/api/videos";
       const result = await dedupedJson<any>(url);
 
       if (epoch !== loadEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
@@ -1171,7 +1181,7 @@ const Cluster2Content = () => {
     }
     const epoch = loadEpochRef.current;
     try {
-      const url = urlUserId ? `/api/educations?userId=${urlUserId}` : "/api/educations";
+      const url = urlUserId ? `/api/educations?userId=${urlUserId}${readScopeSuffix}` : "/api/educations";
       const result = await dedupedJson<any>(url);
       if (epoch !== loadEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
       if (result.success && result.data && result.data.length > 0) {
@@ -1476,7 +1486,7 @@ const Cluster2Content = () => {
   }, [introModalOpen]);
 
   const [reviewLinks, setReviewLinks] = useState<string[]>([
-    "", // Total Complete (cluving_review_link)
+    "", // Total Complete (week_index=30)
     "", // 3 weeks
     "", // 6 weeks
     "", // 9 weeks
@@ -1685,7 +1695,7 @@ const Cluster2Content = () => {
     }
     const epoch = loadEpochRef.current;
     try {
-      const url = urlUserId ? `/api/review-link?userId=${urlUserId}` : "/api/review-link";
+      const url = urlUserId ? `/api/review-link?userId=${urlUserId}${readScopeSuffix}` : "/api/review-link";
       const result = await dedupedJson<any>(url);
 
       if (epoch !== loadEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
@@ -1754,7 +1764,7 @@ const Cluster2Content = () => {
     }
     const epoch = loadEpochRef.current;
     try {
-      const url = urlUserId ? `/api/introductions?userId=${urlUserId}` : "/api/introductions";
+      const url = urlUserId ? `/api/introductions?userId=${urlUserId}${readScopeSuffix}` : "/api/introductions";
       const result = await dedupedJson<any>(url);
 
       if (epoch !== loadEpochRef.current) return; // 사용자 전환 — stale 응답 폐기
@@ -2744,15 +2754,8 @@ const Cluster2Content = () => {
             cursor: isDragging ? "grabbing" : "grab",
           }}
         >
-          {/* 대표학력을 맨 앞에 배치하고, 나머지는 입학년도 최신순 정렬 */}
-          {[...educationData]
-            .sort((a, b) => {
-              if (a.isFinal !== b.isFinal) return a.isFinal ? -1 : 1;
-              const aDate = parseInt(a.startYear || "0") * 100 + parseInt(a.startMonth || "0");
-              const bDate = parseInt(b.startYear || "0") * 100 + parseInt(b.startMonth || "0");
-              return bDate - aDate;
-            })
-            .map((edu, index) => (
+          {/* API가 공식 대표 학력 규칙으로 정렬한 순서를 그대로 표시한다. */}
+          {educationData.map((edu, index) => (
               <div className={`edu-card ${edu.isFinal ? "first" : ""}`} key={index}>
                 <img className="edu-border-tl" src="/images/0/cluster 2/border.png" alt="" />
                 <img className="edu-border-br" src="/images/0/cluster 2/border.png" alt="" />

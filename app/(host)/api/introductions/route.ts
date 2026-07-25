@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
 import { resolveWriteUserId } from "@/lib/api-auth";
 import { enforceQaMode } from "@/lib/qaModeGate";
+import { resolveCluster2UserScope } from "@/lib/cluster2UserScope";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -41,7 +42,7 @@ function errorPayload(step: string, message: string, details?: unknown) {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const targetUserId = searchParams.get("userId");
+    const { targetUserId } = resolveCluster2UserScope(searchParams);
 
     const qaBlock = await enforceQaMode(request, { targetUserId });
     if (qaBlock) return qaBlock;

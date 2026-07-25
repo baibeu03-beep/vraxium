@@ -13,6 +13,7 @@ import {
   canEditWithQaOwnerOverride,
   QA_OWNER_EDIT_ENABLED,
 } from "@/lib/qa-owner-edit-permission";
+import { resolveCluster2UserScope } from "@/lib/cluster2UserScope";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -32,9 +33,6 @@ export const revalidate = 0;
 //   index 7 → week_index 21
 //   index 8 → week_index 24
 //   index 9 → week_index 27
-//
-// Legacy fallback: user_review_links 의 week_index=30 row 가 없을 때
-//   user_cluster2.cluving_review_link 값을 Total Complete 슬롯으로 표시.
 //
 // 편집 권한:
 //   - admin email → 항상 허용 (reason: "admin")
@@ -142,7 +140,6 @@ function permissionDto(
 
 function buildSlots(
   rows: Array<{ week_index: number; url: string | null; label: string | null; is_visible: boolean | null }> | null,
-  legacyTotalCompleteUrl: string | null,
 ): ReviewLinkSlot[] {
   const byIndex = new Map<number, { url: string | null; label: string | null; is_visible: boolean | null }>();
   for (const row of rows ?? []) {
@@ -153,15 +150,10 @@ function buildSlots(
 
   return SLOT_WEEK_INDICES.map((weekIndex) => {
     const row = byIndex.get(weekIndex) ?? null;
-    let url: string | null = row?.url ?? null;
-    // legacy fallback: week_index=30 row 없을 때 user_cluster2.cluving_review_link 사용.
-    if (weekIndex === 30 && !url && legacyTotalCompleteUrl) {
-      url = legacyTotalCompleteUrl;
-    }
     return {
       weekIndex,
       label: row?.label?.trim() || SLOT_LABELS[weekIndex],
-      url,
+      url: row?.url ?? null,
       isVisible: row?.is_visible ?? true,
     };
   });
@@ -178,7 +170,8 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
-    const queryUserId = searchParams.get("userId");
+    const { targetUserId: queryUserId } =
+      resolveCluster2UserScope(searchParams);
 
     const qaBlock = await enforceQaMode(request, { targetUserId: queryUserId });
     if (qaBlock) return qaBlock;
@@ -248,21 +241,6 @@ export async function GET(request: Request) {
       );
     }
 
-    // 2) legacy user_cluster2.cluving_review_link 조회 (fallback 용)
-    const { data: cluster, error: clusterError } = await supabaseAdmin
-      .from("user_cluster2")
-      .select("cluving_review_link")
-      .eq("user_id", targetUserId)
-      .maybeSingle();
-
-    if (clusterError) {
-      console.warn(TAG, "GET user_cluster2 fallback failed", clusterError);
-    }
-
-    const legacyTotalComplete = sanitizePersistedUrl(
-      cluster?.cluving_review_link ?? null,
-    );
-
     const slots = buildSlots(
       (linkRows ?? []) as Array<{
         week_index: number;
@@ -270,7 +248,6 @@ export async function GET(request: Request) {
         label: string | null;
         is_visible: boolean | null;
       }>,
-      legacyTotalComplete,
     );
 
     // 3) permission row 조회
@@ -296,10 +273,6 @@ export async function GET(request: Request) {
       success: true,
       links: slots,
       permission,
-      // 기존 호출자(legacy) 호환: data.cluvingReviewLink 유지 — Total Complete 슬롯 = week_index 30.
-      data: {
-        cluvingReviewLink: slots[0]?.url ?? null,
-      },
     });
   } catch (error) {
     console.error(TAG, "GET unexpected error", error);
@@ -400,24 +373,14 @@ export async function PUT(request: Request) {
       );
     }
 
-    // body 파싱 — 신 스키마(links[]) 우선, 구 스키마(cluvingReviewLink) 호환.
     const rawLinks = (body as { links?: unknown }).links;
-    let incoming: IncomingLink[] = [];
-
-    if (Array.isArray(rawLinks)) {
-      incoming = rawLinks as IncomingLink[];
-    } else {
-      // legacy single-link body — week_index=30 1슬롯으로 변환.
-      const legacy = (body as { cluvingReviewLink?: string | null }).cluvingReviewLink;
-      if (legacy !== undefined) {
-        incoming = [{ weekIndex: 30, url: legacy }];
-      } else {
-        return NextResponse.json(
-          errorPayload("validation", "links 가 배열이 아닙니다."),
-          { status: 400 },
-        );
-      }
+    if (!Array.isArray(rawLinks)) {
+      return NextResponse.json(
+        errorPayload("validation", "links 가 배열이 아닙니다."),
+        { status: 400 },
+      );
     }
+    const incoming = rawLinks as IncomingLink[];
 
     const nowIso = new Date().toISOString();
 
@@ -484,24 +447,6 @@ export async function PUT(request: Request) {
           ),
           { status: 500 },
         );
-      }
-    }
-
-    // legacy 호환: Total Complete 슬롯이 payload 에 있으면 user_cluster2 도 함께 갱신.
-    if (byWeek.has(30)) {
-      const totalUrl = byWeek.get(30) ?? null;
-      const { error: legacyError } = await supabaseAdmin
-        .from("user_cluster2")
-        .upsert(
-          {
-            user_id: userId,
-            cluving_review_link: totalUrl,
-            updated_at: nowIso,
-          },
-          { onConflict: "user_id" },
-        );
-      if (legacyError) {
-        console.warn(TAG, "PUT user_cluster2 legacy mirror failed", legacyError);
       }
     }
 

@@ -4,6 +4,9 @@ import { authOptions } from "@/lib/auth";
 import { isAdminEmail, extractTargetUserId } from "@/lib/admin";
 import { getUserProfile } from "@/lib/get-user-profile";
 import { DemoModeError, resolveDemoProfileUserIdFromRequest } from "@/lib/demoMode";
+import { readScopeMode } from "@/lib/userScopeShared";
+import { isTestUserId } from "@/lib/weekResultState";
+import { supabaseAdmin } from "@/lib/supabase";
 
 // owner/admin 권한 게이트 — Cluster4 등 user-facing API에서 재사용.
 // `getUserProfile()` + `isAdminEmail()` 위에 얇은 래퍼를 둬서, 라우트마다
@@ -56,6 +59,42 @@ export type WriteActorResult =
   | { ok: true; userId: string; isDemo: boolean; isAdmin: boolean }
   | { ok: false; response: NextResponse };
 
+async function validateActAsTestUserId(
+  request: Request,
+): Promise<{ userId: string | null; error: DemoModeError | null }> {
+  let url: URL;
+  try {
+    url = new URL(request.url);
+  } catch {
+    return { userId: null, error: null };
+  }
+  const userId =
+    readScopeMode(url.searchParams) === "test"
+      ? url.searchParams.get("actAsTestUserId")?.trim() || null
+      : null;
+  if (!userId) return { userId: null, error: null };
+  const explicitTarget = extractTargetUserId(request)?.trim() || null;
+  const idsToValidate =
+    explicitTarget && explicitTarget !== userId
+      ? [userId, explicitTarget]
+      : [userId];
+  const db = supabaseAdmin;
+  if (
+    !db ||
+    !(await Promise.all(idsToValidate.map((id) => isTestUserId(db, id))))
+      .every(Boolean)
+  ) {
+    return {
+      userId: null,
+      error: new DemoModeError(
+        403,
+        "actAsTestUserId is not a registered test user.",
+      ),
+    };
+  }
+  return { userId, error: null };
+}
+
 // requireOwnerOrAdmin 의 데모 인지 버전. 데모면 세션 없이 demoUserId 반환, 아니면 동일 게이트.
 export async function resolveWriteActor(
   request: Request,
@@ -72,6 +111,16 @@ export async function resolveWriteActor(
   }
   if (demoUserId) {
     return { ok: true, userId: demoUserId, isDemo: true, isAdmin: false };
+  }
+  const actAs = await validateActAsTestUserId(request);
+  if (actAs.error) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: actAs.error.message },
+        { status: actAs.error.status },
+      ),
+    };
   }
   const gate = await requireOwnerOrAdmin(extractTargetUserId(request));
   if (!gate.ok) return { ok: false, response: gate.response };
@@ -100,6 +149,14 @@ export async function resolveWriteUserId(
   }
   if (demoUserId) {
     return { ok: true, userId: demoUserId, isDemo: true };
+  }
+  const actAs = await validateActAsTestUserId(request);
+  if (actAs.error) {
+    return {
+      ok: false,
+      status: actAs.error.status,
+      message: actAs.error.message,
+    };
   }
   const { profile, error } = await getUserProfile<{ user_id: string }>(
     "user_id",

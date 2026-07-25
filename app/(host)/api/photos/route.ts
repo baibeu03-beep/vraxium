@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getUserProfile } from "@/lib/get-user-profile";
 import { resolveWriteUserId } from "@/lib/api-auth";
 import { enforceQaMode } from "@/lib/qaModeGate";
+import { resolveCluster2UserScope } from "@/lib/cluster2UserScope";
 import { getCluster2DefaultPhotosForOrgSlug } from "@/lib/cluster2-defaults";
 
 export const dynamic = "force-dynamic";
@@ -46,7 +47,7 @@ function isLocalPreviewUrl(value: unknown): boolean {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const targetUserId = searchParams.get("userId");
+    const { targetUserId } = resolveCluster2UserScope(searchParams);
     // org별 기본 이미지 6장(사용자 저장 전 노출값) — 클라이언트/데모/테스트 모드 공통 SoT.
     const orgSlug = searchParams.get("org");
     const defaultPhotos = getCluster2DefaultPhotosForOrgSlug(orgSlug);

@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
+import { readScopeMode } from "@/lib/userScopeShared";
 
 // 고객 앱 공통 테스트 유저(데모) 모드 훅.
 // ─────────────────────────────────────────────────────────────────────────
@@ -26,8 +27,10 @@ export interface DemoUserMode {
   demoUserId: string | null;
   /** URL ?demoUserName= 원본 (배너 표시용, 없으면 null) */
   demoUserName: string | null;
+  actAsTestUserId: string | null;
   /** 테스트 유저 모드 여부 (= demoUserId 존재) */
   isDemo: boolean;
+  hasTestUserTarget: boolean;
   /**
    * 조회/표시 대상 user_id.
    * admin-view(userId/userID) 우선 → 없으면 demoUserId. 일반 사용자는 null(=본인).
@@ -56,7 +59,11 @@ export function useDemoUserMode(): DemoUserMode {
     const demoUserId = searchParams.get("demoUserId");
     const demoUserName = searchParams.get("demoUserName");
     const adminView = searchParams.get("userId") || searchParams.get("userID");
-    const targetUserId = adminView || demoUserId;
+    const actAsTestUserId =
+      readScopeMode(searchParams) === "test"
+        ? searchParams.get("actAsTestUserId")
+        : null;
+    const targetUserId = adminView || demoUserId || actAsTestUserId;
 
     const demoQS = demoUserId
       ? `&demoUserId=${encodeURIComponent(demoUserId)}`
@@ -67,6 +74,9 @@ export function useDemoUserMode(): DemoUserMode {
       const parts = [`demoUserId=${encodeURIComponent(demoUserId)}`, "admin=true"];
       if (demoUserName) parts.push(`demoUserName=${encodeURIComponent(demoUserName)}`);
       userLinkQuery = `?${parts.join("&")}`;
+    } else if (actAsTestUserId) {
+      userLinkQuery =
+        `?mode=test&actAsTestUserId=${encodeURIComponent(actAsTestUserId)}`;
     } else if (targetUserId) {
       userLinkQuery = `?userId=${encodeURIComponent(targetUserId)}`;
     }
@@ -80,7 +90,9 @@ export function useDemoUserMode(): DemoUserMode {
     return {
       demoUserId,
       demoUserName,
+      actAsTestUserId,
       isDemo: !!demoUserId,
+      hasTestUserTarget: !!demoUserId || !!actAsTestUserId,
       targetUserId,
       demoQS,
       userLinkQuery,

@@ -84,7 +84,14 @@ export async function enforceQaMode(
   if (mode !== "test") return null; // 운영 — 무변경
   if (!supabaseAdmin) return null;
 
-  const demoUserId = url.searchParams.get("demoUserId");
+  const delegatedTestUserId =
+    url.searchParams.get("demoUserId") ??
+    url.searchParams.get("actAsTestUserId");
+  const demoUserId =
+    delegatedTestUserId &&
+    (!opts?.targetUserId || opts.targetUserId === delegatedTestUserId)
+      ? delegatedTestUserId
+      : null;
 
   const session = await getServerSession(authOptions);
   const sessionUserId = (session?.user as { id?: string } | undefined)?.id ?? null;
