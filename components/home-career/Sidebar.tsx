@@ -22,6 +22,8 @@ import { isPxRoute, isEcRoute, getThemeClass, withPxRoute, getOrgConfigFromPathn
 import { RESUME_ROLE_CLASS_LABELS } from "@/lib/crewClassLabel";
 import { LoadingPanel } from "@/components/ui/loading/LoadingPanel";
 import { progressStatusToSeasonKey, RESUME_SEASON_BADGE_TEXT, type SeasonStatusKey } from "@/lib/cluster4-status-label";
+import { resolvePersonDisplayNames } from "@/lib/koreanRomanization";
+import { useDemoUserMode } from "@/hooks/useDemoUserMode";
 
 const koreaRegions: { [key: string]: string[] } = koreaRegionsData;
 const DEFAULT_PHONE_COMMENT = "평일 오전 10시 ~ 오후 20시 사이에 언제든지 연락가능합니다. 주말은 문자나 텍스트로만 부탁드려요! 😊";
@@ -122,6 +124,7 @@ const IDENTITY_TAB_IMAGES = [
 // =============================================================
 type SidebarUserProfile = {
   name: string;
+  namePrefix?: string;
   nameEng: string;
   gender: string;
   birthDate: string;
@@ -165,17 +168,15 @@ const buildSidebarUserProfile = (
   const addressParts = address.split(" ");
   const rawPhone = (profile.phone as string | null) ?? "";
   const rawBirth = (profile.birth_date as string | null) ?? "";
+  const displayNames = resolvePersonDisplayNames(
+    profile.display_name as string | null,
+  );
   return {
-    name: (profile.display_name as string | null) ?? "",
-    // 영문명(name-eng): admin API 가 노출하는 englishName(crew.englishName / bundle.englishName
-    // 의 camelCase 미러) → english_name(user_profiles 정규 컬럼, bundle.profile.english_name)
-    // → eng_name(레거시) → placeholder("") 순으로 fallback. read-only 표시이며
-    // displayName(한글 이름, profile.display_name) 영역은 건드리지 않는다.
-    nameEng:
-      (profile.englishName as string | null) ??
-      (profile.english_name as string | null) ??
-      (profile.eng_name as string | null) ??
-      "",
+    name: displayNames.koreanName,
+    namePrefix: displayNames.rolePrefix,
+    // 국문명과 영문명은 같은 display_name에서 생성한다. 저장 english_name/eng_name은
+    // 편집 데이터로 남겨두되 이력서 카드 표시에는 사용하지 않는다.
+    nameEng: displayNames.englishName,
     gender: (profile.gender as string | null) ?? "",
     birthDate: rawBirth ? rawBirth.replace(/-/g, ".") : "",
     city: addressParts[0] || "",
@@ -302,9 +303,9 @@ const Sidebar = () => {
   // 보게 되어 테스트 유저 이력서 영역이 전부 void 로 표시된다.
   // Sidebar 는 cluster-4 / cluster-4-ec / cluster-4-px 등 모든 cluster route 의 공용 컴포넌트라
   // 본 한 줄로 세 라우트가 동일하게 demoUserId 를 처리한다(일반 로그인 사용자는 demoUserId 부재 → 기존 동작).
-  const demoUserId = searchParams.get("demoUserId");
-  const targetUserId =
-    searchParams.get("userId") || searchParams.get("userID") || demoUserId;
+  const demo = useDemoUserMode();
+  const demoUserId = demo.demoUserId;
+  const targetUserId = demo.targetUserId;
   const sessionUserId = session?.user?.id ?? null;
   const shouldFetchProfile = !!targetUserId || sessionStatus === "authenticated";
   const hasFetchIdentity = !!targetUserId || !!sessionUserId;
@@ -1253,6 +1254,8 @@ const Sidebar = () => {
           membershipLevel: userProfile.membershipLevel,
         }
       : defaultProfile;
+  const currentNamePrefix =
+    isMounted && userProfile ? userProfile.namePrefix ?? "" : "";
 
   // 페이지 로드 시 프로필 데이터 가져오기 (캐시 활용)
   const fetchUserProfile = async (forceRefresh?: boolean) => {
@@ -2616,7 +2619,8 @@ const Sidebar = () => {
                     >
                       <Image src="/images/0/cluster 1/small icon/Chevron_Right_MD.png" alt="" width={18} height={18} />
                     </span>
-                    {mask.crewName(currentProfile.name)} <span className="name-eng">{mask.crewName(currentProfile.nameEng)}</span>
+                    {currentNamePrefix}{mask.crewName(currentProfile.name)}{" "}
+                    <span className="name-eng">{mask.crewName(currentProfile.nameEng)}</span>
                   </h1>
 
                   <div className="resume-details">

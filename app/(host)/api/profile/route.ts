@@ -17,6 +17,8 @@ import { resolveWeekScopeForUser, resolveWeekResultStates, statesByStartDate } f
 import { enforceQaMode } from "@/lib/qaModeGate";
 import { isTransitionWeek, resolveTransitionSpan, weekNumberLabel } from "@/lib/cluster4-transition-week";
 import { loadCurrentWeekPositionOverrides } from "@/lib/currentWeekPositionOverride";
+import { resolveCluster2UserScope } from "@/lib/cluster2UserScope";
+import { resolvePersonDisplayNames } from "@/lib/koreanRomanization";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -468,7 +470,7 @@ export async function GET(request: NextRequest) {
     // 조회 대상: userId(어드민/공개 조회) → demoUserId(테스트 유저 모드).
     // GET 은 공개 read 경로이므로 demoUserId 도 동일하게 user_id 조회 키로 사용한다
     // (test_user_markers 게이트는 쓰기 경로 전용 — 읽기는 어떤 userId 든 공개).
-    const targetUserId = searchParams.get('userId') || searchParams.get('demoUserId');
+    const { targetUserId } = resolveCluster2UserScope(searchParams);
 
     // QA 모드 게이트(Phase C): mode=test 에서 실사용자 세션/대상이면 차단(운영·QA 데이터 미노출).
     const qaBlock = await enforceQaMode(request, { targetUserId });
@@ -539,11 +541,16 @@ export async function GET(request: NextRequest) {
           legacy.id ?? null,
           legacy.organization_slug ?? null,
         );
+        const legacyNames = resolvePersonDisplayNames(
+          legacy.display_name ?? legacy.name ?? "",
+        );
         return NextResponse.json({
           success: true,
           data: {
             id: legacy.id,
-            display_name: legacy.display_name ?? legacy.name ?? "",
+            display_name: legacyNames.displayName,
+            englishName: legacyNames.englishName,
+            nameRolePrefix: legacyNames.rolePrefix,
             eng_name: "",
             gender: legacy.gender ?? "",
             birth_date: legacy.birth_date ?? null,
@@ -718,6 +725,13 @@ export async function GET(request: NextRequest) {
     // user_profiles는 user_id 컬럼을 PK로 사용. 다운스트림은 profile.id 참조이므로 정규화.
     if (profile && !profile.id && profile.user_id) {
       profile.id = profile.user_id;
+    }
+
+    if (profile) {
+      const displayNames = resolvePersonDisplayNames(profile.display_name);
+      profile.display_name = displayNames.displayName;
+      profile.englishName = displayNames.englishName;
+      profile.nameRolePrefix = displayNames.rolePrefix;
     }
 
     // contact_available (DB) → contactAvailable (API/Frontend) 별칭 노출.
