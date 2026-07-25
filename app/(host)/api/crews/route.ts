@@ -223,6 +223,68 @@ async function fetchDisplayGrowthStatusMap(
   }
 }
 
+async function fetchCanonicalSuccessWeeksMap(
+  request: Request,
+  userIds: readonly string[],
+): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  if (userIds.length === 0) return result;
+
+  const adminApiBaseUrl = await resolveAdminBaseUrl();
+  if (!adminApiBaseUrl) return result;
+
+  const internalApiKey = process.env.INTERNAL_API_KEY ?? "";
+  const cookie = request.headers.get("cookie");
+  const concurrency = 8;
+  let cursor = 0;
+
+  const worker = async () => {
+    while (cursor < userIds.length) {
+      const userId = userIds[cursor++];
+      const targetUrl = new URL(
+        `${adminApiBaseUrl}/api/cluster3/stats-cards`,
+      );
+      targetUrl.searchParams.set("userId", userId);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      try {
+        const headers = new Headers({
+          "x-internal-api-key": internalApiKey,
+        });
+        if (cookie) headers.set("cookie", cookie);
+        const upstream = await fetch(targetUrl, {
+          headers,
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!upstream.ok) continue;
+        const json = (await upstream.json()) as {
+          data?: { period?: { successWeeks?: unknown } };
+        };
+        const raw = json.data?.period?.successWeeks;
+        const value =
+          typeof raw === "number" ? raw : Number.parseFloat(String(raw));
+        if (Number.isFinite(value)) result.set(userId, value);
+      } catch (error) {
+        console.warn("[/api/crews] canonical successWeeks fetch failed", {
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from(
+      { length: Math.min(concurrency, userIds.length) },
+      () => worker(),
+    ),
+  );
+  return result;
+}
+
 const isValidUUID = (str: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
@@ -617,7 +679,14 @@ export async function GET(request: Request) {
     // 6) 페이지(≤pageSize) 전용 enrichment — 무거운 per-user 스캔(별/주차 success)을 보이는
     //    행에만 한정한다(요구 4·7). crew_list_view·memberships 도 페이지 한정.
     const STAR_PAGE = 1000;
-    const [viewRes, membershipRes, starsByUser, confirmedWeeksByUser, weekOverrideMap] = await Promise.all([
+    const [
+      viewRes,
+      membershipRes,
+      starsByUser,
+      confirmedWeeksByUser,
+      weekOverrideMap,
+      canonicalSuccessWeeksMap,
+    ] = await Promise.all([
       // crew_list_view (rich fields: club / total_stars 폴백)
       supabase.from("crew_list_view").select("*").in("id", pageIds).returns<CrewListViewRow[]>(),
       // memberships (team/part 표시 + rest 마스킹용)
@@ -675,6 +744,7 @@ export async function GET(request: Request) {
       //   ⚠ 정책값이므로 operating 기준 — mode=test/actAsTestUserId/demoUserId 모두 동일 경로·동일
       //     DTO 를 쓴다(QA 워크백: 비즈니스 로직은 항상 operating).
       loadCurrentWeekPositionOverrides(supabase, pageIds),
+      fetchCanonicalSuccessWeeksMap(request, pageIds),
     ]);
     const { data: viewData, error: viewError } = viewRes;
     if (viewError) console.error("crew_list_view enrichment failed:", JSON.stringify(viewError));
@@ -706,7 +776,11 @@ export async function GET(request: Request) {
         season?.statusByUser.get(p.user_id) ?? null,
         weekOverrideMap.get(p.user_id) ?? null,
       );
-      return { ...row, name: maskCrewName(row.name, isLoggedIn) };
+      return {
+        ...row,
+        name: maskCrewName(row.name, isLoggedIn),
+        successWeeks: canonicalSuccessWeeksMap.get(p.user_id) ?? null,
+      };
     });
 
     return NextResponse.json({

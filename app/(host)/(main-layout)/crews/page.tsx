@@ -37,6 +37,7 @@ interface Crew {
   displayGrowthStatus: string;
   totalStars: number;
   approvedWeeks: number;
+  successWeeks: number | null;
   organizationSlug: string | null;
 }
 
@@ -911,7 +912,8 @@ function CrewsContent() {
                               </div>
                               <div className="review">
                                 <span className="text-sm fw-6" style={{ whiteSpace: 'nowrap' }}>
-                                  <i className="ti ti-calendar-check"></i>{crew.approvedWeeks}주
+                                  <i className="ti ti-calendar-check"></i>
+                                  {crew.successWeeks === null ? "-" : `${crew.successWeeks}주`}
                                 </span>
                               </div>
                             </div>
