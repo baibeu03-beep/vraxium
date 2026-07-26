@@ -20,9 +20,9 @@ import { isPxRoute, isEcRoute, withPxRoute, getThemeClass, getGraduationWeeksFro
 import { formatSeasonLabel, formatSeasonWeekTitle, resolveSeasonWeekText } from "@/lib/cluster4-types";
 import { isTransitionWeek, isTransitionWeekDto, isOfficialRestWeek, weekNumberLabel, TRANSITION_WEEK_LABEL } from "@/lib/cluster4-transition-week";
 import { isFadedCardStatus } from "@/lib/cluster4-faded-card";
-// 클래스(직책) 표시 — 주차 당시 position_code → 라벨 단일 변환기(admin 미러 공통 모듈).
-import { positionCodeToClassLabel } from "@/shared/crewClassPosition";
-import { formatCrewClassDisplayLabel, toCrewClassDisplayLabel, CREW_CLASS_REGULAR, CREW_CLASS_AMBASSADOR } from "@/lib/crewClassDisplayLabel";
+// 클래스(직책) 표시 — 주차 당시 position_code → 라벨 변환은 lib/crewClassDisplayLabel 의
+// resolveCrewClassLabel(공통 resolver) 단일 경유. 여기서 shared 모듈을 직접 부르지 않는다.
+import { formatCrewClassDisplayLabel, toCrewClassDisplayLabel, resolveCrewClassLabel, CREW_CLASS_REGULAR } from "@/lib/crewClassDisplayLabel";
 import { normalizePointACriterion } from "@/lib/pointACriterionLabel";
 import { clampAdminOutputs, ADMIN_OUTPUT_IMAGE_MAX, ADMIN_OUTPUT_LINK_MAX } from "@/lib/cluster4-admin-output-clamp";
 import { RESERVED_ADMIN_IMAGE_SLOTS } from "@/lib/cluster4OutputImages";
@@ -216,7 +216,12 @@ const resolvePersonalInfo = (sources: PersonalInfoSourceBag): ResolvedPersonalIn
     //   weeklyCardMeta(주차 핀)를 최우선으로 둔다. 카드 메타가 없을 때만(레거시/미수신·타 크루 모달은
     //   meta 미전달) 기존 profile/role 폴백. (연계동료/평판 모달은 weeklyCardMeta 를 넘기지 않으므로
     //   meta={} → 이 우선분기 무영향.)
-    membershipLevel: pickPersonalValue(meta.roleLabel, p.membershipLevel, p.membership_level, u.membershipLevel, u.membership_level, p.role, u.role),
+    //   ⚠ 주차 핀 후보는 meta.roleLabel(등급) 이 아니라 **공통 resolver 결과**다 — position_code 를
+    //     먼저 보지 않으면 직책 미특정 "심화" 가 "심화(에이전트)" 로 굳는다(2026-07-26).
+    membershipLevel: pickPersonalValue(
+      resolveCrewClassLabel({ positionCode: meta.crewClassPositionCode, roleLabel: meta.roleLabel }, ""),
+      p.membershipLevel, p.membership_level, u.membershipLevel, u.membership_level, p.role, u.role,
+    ),
     profileImageUrl: pickPersonalValue(
       p.profileImageUrl, p.profile_photo_url, p.profileImg, p.avatarUrl, p.profilePhotoUrl,
       u.profileImageUrl, u.profile_photo_url, u.profileImg, u.avatarUrl, u.image,
@@ -239,6 +244,16 @@ const resolvePersonalInfo = (sources: PersonalInfoSourceBag): ResolvedPersonalIn
 //     종전의 로컬 MEMBERSHIP_ROLE_LABEL_MAP 은 "일반"/"심화" 를 그대로 뱉어 폐기했다.
 const formatMembershipRoleLabel = (value: string | null | undefined): string =>
   formatCrewClassDisplayLabel(value, "-");
+
+// 데모(가상 인물 placeholder) 페르소나의 클래스 — **position_code 로 한 번만** 정의한다.
+//   실사용자 경로와 완전히 같은 resolver(resolveCrewClassLabel)를 태워 라벨을 얻으므로,
+//   데모 전용 표시 문자열이 컴포넌트에 남지 않는다(라벨 문구 변경 시 자동 추종).
+//   ⚠ 2026-07-26 이전에는 인적사항은 "심화(에이전트)" 문자열 리터럴, 역할 배지는
+//     CREW_CLASS_AMBASSADOR 상수를 각각 박아 **같은 데모 인물이 화면마다 다른 클래스**로
+//     보였다(실사용자에서 방금 고친 것과 동일한 형태의 불일치). 원천을 하나로 합친다.
+//     팀(마케팅)·파트(바이럴)를 가진 페르소나이므로 운영진 계열이 아닌 심화 크루가 맞다.
+const DEMO_CLASS_POSITION_CODE = "advanced_agent";
+const demoClassLabel = () => resolveCrewClassLabel({ positionCode: DEMO_CLASS_POSITION_CODE });
 
 const WORKINFO_IMAGE_SLOT_COUNT = 4;
 
@@ -6448,10 +6463,18 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   //   ⚠ 표시 어휘는 반드시 lib/crewClassDisplayLabel 를 경유한다 — 어드민 weekly-cards 스냅샷은
   //     과거에 baking 된 "일반"(내부 어휘)을 그대로 들고 있을 수 있어(2026-07-22 실측: 같은 유저의
   //     주차별 roleLabel 이 "정규"/"일반" 혼재) 소비 측이 마지막 게이트가 되어야 한다.
+  //   ⚠ 2026-07-26: 공통 resolver(resolveCrewClassLabel)로 통일 — position_code 가 1순위다.
+  //     roleLabel(등급)만 보면 직책 미특정 "심화" 가 기본값 "심화(에이전트)" 로 떨어져 디테일
+  //     로그(dl-crew-seg, 이미 position_code 사용)와 같은 카드 안에서 값이 갈렸다.
   const headerRoleLabel = weeklyCardMeta
-    ? (toCrewClassDisplayLabel(weeklyCardMeta.roleLabel) ??
-       toCrewClassDisplayLabel(weeklyCardMeta.membershipStatusLabel) ??
-       "-")
+    ? resolveCrewClassLabel(
+        {
+          positionCode: weeklyCardMeta.crewClassPositionCode,
+          roleLabel: weeklyCardMeta.roleLabel,
+          membershipStatusLabel: weeklyCardMeta.membershipStatusLabel,
+        },
+        "-",
+      )
     : formatCrewClassDisplayLabel(roleLabel, "-");
 
   // 팀/파트
@@ -6472,7 +6495,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
         department: "경영",
         team: "마케팅",
         part: "바이럴",
-        membershipLevel: "심화(에이전트)",
+        membershipLevel: demoClassLabel(),
         profileImageUrl: null,
         tagline: "엔비디아 구글 테슬라",
       };
@@ -6513,18 +6536,22 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   //   폴백해 메운다. badge 등급 SoT = membership_level 정책(연계동료/평판 카드와 동일)과 일치.
   //   빈 문자열·"-"·"—" 는 무효로 보고 다음 후보로 넘어간다(placeholder 노출 방지).
   const ownerRoleBadge = useMemo(() => {
-    if (isDemoMode) return CREW_CLASS_AMBASSADOR;
+    // 데모 배지도 인적사항과 **같은 원천**(DEMO_CLASS_POSITION_CODE)에서 라벨을 얻는다.
+    if (isDemoMode) return demoClassLabel();
     // 카드(시즌) 기준 단계 우선 — weeklyCardMeta.roleLabel 은 백엔드 snapshot SoT
     //   (user_position_histories, 이력서 resume-activities 와 동일 SoT). 그 카드 시즌 "당시 단계"를
     //   담으므로 현재 role/membership(roleLabel·membershipLevel)보다 우선해야 과거 주차 카드가
     //   현재 단계로 덮이지 않는다. 헤더 배지(headerRoleLabel)와 동일 source.
-    // 각 후보는 표시 어휘(lib/crewClassDisplayLabel)로 정규화한 뒤 첫 유효값을 고른다.
-    const candidates = [
-      weeklyCardMeta?.roleLabel,
-      roleLabel,
-      ownerPersonalInfo.membershipLevel,
-    ];
-    for (const c of candidates) {
+    // 공통 resolver 단일 사용 — position_code(클래스 SoT) 우선, 그다음 등급 라벨 후보.
+    const byWeek = resolveCrewClassLabel(
+      {
+        positionCode: weeklyCardMeta?.crewClassPositionCode,
+        roleLabel: weeklyCardMeta?.roleLabel,
+      },
+      "",
+    );
+    if (byWeek) return byWeek;
+    for (const c of [roleLabel, ownerPersonalInfo.membershipLevel]) {
       const s = toCrewClassDisplayLabel(c);
       if (s) return s;
     }
@@ -6852,10 +6879,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       //   ⚠ roleLabel(등급)을 클래스로 쓰지 않는다 — 팀장이 "정규"로 표시되던 회귀 방지.
       //   ⚠ 폴백도 표시 어휘 SoT 를 경유한다. 종전엔 "등급(역할)" 을 문자열 연결해
       //     "일반(정규)" 같은 금지 어휘 혼합 문구가 나왔다.
-      level:
-        positionCodeToClassLabel(weeklyCardMeta?.crewClassPositionCode ?? null) ??
-        toCrewClassDisplayLabel(ownerPersonalInfo.membershipLevel) ??
+      //   ⚠ 2026-07-26: 다른 표시 지점과 **같은 함수**(resolveCrewClassLabel)를 타게 통일했다.
+      //     동작(코드 우선 → 등급 폴백)은 종전과 동일하다.
+      level: resolveCrewClassLabel(
+        {
+          positionCode: weeklyCardMeta?.crewClassPositionCode,
+          roleLabel: ownerPersonalInfo.membershipLevel,
+        },
         formatCrewClassDisplayLabel(headerRoleLabel, "-"),
+      ),
     },
     statusText: headerStatusText || "-",
     statusClass: detailLogStatusClass,
@@ -8835,7 +8867,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   //   user_position_histories 주차단위 — 이력서 resume-activities 와 동일). 과거 주차 카드가 최신 profile
   //   membershipLevel 로 덮이면 안 되므로 주차 핀 값을 최우선으로 쓴다. 카드 메타 미수신(레거시/오류) 시에만
   //   로컬 membershipLevel state(현재값) 폴백 — 무회귀.
-  const weekStageLabel = (weeklyCardMeta?.roleLabel && weeklyCardMeta.roleLabel.trim()) || "";
+  //   ⚠ 2026-07-26: 주차 핀 값도 공통 resolver 를 경유한다. roleLabel(등급)만 보면 파트장이
+  //     "심화" → "심화(에이전트)" 로 해석돼 관리 슬롯 아이콘(isExpAgentRole)까지 에이전트로 갈렸다.
+  const weekStageLabel = resolveCrewClassLabel(
+    {
+      positionCode: weeklyCardMeta?.crewClassPositionCode,
+      roleLabel: weeklyCardMeta?.roleLabel,
+    },
+    "",
+  );
   const expMembershipRaw = weekStageLabel || (membershipLevel ?? "");
   const expStageFull = toCrewClassDisplayLabel(expMembershipRaw) ?? "";
   const expStagePrefix = expStageFull.split("(")[0] || ""; // "정규" | "심화" | "운영진" | ""

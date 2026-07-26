@@ -10,7 +10,7 @@ import { dedupedJson } from "@/lib/fetch-dedupe";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import { resolvePointC, resolveFinalPointB } from "@/lib/cluster4-points";
-import { toCrewClassDisplayLabel, formatCrewClassDisplayLabel, CREW_CLASS_REGULAR } from "@/lib/crewClassDisplayLabel";
+import { toCrewClassDisplayLabel, formatCrewClassDisplayLabel, resolveCrewClassLabel, CREW_CLASS_REGULAR } from "@/lib/crewClassDisplayLabel";
 import { DUMMY_USER_PROFILE, DUMMY_SIDEBAR_EXTRA } from "@/constants/dummyData";
 import { SECTION2_SLOGAN_DEFAULTS } from "@/constants/dummyData/cluster2-section2-default";
 import { useResumeCardHeight } from "@/hooks/useResumeCardHeight";
@@ -19,7 +19,6 @@ import { usePopup } from "@/components/ui/popup";
 import { logEvent } from "@/utils/blackScreenDiagnostics";
 import koreaRegionsData from "@/data/korea-regions.json";
 import { isPxRoute, isEcRoute, getThemeClass, withPxRoute, getOrgConfigFromPathname, getOrgMascotSrc, getOrgStampSrc } from "@/lib/cluster-route";
-import { RESUME_ROLE_CLASS_LABELS } from "@/lib/crewClassLabel";
 import { LoadingPanel } from "@/components/ui/loading/LoadingPanel";
 import { progressStatusToSeasonKey, RESUME_SEASON_BADGE_TEXT, type SeasonStatusKey } from "@/lib/cluster4-status-label";
 import { resolvePersonDisplayNames } from "@/lib/koreanRomanization";
@@ -137,6 +136,10 @@ type SidebarUserProfile = {
   team: string;
   part: string;
   membershipLevel: string;
+  // 현재 시점 클래스(직책) position_code — 클래스 표시 SoT. /api/profile 이 role+등급을
+  //   공통 정규화기로 해석해 내려준다. 등급(membershipLevel)만으로는 에이전트/파트장이
+  //   구분되지 않으므로 표시할 때 이 값을 먼저 본다(resolveCrewClassLabel).
+  classPositionCode?: string | null;
 };
 
 const buildSidebarUserProfile = (
@@ -199,6 +202,7 @@ const buildSidebarUserProfile = (
     team: (profile.team_name as string | null) ?? "",
     part: (profile.part_name as string | null) ?? "",
     membershipLevel: (profile.membership_level as string | null) ?? "",
+    classPositionCode: (profile.class_position_code as string | null) ?? null,
   };
 };
 
@@ -396,9 +400,9 @@ const Sidebar = () => {
     winter: "겨울",
   };
 
-  // 역할 한글 변환 — 라벨 SoT 는 lib/crewClassLabel(RESUME_ROLE_CLASS_LABELS).
-  //   /crews 크루 카드 클래스 배지와 동일 정의소를 공유한다(라벨 문구 수정은 그 파일 한 곳).
-  const roleKorean = RESUME_ROLE_CLASS_LABELS;
+  // 역할 라벨 변환은 lib/crewClassDisplayLabel 단일 경유다(아래 normalizeActivityDisplay).
+  //   종전의 로컬 별칭(roleKorean = RESUME_ROLE_CLASS_LABELS)은 표시 변환기 통일 후 참조가 사라져
+  //   제거했다 — 라벨 규칙을 이 파일에서 다시 정의하지 않는다.
 
   // 활동 이력(activity-line) 표시용 정규화.
   // 백엔드 DTO 필드명/시즌 시스템 편차(두 시즌 시스템: seasons(uuid) vs season_definitions)를
@@ -579,6 +583,7 @@ const Sidebar = () => {
     team: string;
     part: string;
     membershipLevel: string;
+    classPositionCode?: string | null;
   } | null>(null);
 
   // 데모 모드 사용자별 sidebar 더미 데이터 분기 (targetUserId 없을 때만 적용)
@@ -1170,6 +1175,11 @@ const Sidebar = () => {
       gpaMax: "4.5",
       photo: "/images/0/cluster 1/shape.png",
       quote: "가장 어두운 순간에도 앞으로 한 걸음 내딛는 자에게 길이 열린다가장 어두운 순간에도 앞으로 한 걸음 내딛는 자에게 길이 열린다",
+      // 소속/클래스는 더미에 없다(실데이터 전용). 실제 프로필이 없으면 화면은 "-" 로 떨어진다.
+      team: "",
+      part: "",
+      membershipLevel: "",
+      classPositionCode: null as string | null,
       lightColor: "#FFEC8F",
       accentColor: "#FFC300",
     },
@@ -1192,6 +1202,10 @@ const Sidebar = () => {
       gpaMax: "4.5",
       photo: "/images/0/cluster 1/EC00.png",
       quote: "디자인은 단순한 외형이 아니라 사용자의 경험을 설계하는 것이다. 좋은 디자인은 보이지 않는 곳에서 빛난다",
+      team: "",
+      part: "",
+      membershipLevel: "",
+      classPositionCode: null as string | null,
       lightColor: "#FF98A6",
       accentColor: "#FF4B70",
     },
@@ -1214,6 +1228,10 @@ const Sidebar = () => {
       gpaMax: "4.5",
       photo: "/images/0/cluster 1/PX00.png",
       quote: "코드 한 줄 한 줄에 사용자를 향한 진심을 담는다. 기술은 사람을 위해 존재해야 한다",
+      team: "",
+      part: "",
+      membershipLevel: "",
+      classPositionCode: null as string | null,
       lightColor: "#B2FF8F",
       accentColor: "#36DA60",
     },
@@ -1250,6 +1268,7 @@ const Sidebar = () => {
           team: userProfile.team,
           part: userProfile.part,
           membershipLevel: userProfile.membershipLevel,
+          classPositionCode: userProfile.classPositionCode ?? null,
         }
       : defaultProfile;
   const currentNamePrefix =
@@ -2800,8 +2819,12 @@ const Sidebar = () => {
                           UI 구조/슬래시 위치/className 미변경.
                           ⚠ 2026-07-22: 종전엔 "(...)" 앞부분만 잘라("심화(파트장)" → "심화") 표시했는데,
                           그 축약형("일반"/"심화")은 사용자 노출 금지 어휘다. 표시 어휘 SoT
-                          (lib/crewClassDisplayLabel) 전체 라벨을 그대로 쓴다. */}
-                      <span style={{ color: currentProfile.lightColor }}>·</span> {currentProfile.part || "-"} <span style={{ color: currentProfile.lightColor }}>/{formatCrewClassDisplayLabel(currentProfile.membershipLevel, "-")}</span>
+                          (lib/crewClassDisplayLabel) 전체 라벨을 그대로 쓴다.
+                          ⚠ 2026-07-26: 클래스는 공통 resolver(resolveCrewClassLabel)로 읽는다 —
+                          position_code 가 1순위. 등급(membershipLevel)만 보던 종전 코드는 직책
+                          미특정 "심화" 를 기본값 "심화(에이전트)" 로 떨어뜨려, 같은 카드의
+                          activity-role(심화(파트장))과 값이 갈렸다. */}
+                      <span style={{ color: currentProfile.lightColor }}>·</span> {currentProfile.part || "-"} <span style={{ color: currentProfile.lightColor }}>/{resolveCrewClassLabel({ positionCode: currentProfile.classPositionCode, roleLabel: currentProfile.membershipLevel }, "-")}</span>
                     </span>
                   </div>
                 </div>
@@ -2922,7 +2945,18 @@ const Sidebar = () => {
                         displaySeasonName,
                         displayTotalWeeks,
                         displayRoleLabel,
-                      } = normalizeActivityDisplay(history, currentProfile.membershipLevel);
+                      // 2번째 인자 = 시즌 핀 값이 전무할 때만 쓰이는 폴백. 상단 클래스와 **같은
+                      //   resolver 결과**를 넘긴다(등급 원문을 넘기면 파트장이 에이전트로 떨어진다).
+                      } = normalizeActivityDisplay(
+                        history,
+                        resolveCrewClassLabel(
+                          {
+                            positionCode: currentProfile.classPositionCode,
+                            roleLabel: currentProfile.membershipLevel,
+                          },
+                          "",
+                        ),
+                      );
                       const avatarImage = getAvatarImage(index);
 
                       return (

@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton/Skeleton";
 import { isTransitionWeekDto, isRegularActivityWeekDto, weekNumberLabel } from "@/lib/cluster4-transition-week";
 import { resolveSeasonWeekText } from "@/lib/cluster4-types";
 import { getGrowthBadgeText } from "@/lib/cluster4-status-label";
-import { toCrewClassDisplayLabel } from "@/lib/crewClassDisplayLabel";
+import { resolveCrewClassLabel } from "@/lib/crewClassDisplayLabel";
 // QA(mode=test) API/link suffix is temporarily disabled. Keep for future QA deployment reuse.
 // import { parseScopeMode } from "@/lib/userScopeShared";
 
@@ -1543,13 +1543,18 @@ const Cluster41Content = () => {
               const teamName = week.teamName && week.teamName.trim() ? week.teamName : "-";
               const partName = week.partName && week.partName.trim() ? week.partName : "-";
 
-              // 활동 상태: roleLabel 우선, 없으면 membershipStatusLabel (null → "-")
-              // 표시 어휘 SoT = lib/crewClassDisplayLabel — 어드민 스냅샷이 내부 어휘("일반")를
-              //   들고 있어도 화면에는 정규 / 심화(에이전트) / 심화(파트장) / 운영진(…) 만 나간다.
-              const membership =
-                toCrewClassDisplayLabel(week.roleLabel) ??
-                toCrewClassDisplayLabel(week.membershipStatusLabel) ??
-                "-";
+              // 활동 상태(클래스) — 공통 resolver 단일 사용. 디테일 로그(dl-crew-seg)·카드 헤더 배지와
+              //   같은 함수·같은 우선순위를 타므로 같은 주차가 화면마다 다른 클래스로 보일 수 없다.
+              //   ⚠ 종전엔 roleLabel(멤버십 **등급**)이 1순위라, 직책 미특정 "심화" 가 표시 변환기의
+              //     기본값 "심화(에이전트)" 로 떨어져 파트장이 에이전트로 보였다(2026-07-26).
+              const membership = resolveCrewClassLabel(
+                {
+                  positionCode: week.crewClassPositionCode,
+                  roleLabel: week.roleLabel,
+                  membershipStatusLabel: week.membershipStatusLabel,
+                },
+                "-",
+              );
 
               // 포인트: card.points?.star / card.points?.pointC (null → 0)
               const pointsObj = week.points || {};

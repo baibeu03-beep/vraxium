@@ -24,7 +24,11 @@
 //   · 새 표시 지점을 추가할 때는 반드시 formatCrewClassDisplayLabel 를 경유한다
 //     (정적 검증: scripts/verify-crew-class-display-label.mjs / npm run verify:class-label).
 
-import { isPositionCode, POSITION_CODE_TO_CLASS_LABEL } from "@/shared/crewClassPosition";
+import {
+  isPositionCode,
+  POSITION_CODE_TO_CLASS_LABEL,
+  positionCodeToClassLabel,
+} from "@/shared/crewClassPosition";
 
 export const CREW_CLASS_REGULAR = "정규";
 export const CREW_CLASS_AGENT = "심화(에이전트)";
@@ -129,4 +133,36 @@ export function formatCrewClassDisplayLabel(
   fallback = "-",
 ): string {
   return toCrewClassDisplayLabel(raw) ?? fallback;
+}
+
+/**
+ * 클래스(직책) 표시 라벨 **단일 resolver** — 화면이 "이 사람의 클래스"를 그릴 때는 이 함수만 쓴다.
+ * ─────────────────────────────────────────────────────────────────────
+ * 우선순위(= admin lib/adminMembersTypes.weekClassLabel 미러):
+ *   ① positionCode — 클래스의 진짜 SoT. 주차 화면은 그 주차 effective(override ?? UPH),
+ *      현재 시점 화면은 /api/profile 이 role+등급을 정규화해 내려준 현재 position_code.
+ *   ② roleLabel(= 멤버십 **등급**) / ③ membershipStatusLabel — positionCode 가 없는 레거시
+ *      스냅샷·DTO 전용 과도기 폴백.
+ *
+ * ⚠ ②를 1순위로 쓰면 안 된다. 등급은 "심화"까지만 담고 직책(에이전트/파트장)을 구분하지 못해,
+ *   표시 어휘 변환기가 직책 미특정 "심화" 를 기본값 "심화(에이전트)" 로 떨어뜨린다.
+ *   같은 사람이 화면마다 심화(에이전트)/심화(파트장) 으로 갈리던 원인이 정확히 이것이다
+ *   (2026-07-26). positionCode 를 먼저 보면 두 화면이 구조적으로 같은 값을 낸다.
+ */
+export function resolveCrewClassLabel(
+  source: {
+    positionCode?: string | null;
+    roleLabel?: string | null;
+    membershipStatusLabel?: string | null;
+  },
+  fallback = "-",
+): string {
+  // position_code 로 해석되지 않는 값은 조용히 통과시키지 않는다(null → ②로 내려감).
+  const byCode = positionCodeToClassLabel(source.positionCode ?? null);
+  if (byCode) return byCode;
+  return (
+    toCrewClassDisplayLabel(source.roleLabel) ??
+    toCrewClassDisplayLabel(source.membershipStatusLabel) ??
+    fallback
+  );
 }

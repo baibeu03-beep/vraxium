@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getCachedTeams, getCachedParts, getCachedActivityTypes } from "@/lib/cached-data";
 import { getProfileLookupKey, resolveUserProfileAccess } from "@/lib/user-profile-access";
 import { seasonLabel } from "@/lib/cluster4-types";
-import { positionCodeToClassLabel } from "@/shared/crewClassPosition";
+import { positionCodeToClassLabel, roleLevelToPositionCode } from "@/shared/crewClassPosition";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import { pageSlugFromReferer, applyPageSlug } from "@/lib/pageSlugForward";
 import { DemoModeError, resolveDemoProfileUserId } from "@/lib/demoMode";
@@ -876,11 +876,18 @@ export async function GET(request: NextRequest) {
       //   부당하게 잠겼다. → admin classLabel(role, level) 과 동일 규칙으로 role 을 병합해
       //   membership_level 응답값을 "운영진(팀장/앰배서더)"로 보정한다(프론트 렌더 로직 무변경).
       //   (part_leader/agent 인데 level="일반" 인 경우는 운영진 아님 → 보정 없음, 기존 정책 유지.)
-      if (profile.role === "team_leader") {
-        profile.membership_level = "운영진(팀장)";
-      } else if (profile.role === "ambassador") {
-        profile.membership_level = "운영진(앰배서더)";
-      }
+      //
+      //   ⚠ 2026-07-26 — role 병합을 로컬 if 문이 아니라 공통 정규화기
+      //   (shared/crewClassPosition.roleLevelToPositionCode, admin 미러)로 돌린다. 종전 if 문은
+      //   team_leader/ambassador 만 흡수해서 **part_leader 가 누락**됐고, 그 결과 등급만 남은
+      //   "심화" 가 표시 변환기의 기본값 "심화(에이전트)" 로 떨어져 이력서 카드 상단이
+      //   심화(파트장) 을 심화(에이전트) 로 그렸다(같은 사람의 activity-role 은 정상).
+      //   결과 라벨은 team_leader/ambassador 에 대해 종전과 완전히 동일하다.
+      const currentClassPositionCode =
+        roleLevelToPositionCode(profile.role, resolvedMembership.membershipLevel) ?? null;
+      profile.class_position_code = currentClassPositionCode;
+      const currentClassLabel = positionCodeToClassLabel(currentClassPositionCode);
+      if (currentClassLabel) profile.membership_level = currentClassLabel;
 
       // ── 현재 주차 파트/클래스 override (2026-07-22) ────────────────────────────
       // 관리자가 팀 상세 [B] 에서 **현재 주차**의 소속 파트/클래스를 바꾸면, 사이드바 인적사항
@@ -904,8 +911,11 @@ export async function GET(request: NextRequest) {
           //   position_code → 라벨 변환 SoT = shared/crewClassPosition.
           profile.team_name = ovr.rawTeam || profile.team_name;
           profile.part_name = ovr.rawPart ?? profile.part_name;
-          profile.membership_level =
-            positionCodeToClassLabel(ovr.positionCode) ?? profile.membership_level;
+          const ovrLabel = positionCodeToClassLabel(ovr.positionCode);
+          if (ovrLabel) {
+            profile.membership_level = ovrLabel;
+            profile.class_position_code = ovr.positionCode;
+          }
         }
       } catch (e) {
         console.warn("[profile] 주차 override 조회 실패 → 현재 멤버십 유지", String(e).slice(0, 120));

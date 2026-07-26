@@ -21,7 +21,7 @@ import { formatSeasonLabel, formatSeasonWeekTitle } from "@/lib/cluster4-types";
 import { getGrowthBadgeText, progressStatusToSeasonKey, seasonSummaryToSeasonKey, SEASON_STATUS_TEXT, type SeasonStatusKey } from "@/lib/cluster4-status-label";
 import { isOfficialRestWeek, isTransitionWeek, resolveTransitionSpan } from "@/lib/cluster4-transition-week";
 import { REPUTATION_KEYWORDS } from "@/lib/reputation-keywords";
-import { formatCrewClassDisplayLabel, toCrewClassDisplayLabel, CREW_CLASS_TEAM_LEADER, CREW_CLASS_AMBASSADOR } from "@/lib/crewClassDisplayLabel";
+import { formatCrewClassDisplayLabel, toCrewClassDisplayLabel, resolveCrewClassLabel, CREW_CLASS_TEAM_LEADER, CREW_CLASS_AMBASSADOR } from "@/lib/crewClassDisplayLabel";
 import { isAdminEmail } from "@/lib/admin";
 import { EDIT_WINDOW_LOCKED_MESSAGE } from "@/lib/editWindowMessages";
 import { CLUSTER4_EDIT_RESOURCE_KEYS } from "@/lib/cluster4EditWindow";
@@ -147,8 +147,10 @@ const resolvePersonalInfo = (sources: PersonalInfoSourceBag): ResolvedPersonalIn
       extras.partName,
       fp.part, fp.partName, fp.part_name,
     ),
+    //   ⚠ 주차 핀 후보는 meta.roleLabel(등급) 이 아니라 **공통 resolver 결과**다 — position_code 를
+    //     먼저 보지 않으면 직책 미특정 "심화" 가 "심화(에이전트)" 로 굳는다(2026-07-26).
     membershipLevel: pickPersonalValue(
-      meta.roleLabel,
+      resolveCrewClassLabel({ positionCode: meta.crewClassPositionCode, roleLabel: meta.roleLabel }, ""),
       p.membershipLevel, p.membership_level, u.membershipLevel, u.membership_level,
       p.role, u.role, p.status, u.status,
       fp.membershipLevel, fp.membership_level, fp.role,
