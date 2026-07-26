@@ -297,6 +297,83 @@ async function fetchAdminSuccessWeeks(request: NextRequest, userId: string | nul
   }
 }
 
+// 성장 상태 SoT — admin growthCore.resolveGrowthStatusDetail()의
+// stats-cards process DTO를 그대로 전달한다. profile.status/growth_status/
+// 시즌 상태를 고객 앱에서 다시 조합하지 않는다.
+async function fetchAdminGrowthStatus(
+  request: NextRequest,
+  userId: string | null,
+): Promise<{
+  key: string;
+  label: string;
+  points: { pointA: number; pointB: number; pointC: number; rawAdvantage: number };
+} | null> {
+  if (!userId) return null;
+  const adminApiBaseUrl = await resolveAdminBaseUrl();
+  if (!adminApiBaseUrl) return null;
+
+  const targetUrl = new URL(`${adminApiBaseUrl}/api/cluster3/stats-cards`);
+  targetUrl.searchParams.set("userId", userId);
+  applyPageSlug(targetUrl, pageSlugFromReferer(request));
+
+  const headers = new Headers({
+    "Content-Type": "application/json",
+    "x-internal-api-key": process.env.INTERNAL_API_KEY ?? "",
+  });
+  const cookie = request.headers.get("cookie");
+  if (cookie) headers.set("cookie", cookie);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  try {
+    const upstream = await fetch(targetUrl.toString(), {
+      method: "GET",
+      headers,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!upstream.ok) {
+      throw new Error(`stats-cards upstream returned ${upstream.status}`);
+    }
+    const json: {
+      data?: {
+        process?: {
+          growthStatusKey?: unknown;
+          growthStatus?: unknown;
+        };
+        points?: {
+          totalStars?: unknown;
+          totalShields?: unknown;
+          totalLightning?: unknown;
+        };
+      };
+    } = await upstream.json();
+    const process = json?.data?.process;
+    const points = json?.data?.points;
+    if (typeof process?.growthStatusKey !== "string" || !points) {
+      throw new Error("stats-cards response is missing canonical growth/point data");
+    }
+    const pointA = Number(points.totalStars ?? 0);
+    const pointB = Number(points.totalShields ?? 0);
+    const pointC = Number(points.totalLightning ?? 0);
+    return {
+      key: process.growthStatusKey,
+      label: typeof process.growthStatus === "string" ? process.growthStatus : "",
+      points: {
+        pointA: Number.isFinite(pointA) ? pointA : 0,
+        pointB: Number.isFinite(pointB) ? pointB : 0,
+        pointC: Number.isFinite(pointC) ? pointC : 0,
+        rawAdvantage: Number.isFinite(pointB + pointC) ? pointB + pointC : 0,
+      },
+    };
+  } catch (e) {
+    console.warn("[profile] stats-cards growth status fetch failed", (e as Error)?.message || String(e));
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // 사이드바 이력서 카드 SoT — admin canonical route(/api/cluster1/resume)의 getCluster1Resume DTO.
 // 활동완료율(activityCompletion.rate)·실무 4종(practicalStats)을 고객 측에서 자체 계산하지 않고
 // 이 단일 DTO 에서 가져간다. club-rank 와 동일한 resolveAdminBaseUrl + x-internal-api-key 패턴.
@@ -593,6 +670,8 @@ export async function GET(request: NextRequest) {
           growthInfo: {
             status: legacy.status ?? "active",
             growthStatus: legacy.growth_status ?? "active",
+            growthStatusKey: null,
+            growthStatusLabel: null,
             startDate: null,
             endDate: null,
             startWeekInfo: null,
@@ -1096,13 +1175,13 @@ export async function GET(request: NextRequest) {
     const adminSuccessWeeksPromise = isCluster41
       ? Promise.resolve<number | null>(null)
       : fetchAdminSuccessWeeks(request, profile.id);
+    const adminGrowthStatusPromise = fetchAdminGrowthStatus(request, profile.id);
 
     // 모든 쿼리를 병렬로 실행 (성능 최적화)
     const [
       joinedWeekResult,
       growthEndDateResult,
       weeklyActivitiesResult,
-      cumulativePointsResult,
       seasonHistoriesResult,
       gradeStatsResult,
       growthStatsResult,
@@ -1157,7 +1236,6 @@ export async function GET(request: NextRequest) {
       //  badges 가 항상 0 으로 죽던 문제. admin getResumeCardForCrew 와 동일 컬럼으로 정정.)
       // total_raw_advantages 포함: 방패(B) 최종값 = raw − penalty (어드민 Po.B SoT). total_advantages(파생 캐시)는
       //   음수 net 사용자에게 stale(0)로 남아 있어 최종 B로 직접 쓰지 않는다(2026-07-14 어드민 대조 결과).
-      supabaseAdmin.from("user_cumulative_points").select("total_checks, total_advantages, total_raw_advantages, total_penalties").eq("user_id", profile.id).maybeSingle(),
 
       // season_histories
       // 실제 user_season_histories 컬럼: id, user_id, season_id, rating, review,
@@ -1373,32 +1451,20 @@ export async function GET(request: NextRequest) {
     const activityRecordsData = activityRecordsResult.data || [];
     const activitiesData = activityRecordsData.filter((ar: { is_completed: boolean }) => ar.is_completed);
     const weeklyActivities = weeklyActivitiesResult.data;
-    const cumulativePoints = cumulativePointsResult.data;
     const gradeStats = gradeStatsResult.data;
+    /*
 
     // resume-badges point DTO — user_cumulative_points 전용 컬럼(total_checks/advantages/penalties).
     // 응답은 data:profile 이므로 data.user_id === profile.user_id. 조회 키도 동일하게 맞춘다
     // (profile.id 가 아닌 profile.user_id 우선 — /api/profile/summary 와 동일 컨벤션).
     // badges 조회와 분리하여, 한쪽 컬럼이 없거나 조회 실패해도 다른 쪽이 0 으로 죽지 않게 한다.
-    const cumulativePointUserId = profile.user_id ?? profile.id;
     // cluster41 은 point DTO(check/advantage/penalty)를 읽지 않으므로 조회를 스킵한다.
-    const cumulativePointsRes = isCluster41
-      ? { data: null as { total_checks: number; total_advantages: number; total_raw_advantages: number; total_penalties: number } | null, error: null as null }
-      : await supabaseAdmin
-          .from("user_cumulative_points")
-          .select("total_checks, total_advantages, total_raw_advantages, total_penalties")
-          .eq("user_id", cumulativePointUserId)
-          .maybeSingle();
-    if (cumulativePointsRes.error) {
       // 조회 실패(컬럼/권한/네트워크 등) — row 없음과 명확히 구분.
       console.error("[Profile API] user_cumulative_points 조회 실패(point)", cumulativePointUserId, cumulativePointsRes.error);
-    } else if (!cumulativePointsRes.data) {
       // 조회는 성공했으나 해당 user_id row 없음.
       console.warn("[Profile API] user_cumulative_points row 없음(point) for user_id:", cumulativePointUserId);
-    } else {
       console.log("[Profile API] user_cumulative_points point row", cumulativePointUserId, cumulativePointsRes.data);
-    }
-    const cumulativePointDto = cumulativePointsRes.data;
+    */
     // 품계 평균 백분위 — admin canonical(club-rank)을 SoT 로 우선하고, admin 미가용일 때만
     //   user_grade_stats.avg_percentile 캐시로 폴백한다(stale 캐시가 admin 값을 덮어쓰지 않게).
     //   cluster41 은 이 값을 읽지 않으므로 admin 호출을 스킵(위 promise=null)하고 캐시만 사용한다.
@@ -1413,6 +1479,7 @@ export async function GET(request: NextRequest) {
     const adminResume = await adminResumePromise;
     // 이력서 카드 medal-week-num — admin Details 와 동일 값. 실패 시 null → 로컬 확정 주차 카운트 폴백.
     const adminSuccessWeeks = await adminSuccessWeeksPromise;
+    const adminGrowthStatus = await adminGrowthStatusPromise;
     const growthStats = growthStatsResult.data;
     const allWeeks = allWeeksResult.data || [];
     const allRests = allRestsResult.data || [];
@@ -2703,8 +2770,12 @@ export async function GET(request: NextRequest) {
       if (typeof rawAdv === "number" && Number.isFinite(rawAdv)) return rawAdv - pen;
       return row?.total_advantages ?? 0; // 구 캐시(raw 컬럼 부재) 폴백
     };
-    const badgesShields = finalPointBFrom(cumulativePoints);
-    const pointAdvantage = finalPointBFrom(cumulativePointDto);
+    if (!adminGrowthStatus) {
+      throw new Error("canonical cumulative points are unavailable");
+    }
+    const resolvedPoints = adminGrowthStatus.points;
+    const badgesShields = resolvedPoints.pointB;
+    const pointAdvantage = resolvedPoints.pointB;
 
     return NextResponse.json({
       success: true,
@@ -2720,12 +2791,12 @@ export async function GET(request: NextRequest) {
       //   Point C=total_penalties 양수 magnitude(빨강). lightnings(−n)은 하위호환 deprecated.
       //   rawAdvantage(=total_raw_advantages)는 구 DTO 호환 fallback(resolveFinalPointB) 입력용으로 함께 노출.
       badges: {
-        stars: cumulativePoints?.total_checks ?? 0,
+        stars: resolvedPoints.pointA,
         // pointC = 패널티 양수 magnitude(표시 SoT). lightnings 는 하위호환(−n) 유지.
-        pointC: cumulativePoints?.total_penalties ?? 0,
-        lightnings: -(cumulativePoints?.total_penalties ?? 0),
-        shields: badgesShields,                              // 최종 B(raw−pen) — total_advantages(stale) 직접 사용 금지
-        rawAdvantage: cumulativePoints?.total_raw_advantages ?? 0,
+        pointC: resolvedPoints.pointC,
+        lightnings: -resolvedPoints.pointC,
+        shields: badgesShields,
+        rawAdvantage: resolvedPoints.rawAdvantage,
       },
       // resume-card .resume-badges 표시용 point DTO.
       // source table: user_cumulative_points (전용 컬럼, cumulativePointDto 로 분리 조회)
@@ -2737,11 +2808,11 @@ export async function GET(request: NextRequest) {
       //   point.penalty     → −total_penalties (하위호환 deprecated, −n 표기)
       // 행/값 미존재 시 null 이 아니라 0 으로 내려준다. 기존 필드는 유지(append-only).
       point: {
-        check: cumulativePointDto?.total_checks ?? 0,
+        check: resolvedPoints.pointA,
         advantage: pointAdvantage,                              // 최종 B(raw−pen)
-        rawAdvantage: cumulativePointDto?.total_raw_advantages ?? 0,
-        pointC: cumulativePointDto?.total_penalties ?? 0,
-        penalty: -(cumulativePointDto?.total_penalties ?? 0),
+        rawAdvantage: resolvedPoints.rawAdvantage,
+        pointC: resolvedPoints.pointC,
+        penalty: -resolvedPoints.pointC,
       },
       seasonRecords: adminResume?.seasonRecords ?? adminResume?.season_records ?? undefined,
       seasonHistories: responseSeasonHistories,
@@ -2751,6 +2822,8 @@ export async function GET(request: NextRequest) {
       growthInfo: {
         status: profile.status,
         growthStatus: profile.growth_status,
+        growthStatusKey: adminGrowthStatus?.key ?? null,
+        growthStatusLabel: adminGrowthStatus?.label ?? null,
         // 현재 시즌 상태 (user_season_statuses.status, 현재 주차 season_key 기준).
         // 'rest' = 시즌 휴식 — 메달 뱃지 SoT (프론트 임의 계산 금지, 이 값 그대로 매핑).
         currentSeasonStatus,

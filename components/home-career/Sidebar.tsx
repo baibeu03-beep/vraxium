@@ -35,14 +35,7 @@ const DEFAULT_ICON_LINK_2 = "https://youtu.be/xf6q5dgn1hU?si=tNK3I1-QIsJ9JmvF";
 const DEFAULT_ICON_LINK_3 = "https://www.naver.com/";
 
 // 메달 뱃지 crewStatus 타입/매핑 — 캐시 init·fetch 두 경로 공용 단일 정의.
-type CrewStatus = "Running" | "Complete" | "On Rest" | "Recharging" | "Next Challenge";
-const CREW_STATUS_MAP: Record<string, CrewStatus> = {
-  active: "Running",
-  weekly_rest: "On Rest",
-  seasonal_rest: "Recharging",
-  graduated: "Complete",
-  suspended: "Next Challenge",
-};
+type CrewStatus = "Running" | "Complete" | "On Rest" | "Recharging" | "Next Challenge" | "-";
 // 메달 상태 판정 — API DTO 값 그대로 매핑 (프론트 임의 계산 금지).
 // 종단 상태(graduated/suspended)는 user_profiles.status 가 active 로 남아 있어도
 // growthInfo.growthStatus(raw enum)로 판정한다 — 이력서 카드 '정상 졸업'/'활동 중단'
@@ -50,26 +43,24 @@ const CREW_STATUS_MAP: Record<string, CrewStatus> = {
 // growthInfo.currentSeasonStatus === 'rest'(시즌 휴식, user_season_statuses SoT)면
 // user_profiles.status 가 active 여도 Recharging(시즌 휴식 뱃지)으로 표시한다.
 // demoUserId 테스트 모드도 동일 DTO(/api/profile)를 쓰므로 두 모드 매핑이 갈리지 않는다.
-const resolveCrewStatus = (
-  profileStatus: string | null | undefined,
-  currentSeasonStatus: string | null | undefined,
-  growthStatus?: string | null,
+const crewStatusFromGrowthKey = (
+  growthStatusKey: string | null | undefined,
 ): CrewStatus => {
-  if (profileStatus === "graduated" || growthStatus === "graduated") return "Complete";
-  // 성장 중단 계열(suspended/paused/deferred) → Next Challenge.
-  //   종전에는 suspended 만 매핑해, growth_status=paused(성장 유보·중단) 사용자가
-  //   user_profiles.status='active' 인 채로 "Running"으로 잘못 표시됐다(2026-06-16 수정).
-  //   admin RESUME_BADGE_BY_GROWTH_STATUS(paused/suspended→next_challenge) ·
-  //   고객 getGrowthBadgeText(성장 중단 집합)과 동일한 raw enum 기준으로 통일.
-  if (
-    profileStatus === "suspended" ||
-    growthStatus === "suspended" ||
-    growthStatus === "paused" ||
-    growthStatus === "deferred"
-  )
-    return "Next Challenge";
-  if (currentSeasonStatus === "rest") return "Recharging";
-  return (profileStatus && CREW_STATUS_MAP[profileStatus]) || "Running";
+  switch (growthStatusKey) {
+    case "graduated": return "Complete";
+    case "weekly_rest": return "On Rest";
+    case "seasonal_rest":
+    case "official_rest": return "Recharging";
+    case "paused":
+    case "suspended": return "Next Challenge";
+    case "active":
+    case "onboarding":
+    case "extra_growth":
+    case "graduating":
+      return "Running";
+    default:
+      return "-";
+  }
 };
 
 // resume-card .resume-badges point 값 정규화.
@@ -768,7 +759,7 @@ const Sidebar = () => {
     setUserProfile(buildSidebarUserProfile(profile, initialQuote));
 
     // 메달 상태 — DTO(profile.status + growthInfo.currentSeasonStatus + growthStatus) 기반 단일 매핑.
-    setCrewStatus(resolveCrewStatus(profile.status, cachedProfile.growthInfo?.currentSeasonStatus, cachedProfile.growthInfo?.growthStatus));
+    setCrewStatus(crewStatusFromGrowthKey(cachedProfile.growthInfo?.growthStatusKey));
 
     if (cachedProfile.completionRate !== undefined && cachedProfile.completionRate !== null) {
       setHasCompletionData(true);
@@ -857,7 +848,7 @@ const Sidebar = () => {
     setPracticalCareerCount(null);
     setHasActivityData(false);
     setApprovedWeeksCount(null);
-    setCrewStatus("Running");
+    setCrewStatus("-");
     // resume-card admin settings 도 대상별 값 — 리셋하지 않으면 이전 사용자(타 조직)의
     // medalWeekOverride/notice/hexagon 링크가 새 사용자 카드에 잔존한다.
     setResumeCardSettings(null);
@@ -1080,7 +1071,7 @@ const Sidebar = () => {
     else if (isEcRoute(pathname)) setDebugPanelType("EC");
     else setDebugPanelType("OK");
   }, [pathname]);
-  const [crewStatus, setCrewStatus] = useState<"Running" | "Complete" | "On Rest" | "Recharging" | "Next Challenge">("Running");
+  const [crewStatus, setCrewStatus] = useState<CrewStatus | "-">("-");
   const [approvedWeeksCount, setApprovedWeeksCount] = useState<number | null>(null);
   const [isArrowShaking, setIsArrowShaking] = useState(false);
   const [tooltipVisible, setTooltipVisible] = useState<"email" | "school" | "major" | "hexagon1" | "hexagon2" | "hexagon3" | null>(null);
@@ -1361,7 +1352,7 @@ const Sidebar = () => {
 
         // 메달 상태 — DTO(profile.status + growthInfo.currentSeasonStatus + growthStatus) 기반 단일 매핑.
         // 캐시 init(useLayoutEffect) 경로와 동일 함수 사용 — 두 경로 매핑이 갈리지 않게 한다.
-        setCrewStatus(resolveCrewStatus(profile.status, cachedResult.growthInfo?.currentSeasonStatus, cachedResult.growthInfo?.growthStatus));
+        setCrewStatus(crewStatusFromGrowthKey(cachedResult.growthInfo?.growthStatusKey));
 
         // completionRate (활동 완료율) - API 응답에서 가져오기
         if (result.completionRate !== undefined && result.completionRate !== null) {

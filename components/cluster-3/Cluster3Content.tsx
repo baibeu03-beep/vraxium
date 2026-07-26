@@ -2390,13 +2390,13 @@ const Cluster3Content = () => {
         dangam: statsCards.points.totalStars, // 별(총합)
         injeolmi: statsCards.points.totalShields, // 방패(총합)
         // Point C(패널티)=양수 magnitude(빨강). upstream 이 음수(−pen)/양수 어느 쪽이든 Math.abs 로 통일.
-        eoheung: Math.abs(statsCards.points.totalLightning),
+        eoheung: statsCards.points.totalLightning,
       }
     : {
         dangam: pointsData.dangam,
         injeolmi: pointsData.injeolmi,
         // 포인트 표시 정책(2026-07): Point C=양수 magnitude. 데모 시드도 부호없는 양수로 표시.
-        eoheung: Math.abs(pointsData.eoheung),
+        eoheung: pointsData.eoheung,
       };
 
   // 초기 로딩 게이트 — 데이터 도착 전 "-"/0/빈 카드 placeholder 노출 금지.
