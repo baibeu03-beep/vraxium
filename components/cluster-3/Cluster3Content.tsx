@@ -463,11 +463,15 @@ const Cluster3Content = () => {
   }
   const [pointsData, setPointsData] = useState<PointsData>({ dangam: 0, injeolmi: 0, eoheung: 0 });
 
-  // 품계 데이터 (user_grade_stats)
+  // 품계 데이터 — /api/profile gradeStats.
+  //   SoT = admin GET /api/cluster3/club-rank (백분위·품계번호·품계라벨 3종 동일 원천).
+  //   백엔드가 live/캐시 중 한 원천에서 통째로 조립해 내려주므로, 프론트는 avgPercentile 로
+  //   품계를 재계산하지 않는다(구간 변환 복제 금지).
+  //   세 값은 null 일 수 있다 = 품계 모집단 제외/주차 이력 없음. 0·정9품 으로 대체 금지.
   interface GradeStats {
-    avgPercentile: number; // 상위 퍼센트
-    grade: number; // 품계 숫자 (1=정승, 2=정1품, ... 10=정9품)
-    gradeLabel: string; // 품계 라벨 (정 7품 등)
+    avgPercentile: number | null; // 상위 퍼센트
+    grade: number | null; // 품계 숫자 (1=정승, 2=정1품, ... 10=정9품)
+    gradeLabel: string | null; // 품계 라벨 (정 7품 등)
   }
   const [gradeStats, setGradeStats] = useState<GradeStats | null>(null);
 
@@ -552,7 +556,8 @@ const Cluster3Content = () => {
   const [animationComplete, setAnimationComplete] = useState(false);
 
   // 섹션 2 상위 퍼센트 애니메이션
-  const [topPercent, setTopPercent] = useState(0);
+  //   null = 품계 산출 대상 아님(모집단 제외/주차 이력 없음) → "—" 표시. 0 과 구분한다.
+  const [topPercent, setTopPercent] = useState<number | null>(null);
 
   // 화살표 애니메이션 (섹션별)
   const [arrowAnimating, setArrowAnimating] = useState<string | null>(null);
@@ -895,7 +900,7 @@ const Cluster3Content = () => {
         setDisplayName(demoUser);
         setPointsData(userData.profile.pointsData);
         setGradeStats(userData.profile.gradeStats);
-        setTopPercent(userData.profile.gradeStats.avgPercentile);
+        setTopPercent(userData.profile.gradeStats?.avgPercentile ?? null);
         setGrowthPeriodStats(userData.profile.growthPeriodStats);
         return;
       }
@@ -928,12 +933,12 @@ const Cluster3Content = () => {
           setDisplayName(result.data.display_name);
         }
 
-        // 품계 데이터 설정
-        if (result.gradeStats) {
-          setGradeStats(result.gradeStats);
-          // 상위 퍼센트 즉시 설정 (애니메이션은 섹션 스크롤 시 실행)
-          setTopPercent(result.gradeStats.avgPercentile ?? 0);
-        }
+        // 품계 데이터 설정 — 백엔드가 3종(백분위/품계번호/품계라벨)을 한 원천에서 조립해 준다.
+        //   gradeStats 자체가 null 이거나 필드가 null 이면 "품계 없음" 상태를 그대로 유지한다
+        //   (0·정9품 으로 채우지 않는다).
+        setGradeStats(result.gradeStats ?? null);
+        // 상위 퍼센트 즉시 설정 (애니메이션은 섹션 스크롤 시 실행)
+        setTopPercent(result.gradeStats?.avgPercentile ?? null);
 
         // NOTE: stats-cards(성장 진행 상태/기간 집계/점수 기록) 값은 더 이상 /api/profile 의
         //  growthInfo·growthPeriodStats·badges 에서 읽지 않는다.
@@ -1060,25 +1065,31 @@ const Cluster3Content = () => {
 
               // 상위 퍼센트 카운트업 애니메이션 (gradeStats.avgPercentile 값으로)
               // 백엔드 어드민 API 값(소수점 포함)을 그대로 표시 — 반올림/재계산 금지
-              const topDuration = 800;
-              const topTarget = gradeStats?.avgPercentile ?? 0;
-              const topStartTime = Date.now();
+              // avgPercentile 이 null(품계 산출 대상 아님)이면 0 으로 카운트업하지 않고
+              //   null 을 유지해 "—" 로 표시한다.
+              const topTarget = gradeStats?.avgPercentile ?? null;
+              if (topTarget === null) {
+                setTopPercent(null);
+              } else {
+                const topDuration = 800;
+                const topStartTime = Date.now();
 
-              const countUpTop = () => {
-                const elapsed = Date.now() - topStartTime;
-                const progress = Math.min(elapsed / topDuration, 1);
-                const easeOut = 1 - Math.pow(1 - progress, 3);
-                // 애니메이션 중간 프레임만 보간하고, 최종 프레임은 API 값 그대로 사용
-                const currentPercent = progress < 1 ? easeOut * topTarget : topTarget;
+                const countUpTop = () => {
+                  const elapsed = Date.now() - topStartTime;
+                  const progress = Math.min(elapsed / topDuration, 1);
+                  const easeOut = 1 - Math.pow(1 - progress, 3);
+                  // 애니메이션 중간 프레임만 보간하고, 최종 프레임은 API 값 그대로 사용
+                  const currentPercent = progress < 1 ? easeOut * topTarget : topTarget;
 
-                setTopPercent(currentPercent);
+                  setTopPercent(currentPercent);
 
-                if (progress < 1) {
-                  requestAnimationFrame(countUpTop);
-                }
-              };
+                  if (progress < 1) {
+                    requestAnimationFrame(countUpTop);
+                  }
+                };
 
-              requestAnimationFrame(countUpTop);
+                requestAnimationFrame(countUpTop);
+              }
             }, 300);
 
             // 품계 카드 순차 애니메이션 (정 9품 → 정승)
@@ -2683,8 +2694,11 @@ const Cluster3Content = () => {
           <div className="section2-progress">
             <div className="progress-info">
               <span className="progress-label">상위</span>
-              <span className="progress-percent">{topPercent.toFixed(2)}</span>
-              <span className="progress-unit">%</span>
+              {/* 품계 산출 대상이 아니면(모집단 제외·주차 이력 없음) 0.00 이 아니라 "—". */}
+              <span className="progress-percent">
+                {topPercent === null ? "—" : topPercent.toFixed(2)}
+              </span>
+              {topPercent !== null && <span className="progress-unit">%</span>}
             </div>
           </div>
           <p className="section-comment section2-comment">
@@ -2722,7 +2736,10 @@ const Cluster3Content = () => {
             return (
               <div
                 key={rank}
-                className={`rank-card ${rank === (gradeStats?.grade || 10) ? "active" : "inactive"}`}
+                // 활성 카드 = club-rank 가 내려준 grade 와 정확히 일치할 때만.
+                //   grade 가 null(품계 없음)이면 어떤 카드도 활성화하지 않는다 —
+                //   과거 `|| 10` 폴백은 데이터가 없는 사용자를 정9품으로 오표시했다.
+                className={`rank-card ${gradeStats?.grade != null && rank === gradeStats.grade ? "active" : "inactive"}`}
                 style={{
                   transform: !animationComplete && highlightedRank !== -1 && highlightedRank >= rank ? `scale(${1 + 0.08 * Math.max(0, 1 - Math.abs(highlightedRank - rank) * 0.3)}) translateY(${-5 * Math.max(0, 1 - Math.abs(highlightedRank - rank) * 0.3)}px)` : undefined,
                   boxShadow: !animationComplete && highlightedRank === rank

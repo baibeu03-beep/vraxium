@@ -187,20 +187,45 @@ async function fetchResumeCardSettings(client: any, userId: string | null, orgSl
   }
 }
 
-// Cluster3 "주차 평균 백분위" canonical source.
+// Cluster3 "클럽 강화 품계" canonical source — 백분위·품계번호·품계라벨 3종 묶음.
+//
 // 기존엔 user_grade_stats.avg_percentile 캐시를 직접 SELECT 했으나,
 // admin 레포에 동일한 getClubRank(userId) 실시간 계산식을 쓰는
 //   GET /api/cluster3/club-rank
 // 가 canonical route 로 추가되었다. 이 헬퍼는 admin API(ADMIN_API_BASE_URL)를
-// 호출해 data.avgPercentile 을 그대로 반환한다 (weekly-cards proxy 와 동일한
-// x-internal-api-key 인증 패턴). best-effort — 실패/미설정 시 null 반환.
-async function fetchClubRankAvgPercentile(request: NextRequest, userId: string | null): Promise<number | null> {
-  if (!userId) return null;
+// 호출해 data.{avgPercentile, rankGradeNumber, rankGradeLabel} 을 **한 덩어리로**
+// 반환한다 (weekly-cards proxy 와 동일한 x-internal-api-key 인증 패턴).
+//
+// ⚠ 원천 혼합 금지(2026-07-26): 백분위는 live, 품계는 캐시 — 이렇게 섞으면
+//   "상위 6.86% + 정4품" 같은 자가당착이 생긴다. 백분위는 상대값이라 한 명의
+//   포인트만 바뀌어도 같은 주차 모집단 전원의 순위·백분위가 이동하는데,
+//   user_grade_stats 는 부분 갱신만 되어 665명 중 659명이 stale 이었다.
+//   → 세 값은 **항상 같은 응답에서** 가져온다.
+//
+// 반환 계약(호출부가 live 성공/실패를 구분해야 하므로 ok 플래그를 함께 준다):
+//   { ok: true,  value: {...} } — 호출 성공. value 필드가 전부 null 일 수 있는데
+//                                 이는 "모집단 제외/주차 이력 없음"이라는 **정상 결과**이며
+//                                 캐시 폴백 대상이 아니다.
+//   { ok: false }               — admin 미가용/타임아웃/비2xx/파싱 실패. 이때만 캐시 폴백.
+type ClubRankTriple = {
+  avgPercentile: number | null;
+  grade: number | null;
+  gradeLabel: string | null;
+};
+type ClubRankFetchResult = { ok: true; value: ClubRankTriple } | { ok: false };
+
+const CLUB_RANK_UNAVAILABLE: ClubRankFetchResult = { ok: false };
+
+async function fetchClubRank(
+  request: NextRequest,
+  userId: string | null,
+): Promise<ClubRankFetchResult> {
+  if (!userId) return CLUB_RANK_UNAVAILABLE;
 
   const adminApiBaseUrl = await resolveAdminBaseUrl();
   if (!adminApiBaseUrl) {
-    console.warn("[profile] admin backend 미발견 (env + localhost probe 실패) — club-rank avgPercentile 조회 불가");
-    return null;
+    console.warn("[profile] admin backend 미발견 (env + localhost probe 실패) — club-rank 조회 불가");
+    return CLUB_RANK_UNAVAILABLE;
   }
 
   const targetUrl = new URL(`${adminApiBaseUrl}/api/cluster3/club-rank`);
@@ -227,16 +252,43 @@ async function fetchClubRankAvgPercentile(request: NextRequest, userId: string |
     });
     if (!upstream.ok) {
       console.warn("[profile] club-rank upstream non-OK", upstream.status, targetUrl.toString());
-      return null;
+      return CLUB_RANK_UNAVAILABLE;
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const json: any = await upstream.json();
-    const raw = json?.data?.avgPercentile;
-    const num = typeof raw === "number" ? raw : parseFloat(raw);
-    return Number.isFinite(num) ? num : null;
+    const data = json?.data;
+    if (!data || typeof data !== "object") {
+      console.warn("[profile] club-rank 응답에 data 없음 — 캐시 폴백");
+      return CLUB_RANK_UNAVAILABLE;
+    }
+
+    const rawPct = data.avgPercentile;
+    const pctNum = typeof rawPct === "number" ? rawPct : parseFloat(rawPct);
+    const avgPercentile = Number.isFinite(pctNum) ? pctNum : null;
+
+    const rawGrade = data.rankGradeNumber;
+    const gradeNum = typeof rawGrade === "number" ? rawGrade : parseFloat(rawGrade);
+    const grade = Number.isFinite(gradeNum) ? gradeNum : null;
+
+    const gradeLabel =
+      typeof data.rankGradeLabel === "string" && data.rankGradeLabel.trim()
+        ? data.rankGradeLabel
+        : null;
+
+    // 백분위는 있는데 품계 필드가 없다 = admin 이 구버전(rankGradeNumber/Label 미배포).
+    // 이때 캐시 품계를 끼워 넣으면 다시 혼합이 되므로, live 결과 전체를 무효로 보고
+    // 캐시(3종 동일 원천)로 내려간다. 배포 순서(admin 선행) 안전장치.
+    if (avgPercentile !== null && (grade === null || gradeLabel === null)) {
+      console.warn(
+        "[profile] club-rank 응답에 rankGradeNumber/rankGradeLabel 없음 — admin 구버전 추정, 캐시(3종 동일 원천)로 폴백",
+      );
+      return CLUB_RANK_UNAVAILABLE;
+    }
+
+    return { ok: true, value: { avgPercentile, grade, gradeLabel } };
   } catch (e) {
-    console.warn("[profile] club-rank fetch 실패 — avgPercentile null", (e as Error)?.message || String(e));
-    return null;
+    console.warn("[profile] club-rank fetch 실패 — 캐시 폴백", (e as Error)?.message || String(e));
+    return CLUB_RANK_UNAVAILABLE;
   } finally {
     clearTimeout(timeoutId);
   }
@@ -1165,20 +1217,24 @@ export async function GET(request: NextRequest) {
       return parsed;
     };
 
-    // Cluster3 주차 평균 백분위: admin canonical(/api/cluster3/club-rank)을 SoT 로 우선한다.
+    // Cluster3 클럽 강화 품계: admin canonical(/api/cluster3/club-rank)을 SoT 로 우선한다.
     // 다른 graft 필드(practicalStats·activityCompletion)와 동일하게 admin 값을 먼저 쓰고,
-    // admin 미가용(미설정/실패/타임아웃)일 때만 user_grade_stats.avg_percentile 캐시로 폴백한다.
+    // admin 미가용(미설정/실패/타임아웃)일 때만 user_grade_stats 캐시로 폴백한다.
     // (기존 cache-first 는 stale 캐시가 admin 값을 덮어써 이력서 카드에 옛 백분위가 남는 문제가
     //  있었음 — 예: cache 81.5 vs admin 74.25, cache 1 vs admin 92.) cluster41 은 이 값을 읽지
     //  않으므로 admin 풀스캔 호출을 스킵하고 캐시만(존재 시) 사용한다.
+    // ⚠ 폴백은 **3종(백분위·품계번호·품계라벨) 전부** 캐시로 내려간다. 백분위만 live 로
+    //   승격하고 품계는 캐시로 두는 부분 혼합은 금지(아래 resolvedGradeStats 참조).
 
     // 사이드바 이력서 카드 단일 SoT — admin getCluster1Resume DTO. DB 쿼리들과 병렬 선행 호출.
     const adminResumePromise = fetchAdminCluster1Resume(request, profile.id);
 
-    // 주차 평균 백분위 admin SoT — 캐시와 무관하게 항상 선행 호출(병렬). cluster41 은 미조회.
-    const clubRankAvgPercentilePromise = isCluster41
-      ? Promise.resolve<number | null>(null)
-      : fetchClubRankAvgPercentile(request, profile.id);
+    // 클럽 강화 품계 admin SoT(백분위+품계번호+품계라벨 3종) — 캐시와 무관하게 항상
+    //   선행 호출(병렬). cluster41 은 이 값을 읽지 않으므로 admin 풀스캔 호출을 스킵하고
+    //   캐시만 사용한다(= 3종 전부 캐시. live/캐시 혼합 아님).
+    const clubRankPromise: Promise<ClubRankFetchResult> = isCluster41
+      ? Promise.resolve(CLUB_RANK_UNAVAILABLE)
+      : fetchClubRank(request, profile.id);
 
     // 이력서 카드 medal-week-num SoT — admin stats-cards period.successWeeks (Details 카드와 동일 값).
     // cluster41 은 statsCards 프록시를 직접 호출하므로 중복 외부 호출 스킵 (club-rank 와 동일 정책).
@@ -1257,9 +1313,9 @@ export async function GET(request: NextRequest) {
         "id, user_id, season_id, rating, review, created_at, updated_at"
       ).eq("user_id", profile.id),
 
-      // grade_stats (품계 정보) — grade/grade_label/avg_percentile 모두 캐시(user_grade_stats)에서 읽는다.
-      // 품계 SoT 를 admin(/admin/members)과 동일하게 user_grade_stats 캐시로 통일 →
-      // avgPercentile 도 캐시 컬럼 우선(아래 clubRankAvgPercentile), 캐시 null 일 때만 실시간 폴백.
+      // grade_stats (품계 캐시) — **폴백 전용**. club-rank(live)가 안 될 때만 3종
+      // (avg_percentile/grade/grade_label)을 통째로 쓴다. live 백분위 + 캐시 품계처럼
+      // 섞어 쓰지 않는다(아래 resolvedGradeStats 참조).
       supabaseAdmin.from("user_grade_stats").select("grade, grade_label, avg_percentile").eq("user_id", profile.id).maybeSingle(),
 
       // growth_stats (성장 기간 집계 + reliability_rate)
@@ -1475,16 +1531,54 @@ export async function GET(request: NextRequest) {
       console.warn("[Profile API] user_cumulative_points row 없음(point) for user_id:", cumulativePointUserId);
       console.log("[Profile API] user_cumulative_points point row", cumulativePointUserId, cumulativePointsRes.data);
     */
-    // 품계 평균 백분위 — admin canonical(club-rank)을 SoT 로 우선하고, admin 미가용일 때만
-    //   user_grade_stats.avg_percentile 캐시로 폴백한다(stale 캐시가 admin 값을 덮어쓰지 않게).
-    //   cluster41 은 이 값을 읽지 않으므로 admin 호출을 스킵(위 promise=null)하고 캐시만 사용한다.
-    const cachedAvgPercentileRaw = (gradeStats as { avg_percentile?: number | string | null } | null)?.avg_percentile;
-    const cachedAvgPercentile =
-      cachedAvgPercentileRaw != null && Number.isFinite(Number(cachedAvgPercentileRaw))
-        ? Number(cachedAvgPercentileRaw)
-        : null;
-    const adminAvgPercentile = await clubRankAvgPercentilePromise;
-    const clubRankAvgPercentile = adminAvgPercentile ?? cachedAvgPercentile;
+    // ─── 클럽 강화 품계 DTO (avgPercentile / grade / gradeLabel) ─────────────
+    //
+    // 원천 혼합 금지. 세 값은 반드시 **한 원천**에서 통째로 온다.
+    //   1순위: admin canonical GET /api/cluster3/club-rank (live, 3종 동일 계산 결과)
+    //   폴백 : user_grade_stats 캐시 (3종 전부 캐시 — 부분 혼합 금지)
+    //   둘 다 없으면 null (프론트에서 "품계 없음"으로 표시. 0/정9품 으로 위조하지 않는다)
+    //
+    // ⚠ 과거 버그(2026-07-26 수정): avgPercentile=live + grade/gradeLabel=캐시 로 섞어
+    //   "상위 6.86%" 옆에 "정 4품" 배지가 붙었다. 백분위는 상대값이라 캐시는 부분 갱신만으로
+    //   즉시 stale 이 되므로(665명 중 659명 불일치), 혼합은 구조적으로 항상 어긋난다.
+    const cachedGradeStatsRow = gradeStats as {
+      avg_percentile?: number | string | null;
+      grade?: number | string | null;
+      grade_label?: string | null;
+    } | null;
+
+    const toFiniteNumber = (raw: unknown): number | null => {
+      if (raw == null) return null;
+      const n = typeof raw === "number" ? raw : Number(raw);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const clubRankResult = await clubRankPromise;
+
+    // 캐시 폴백 값 — 3종을 같은 row 에서만 뽑는다(부분 승격 금지).
+    const cachedGradeStats: ClubRankTriple | null = cachedGradeStatsRow
+      ? {
+          avgPercentile: toFiniteNumber(cachedGradeStatsRow.avg_percentile),
+          grade: toFiniteNumber(cachedGradeStatsRow.grade),
+          gradeLabel:
+            typeof cachedGradeStatsRow.grade_label === "string" && cachedGradeStatsRow.grade_label.trim()
+              ? cachedGradeStatsRow.grade_label
+              : null,
+        }
+      : null;
+
+    // live 성공이면 user_grade_stats row 존재 여부와 무관하게 live 를 쓴다.
+    //   (row 가 없다는 이유로 정상 live 결과를 버려 "상위 0.00%" 로 떨어뜨리던 회귀 제거)
+    const resolvedGradeStats: ClubRankTriple | null = clubRankResult.ok
+      ? clubRankResult.value
+      : cachedGradeStats;
+
+    const gradeStatsSource: "club-rank" | "user_grade_stats" | "none" = clubRankResult.ok
+      ? "club-rank"
+      : cachedGradeStats
+        ? "user_grade_stats"
+        : "none";
+
     // 이력서 카드 SoT DTO (활동완료율·실무성적). 실패 시 null → 아래에서 로컬 계산 폴백.
     const adminResume = await adminResumePromise;
     // 이력서 카드 medal-week-num — admin Details 와 동일 값. 실패 시 null → 로컬 확정 주차 카운트 폴백.
@@ -2843,13 +2937,20 @@ export async function GET(request: NextRequest) {
         growthStartWeek: resolvedGrowthStart.growthStartWeek,
         endWeekInfo: growthEndWeekInfo,
       },
-      gradeStats: gradeStats ? {
-        // avgPercentile: admin canonical(/api/cluster3/club-rank) SoT 우선, admin 미가용 시에만
-        //   user_grade_stats.avg_percentile 캐시로 폴백(위 clubRankAvgPercentile).
-        avgPercentile: clubRankAvgPercentile ?? 0,
-        grade: gradeStats.grade || 10,
-        gradeLabel: gradeStats.grade_label || '정 9품',
-      } : null,
+      // 품계 3종 — 전부 resolvedGradeStats 한 원천에서 파생(위 주석 참조).
+      //   · live(club-rank) 성공 → 3종 모두 live. user_grade_stats row 유무 무관.
+      //   · live 실패 → 3종 모두 user_grade_stats 캐시.
+      //   · 둘 다 없음 → null. 0 / 정9품 같은 기본값으로 위조하지 않는다.
+      // 값이 없을 수 있으므로 각 필드는 number|string|null 이다(프론트가 null 을 표시 처리).
+      gradeStats: resolvedGradeStats
+        ? {
+            avgPercentile: resolvedGradeStats.avgPercentile,
+            grade: resolvedGradeStats.grade,
+            gradeLabel: resolvedGradeStats.gradeLabel,
+            // 어느 원천에서 조립됐는지 관측용(디버깅/모니터링 전용, 표시 아님).
+            source: gradeStatsSource,
+          }
+        : null,
       growthPeriodStats: {
         // 이력서 카드 medal-week-num — 확정된 성장 성공 주차만 (진행/집계 중·휴식·전환 제외).
         // 1순위: admin stats-cards period.successWeeks (Details 카드와 동일 SoT, verdict 전환 반영).

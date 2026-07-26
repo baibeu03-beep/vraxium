@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import { pageSlugFromReferer, applyPageSlug } from "@/lib/pageSlugForward";
 import { enforceQaMode } from "@/lib/qaModeGate";
+import { resolveCluster2UserScope } from "@/lib/cluster2UserScope";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -77,9 +78,13 @@ export async function GET(request: NextRequest) {
 
   const sourceUrl = new URL(request.url);
 
-  // 대상 userId: 쿼리에 있으면 그대로(다른 유저 조회), 없으면 세션 사용자 본인으로 resolve.
-  // admin 의 internal-key 경로는 ?userId= 가 필수이므로, 본인 페이지에서도 반드시 채워 보낸다.
-  let userId = sourceUrl.searchParams.get("userId")?.trim() || null;
+  // 대상 userId: 공통 resolver 로 정규화한다 — userId/userID(어드민·공개 조회)
+  //   → demoUserId(테스트 유저 모드) → actAsTestUserId(mode=test). 없으면 세션 본인.
+  //   종전엔 ?userId= 만 읽어, demoUserId 만 붙여 부르는 호출자는 401 이 났다. 클라이언트가
+  //   demoUserId 를 userId 로 접어 넣어주는 우연에 의존하지 않도록 서버에서 정규화한다.
+  //   ⚠ 인증·QA 정책은 그대로 — 아래 enforceQaMode 가 정규화된 대상으로 동일하게 검문하고,
+  //     admin canonical 라우트의 page-slug/org 접근 게이트도 종전과 같이 적용된다.
+  let userId = resolveCluster2UserScope(sourceUrl.searchParams).targetUserId;
 
   const qaBlock = await enforceQaMode(request, { targetUserId: userId });
   if (qaBlock) return qaBlock;
