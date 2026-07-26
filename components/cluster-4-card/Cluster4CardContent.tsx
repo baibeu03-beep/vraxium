@@ -12,6 +12,7 @@ import { usePopup } from "@/components/ui/popup";
 import { supabase } from "@/lib/supabase";
 // QA(mode=test) API/write routing is temporarily disabled. Keep for future QA deployment reuse.
 // import { parseScopeMode } from "@/lib/userScopeShared";
+import { getDeployMode } from "@/lib/userScopeShared";
 import { useDataMasking } from "@/hooks/useDataMasking";
 import { isDemoMode as checkDemoMode } from "@/utils/isDemoMode";
 import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
@@ -648,6 +649,46 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // forceEditUnlock(더미 데모 / 순수 어드민 프리뷰)은 모든 가드가 이 값보다 먼저 검사하므로
   // 종전대로 우회한다(정책 불변).
   const isForeignViewer = !(viewerIsCardOwner || adminCanEditAny);
+
+  // ── 주차 확인(확인 완료) 버튼 권한 게이트 ────────────────────────────────
+  // 정책(요구사항 표): 비로그인=본인/타인 카드 모두 불가, 로그인=본인 카드만 가능.
+  //   · 4허브 수정 게이트(isForeignViewer)와 달리 어드민 우회(adminCanEditAny)를 인정하지 않는다 —
+  //     "주차 확인"은 카드 주인 본인의 확인 행위이므로 어드민도 남의 카드에서 누를 수 없다.
+  //   · forceEditUnlock(더미 데모 / 순수 어드민 프리뷰)도 우회 대상이 아니다(비로그인 = 불가).
+  //   · 세션 로딩 중에는 viewerUserId=null → false → 버튼 비활성(플래시 없음).
+  // UI disabled 는 1차 방어일 뿐이고, 클릭 핸들러와 서버 API 가 같은 기준으로 다시 검증한다.
+  //
+  // 뷰어 식별은 서버 라우트의 actor 도출과 **같은 우선순위**를 쓴다:
+  //   demoUserId → actAsTestUserId(test 스코프) → 로그인 세션.
+  // (4허브 게이트의 viewerUserId 는 actAsTestUserId 를 보지 않는다. 그 값을 전역으로 넓히면
+  //  이번 요구와 무관한 수정 게이트까지 바뀌므로, 주차 확인 전용으로만 한 단계 얹는다 —
+  //  세 경로가 서로 다른 판별 로직을 타지 않게 하려는 요구를 이 기능 안에서 만족시킨다.)
+  // actAsTestUserId 가 실제 test_user_markers 등재 유저인지는 클라가 알 수 없다 → 최종 판정은
+  // 서버(미등재 시 403)가 한다. 여기서는 버튼 활성 여부만 결정한다.
+  const actAsTestUserId =
+    getDeployMode() === "test" ? searchParams.get("actAsTestUserId")?.trim() || null : null;
+  const weekConfirmViewerUserId = demoUserId || actAsTestUserId || session?.user?.id || null;
+  const canConfirmWeek =
+    weekConfirmViewerUserId != null &&
+    cardOwnerUserId != null &&
+    weekConfirmViewerUserId === cardOwnerUserId;
+  // 이 카드의 주인 — 확인 상태 조회/기록의 대상. 서버는 이 값을 신원으로 신뢰하지 않고
+  // 자신이 도출한 actor 와 대조만 한다(불일치 → 403).
+  const weekConfirmOwnerUserId = cardOwnerUserId;
+  // 주차 확인 API URL — 일반/테스트(demoUserId·actAsTestUserId) 모두 같은 엔드포인트를 쓰고
+  // 액터 식별용 쿼리만 덧붙인다(경로/DTO 분기 없음).
+  const weekConfirmApiUrl = (extra?: Record<string, string>) => {
+    const params = new URLSearchParams();
+    if (demoUserId) params.set("demoUserId", demoUserId);
+    if (actAsTestUserId) {
+      params.set("actAsTestUserId", actAsTestUserId);
+      const mode = searchParams.get("mode");
+      if (mode) params.set("mode", mode);
+    }
+    Object.entries(extra ?? {}).forEach(([key, value]) => params.set(key, value));
+    const qs = params.toString();
+    return `/api/cluster4/week-confirmations${qs ? `?${qs}` : ""}`;
+  };
 
   // ── 4허브 편집/저장/초기화 권한 단일 게이트 (weekly-cards DTO 라인 기준) ──
   // 편집 진입·수정 버튼은 이미 matchedLine.canEdit + lineTargetId(DTO)로 판정하는데,
@@ -2131,10 +2172,51 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   const [showDetailLogModal, setShowDetailLogModal] = useState(false);
 
   // 주차 확인 상태 머신 (pending → confirming → confirmed)
+  // ⚠ "pending" 은 서버 조회 전 기본값일 뿐 표시의 근거가 아니다 — 실제 확인 여부는 아래
+  //   GET /api/cluster4/week-confirmations 응답(weekConfirmLoaded)으로만 확정된다.
   type WeekConfirmStatus = "pending" | "confirming" | "confirmed";
   const [weekStatus, setWeekStatus] = useState<WeekConfirmStatus>("pending");
+  const [weekConfirmLoaded, setWeekConfirmLoaded] = useState(false);
   const isWeekConfirmed = weekStatus === "confirmed";
   const weekConfirmBtnRef = useRef<HTMLButtonElement>(null);
+
+  // 주차 확인 상태 — 서버(DB) 조회로 초기화. 새로고침/다른 기기에서도 동일하게 복원된다.
+  // 타 크루 카드를 열람 중이면 "그 카드 주인의" 확인 상태를 읽는다(표시 전용 — 쓰기는 소유자만).
+  useEffect(() => {
+    // localStorage 더미 데모는 서버에 없는 가짜 weekId 를 쓰므로 조회 대상이 아니다.
+    if (isDemoMode) {
+      setWeekStatus("pending");
+      setWeekConfirmLoaded(true);
+      return;
+    }
+    if (!weekId || !weekConfirmOwnerUserId) {
+      setWeekStatus("pending");
+      setWeekConfirmLoaded(false);
+      return;
+    }
+    let cancelled = false;
+    setWeekConfirmLoaded(false);
+    (async () => {
+      try {
+        const res = await fetch(weekConfirmApiUrl({ weekId, userId: weekConfirmOwnerUserId }), { cache: "no-store" });
+        const json = (await readJsonSafe(res)) as
+          | { success?: boolean; data?: { confirmed?: boolean } }
+          | null;
+        if (cancelled) return;
+        setWeekStatus(res.ok && json?.success && json?.data?.confirmed === true ? "confirmed" : "pending");
+      } catch (err) {
+        if (cancelled) return;
+        console.error("[week-confirm] 상태 조회 실패:", err);
+        setWeekStatus("pending");
+      } finally {
+        if (!cancelled) setWeekConfirmLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekId, weekConfirmOwnerUserId, demoUserId, isDemoMode]);
 
   // 주차 리뷰 모달 (신규)
   const [weeklyReviewModalOpen, setWeeklyReviewModalOpen] = useState(false);
@@ -5684,14 +5766,45 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
 
   const handleWeekConfirmClick = async () => {
     if (weekStatus !== "pending") return;
+    // 2차 방어 — 버튼 disabled 를 DevTools 로 풀고 눌러도 여기서 끊긴다(네트워크 요청 자체가 없음).
+    // 3차 방어는 서버(POST /api/cluster4/week-confirmations)의 actor≠소유자 → 403.
+    if (!canConfirmWeek) {
+      await popup.alert(
+        weekConfirmViewerUserId
+          ? "본인의 주차 카드에서만 확인할 수 있습니다."
+          : "로그인 후 본인의 주차 카드에서 확인할 수 있습니다.",
+      );
+      return;
+    }
+    if (!weekId || !weekConfirmOwnerUserId) return;
+
     const ok = await popup.confirm("주차 내역을 모두 확인하셨나요? 확인 이후에는 해당 주차 내역은 변동되지 않습니다.");
     if (!ok) return;
+
     setWeekStatus("confirming");
-    fireConfettiAtButton();
-    setTimeout(() => {
+    try {
+      const res = await fetch(weekConfirmApiUrl(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // userId 는 "이 카드의 주인"(대상)일 뿐 신원이 아니다 — 서버가 세션/테스트유저로
+        // actor 를 도출해 대조하고, 다르면 403 이다.
+        body: JSON.stringify({ weekId, userId: weekConfirmOwnerUserId }),
+        cache: "no-store",
+      });
+      const json = (await readJsonSafe(res)) as { success?: boolean; error?: string } | null;
+      if (!res.ok || !json?.success) {
+        // 실패 시 원래 상태(확인 필요)로 되돌린다 — 낙관적 확정 금지.
+        setWeekStatus("pending");
+        await popup.alert(json?.error || "주차 확인에 실패했습니다. 잠시 후 다시 시도해주세요.");
+        return;
+      }
       setWeekStatus("confirmed");
-      // 데모/실제 모두 클라이언트 상태만 변경 (백엔드 연동은 추후)
-    }, 900);
+      fireConfettiAtButton();
+    } catch (err) {
+      console.error("[week-confirm] 저장 실패:", err);
+      setWeekStatus("pending");
+      await popup.alert("주차 확인에 실패했습니다. 잠시 후 다시 시도해주세요.");
+    }
   };
 
   // 주차 리뷰 — 모달 닫기 (isDirty 체크)
@@ -9741,7 +9854,17 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
                     <span className="highlight">{headerWeekHighlight}</span>{headerWeekSuffix}
                   </span>
                 </div>
-                <button ref={weekConfirmBtnRef} type="button" className={`week-confirm-btn status-${weekStatus}${isWeekConfirmed ? " is-confirmed" : ""}`} onClick={handleWeekConfirmClick} disabled={weekStatus !== "pending"} aria-label={isWeekConfirmed ? "주차 확인 완료" : "주차 확인 필요"}>
+                <button
+                  ref={weekConfirmBtnRef}
+                  type="button"
+                  className={`week-confirm-btn status-${weekStatus}${isWeekConfirmed ? " is-confirmed" : ""}`}
+                  onClick={handleWeekConfirmClick}
+                  // 1차 방어(UI). 본인 카드가 아니거나(비로그인 포함) 서버 상태 로딩 전에는 비활성.
+                  // 표시(확인 완료/확인 필요)는 그대로 유지되고 클릭만 막힌다.
+                  disabled={!canConfirmWeek || !weekConfirmLoaded || weekStatus !== "pending"}
+                  title={canConfirmWeek ? undefined : "본인의 주차 카드에서만 확인할 수 있습니다."}
+                  aria-label={isWeekConfirmed ? "주차 확인 완료" : "주차 확인 필요"}
+                >
                   <span className="icon-shift">
                     <i className={isWeekConfirmed ? "ti ti-circle-check-filled" : "ti ti-circle-check"}></i>
                   </span>
