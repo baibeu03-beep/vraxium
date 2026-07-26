@@ -507,6 +507,13 @@ const Sidebar = () => {
       case "승인완료":
       case "승인":
         return { text: "승인 완료", className: "approved" };
+      // admin 검수 라벨이 "승인 완료" → "확인 완료" 로 바뀐 뒤 이 값이 default 로 떨어져
+      // 상태 클래스 없이(기본 글자색) 렌더되던 회귀 수정. 문구는 그대로 두고 완료 상태
+      // 색상(.activity-check.approved)만 복원한다.
+      case "confirmed":
+      case "확인완료":
+      case "확인":
+        return { text: "확인 완료", className: "approved" };
       case "reviewing":
       case "검수중":
       case "검수":
