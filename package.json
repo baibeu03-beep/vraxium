@@ -19,7 +19,10 @@
     "verify:week-effective-position": "npx tsx scripts/verify-week-effective-position.ts",
     "verify:weekly-league-parts": "node scripts/verify-weekly-league-parts.mjs",
     "verify:point-a-criterion": "node scripts/browser-verify-point-a-criterion.mjs",
-    "lint": "next lint"
+    "lint": "next lint",
+    "verify:class-position-parity": "node scripts/verify-crew-class-position-parity.mjs",
+    "verify:crew-class-role": "npx tsx scripts/verify-crew-class-role-parity.ts",
+    "verify:crew-class-role-dom": "node scripts/browser-verify-crew-class-label.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.1",

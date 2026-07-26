@@ -14,13 +14,21 @@
 // ⚠ 반환값은 **사용자 노출 문자열**이다 — 표시 어휘 SoT = lib/crewClassDisplayLabel.
 //   DB 원본 "일반"/홑겹 "심화" 는 화면에 내보내지 않는다(정규 / 심화(에이전트) /
 //   심화(파트장) / 운영진(…) 만 노출). 호출부가 넘긴 roleBasedLabel 도 여기서 정규화한다.
+//
+// ⚠ 2026-07-26 — 판정 규칙을 **공통 정규화기 하나**(shared/crewClassPosition.roleLevelToPositionCode,
+//   admin lib/adminMembersTypes.resolvePositionLabels 와 동일 미러)로 접었다. 종전에는 위 정책이
+//   이 파일 안에 손으로 미러링돼 있어서, 같은 정책을 구현한 세 함수(여기 · /api/crews ·
+//   shared/crewClassPosition)가 입력 값 변형에 따라 서로 다른 답을 냈다:
+//     · membership_level 컬럼이 등급이 아니라 **완성 라벨**("심화(파트장)" 13명 · "심화(에이전트)" 16명,
+//       2026-07-26 실측)인 사용자를 여기서는 "레벨 미확인"으로 떨어뜨려 role 폴백으로 보냈다.
+//   이제 코드로 정규화되면 그 결과가 곧 답이고, 정규화 불가(관리자 계정·등급 미상)일 때만
+//   아래 기존 폴백 정책이 그대로 남는다. 운영진 role 단축경로/part_leader 단독 금지 규칙은 불변.
 
 import {
   toCrewClassDisplayLabel,
   CREW_CLASS_REGULAR,
-  CREW_CLASS_AGENT,
-  CREW_CLASS_PART_LEADER,
 } from "@/lib/crewClassDisplayLabel";
+import { positionCodeToClassLabel, roleLevelToPositionCode } from "@/shared/crewClassPosition";
 
 const PART_LEADER_ROLES = new Set([
   "part_leader",
@@ -36,15 +44,6 @@ const OPERATIONS_ROLES = new Set([
   "operations_clubleader", "super_admin",
 ]);
 
-// DB 원본값(한글 "일반"/"심화")과 단축 영문값을 함께 흡수한다.
-function normalizeMembershipLevel(level: string | null | undefined): "regular" | "advanced" | null {
-  if (typeof level !== "string") return null;
-  const v = level.trim().toLowerCase();
-  if (v === "심화" || v === "advanced") return "advanced"; // class-label-allow (DB 원본값 입력)
-  if (v === "일반" || v === "active" || v === "regular" || v === "normal") return "regular"; // class-label-allow (DB 원본값 입력)
-  return null;
-}
-
 export function resolveMembershipRoleLabel(opts: {
   role: string | null | undefined;
   membershipLevel: string | null | undefined;
@@ -56,13 +55,13 @@ export function resolveMembershipRoleLabel(opts: {
   const fallback = toCrewClassDisplayLabel(opts.roleBasedLabel);
   if (role && OPERATIONS_ROLES.has(role)) return fallback;
 
-  const level = normalizeMembershipLevel(opts.membershipLevel);
-  if (level === "regular") return CREW_CLASS_REGULAR;
-  if (level === "advanced") {
-    return role && PART_LEADER_ROLES.has(role) ? CREW_CLASS_PART_LEADER : CREW_CLASS_AGENT;
-  }
+  // 공통 정규화기 — role + 등급을 position_code 로 접은 뒤 라벨 1회 변환.
+  const canonical = positionCodeToClassLabel(
+    roleLevelToPositionCode(opts.role, opts.membershipLevel),
+  );
+  if (canonical) return canonical;
 
-  // 레벨 미확인 — part_leader 단독 "심화(파트장)" 금지.
+  // 코드로 정규화조차 안 되는 값(등급 미상 등) — part_leader 단독 "심화(파트장)" 금지.
   if (role && PART_LEADER_ROLES.has(role)) return CREW_CLASS_REGULAR;
   return fallback;
 }

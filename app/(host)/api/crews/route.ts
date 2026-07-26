@@ -5,7 +5,8 @@ import { maskCrewName } from "@/lib/dataMasking";
 import { createAdminClient } from "@/lib/supabase-server";
 import { resolveMembershipDisplay } from "@/lib/membership";
 import { resolveResumeClassLabel } from "@/lib/crewClassLabel";
-import { positionCodeToClassLabel } from "@/shared/crewClassPosition";
+import { resolveMembershipRoleLabel } from "@/lib/cluster4-role-label";
+import { positionCodeToClassLabel, roleLevelToPositionCode } from "@/shared/crewClassPosition";
 import {
   loadCurrentWeekPositionOverrides,
   type OverridePosition,
@@ -466,11 +467,31 @@ function mergeRow(
     // 클래스명(표시용 역할 라벨 — 정규/심화(파트장)/운영진(팀장) …).
     //   ① 현재 주차 override(position_code) 가 있으면 그 클래스 — 라벨 SoT = shared/crewClassPosition
     //      (admin lib/positionHistory POSITION_CODE_TO_LABEL 와 byte-identical 미러).
-    //   ② 없으면 종전대로 user_profiles.role → 이력서 카드와 동일 라벨 SoT(resolveResumeClassLabel).
+    //   ② 없으면 **공통 resolver**(resolveMembershipRoleLabel = roleLevelToPositionCode 정규화)로
+    //      role + 등급을 함께 본다. 라벨 문자열은 이력서 카드/카드 헤더/디테일 로그와 같은 어휘다.
     //   값이 비면(null) 프론트가 배지를 숨긴다. rest 마스킹 대상 아님(직급은 시즌 휴식과 무관).
+    //
+    //   ⚠ 2026-07-26 — 종전엔 resolveResumeClassLabel(role) 로 **role 만** 봤다. 등급을 보지 않으니
+    //     같은 사람이 이 화면에서만 다른 클래스로 보였다(실측: role=part_leader·등급=일반 사용자가
+    //     여기서만 "심화(파트장)", 어드민·이력서에서는 "정규"). 등급 게이트는 공통 정책이다.
+    //   ⚠ **배지 노출 여부 정책은 그대로 둔다** — role 이 없는 사용자(589명)는 종전처럼 배지 없음.
+    //     여기서 등급만으로 배지를 새로 만들면 이번 수정과 무관한 화면 변화(580여 명 신규 배지)가
+    //     생긴다. 라벨 규칙만 통일하고 노출 규칙은 건드리지 않는다.
     className:
       (weekOverride ? positionCodeToClassLabel(weekOverride.positionCode) : null) ??
-      resolveResumeClassLabel(profile.role),
+      (profile.role
+        ? resolveMembershipRoleLabel({
+            role: profile.role,
+            membershipLevel: resolved.membershipLevel,
+            roleBasedLabel: resolveResumeClassLabel(profile.role),
+          })
+        : null),
+    // 클래스(직책) 원시 코드 — 소비 측이 공통 resolver(lib/crewClassDisplayLabel.resolveCrewClassLabel)
+    //   로 라벨을 만들 수 있게 additive 노출한다(카드 DTO crewClassPositionCode 와 같은 의미·같은 코드계).
+    classPositionCode:
+      weekOverride?.positionCode ??
+      roleLevelToPositionCode(profile.role, resolved.membershipLevel) ??
+      null,
     nickname: profile.vision ?? view?.vision ?? view?.nickname ?? "-",
     // 한줄소개 체인(profile_tagline → profile_keyword → vision) — 연계동료/평판 카드의
     // "닉네임" 칸 표시값과 동일 규칙(personProfiles.buildPersonProfileMap mirror). additive 필드.

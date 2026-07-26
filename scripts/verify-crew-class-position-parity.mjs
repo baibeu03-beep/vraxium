@@ -13,10 +13,15 @@ if (!existsSync(sibling)) {
   console.log(`[parity] 형제 admin 레포 미발견(${sibling}) — skip(로컬 CI 밖).`);
   process.exit(0);
 }
-const a = readFileSync(self, "utf8");
-const b = readFileSync(sibling, "utf8");
+// 개행문자만 정규화해 비교한다(내용 parity 검증). 두 레포는 각각 git core.autocrlf 설정에 따라
+//   체크아웃 시 CRLF/LF 가 갈릴 수 있는데(Windows 실측 2026-07-26: vraxium=LF, admin=CRLF),
+//   그건 미러 불일치가 아니라 체크아웃 차이다. 이걸 실패로 보면 가드가 상시 빨간불이 되어
+//   "진짜 규칙 분기"를 잡아내지 못한다.
+const norm = (s) => s.replace(/\r\n/g, "\n");
+const a = norm(readFileSync(self, "utf8"));
+const b = norm(readFileSync(sibling, "utf8"));
 if (a !== b) {
   console.error("[parity] ❌ shared/crewClassPosition.ts 가 두 레포에서 불일치. 미러 동기화 필요.");
   process.exit(1);
 }
-console.log("[parity] ✅ shared/crewClassPosition.ts byte-identical (vraxium ↔ vraxium-admin).");
+console.log("[parity] ✅ shared/crewClassPosition.ts 내용 일치 (vraxium ↔ vraxium-admin, 개행 정규화 비교).");
