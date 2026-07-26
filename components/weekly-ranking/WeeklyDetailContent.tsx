@@ -13,6 +13,7 @@ import {
   normalizePointACriterion,
 } from "@/lib/pointACriterionLabel";
 import { resolveOrgPointMeta, resolveGrowthStandardPoint, growthStandardLabel } from "@/lib/orgPointMeta";
+import { loadWeeklyLeague, weeklyLeagueUrl } from "@/lib/weeklyLeagueClient";
 import {
   WeeklyFilterSelect,
   getSelectWidthByLongestLabel,
@@ -157,6 +158,8 @@ type LoadState = "loading" | "ready" | "notfound";
 export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContentProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  // 리스트와 동일한 시즌 필터를 상세 조회에도 그대로 전달한다(URL ?seasonKey= 유지).
+  const seasonKeyParam = searchParams?.get("seasonKey") ?? null;
   const [card, setCard] = useState<WeeklyCardData | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   // 대시보드 Progress Bar 진입 애니메이션 트리거(0% → 목표%).
@@ -207,12 +210,13 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
 
     (async () => {
       try {
-        const res = await fetch(`/api/weekly-league?org=${encodeURIComponent(org)}`, {
-          cache: "no-store",
-        });
-        const json = await res.json();
+        // 리스트(WeeklyRankingContent)와 **완전히 같은 URL·같은 로더**를 쓴다.
+        //   종전엔 seasonKey 를 떨어뜨린 raw fetch 라, 아카이브 시즌(?seasonKey=)에서 진입하면
+        //   기본 era 응답에 그 주차가 없어 'notfound' 가 되거나 리스트와 다른 응답을 소비했다.
+        //   (스코프(mode/actAs/demo)는 서버 readScopeMode 가 배포 env 로 고정 — URL 파라미터 무관.)
+        const json = await loadWeeklyLeague(weeklyLeagueUrl(org, seasonKeyParam));
         if (cancelled) return;
-        const cards: WeeklyCardData[] = json?.success && Array.isArray(json.cards) ? json.cards : [];
+        const cards: WeeklyCardData[] = Array.isArray(json.cards) ? json.cards : [];
         const found = cards.find((c) => c.id === weekId) ?? null;
         setCard(found);
         setState(found ? "ready" : "notfound");
@@ -224,7 +228,7 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
     return () => {
       cancelled = true;
     };
-  }, [weekId, org]);
+  }, [weekId, org, seasonKeyParam]);
 
   // 스크롤 진입 fade-up — data-fadeup 요소가 뷰포트에 들어오면 is-visible 부여.
   //   콘텐츠가 opacity:0 로 영구 숨는 일이 없도록 3중 안전장치:
@@ -397,6 +401,9 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
   // Champion's Hall — DTO(card.top10 / card.top10Focus)에서 수신(하드코딩 없음).
   const activeTab = championTabs.find((t) => t.key === champTab) ?? championTabs[0];
   // 탭별 표시 데이터: 리스트 / 포인트 아이콘 / 값 getter / 단위. 카드 컴포넌트는 완전 공용.
+  //   ⚠ focus 탭 표시값 = c.pointB(**캐노니컬 net** — 아래 크루 랭킹 카드와 같은 값·같은 아이콘).
+  //     리스트 순서는 백엔드가 raw advantages(DTO pointBRaw)로 이미 확정해 내려준다 —
+  //     프론트는 재정렬하지 않는다(표시 필드로 정렬 금지: 값이 net 이라 순위가 뒤집힌다).
   const champTabData: Record<
     ChampTabKey,
     { list: ChampionCrew[]; pointIcon: string; pointOf: (c: ChampionCrew) => number; unit: string }
@@ -886,11 +893,12 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
               모든 섹션을 항상 렌더(값 없으면 '-'/placeholder) → 카드마다 내부 y좌표 동일. */}
           <div className="wd-tb__grid">
             {teams.map((t) => {
-              // 파트명/파트 수 — DTO parts[] 를 그대로 쓴다(프론트 재필터 금지).
-              //   운용 파트(배정 1명 이상) 판정은 집계에서 끝났다 — lib/weekly-league-teams.ts.
+              // 파트명/파트 수 — DTO 를 그대로 쓴다(프론트 재계산·재필터 금지).
+              //   운용 파트 판정/중복 제거/정렬은 집계에서 끝났다 — lib/weekly-league-teams.resolveOperatingParts.
+              //   DTO 계약: partCount === parts.length (live 집계·공표 snapshot 양쪽 동일).
               //   과거엔 여기서 '일반'을 걸러내 상단 KPI(Σ partCount)와 카드 태그 수가 어긋났다.
-              const partNames = t.parts.map((p) => p.partName);
-              const partShownCount = partNames.length;
+              const partNames = (Array.isArray(t.parts) ? t.parts : []).map((p) => p.partName);
+              const partShownCount = t.partCount ?? partNames.length;
 
               // 대전 결과 마크(승/패/무). 승만 왕관, 그 외는 아이콘 자리(placeholder) 확보.
               const resultMark = t.battleResult === "win" ? "승" : t.battleResult === "lose" ? "패" : "무";
@@ -1153,6 +1161,11 @@ export default function WeeklyDetailContent({ weekId, org }: WeeklyDetailContent
           ) : (
             crewPageItems.map((c) => {
               const tier = rankTier(c.rank);
+              // 포인트 A/B/C — **선택 조직 + 선택 시즌 + 이 카드의 주차 + 이 사용자** 의 값.
+              //   원천은 집계 DTO(crewRankShowcase.pointA/B/C) 하나뿐이다 = user_weekly_points
+              //   (points/advantages/penalty) 의 해당 주차 행. 누적·팀 합계·다른 주차·snapshot 대체 금지.
+              //   아이콘 매핑은 lib/orgPointMeta 인덱스 고정: [0]=A · [1]=B · [2]=C
+              //   (oranke Ok01=단감=A / OK02=인절미=B / Ok03=어흥=C).
               const points = [
                 { key: "A", icon: pointIcons.a, value: c.pointA },
                 { key: "B", icon: pointIcons.b, value: c.pointB },

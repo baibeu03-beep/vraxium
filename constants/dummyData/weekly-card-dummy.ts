@@ -21,7 +21,12 @@ export type ChampionCrew = {
   team: string | null;             // ⑥ 팀
   part: string | null;             // ⑦ 파트
   pointA: number;                  // 포인트 A(성장 활동량=별/points) 수치
-  pointB: number;                  // 포인트 B(성장 집중력=방패/advantages) 수치
+  // ⚠ 표시값과 정렬값을 분리한다(2026-07-26). 같은 페이지의 크루 랭킹 카드(CrewRankShowcase)와
+  //   같은 아이콘·같은 포인트명을 쓰므로 **표시값은 반드시 캐노니컬 net** 이어야 한다.
+  /** 화면 표시용 포인트 B = advantages − |penalty| (net, 음수 가능). SoT=lib/weekly-points-canonical. */
+  pointB: number;
+  /** '성장 집중력 Top 10' **정렬 기준** raw advantages(획득량). 표시에 쓰지 말 것 — 순위 산정 전용. */
+  pointBRaw: number;
   growthRate: number;              // 주차 성장률(%)
   profileImage?: string | null;    // ① 프로필 이미지(없으면 이니셜 폴백)
 };
@@ -426,10 +431,12 @@ const buildChampionLists = (
     arr.slice(0, 10).map((c, i) => ({
       rank: i + 1, name: c.name, className: c.className, school: c.school,
       major: c.major, team: c.team, part: c.part,
-      pointA: c.pointA, pointB: c.pointB, growthRate: c.growthRate,
+      // 더미도 실제 DTO 계약과 동일하게: 표시=net(raw−|C|) · 정렬=raw.
+      pointA: c.pointA, pointB: c.pointB - c.pointC, pointBRaw: c.pointB, growthRate: c.growthRate,
       profileImage: c.profileImage,
     }));
   const activity = rank([...pool].sort((a, b) => b.pointA - a.pointA || b.pointB - a.pointB || a._uid - b._uid));
+  // 정렬 기준은 raw advantages(pool.pointB) — 표시용 net 으로 바꾸지 않는다(순위 불변).
   const focus = rank([...pool].sort((a, b) => b.pointB - a.pointB || b.pointA - a.pointA || a.pointC - b.pointC || a._uid - b._uid));
   // 성장률: rate desc → 강화성공 desc → 활동주차 asc → pointA desc → pointC desc.
   const growth = rank([...pool].sort((a, b) =>

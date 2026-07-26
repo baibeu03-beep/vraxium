@@ -35,8 +35,16 @@ import {
   rankingLabelForOrgStatus,
   type WeekOrgResultState,
 } from "@/lib/weekOrgResultState";
-import type { WeeklyCardData, WeeklyCardCrew, ChampionCrew, RestReason, WeeklyLeagueTeamBattle, WeeklyLeagueMvp, CrewRankShowcase } from "@/constants/dummyData/weekly-card-dummy";
-import { loadTeamBattleContext, buildTeamBattles, type CrewVerdict, type TeamBattleContext } from "@/lib/weekly-league-teams";
+import type { WeeklyCardData, WeeklyCardCrew, ChampionCrew, RestReason, WeeklyLeagueTeamBattle, WeeklyLeagueTeamPart, WeeklyLeagueMvp, CrewRankShowcase } from "@/constants/dummyData/weekly-card-dummy";
+import {
+  loadTeamBattleContext,
+  buildTeamBattles,
+  resolveOperatingParts,
+  normalizePartName,
+  type CrewVerdict,
+  type TeamBattleContext,
+} from "@/lib/weekly-league-teams";
+import { resolveCanonicalWeeklyPoints } from "@/lib/weekly-points-canonical";
 import {
   loadWeekEffectivePositionIndex,
   resolveEffectivePosition,
@@ -152,22 +160,85 @@ async function loadActiveRunTeamSnapshots(
     console.warn("[weekly-league] 팀 snapshot 행 조회 실패", error.message);
     return out;
   }
+
+  // ── 팀별 파트 목록 재수화(read-time canonical, 2026-07-26) ───────────────────
+  //   team_results 에는 part_count(수)만 있고 **파트명 목록이 없다**. 종전엔 parts:[] 를 그대로
+  //   내려보내 공표 주차 팀 카드가 "파트 0개 / -" 로 떨어졌다(프론트는 목록 길이로 개수를 센다).
+  //   같은 run 의 per-user snapshot(cluster4_week_finalize_run_crew_results)에 공표 당시의
+  //   team_name/part_name 이 그대로 보존돼 있으므로, 그 배정에서 distinct 파트를 복원한다.
+  //   → 공표 당시 값이며 현재 멤버십을 덮어쓰지 않는다. snapshot 재생성·DB 수정 불필요.
+  //   정렬/중복 제거/미배정 제외는 live 경로와 **같은 resolveOperatingParts**.
+  const runIds = Array.from(runIdToWeek.keys());
+  const teamIds = Array.from(
+    new Set((rows ?? []).map((r) => (r as Record<string, unknown>).team_id as string | null).filter((v): v is string => !!v)),
+  );
+  // (run_id||team_name) → 배정된 파트명 집합
+  const assignedByRunTeam = new Map<string, Set<string>>();
+  const { data: crewRows, error: crewErr } = await db
+    .from("cluster4_week_finalize_run_crew_results")
+    .select("run_id,team_name,part_name")
+    .in("run_id", runIds);
+  if (crewErr) {
+    console.warn("[weekly-league] 팀 snapshot 파트 재수화 실패 — 파트 목록 없이 진행", crewErr.message);
+  } else {
+    for (const r of (crewRows ?? []) as Array<Record<string, unknown>>) {
+      const teamName = String(r.team_name ?? "").trim();
+      const partName = normalizePartName(r.part_name as string | null);
+      if (!teamName || !partName) continue;
+      const key = `${String(r.run_id)}||${teamName}`;
+      const set = assignedByRunTeam.get(key) ?? new Set<string>();
+      set.add(partName);
+      assignedByRunTeam.set(key, set);
+    }
+  }
+  // 표시 순서를 live 경로와 맞추기 위한 카탈로그(display_order asc). 실패해도 가나다순으로 진행.
+  const catalogByTeamId = new Map<string, WeeklyLeagueTeamPart[]>();
+  if (teamIds.length > 0) {
+    const { data: catRows, error: catErr } = await db
+      .from("cluster4_team_parts")
+      .select("id,team_half_id,part_name,display_order")
+      .in("team_half_id", teamIds);
+    if (catErr) {
+      console.warn("[weekly-league] 팀 snapshot 파트 카탈로그 조회 실패 — 가나다순 폴백", catErr.message);
+    } else {
+      const sorted = [...((catRows ?? []) as Array<Record<string, unknown>>)].sort(
+        (a, b) => (Number(a.display_order ?? 9999) || 0) - (Number(b.display_order ?? 9999) || 0),
+      );
+      for (const c of sorted) {
+        const halfId = String(c.team_half_id);
+        const arr = catalogByTeamId.get(halfId) ?? [];
+        arr.push({ partId: String(c.id), partName: String(c.part_name ?? "") });
+        catalogByTeamId.set(halfId, arr);
+      }
+    }
+  }
+
   for (const r of (rows ?? []) as Array<Record<string, unknown>>) {
     const weekId = runIdToWeek.get(r.run_id as string);
     if (!weekId) continue;
     if (!out.has(weekId)) out.set(weekId, []);
+    const teamId = (r.team_id as string | null) ?? null;
+    const teamName = r.team_name as string;
+    // 공표 당시 배정에서 복원한 운용 파트. 재수화 실패/legacy run(crew_results 없음)이면 빈 목록.
+    const parts = resolveOperatingParts({
+      catalogParts: teamId ? catalogByTeamId.get(teamId) ?? [] : [],
+      assignedNames: assignedByRunTeam.get(`${String(r.run_id)}||${String(teamName ?? "").trim()}`) ?? [],
+      teamHalfId: teamId,
+    });
     out.get(weekId)!.push({
-      teamId: (r.team_id as string | null) ?? null,
-      teamName: r.team_name as string,
+      teamId,
+      teamName,
       leader: {
         name: (r.leader_display_name as string | null) ?? null,
         school: (r.leader_school_name as string | null) ?? null,
         major: (r.leader_major_name as string | null) ?? null,
         profileImageUrl: null, // snapshot 은 표시 최소 필드만 보존한다(이름/학교/전공).
       },
-      // 파트 상세 목록은 snapshot 대상이 아니다(표에 파트 "수"만 필요). 카운트만 신뢰한다.
-      parts: [],
-      partCount: (r.part_count as number | null) ?? 0,
+      // 파트 목록/개수 계약: partCount === parts.length (프론트가 개수를 따로 세지 않는다).
+      //   재수화가 가능한 run 은 실측 part_count 와 일치한다(8/8 run 검증, 2026-07-26).
+      //   재수화 불가(legacy run)일 때만 snapshot 의 part_count 로 폴백한다.
+      parts,
+      partCount: parts.length > 0 ? parts.length : (r.part_count as number | null) ?? 0,
       teamGoal: null,
       weeklyFlow: null,
       crewComment: null,
@@ -926,14 +997,21 @@ export async function aggregateWeeklyLeague(
       arr.push({ user_id: r.user_id, status: r.status });
       statusByWeek.set(r.week_start_date, arr);
     }
-    const pointsByWeek = new Map<string, Array<{ user_id: string; points: number; advantages: number; penalty: number }>>();
+    // (user, week) 포인트 인덱스 — raw 컬럼과 **표시 캐노니컬 B** 를 함께 싣는다.
+    //   points/advantages/penalty = raw(정렬·누적 등 내부 집계 전용, 기존 사용처 무변경)
+    //   pointB                    = resolveCanonicalWeeklyPoints 의 net(advantages−|penalty|)
+    //   화면에 나가는 B 는 반드시 pointB 를 쓴다 — raw advantages 를 그대로 내보내면
+    //   어드민 주차 결과 표·주차 카드와 값이 갈린다(패널티 보유자 전원).
+    const pointsByWeek = new Map<string, Array<{ user_id: string; points: number; advantages: number; penalty: number; pointB: number }>>();
     for (const r of pointRows) {
       const arr = pointsByWeek.get(r.week_start_date) || [];
+      const canonical = resolveCanonicalWeeklyPoints(r);
       arr.push({
         user_id: r.user_id,
-        points: Number(r.points) || 0,
-        advantages: Number(r.advantages) || 0,
-        penalty: Number(r.penalty) || 0,
+        points: canonical.pointA,
+        advantages: canonical.rawAdvantage,
+        penalty: canonical.pointC,
+        pointB: canonical.pointB,
       });
       pointsByWeek.set(r.week_start_date, arr);
     }
@@ -1329,7 +1407,13 @@ export async function aggregateWeeklyLeague(
       const growthRateOf = (p: { points: number }): number => (maxWeekPoints > 0 ? Math.round((p.points / maxWeekPoints) * 100) : 0);
 
       // Champion's Hall 크루 매퍼 — 포인트 엔트리 → 표시 카드(포인트 A/B + 주차 성장률 동시 보유).
-      const championFor = (p: { user_id: string; points: number; advantages: number }, rank: number): ChampionCrew => {
+      //   ⚠ pointB(표시) 와 pointBRaw(정렬) 를 분리해 싣는다(2026-07-26). Champion's Hall 과
+      //     크루 랭킹 카드는 같은 아이콘·같은 포인트명을 쓰므로 **표시값은 같은 캐노니컬 net** 이어야 한다.
+      //     '성장 집중력 Top 10' 의 순위는 종전대로 raw advantages 로 매긴다(정렬 불변) — 아래 top10Focus.
+      const championFor = (
+        p: { user_id: string; points: number; advantages: number; penalty?: number; pointB?: number },
+        rank: number,
+      ): ChampionCrew => {
         const { team, part } = teamPartAt(p.user_id, week.startDate);
         const primary = pickPrimaryMembership(membershipByUser.get(p.user_id) || []);
         const cp = champProfile.get(p.user_id);
@@ -1347,7 +1431,10 @@ export async function aggregateWeeklyLeague(
           team: team === "-" ? null : team,
           part: part === "-" ? null : part,
           pointA: p.points,
-          pointB: p.advantages,
+          // 표시 = 캐노니컬 net. pointsByWeek 가 이미 계산해 싣는다(없으면 동일 식으로 폴백).
+          pointB: p.pointB ?? p.advantages - Math.abs(p.penalty ?? 0),
+          // 정렬 = raw advantages(획득량). top10Focus 순위 키와 동일한 값을 DTO 로도 노출한다.
+          pointBRaw: p.advantages,
           growthRate: growthRateOf(p),
           profileImage: cp?.photo ?? null,
         };
@@ -1356,8 +1443,11 @@ export async function aggregateWeeklyLeague(
       // ① 성장 활동량(포인트 A) Top 10.
       const top10: ChampionCrew[] = rankedByPoints.slice(0, 10).map((p, i) => championFor(p, i + 1));
 
-      // ② 성장 집중력(포인트 B=advantages) Top 10.
-      //    정렬: B desc → A desc → C(penalty) asc → user_id.
+      // ② 성장 집중력 Top 10 — **순위 키 = raw advantages(획득량)**.
+      //    정렬: rawB desc → A desc → C(penalty) asc → user_id.  (2026-07-26 이후에도 불변)
+      //    ⚠ 표시값(championFor.pointB)은 캐노니컬 net 이지만 **순위는 이 raw 키로만 매긴다** —
+      //      표시/정렬을 한 필드에 묶으면 크루 카드와 값이 갈리거나 순위가 뒤집힌다. DTO 의
+      //      pointBRaw 가 여기서 쓰는 값과 동일하다(소비처가 정렬 근거를 확인할 수 있게 노출).
       //    (스펙의 4·5순위 '강화 성공 라인수'/'활동 가능 주차'는 본 집계 데이터에 없어 미적용 — user_id 로 결정성 보강.)
       const top10Focus: ChampionCrew[] = weekPts
         .filter((p) => p.advantages > 0)
@@ -1408,7 +1498,8 @@ export async function aggregateWeeklyLeague(
       }
 
       // ── [5] Weekly Rank Showcase — 크루 개별 활동 결과(best-effort) ──
-      //   points/advantages 보유 크루 대상. championFor 재사용(프로필/포인트/팀·파트/성장률프록시),
+      //   모집단 = "그 주차(week.startDate) 포인트 원장에 **유의미한 기록이 있는** 크루".
+      //   championFor 재사용(프로필/포인트/팀·파트/성장률프록시),
       //   결과는 per-user verdict(success/fail/rest)로 매핑.
       //   품계(user_grade_stats)·강화율 5종+전주 델타·누적 성공주차·위클리 리뷰는 스냅샷(growthMetricsByUser)에서 주입.
       const previousWeekId = previousWeekIdByWeekId.get(week.id) ?? null;
@@ -1420,8 +1511,14 @@ export async function aggregateWeeklyLeague(
         competencyRate: 0,
         careerRate: 0,
       };
-      const crewBase = (weekPts as Array<{ user_id: string; points: number; advantages: number; penalty: number }>)
-        .filter((p) => p.points > 0 || p.advantages > 0)
+      const crewBase = (weekPts as Array<{ user_id: string; points: number; advantages: number; penalty: number; pointB: number }>)
+        // 모집단 규칙(2026-07-26 교정): A/B/C 중 **하나라도 0이 아니면** 포함한다.
+        //   종전 `points > 0 || advantages > 0` 은
+        //     · A=0·B=0·C>0 (패널티만 받은 크루) → 카드 자체가 사라짐(실측 oranke 여름 W1 4명,
+        //       공표 snapshot 30명 중 26명만 노출), · A<0(음수 보정) 크루도 동일하게 탈락,
+        //     · 남은 인원으로 rank/totalRankCount 를 매겨 "N등 / 총 M명"까지 어긋났다.
+        //   A=B=C=0 인 행은 원장에 자동 생성된 플레이스홀더라 계속 제외한다(모집단 폭증 방지).
+        .filter((p) => p.points !== 0 || p.advantages !== 0 || p.penalty !== 0)
         .map((p) => {
           const c = championFor(p, 0);
           const v = verdicts.get(p.user_id) ?? null;
@@ -1487,8 +1584,11 @@ export async function aggregateWeeklyLeague(
           major: x.c.major,
           teamName: x.c.team,
           partName: x.c.part,
+          // 표시 계약 = lib/weekly-points-canonical (어드민 pointResolver · 주차 카드와 동일):
+          //   A = points · B = advantages − |penalty|(net, 음수 가능) · C = |penalty|(양수 magnitude).
+          //   ⚠ raw advantages 를 B 로 내보내면 패널티 보유자 전원이 다른 화면과 갈린다.
           pointA: x.p.points,
-          pointB: x.p.advantages,
+          pointB: x.p.pointB,
           pointC: x.p.penalty,
           cumulativeSuccessWeeks: current.cumulativeSuccessWeeks,
           weeklySuccessDelta: Math.min(1, Math.max(0, current.cumulativeSuccessWeeks - (previousMetric?.cumulativeSuccessWeeks ?? current.cumulativeSuccessWeeks))) as 0 | 1,

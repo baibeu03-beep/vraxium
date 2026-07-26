@@ -37,6 +37,59 @@ type Db = any;
 
 export type CrewVerdict = "success" | "fail" | "rest";
 
+// ── 운용 파트 목록 SoT(2026-07-26) ────────────────────────────────────────
+//   live 집계(buildTeamBattles)와 **공표 snapshot 재수화**(weekly-league.loadActiveRunTeamSnapshots)가
+//   반드시 이 두 함수를 통과한다. 두 경로가 서로 다른 파트 목록/개수를 만들지 않게 하는 단일 지점이며,
+//   DTO 계약은 `partCount === parts.length` 다(프론트가 개수를 따로 세지 않는다).
+//
+//   과거 회귀: 공표 주차는 snapshot 경로가 parts:[] 를 하드코딩해 화면이 "파트 0개 / -" 로 떨어졌다
+//   (part_count 는 3인데 목록이 비어 있어 프론트가 목록 길이로 0을 표시).
+
+/** 파트명 정규화 — 공백 제거 후 미배정 표기는 파트가 아니므로 null. */
+export function normalizePartName(raw: string | null | undefined): string | null {
+  const v = String(raw ?? "").trim();
+  if (!v || v === "-" || v === "미배정") return null;
+  return v;
+}
+
+/**
+ * 운용 파트 = "그 주차에 배정 1명 이상인 distinct 파트".
+ *   표시 순서: 카탈로그 등록분(display_order asc — catalogParts 가 이미 그 순서)
+ *            → 카탈로그 밖(운용 중이나 미등록) 이름 가나다순.
+ *   카탈로그에만 있고 배정 0명인 파트는 제외한다('일반'도 예외 없음 — 이름으로 특별 취급 금지).
+ *   카탈로그 미등록 팀(teamHalfId=null)은 합성 파트를 만들지 않는다(정체불명 태그·KPI 부풀림 방지).
+ */
+export function resolveOperatingParts(params: {
+  catalogParts: readonly WeeklyLeagueTeamPart[];
+  /** 배정된 파트명(원본). 중복/미배정 표기가 섞여 있어도 된다 — 여기서 정규화·중복 제거한다. */
+  assignedNames: Iterable<string | null | undefined>;
+  teamHalfId: string | null;
+}): WeeklyLeagueTeamPart[] {
+  const { catalogParts, assignedNames, teamHalfId } = params;
+  const assigned = new Set<string>();
+  Array.from(assignedNames).forEach((raw) => {
+    const name = normalizePartName(raw);
+    if (name) assigned.add(name);
+  });
+  const parts: WeeklyLeagueTeamPart[] = [];
+  const taken = new Set<string>();
+  for (const p of catalogParts) {
+    const name = normalizePartName(p.partName);
+    if (!name || taken.has(name)) continue;
+    if (!assigned.has(name)) continue; // 생성만 되고 배정 0명 → 제외
+    taken.add(name);
+    parts.push({ partId: p.partId, partName: name });
+  }
+  if (teamHalfId) {
+    for (const name of Array.from(assigned).sort((x, y) => x.localeCompare(y, "ko"))) {
+      if (taken.has(name)) continue;
+      taken.add(name);
+      parts.push({ partId: `adhoc:${teamHalfId}:${name}`, partName: name });
+    }
+  }
+  return parts;
+}
+
 // 시즌 키 → 반기 키(순수). admin lib/teamHalf.ts 와 동일 매핑(겨울·봄→H1, 여름·가을→H2).
 export function seasonKeyToHalfKey(seasonKey: string | null | undefined): string | null {
   if (!seasonKey) return null;
@@ -495,30 +548,13 @@ export function buildTeamBattles(params: {
     const teamHalfId = catalog?.id ?? null;
 
     // ── 운용 파트 = 배정 1명 이상인 distinct 파트 ──────────────────────────
-    //   표시 순서: 카탈로그 등록분(display_order asc — partsByHalfId 가 이미 그 순서) →
-    //   카탈로그 밖(운용 중이나 미등록) 이름 가나다순. 카탈로그 0명 파트는 여기서 탈락한다.
+    //   판정·정렬·중복 제거는 공용 resolveOperatingParts 단일 지점(공표 snapshot 재수화와 동일 함수).
     const catalogParts = teamHalfId ? ctx.partsByHalfId.get(teamHalfId) ?? [] : [];
-    const assigned = b.partCrewByName;
-    const parts: WeeklyLeagueTeamPart[] = [];
-    const taken = new Set<string>();
-    for (const p of catalogParts) {
-      const name = (p.partName ?? "").trim();
-      if (!name || taken.has(name)) continue;
-      if ((assigned.get(name) ?? 0) < 1) continue; // 생성만 되고 배정 0명 → 제외
-      taken.add(name);
-      parts.push({ partId: p.partId, partName: name });
-    }
-    // 카탈로그 등록 팀에 한해, 카탈로그에 없지만 실제 배정된 파트도 운용 파트로 인정(합성 partId).
-    //   ⚠️ 카탈로그 미등록 팀(teamHalfId=null — '미배정'·시즌 휴식 플레이스홀더 등 레거시 팀명)은
-    //   제외한다. 이들은 반기 팀 운용 단위가 아니라서 여기서 파트를 만들면 KPI 가 실제 운용
-    //   규모를 넘어 부풀고, 카드에도 정체불명 태그가 붙는다.
-    if (teamHalfId) {
-      for (const name of Array.from(assigned.keys()).sort((x, y) => x.localeCompare(y, "ko"))) {
-        if (taken.has(name)) continue;
-        taken.add(name);
-        parts.push({ partId: `adhoc:${teamHalfId}:${name}`, partName: name });
-      }
-    }
+    const parts = resolveOperatingParts({
+      catalogParts,
+      assignedNames: b.partCrewByName.keys(),
+      teamHalfId,
+    });
     return {
       teamId: teamHalfId,
       teamName: b.teamName,
