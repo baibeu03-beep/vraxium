@@ -286,6 +286,28 @@ const LinePointPair: React.FC<{ pair: CrewLinePointPairDto; kind: LinePointKind 
   </span>
 );
 
+/**
+ * 평점 Point A 단일 값 — 강화 시 포인트(LinePointPair, "획득 / 가능")와 **다른 항목**이다.
+ *   실제 평가 결과라 "가능치" 개념이 없어 값 하나만 그린다. 색은 Point A 계열(dl-point-pair--a)을
+ *   그대로 상속해 요약과 표가 갈라지지 않게 한다(인라인 color 금지).
+ *   status 로 세 상태를 구분한다 — paid=값 · not_paid="미지급" · not_applicable="-".
+ *   ⚠ 화면에서 평점을 재계산하지 않는다. 값도 상태도 전부 서버(원장) SoT 다.
+ */
+const LineRatingPoint: React.FC<{
+  value?: number;
+  status?: "paid" | "not_paid" | "not_applicable";
+}> = ({ value, status }) => {
+  // 구 admin 응답(v4 이하)에는 필드가 없다 → "정보 없음"이므로 0 이 아니라 "-" 로 둔다.
+  if (status == null) return <span className="dl-point-pair dl-point-pair--a">-</span>;
+  if (status === "not_applicable") return <span className="dl-point-pair dl-point-pair--a">-</span>;
+  if (status === "not_paid") return <span className="dl-point-pair dl-point-pair--a">미지급</span>;
+  return (
+    <span className="dl-point-pair dl-point-pair--a">
+      <span className="dl-point-earned">{value ?? 0}</span>
+    </span>
+  );
+};
+
 /** 주차 성장 조건 배지 문구 — 실무 경험만 필수(백엔드 growthRequirement SoT). */
 const growthRequirementLabel = (r: "required" | "optional"): string =>
   r === "required" ? "필수" : "자율";
@@ -328,6 +350,8 @@ const toLineSortRow = (row: CrewWeekLineEnhancementRowDto): LineSortRow => ({
   pointA: row.pointA.earned,
   pointB: row.pointB.earned,
   pointC: row.pointC.earned,
+  // 평점 Point A — 지급된 행만 숫자, 그 외(미지급/해당없음/구 DTO 부재)는 null → 방향 무관 최하단.
+  ratingPointA: row.ratingPointStatus === "paid" ? (row.ratingPointA ?? null) : null,
   growthRequirement: growthRequirementLabel(row.growthRequirement),
   clubOpen: true, // 크루 표는 클럽 오픈 라인만 실린다 — 컬럼 없음(정렬 대상 아님).
 });
@@ -980,10 +1004,21 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                               <LinePointPair pair={lineState.data.summary.pointC} kind="c" />
                             </span>
                           </span>
+                          {/* 평점 Point A 합 — 위 "획득 A"(강화 시 포인트)와 **출처가 다른 별개 항목**이라
+                              합치지 않고 따로 보여준다. 가능치 개념이 없어 단일 값이다.
+                              구 admin 응답(v4 이하)에는 필드가 없다 → 표시하지 않는다(0 으로 단정 금지). */}
+                          {typeof lineState.data.summary.ratingPointA === "number" ? (
+                            <span className="dl-act-stat dl-act-stat--point">
+                              <span className="dl-act-stat-label">평점 {pointALabel}</span>
+                              <span className="dl-act-stat-value">
+                                <LineRatingPoint value={lineState.data.summary.ratingPointA} status="paid" />
+                              </span>
+                            </span>
+                          ) : null}
                         </div>
                       </div>
 
-                      {/* 하단 표 Y — 이번 주 클럽 오픈 라인 전 행. 10열이라 좁은 폭에선 가로 스크롤(wrap). */}
+                      {/* 하단 표 Y — 이번 주 클럽 오픈 라인 전 행. 11열이라 좁은 폭에선 가로 스크롤(wrap). */}
                       <div className="dl-act-table-wrap">
                         <table className="dl-act-table dl-line-table">
                           <colgroup>
@@ -995,6 +1030,8 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                             <col className="dl-line-col-rating" />
                             <col className="dl-line-col-pt" />
                             <col className="dl-line-col-pt" />
+                            <col className="dl-line-col-pt" />
+                            {/* 평점 Point A — 강화 시 포인트 3열과 별개 컬럼(2026-07-27). */}
                             <col className="dl-line-col-pt" />
                             <col className="dl-line-col-req" />
                           </colgroup>
@@ -1009,6 +1046,8 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                               <SortTh label={`획득 ${pointALabel}`} labelText={`획득 ${pointALabel}`} dir={lineDir("pointA")} onSort={() => onLineSort("pointA")} className="dl-act-col-point" />
                               <SortTh label={`획득 ${pointBLabel}`} labelText={`획득 ${pointBLabel}`} dir={lineDir("pointB")} onSort={() => onLineSort("pointB")} className="dl-act-col-point" />
                               <SortTh label={`획득 ${pointCLabel}`} labelText={`획득 ${pointCLabel}`} dir={lineDir("pointC")} onSort={() => onLineSort("pointC")} className="dl-act-col-point" />
+                              {/* 평점 Point A — 위 "획득 A"(강화 시 포인트)와 출처가 다른 별개 항목이라 라벨을 구분한다. */}
+                              <SortTh label={`평점 ${pointALabel}`} labelText={`평점 ${pointALabel}`} dir={lineDir("ratingPointA")} onSort={() => onLineSort("ratingPointA")} className="dl-act-col-point" />
                               <SortTh label="주차 성장 조건" labelText="주차 성장 조건" dir={lineDir("growthRequirement")} onSort={() => onLineSort("growthRequirement")} />
                             </tr>
                           </thead>
@@ -1042,6 +1081,11 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                                 </td>
                                 <td className="dl-act-num">
                                   <LinePointPair pair={row.pointC} kind="c" />
+                                </td>
+                                {/* 평점 Point A — 원장 source='line_rating' 실측값(서버 SoT). 재계산 없음.
+                                    해당 없음 "-" / 미지급 / 값 세 상태를 구분해 잘못된 0점 항목을 만들지 않는다. */}
+                                <td className="dl-act-num">
+                                  <LineRatingPoint value={row.ratingPointA} status={row.ratingPointStatus} />
                                 </td>
                                 <td>
                                   <span

@@ -357,10 +357,21 @@ export interface CrewWeekLineEnhancementRowDto {
   // 평점(0~10) — 실무 경험=활동 평점 · 실무 경력=등급(S/A/B/C/D) 환산 점수(10/8/6/4/2).
   //   실무 정보·역량은 원천이 NULL 강제라 항상 null → "-". 없음=null → "-". 0 과 null 구분.
   rating: number | null;
+  // ⚠ pointA/B/C = **강화 시 포인트**(원장 source='line' · cluster4_line_point_configs 설정값).
+  //   의미 불변 — 아래 평점 Point A 와 섞지 않는다.
   pointA: CrewLinePointPairDto;
   pointB: CrewLinePointPairDto;
   // 번개 — 원장 point_penalty / 설정 point_c. 현재 원천상 전부 0/0 이지만 컬럼·구조는 A/B 와 동형.
   pointC: CrewLinePointPairDto;
+  // ── 평점 Point A(원장 source='line_rating') — admin DTO v5(2026-07-27) 신설. ──
+  //   실무 경험 도출·분석·견문·관리에서 강화 성공 + 실제 평가 완료 시 **받은 평점 그대로** 적립된 Point A.
+  //   강화 시 포인트와 **완전히 별개 항목**이며 서로 대체하지 않는다. "가능치" 개념이 없어 값 하나뿐이다.
+  //   ratingPointStatus 로 "해당 없음"(대상 라인 아님)과 "미지급"(미평가·평점≤3·강화 실패·회수)을 구분한다.
+  //   ⚠ optional — 구 admin 응답(v4 이하)에는 없다. 부재는 "정보 없음"이며 0 으로 단정하지 않는다.
+  ratingPointA?: number;
+  ratingPointStatus?: "paid" | "not_paid" | "not_applicable";
+  totalPointA?: number; // pointA.earned + ratingPointA
+  totalPointB?: number; // = pointB.earned (평점은 Point B 로 지급하지 않음)
   growthRequirement: CrewLineGrowthRequirement; // experience=required, 그 외=optional
 }
 
@@ -382,6 +393,9 @@ export interface CrewWeekLineEnhancementDetailDto {
     pointA: CrewLinePointPairDto;
     pointB: CrewLinePointPairDto;
     pointC: CrewLinePointPairDto; // = Σ rows.pointC (값 0 이어도 숨기지 않는다)
+    // 평점 Point A 합 = Σ rows.ratingPointA (admin DTO v5). optional — 구 응답에는 없다(정보 없음).
+    ratingPointA?: number;
+    totalPointA?: number; // pointA.earned + ratingPointA
   };
   rows: CrewWeekLineEnhancementRowDto[];
 }
