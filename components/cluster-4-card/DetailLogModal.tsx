@@ -67,7 +67,7 @@ export interface DetailLogActRow {
   hubLabel: string;
   /** 소속 라인 급 — 정규=line group name, 변동="변동 액트"(2026-07-31부터) 또는 "-"(미상) */
   lineLabel: string;
-  /** 소요 시간 — "30m" 또는 "-"(변동/미상) */
+  /** 소요 시간 — 정규/변동 공통(admin 저장값). "30m" 또는 "-"(미설정) */
   durationText: string;
   /** Po.A(별/단감/투구 …) 적립값 */
   pointA: number;

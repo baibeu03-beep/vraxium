@@ -6934,9 +6934,12 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     const p = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   };
-  // 소요 시간 — 구분=변동이면 "-"(스펙), 정규는 등록 분(0이면 "-").
-  const dlActDurationText = (source: string, durationMinutes: number): string =>
-    source === "regular" && durationMinutes > 0 ? `${durationMinutes}m` : "-";
+  // 소요 시간 — 정규/변동 공통: DTO durationMinutes(admin 저장값) 그대로, 0(미설정)이면 "-".
+  //   ⚠ 과거엔 구분=변동이면 무조건 "-"였으나(변동 액트 duration 미제공 시절의 스펙), admin 이
+  //   process_irregular_acts.duration_minutes 를 저장하고 DTO(Cluster4ActLogDto.durationMinutes)가
+  //   정규/변동 구분 없이 그 값을 내려준 지 오래라 프론트 게이트가 실값을 가려버리는 회귀였다.
+  const dlActDurationText = (durationMinutes: number): string =>
+    durationMinutes > 0 ? `${durationMinutes}m` : "-";
   // actLogs 단일 출처 = 백엔드 weekly-cards snapshot(card.actLogs). 없으면 빈 배열 → empty state.
   const sourceActLogs: Cluster4ActLogDto[] = weeklyCardMeta?.actLogs ?? [];
   const detailLogActs: DetailLogActRow[] = sourceActLogs.map((a, i) => {
@@ -6944,8 +6947,8 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
     const kind = dlActKind(source, a.kind);
     // 발생 시점 정렬 원천 = 표시 문자열의 원천(requestedAt 우선, 없으면 occurredAt)과 동일 값.
     const occurredAt = a.requestedAt ?? a.occurredAt ?? null;
-    // 소요 시간 정렬 원천 = 표시("-" 여부)와 일치 — 변동/0 은 null 로 최하단 처리.
-    const durationMinutes = source === "regular" && (a.durationMinutes ?? 0) > 0 ? (a.durationMinutes ?? 0) : null;
+    // 소요 시간 정렬 원천 = 표시("-" 여부)와 일치 — 정규/변동 공통, 0/미상만 null 로 최하단 처리.
+    const durationMinutes = (a.durationMinutes ?? 0) > 0 ? (a.durationMinutes ?? 0) : null;
     // 허브 정렬 원천 = 라벨 파생과 동일 base 코드("-line" 제거). 미상/club → null → 최하단.
     const hubBase = a.hub ? String(a.hub).replace(/-line$/, "") : null;
     return {
@@ -6954,7 +6957,7 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       occurredText: dlActTimeText(occurredAt),
       hubLabel: dlActHubLabel(a.hub),
       lineLabel: a.lineGroupName && String(a.lineGroupName).trim() ? a.lineGroupName : "-",
-      durationText: dlActDurationText(source, a.durationMinutes ?? 0),
+      durationText: dlActDurationText(a.durationMinutes ?? 0),
       pointA: a.pointA ?? 0,
       pointB: a.pointB ?? 0,
       pointC: a.pointC ?? 0,
