@@ -2493,12 +2493,35 @@ export async function GET(request: NextRequest) {
       // 현재 진행 중인 시즌인지 확인 (시즌 종료일이 오늘 이후)
       const isSeasonInProgress = item.seasons?.end_date >= today;
 
+      // 공식 시즌 상태(user_season_statuses.status / profile.growth_status) — 날짜 범위보다
+      // 우선 확인한다(admin resolveSeasonProgressStatus 와 동일 우선순위, 2026-08-03).
+      // season_key 는 두 시즌 시스템(uuid seasons ↔ text season_key) 브릿지로 얻는다
+      // (allSeasonWeeks 는 이 seasonId 에 속한 주차만 필터된 배열 — 첫 주차의 season_key 사용).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const itemSeasonKey: string | null = (allSeasonWeeks[0] as any)?.season_key ?? null;
+      const itemSeasonStatus: string | null = itemSeasonKey
+        ? (ssRows.find((r) => r.season_key === itemSeasonKey)?.status ?? null)
+        : null;
+      // growth_status(전역 필드)는 "현재 시즌" 행에만 적용한다 — 과거 완료 시즌에 소급 적용 금지
+      // (admin 의 latestActivitySeasonKey 제한과 동일 원칙 — 활동 중단 이전 완료 시즌까지
+      // '활동 중단'으로 덮어쓰지 않는다). suspended/paused 둘 다 활동 중단 계열(성장 유보 포함,
+      // lib/cluster4-status-label.ts getGrowthBadgeText·admin growthCore.deriveEndStatus 와 동일 어휘).
+      const isOfficialStopped =
+        itemSeasonStatus === 'stopped' ||
+        (isSeasonInProgress && (profile.growth_status === 'suspended' || profile.growth_status === 'paused'));
+      const isOfficialRest = !isOfficialStopped && itemSeasonStatus === 'rest';
+
       // review_status 실시간 보정: 진행 중인 시즌은 항상 'reviewing'
       const correctedReviewStatus = isSeasonInProgress ? 'reviewing' : (item.review_status || 'approved');
 
-      // progress_status 실시간 보정: 진행 중인 시즌은 항상 'in_progress'
-      // (admin seasonRecords 와 동일 규칙 — 시즌 휴식 표시는 growthInfo.currentSeasonStatus 가 담당).
-      const correctedProgressStatus = isSeasonInProgress ? 'in_progress' : (item.progress_status || 'completed');
+      // progress_status 실시간 보정 — 공식 상태(활동 중단/시즌 휴식)가 날짜 범위보다 우선한다.
+      // (admin seasonRecords 와 동일 규칙 — 종전엔 진행 중인 시즌이면 무조건 'in_progress' 로
+      // 강제해, 활동 중단·시즌 휴식 중인 현재 시즌도 "진행 중"으로 잘못 표시됐다.)
+      const correctedProgressStatus = isOfficialStopped
+        ? 'suspended'
+        : isOfficialRest
+          ? 'full_rest'
+          : isSeasonInProgress ? 'in_progress' : (item.progress_status || 'completed');
 
       // 휴식 주차 수 (해당 시즌 내) - rest_requests + user_week_statuses personal_rest 모두 포함
       let restWeeksInSeason = 0;
@@ -2678,12 +2701,18 @@ export async function GET(request: NextRequest) {
       const isOngoing = seasonEndDate >= today;
 
       // 진행 상태 — admin computeSeasonRecords 규칙 그대로 (admin 가용/미가용 간 표시 흔들림 방지).
-      // 시즌 휴식 메달 표시는 growthInfo.currentSeasonStatus(user_season_statuses SoT)가 별도 담당.
+      // 공식 시즌 상태(user_season_statuses.status, 이 seasonKey 행)가 있으면 최우선 — 주차
+      // 상태 패턴으로 추측하지 않는다(2026-08-03, Next Challenge/진행 중 불일치 수정).
       // (2026-06-08 정정) suspended 조건 = 인정 주차 0 ∧ fail 만. admin cluster1ResumeData 와
       // 동기 — 인정 주차 ≥1 이면 절반 미만이라도 '활동 중단' 금지(과거 시즌 완료 이력 보존).
       // PMS 이관 사용자는 일부 주차만 인정이 정상이라 종전 totalWeeks/2 기준은 과잉 강등이었다.
+      const synthesizedSeasonStatus = ssRows.find((r) => r.season_key === seasonKey)?.status ?? null;
       let progressStatus: string;
-      if (isOngoing) {
+      if (synthesizedSeasonStatus === 'stopped') {
+        progressStatus = "suspended";
+      } else if (synthesizedSeasonStatus === 'rest') {
+        progressStatus = "full_rest";
+      } else if (isOngoing) {
         progressStatus = "in_progress";
       } else if (hasRest && !hasFail) {
         progressStatus = "full_rest";
