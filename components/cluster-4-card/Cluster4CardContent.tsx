@@ -6904,12 +6904,15 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
   // 1차 범위 = "수행/적립된 액트 내역"만(미스/미수행/체크 가능 전체 미구현). actLogs 부재 시 빈 배열 → empty state.
   // 프론트는 임의 row 생성/대상자 재판정/별도 API 호출을 하지 않는다(변동>부분 대상자 필터는 원장 단계에서 이미 적용됨).
   const DL_ACT_HUB_LABEL: Record<string, string> = {
+    club: "클럽 총괄",
     info: "실무 정보",
     experience: "실무 경험",
     competency: "실무 역량",
     career: "실무 경력",
   };
-  // hub 키("info"|"experience"|"competency"|"career"|"info-line"…) → 한글 허브 급. club/비귀속/미상 → "-".
+  // hub 키("club"|"info"|"experience"|"competency"|"career"|"info-line"…) → 한글 허브 급.
+  //   비귀속/미상(마이그레이션 전 변동 액트 등) → "-". (2026-07-31: 변동 액트도 hub_grade 로
+  //   club/info/experience/competency 값이 내려오기 시작 — club 라벨 추가.)
   const dlActHubLabel = (hub: string | null | undefined): string => {
     if (!hub) return "-";
     const base = String(hub).replace(/-line$/, "");

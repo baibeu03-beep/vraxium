@@ -267,9 +267,12 @@ export interface Cluster4ActLogDto {
   occurredAt: string | null;
   // 체크 신청 시점 (regular=process_check_statuses.requested_at, irregular=null)
   requestedAt: string | null;
-  // regular=process_acts.hub 키("info"|"experience"|"competency"|"career"|"club"…), irregular=null
+  // regular=process_acts.hub 키("info"|"experience"|"competency"|"career"|"club"…).
+  // irregular=process_irregular_acts.hub_grade("club"|"info"|"experience"|"competency", 2026-07-31
+  //   부터 저장·admin 이 채워 내려줌). 마이그레이션 미적용/백필 전 데이터는 null.
   hub: string | null;
-  // regular=process_line_groups.name, irregular=null
+  // regular=process_line_groups.name.
+  // irregular=항상 "변동 액트" 고정 문자열(소속 라인 급, 2026-07-31부터). 과거엔 null.
   lineGroupName: string | null;
   // 소요 시간(분). 없으면 0.
   durationMinutes: number;

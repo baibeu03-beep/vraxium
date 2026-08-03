@@ -63,9 +63,9 @@ export interface DetailLogActRow {
   actName: string;
   /** 발생 시점(=체크 신청 시점) 포맷 문자열, 없으면 "-" */
   occurredText: string;
-  /** 소속 허브 급 — "실무 정보/경험/역량/경력" 또는 "-"(변동·비귀속) */
+  /** 소속 허브 급 — "클럽 총괄/실무 정보/경험/역량/경력"(2026-07-31부터 변동 액트도 포함) 또는 "-"(미상) */
   hubLabel: string;
-  /** 소속 라인 급 — line group name 또는 "-" */
+  /** 소속 라인 급 — 정규=line group name, 변동="변동 액트"(2026-07-31부터) 또는 "-"(미상) */
   lineLabel: string;
   /** 소요 시간 — "30m" 또는 "-"(변동/미상) */
   durationText: string;
@@ -863,7 +863,7 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                                 {a.actName || "-"}
                               </td>
                               <td className="dl-act-time">{a.occurredText}</td>
-                              <td className="dl-act-cell">{a.hubLabel}</td>
+                              <td className="dl-act-cell" title={a.hubLabel}>{a.hubLabel}</td>
                               <td className="dl-act-cell" title={a.lineLabel}>
                                 {a.lineLabel}
                               </td>
