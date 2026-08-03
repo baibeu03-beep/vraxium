@@ -271,6 +271,13 @@ export interface Cluster4ActLogDto {
   // irregular=process_irregular_acts.hub_grade("club"|"info"|"experience"|"competency", 2026-07-31
   //   부터 저장·admin 이 채워 내려줌). 마이그레이션 미적용/백필 전 데이터는 null.
   hub: string | null;
+  // 소속 팀(2026-08-03부터, hub_grade='experience' 인 irregular 행만) — 팀명이 아니라 teamId 로
+  //   식별하고 teamName 은 표시용으로 별도 제공한다("팀명 · 변동 액트"처럼 다른 필드에 접어 넣지 않음).
+  //   regular 행·팀 미배정 experience 행·컬럼 미적용 환경은 모두 null.
+  teamId: string | null;
+  teamName: string | null;
+  // 소속 파트(2026-08-03부터) — experience+팀배정 행은 항상 "팀 총괄". 그 외는 null.
+  partName: string | null;
   // regular=process_line_groups.name.
   // irregular=항상 "변동 액트" 고정 문자열(소속 라인 급, 2026-07-31부터). 과거엔 null.
   lineGroupName: string | null;

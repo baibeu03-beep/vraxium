@@ -6956,6 +6956,10 @@ const Cluster4CardContent = ({ weekId }: Cluster4CardContentProps) => {
       actName: a.actName ?? "",
       occurredText: dlActTimeText(occurredAt),
       hubLabel: dlActHubLabel(a.hub),
+      // 소속 팀/파트(2026-08-03) — hub_grade='experience' 이고 팀이 배정된 변동 액트만 값을 가진다.
+      //   DTO 가 이미 별도 필드로 분리해 내려주므로 여기서 접거나 다른 필드에서 추론하지 않는다.
+      teamLabel: a.teamName && String(a.teamName).trim() ? a.teamName : "-",
+      partLabel: a.partName && String(a.partName).trim() ? a.partName : "-",
       lineLabel: a.lineGroupName && String(a.lineGroupName).trim() ? a.lineGroupName : "-",
       durationText: dlActDurationText(a.durationMinutes ?? 0),
       pointA: a.pointA ?? 0,

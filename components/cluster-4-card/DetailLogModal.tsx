@@ -65,6 +65,10 @@ export interface DetailLogActRow {
   occurredText: string;
   /** 소속 허브 급 — "클럽 총괄/실무 정보/경험/역량/경력"(2026-07-31부터 변동 액트도 포함) 또는 "-"(미상) */
   hubLabel: string;
+  /** 소속 팀(2026-08-03부터) — hub_grade='experience' 이고 팀이 배정된 변동 액트만. 그 외는 "-" */
+  teamLabel: string;
+  /** 소속 파트(2026-08-03부터) — 팀 배정 experience 행은 항상 "팀 총괄". 그 외는 "-" */
+  partLabel: string;
   /** 소속 라인 급 — 정규=line group name, 변동="변동 액트"(2026-07-31부터) 또는 "-"(미상) */
   lineLabel: string;
   /** 소요 시간 — 정규/변동 공통(admin 저장값). "30m" 또는 "-"(미설정) */
@@ -823,6 +827,8 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                           <col className="dl-col-name" />
                           <col className="dl-col-time" />
                           <col className="dl-col-hub" />
+                          <col className="dl-col-team" />
+                          <col className="dl-col-part" />
                           <col className="dl-col-line" />
                           <col className="dl-col-dur" />
                           <col className="dl-col-pt" />
@@ -837,6 +843,9 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                             <SortTh label="액트명" labelText="액트명" dir={actDir("name")} onSort={() => onActSort("name")} className="dl-act-col-name" />
                             <SortTh label="발생 시점" labelText="발생 시점" dir={actDir("occurredAt")} onSort={() => onActSort("occurredAt")} />
                             <SortTh label="소속 허브 급" labelText="소속 허브 급" dir={actDir("hub")} onSort={() => onActSort("hub")} />
+                            {/* 소속 팀/파트(2026-08-03) — experience 변동 액트 전용, 정렬은 미지원(표시 전용). */}
+                            <th className="dl-act-col-name">소속 팀</th>
+                            <th className="dl-act-col-name">소속 파트</th>
                             <SortTh label="소속 라인 급" labelText="소속 라인 급" dir={actDir("line")} onSort={() => onActSort("line")} />
                             <SortTh label="소요 시간" labelText="소요 시간" dir={actDir("duration")} onSort={() => onActSort("duration")} />
                             <SortTh label={data.actPointNames[0]} labelText={data.actPointNames[0]} dir={actDir("pointA")} onSort={() => onActSort("pointA")} className="dl-act-col-point" />
@@ -864,6 +873,8 @@ const DetailLogModal: React.FC<DetailLogModalProps> = ({
                               </td>
                               <td className="dl-act-time">{a.occurredText}</td>
                               <td className="dl-act-cell" title={a.hubLabel}>{a.hubLabel}</td>
+                              <td className="dl-act-cell" title={a.teamLabel}>{a.teamLabel}</td>
+                              <td className="dl-act-cell" title={a.partLabel}>{a.partLabel}</td>
                               <td className="dl-act-cell" title={a.lineLabel}>
                                 {a.lineLabel}
                               </td>

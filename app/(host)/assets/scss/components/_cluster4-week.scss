@@ -14846,7 +14846,8 @@
   .dl-act-table {
     width: 100%;
     // 정렬 아이콘 추가로 헤더가 넓어져 고정열 합을 상향(모달 폭보다 좁아지면 래퍼가 가로 스크롤).
-    min-width: 1000px; // 모달 폭보다 좁아지면 가로 스크롤(레이아웃 깨짐 방지)
+    // 2026-08-03: 소속 팀/파트 2열 추가로 200px 상향.
+    min-width: 1200px; // 모달 폭보다 좁아지면 가로 스크롤(레이아웃 깨짐 방지)
     table-layout: fixed; // 컬럼 폭 고정 → 행 높이 균일
     border-collapse: collapse;
     font-family: "Pretendard", sans-serif;
@@ -14857,6 +14858,8 @@
     col.dl-col-name { width: auto; }
     col.dl-col-time { width: 124px; }
     col.dl-col-hub { width: 98px; }
+    col.dl-col-team { width: 100px; }
+    col.dl-col-part { width: 100px; }
     col.dl-col-line { width: 110px; }
     col.dl-col-dur { width: 92px; }
     col.dl-col-pt { width: 62px; }
