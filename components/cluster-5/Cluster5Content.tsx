@@ -2389,6 +2389,543 @@ const mentionCardsStyles = `
   }
 `;
 
+// =====================================================================
+// Section 6 — "Cluv_General Mention"
+//
+// Figma 기준: 동일 파일, node 1068:22130("Group 2121454081", 1335x1245,
+// 부모 Frame 633 = 1068:22048 기준 x=0 / y=3788) — 사용자가 지정한 selection.
+//
+// [조사 — selection 자체가 구현 대상 전체였다(Section 5 와 다름)]
+// 부모 Frame 633(1068:22048)의 자식 전수 목록을 다시 확보해 대조했다.
+//   ... y=2500  Group 2121454071 (Section 5, h 1288) + 형제 오버레이 22706
+//       y=3788  Group 2121454081 (이번 selection, h 1245)   ← 여기
+//       y=5033  Group 2121454082 (다음 섹션, h 1194.5)
+// 이번 selection 의 y 구간(3788~5033)에 걸치는 형제 프레임은 없다. 같은
+// 구간에 vector 2개(1068:22084 y=4762 / 1068:22705 y=4870)가 있으나 둘 다
+// 그룹보다 뒤(아래) z-order 이거나 배너에 가려져 레퍼런스 렌더에 나타나지
+// 않는다(픽셀 스캔으로 확인). 즉 Section 5 와 달리 카드 리스트가 배너
+// 프레임(1068:22131) *안에* 들어있다.
+//
+// [조회 제약 — 명시]
+//   - get_metadata 는 1068:22131(배너 프레임)을 leaf 로 축약해 자식을 전혀
+//     반환하지 않는다. 내부 구조/좌표는 get_design_context 결과 + 레퍼런스
+//     PNG 픽셀 스캔(FM 칩 55x24 / go 배지 15x15 / 이미지 chamfer 등 전부
+//     실측)으로 확보했다.
+//   - Section 5(y 3788 끝) 와 이번 섹션(y 3788 시작)은 같은 좌표계라 두
+//     섹션 사이 Figma 실측 간격이 0px 임을 직접 확인했다(추정 아님).
+//
+// [레이어 / 구조] 그룹(1335x1245) 기준 상대좌표
+//   Frame 2121457572   (0,    0)    1335x1245  배경 배너(overflow clip)
+//     ├ 배경 이미지 + 3중 그라디언트 스크림 (Section 5 와 동일 조합)
+//     ├ 헤더 블록      (112.5, 51)  1110 wide  (auto-layout, gap 50)
+//     ├ 카드 리스트    (588,  345)  672.83 wide (3행, 세로 gap 15)
+//     ├ 상/하 원형 화살표 (905, 288) / (905, 1157)  38x37
+//     └ Vector(1084:1816) bottom    1168x2  org accent 구분선
+//   Frame 2121457272   (1241, 25)   49x22      수정/검색 아이콘 2개
+//
+// [재사용 — 새 디자인 시스템을 만들지 않는다]
+// 배너/스크림/헤더(눈썹·배지·타이틀·Type by·통계 pill·공유/더보기)/우상단
+// 아이콘 버튼의 Figma 스펙이 Section 5(1068:22090)와 좌표·치수·타이포까지
+// 전부 동일하다. 따라서 CSS 를 복제하지 않고 기존 .cluster5-mention__*
+// 클래스를 그대로 재사용하고, 실제로 다른 것(루트 종횡비 1335/1245, 배너
+// 이미지, 우상단 아이콘 좌표, 카드 리스트)만 이 블록에서 덮어쓴다.
+// 아이콘 SVG 도 Figma export 를 대조해 전부 동일 path 임을 확인했으므로
+// MentionBadgeIcon / MentionShareIcon / MentionMoreIcon / MentionScrollIcon /
+// ArrowIcon / STAR_ICONS 를 그대로 재사용한다(신규 SVG 0개).
+// 새로 필요한 도형은 두 개뿐이고 둘 다 clip-path 로 처리해 컨테이너와 같이
+// 축소된다: 카드 이미지 우상단 chamfer, 명성도 칩 우하단 chamfer.
+//
+// [org 색상 정책 — 기존 SoT 그대로]
+// Figma 원본 색을 ORGANIZATION_CONFIG 와 1:1 대조해 "정확히 일치하는 것만"
+// var(--cluster5-accent)로 치환한다:
+//   #FAAB07 = marketing.themeColor → pill 숫자 / 우상단 아이콘 버튼 배경 /
+//             카드 본문 화살표 배지 / 상하 원형 화살표 / 하단 구분선 → accent
+//   #DDF247 / #1C242F / #141A23 / rgba(80,93,106,.31) / #F7BA48 / #FFAC00 /
+//   #EBF748 / #8F00FF / #FC6C85 / #919191
+//             → 어느 org 색과도 대응하지 않는 고유값 → 하드코딩 유지
+//   (#FFAC00 은 #FAAB07 과 다른 색이다 — 비슷하다고 accent 로 묶지 않는다.)
+//
+// [스케일] Section 4/5 와 동일하게 container-type: inline-size + aspect-ratio
+// 를 쓰고 내부 치수를 전부 cqw(px / 1335 * 100)로 적는다. 아이콘·SVG·배지·
+// gap·absolute 요소가 전부 부모와 같은 비율로 축소된다.
+//
+// [데이터] 순수 표현 계층이다. Figma placeholder 문구/숫자를 그대로 정적
+// 마크업으로 넣는다 — API/DTO/조회 로직/권한/라우팅을 일절 건드리지 않으며,
+// 일반 / mode=test / actAsTestUserId / demoUserId 가 완전히 동일한 DOM 을 탄다.
+const gmentionSectionStyles = `
+  .cluster5-gmention {
+    position: relative;
+    width: 100%;
+    max-width: 1335px;
+    margin: 0 auto;
+    aspect-ratio: 1335 / 1245;
+    box-sizing: border-box;
+    container-type: inline-size;
+    font-synthesis: none;
+  }
+  /* 재사용한 .cluster5-mention__bg 의 배경 이미지만 이 섹션 것으로 교체 */
+  .cluster5-gmention .cluster5-mention__bg {
+    background-image: url(/images/0/cluster5/gmention/Banner-bg.png);
+  }
+  /* Figma 1068:22431 — (1241, 25) 49x22. Section 5(1240.5, 26.957)와
+     0.5~2px 다르므로 좌표만 덮어쓴다. */
+  .cluster5-gmention .cluster5-mention__actions {
+    left: 92.9588cqw; /* 1241px */
+    top: 1.8727cqw; /* 25px */
+    height: 1.6479cqw; /* 22px */
+  }
+
+  /* ---- 카드 리스트 (Figma 1068:22165/22166 + 화살표 1068:22428) ----
+     화살표(폭 38)의 중심 905+19=924 와 리스트(588~1260.83)의 중심 924.4 가
+     일치하므로 align-items:center 한 벌로 둘 다 배치된다. */
+  .cluster5-gmention__list {
+    position: absolute;
+    left: 44.0449cqw; /* 588px */
+    top: 21.573cqw; /* 288px */
+    width: 50.3993cqw; /* 672.83px */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 2;
+  }
+  .cluster5-gmention__scroll-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.8464cqw; /* 38px */
+    height: 2.7715cqw; /* 37px */
+    flex-shrink: 0;
+  }
+  .cluster5-gmention__scroll-btn svg {
+    display: block;
+    width: 2.2846cqw; /* 30.5px */
+    height: 2.2285cqw; /* 29.75px */
+  }
+  /* Figma export 상 위쪽 화살표만 opacity 0.3 이다(아래쪽은 1.0) —
+     레퍼런스 PNG 에서도 위가 흐리게 렌더된다. */
+  .cluster5-gmention__scroll-btn--up { opacity: 0.3; }
+  .cluster5-gmention__scroll-btn--up svg { transform: rotate(180deg); }
+  .cluster5-gmention__scroll-btn--down { margin-top: 1.3858cqw; /* 1157 - 1138.5 */ }
+  .cluster5-gmention__cards {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1236cqw; /* 15px */
+    width: 100%;
+    margin-top: 1.4981cqw; /* 345 - 325 = 20px */
+  }
+
+  /* ---- ≤1199.98px: 오버레이/절대배치 해제 → 배너 아래 일반 흐름 ----
+     Figma 에 모바일 스펙이 없어 히어로/Keyword/showcase/Section 5 와 동일한
+     breakpoint·기법을 그대로 따른다. */
+  @media only screen and (max-width: 1199.98px) {
+    .cluster5-gmention {
+      aspect-ratio: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    .cluster5-gmention__list {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: 100%;
+      max-width: 760px;
+      margin: 32px auto 0;
+      padding: 0 16px;
+      box-sizing: border-box;
+    }
+    .cluster5-gmention__scroll-btn { width: 38px; height: 37px; }
+    .cluster5-gmention__scroll-btn svg { width: 30.5px; height: 29.75px; }
+    .cluster5-gmention__scroll-btn--down { margin-top: 12px; }
+    .cluster5-gmention__cards { gap: 16px; margin-top: 16px; }
+  }
+`;
+
+// Figma 카드 1행 = Overlay+Border(376x254, #1C242F) + 마스킹된 이미지
+// (297x254.502). 좌표 복사가 아니라 flex flow 로 옮겨 폭이 줄면 함께 재배치된다.
+//
+// [실측 — 레퍼런스 PNG 픽셀 스캔으로 확정한 값들]
+//   · 명성도 칩: Figma 는 55x26 요소에 64.39x26 마스크를 (-7, 2) 로 얹는다.
+//     실제 렌더는 55x24(상단 2px 이 마스크 밖으로 잘림)이고 우하단 chamfer 가
+//     (55, 17.53) → (46.99, 24). 픽셀 스캔(x 680~734 / y 547~570)과 일치.
+//     → 55x24 + clip-path polygon 으로 그대로 재현한다.
+//   · 카드 이미지 chamfer: (237.464, 0) → (296.83, 63.5) = 79.955% / 24.95%.
+//     우하단은 직각이다(대각선처럼 보이는 것은 사진 자체의 보케).
+//   · 3번째 카드 이미지만 좌우 반전이다(원본 에셋은 여우가 왼쪽, 렌더는
+//     오른쪽). Figma 의 rotate-180 + scaleY(-1) 조합이지만 chamfer 는
+//     1번 카드와 같은 우상단에 남으므로 <img> 에만 scaleX(-1) 을 건다.
+//   · 본문 화살표 배지: 15x15(x 707~721 / y 510~524), 내부 화살표 약 9~10px.
+const gmentionCardStyles = `
+  .c5gcard {
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
+  .c5gcard__panel {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    flex-shrink: 0;
+    width: 28.1648cqw; /* 376px */
+    height: 19.0262cqw; /* 254px */
+    padding: 0.0749cqw; /* 1px */
+    box-sizing: border-box;
+    background: #1c242f;
+    border: 0.0749cqw solid rgba(80, 93, 106, 0.31);
+    border-bottom-left-radius: 1.1236cqw; /* 15px */
+  }
+
+  /* 상단 블록 (Figma Background, #141A23) */
+  .c5gcard__head {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.2247cqw; /* 3px */
+    width: 100%;
+    padding: 1.1985cqw 1.7978cqw; /* 16 / 24 */
+    box-sizing: border-box;
+    background: #141a23;
+  }
+  .c5gcard__headrow {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    width: 24.7191cqw; /* 330px */
+  }
+  .c5gcard__kind {
+    font-family: "Pretendard", sans-serif;
+    font-weight: 600;
+    font-size: 1.1985cqw; /* 16px */
+    line-height: 1.4981cqw; /* 20px */
+    color: var(--white, #ffffff);
+    white-space: nowrap;
+  }
+  .c5gcard__date {
+    font-family: "Pretendard", sans-serif;
+    font-weight: 600;
+    font-size: 1.0487cqw; /* 14px */
+    line-height: 1.4981cqw; /* 20px */
+    color: rgba(255, 255, 255, 0.38);
+    white-space: nowrap;
+  }
+  .c5gcard__rate {
+    display: flex;
+    align-items: center;
+    gap: 0.7491cqw; /* 10px */
+  }
+  .c5gcard__starset {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.2996cqw; /* 4px */
+  }
+  .c5gcard__starset .c5card__star {
+    width: 0.952cqw; /* 12.71px */
+    height: 1.3483cqw; /* 18px */
+    /* Figma export path 는 상하 반전 좌표계다(Section 5 .c5mcard 와 동일). */
+    transform: scaleY(-1);
+  }
+  .c5gcard__score {
+    padding-left: 0.2996cqw; /* 4px */
+    font-family: var(--rajdhani), "Rajdhani", sans-serif;
+    font-weight: 400;
+    font-size: 0.8989cqw; /* 12px */
+    line-height: 1.3483cqw; /* 18px */
+    color: rgba(255, 255, 255, 0.9);
+    white-space: nowrap;
+  }
+
+  /* 하단 블록 (Figma Container, 높이 180) */
+  .c5gcard__body {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5993cqw; /* 8px */
+    width: 100%;
+    height: 13.4831cqw; /* 180px */
+    padding: 0.7491cqw 1.7978cqw 2.2472cqw; /* 10 / 24 / 30 */
+    box-sizing: border-box;
+  }
+  .c5gcard__profile {
+    display: flex;
+    align-items: center;
+    gap: 0.7491cqw; /* 10px */
+    /* Figma 상 이 행은 폭이 없는(shrink-to-fit) 컨테이너지만, Pretendard 가
+       실제로 로드되지 않는 현재 전역 상태에서는 폴백(Malgun Gothic)이 약 8%
+       넓어 식별행이 패널을 넘어 우측 사진 위로 삐져나온다. 100% + min-width:0
+       으로 본문 컨텐츠 폭(326px)에 묶어 둔다 — Pretendard 가 로드되면
+       (273px < 326px) 이 제약은 아무 영향도 주지 않는다. */
+    width: 100%;
+    height: 3.7453cqw; /* 50px */
+  }
+  .c5gcard__avatar {
+    display: block;
+    flex-shrink: 0;
+    width: 3.7453cqw; /* 50px */
+    height: 3.7453cqw;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+  .c5gcard__ident {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2247cqw; /* 3px */
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .c5gcard__idrow {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.2247cqw; /* 3px */
+    margin: 0;
+    /* <p> 라 전역 스타일시트의 p{...} 가 부모 상속을 이긴다 — 클래스에서 직접 지정. */
+    font-family: "Pretendard", sans-serif;
+    font-weight: 400;
+    font-size: 0.8989cqw; /* 12px */
+    line-height: 1.4232cqw; /* 19px */
+    color: var(--white, #ffffff);
+    white-space: nowrap;
+  }
+  .c5gcard__b { font-weight: 700; }
+  .c5gcard__m { font-weight: 500; }
+  .c5gcard__r { font-weight: 400; }
+  .c5gcard__sep { font-weight: 400; font-size: 1.0487cqw; /* 구분자만 14px */ }
+
+  /* 본문 + 화살표 배지 (Figma Component 11, 좌표 기준 컨테이너 = 315 폭) */
+  .c5gcard__textwrap {
+    position: relative;
+    width: 23.5955cqw; /* 315px */
+  }
+  .c5gcard__text {
+    margin: 0;
+    width: 24.1199cqw; /* 322px */
+    font-family: "Pretendard", sans-serif;
+    font-weight: 600;
+    font-size: 1.0487cqw; /* 14px */
+    line-height: 1.4981cqw; /* 20px */
+    color: var(--white, #ffffff);
+    /* [실측] 전역 _typography.scss 의 p{word-break:keep-all; line-break:strict;
+       hyphens:auto; text-wrap:pretty} 가 이 <p> 를 잡아 Figma 와 다른 지점에서
+       줄바꿈된다(Figma 는 "…작성하 / 고 평가하는" 처럼 어절 중간에서 끊는다).
+       전역 규칙을 고치지 않고 이 클래스에서만 원복한다. */
+    word-break: normal;
+    line-break: auto;
+    hyphens: none;
+    text-wrap: wrap;
+    /* Figma 텍스트 프레임은 2줄 고정이다. 폴백 폰트가 더 넓어도 3줄로 번져
+       아래 블록을 밀지 않도록 자른다(Section 4/5 .c5*card__text 와 동일). */
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .c5gcard__go {
+    position: absolute;
+    left: 7.0412cqw; /* 94px */
+    top: 1.7228cqw; /* 23px */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.1236cqw; /* 15px */
+    height: 1.1236cqw;
+    border-radius: 0.3745cqw; /* 5px */
+    background: var(--cluster5-accent, #faab07);
+  }
+  .c5gcard__go svg {
+    display: block;
+    width: 0.7491cqw; /* 10px */
+    height: 0.7491cqw;
+    /* 반전 없이 그리면 화살표가 ↘ 로 렌더된다(Figma 는 ↗). */
+    transform: scaleY(-1);
+  }
+
+  /* 명성도(FM) 박스 + 해시태그 */
+  .c5gcard__bottom {
+    display: flex;
+    align-items: center;
+    gap: 0.8989cqw; /* 12px */
+  }
+  .c5gcard__fm {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    width: 9.8127cqw; /* 131px */
+    height: 3.7453cqw; /* 50px */
+    padding: 0.8989cqw; /* 12px */
+    box-sizing: border-box;
+  }
+  .c5gcard__fm-border {
+    position: absolute;
+    left: -0.0749cqw;
+    top: -0.0749cqw;
+    display: block;
+    width: 9.9625cqw; /* 133px (stroke 2 포함) */
+    height: 3.8951cqw; /* 52px */
+  }
+  .c5gcard__fm-text {
+    position: relative;
+    font-family: "Pretendard", sans-serif;
+    font-weight: 600;
+    font-size: 1.0487cqw; /* 14px */
+    line-height: 1.4981cqw; /* 20px */
+    color: var(--white, #ffffff);
+    white-space: pre;
+  }
+  .c5gcard__fm-unit { color: #ffac00; text-transform: uppercase; }
+  .c5gcard__fm-chip {
+    position: relative;
+    flex-shrink: 0;
+    width: 4.1199cqw; /* 55px */
+    height: 1.947cqw; /* 26px */
+  }
+  .c5gcard__fm-chip-shape {
+    position: absolute;
+    left: 0.5243cqw; /* 7px */
+    top: 0;
+    display: flex;
+    align-items: center;
+    width: 4.1199cqw; /* 55px */
+    height: 1.7978cqw; /* 24px (마스크 밖 상단 2px 은 실제로 잘린다) */
+    background: #ffac00;
+    /* 우하단 chamfer: (55, 17.53) → (46.99, 24) 실측값 */
+    clip-path: polygon(0 0, 100% 0, 100% 73.04%, 85.44% 100%, 0 100%);
+  }
+  .c5gcard__fm-chip-text {
+    padding-left: 0.5993cqw; /* 8px */
+    font-family: "Pretendard", sans-serif;
+    font-weight: 700;
+    font-size: 1.0487cqw; /* 14px */
+    line-height: 1.4981cqw; /* 20px */
+    color: var(--black, #000000);
+    white-space: nowrap;
+  }
+  .c5gcard__tags {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5993cqw; /* 8px */
+  }
+  .c5gcard__tagrow {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.3745cqw; /* 5px */
+  }
+  .c5gcard__tag {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.2996cqw 0.5393cqw; /* 4 / 7.2 */
+    box-sizing: border-box;
+    border-radius: 0.2996cqw; /* 4px */
+    font-family: "Pretendard", sans-serif;
+    font-weight: 500;
+    font-size: 0.7491cqw; /* 10px */
+    line-height: 0.7491cqw;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .c5gcard__tag--lime { background: rgba(235, 247, 72, 0.1); color: #ebf748; }
+  .c5gcard__tag--purple { background: rgba(143, 0, 255, 0.1); color: #8f00ff; }
+  .c5gcard__tag--pink { background: rgba(252, 108, 133, 0.1); color: #fc6c85; }
+
+  /* 카드 우측 이미지 (Figma Link:mask, 297 x 254.502) */
+  .c5gcard__photo {
+    position: relative;
+    flex-shrink: 0;
+    width: 22.2472cqw; /* 297px */
+    height: 19.0638cqw; /* 254.502px */
+    overflow: hidden;
+    background: var(--black, #000000);
+    /* 우상단 chamfer — 237.464/297 = 79.955%, 63.5/254.502 = 24.95% */
+    clip-path: polygon(0 0, 79.955% 0, 100% 24.95%, 100% 100%, 0 100%);
+  }
+  .c5gcard__photo img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    /* Figma 는 297 높이 원본을 254.502 박스 안에서 중앙보다 10.73px 아래로
+       내려 잡는다(레이어 계산상 overflow 42.5px 중 10.52px = 24.75%). 다만
+       레퍼런스 PNG 와 브라우저 렌더를 세로 오프셋 스윕으로 상관 비교하니
+       실제 최적점이 약 1.5px 위였다(잔차 11.5 → 3.6). 실측값을 쓴다. */
+    object-position: 50% 27.9%;
+  }
+  .c5gcard__photo--flip img { transform: scaleX(-1); }
+
+  @media only screen and (max-width: 1199.98px) {
+    .c5gcard {
+      flex-direction: column-reverse;
+      align-items: stretch;
+    }
+    .c5gcard__panel {
+      width: 100%;
+      height: auto;
+      border-radius: 0 0 16px 16px;
+    }
+    .c5gcard__head { gap: 4px; padding: 14px 18px; }
+    .c5gcard__headrow { width: 100%; }
+    .c5gcard__kind { font-size: 15px; line-height: 20px; }
+    .c5gcard__date { font-size: 12px; line-height: 20px; }
+    .c5gcard__rate { gap: 10px; }
+    .c5gcard__starset { gap: 4px; }
+    .c5gcard__starset .c5card__star { width: 13px; height: 18px; }
+    .c5gcard__score { padding-left: 4px; font-size: 12px; line-height: 18px; }
+    .c5gcard__body { height: auto; gap: 10px; padding: 12px 18px 18px; }
+    .c5gcard__profile { height: auto; gap: 10px; }
+    .c5gcard__avatar { width: 44px; height: 44px; }
+    .c5gcard__ident { gap: 3px; }
+    .c5gcard__idrow {
+      gap: 4px;
+      font-size: 12px;
+      line-height: 18px;
+      flex-wrap: wrap;
+      white-space: normal;
+    }
+    .c5gcard__sep { font-size: 13px; }
+    /* 절대배치를 풀면 화살표가 정적 흐름으로 내려온다 — flex 컨테이너로 바꿔야
+       align-self:flex-end 가 먹는다(Section 5 .c5mcard__body 와 동일 처리). */
+    .c5gcard__textwrap {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+    }
+    .c5gcard__text { width: 100%; font-size: 13px; line-height: 20px; -webkit-line-clamp: 3; }
+    .c5gcard__go {
+      position: relative;
+      left: auto;
+      top: auto;
+      align-self: flex-end;
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+    }
+    .c5gcard__go svg { width: 10px; height: 10px; }
+    .c5gcard__bottom { gap: 12px; flex-wrap: wrap; }
+    .c5gcard__fm { width: 131px; height: 50px; padding: 12px; }
+    .c5gcard__fm-border { left: -1px; top: -1px; width: 133px; height: 52px; }
+    .c5gcard__fm-text { font-size: 14px; line-height: 20px; }
+    .c5gcard__fm-chip { width: 55px; height: 26px; }
+    .c5gcard__fm-chip-shape { left: 7px; width: 55px; height: 24px; }
+    .c5gcard__fm-chip-text { padding-left: 8px; font-size: 14px; line-height: 20px; }
+    .c5gcard__tags { gap: 6px; }
+    .c5gcard__tagrow { gap: 5px; }
+    .c5gcard__tag { padding: 4px 8px; border-radius: 4px; font-size: 11px; line-height: 13px; }
+    .c5gcard__photo {
+      width: 100%;
+      height: 200px;
+      clip-path: polygon(0 0, 79.955% 0, 100% 24.95%, 100% 100%, 0 100%);
+    }
+  }
+
+  @media only screen and (max-width: 767.98px) {
+    .c5gcard__photo { height: 160px; }
+    .c5gcard__kind { font-size: 14px; }
+    .c5gcard__date { font-size: 11px; }
+  }
+`;
+
 const sectionSpacingStyles = `
   .cluster5-sections {
     display: flex;
@@ -2414,6 +2951,13 @@ const sectionSpacingStyles = `
   .cluster5-mention {
     margin-top: 11px;
   }
+  /* [Figma 실측] Section 5 그룹(1068:22090)은 y=2500~3788, Section 6 그룹
+     (1068:22130)은 y=3788~5033 — 같은 좌표계에서 정확히 맞닿아 있다. 즉
+     의도된 간격은 0px 이고, Section 5 배너 하단의 accent 구분선이 그대로
+     Section 6 의 상단 경계가 된다(구분선을 두 번 그리지 않는다). */
+  .cluster5-gmention {
+    margin-top: 0;
+  }
   @media only screen and (max-width: 1199.98px) {
     .cluster5-keyword {
       margin-top: 32px;
@@ -2422,6 +2966,9 @@ const sectionSpacingStyles = `
       margin-top: 48px;
     }
     .cluster5-mention {
+      margin-top: 48px;
+    }
+    .cluster5-gmention {
       margin-top: 48px;
     }
   }
@@ -2804,6 +3351,191 @@ const MentionReputationCard = ({ card }: { card: MentionCard }) => (
   </div>
 );
 
+// =====================================================================
+// Section 6 데이터 / 아이콘 — 전부 Figma placeholder 원문 그대로의 정적
+// 마크업이다(Section 1~5 와 동일 정책). 평판/멘션 API 를 새로 붙이지 않는다.
+//
+// [에셋] Figma raw image 를 내려받아 프로젝트 규칙(public/images/0/cluster5/
+// <섹션>/)에 맞춰 로컬 저장했다. 다만 type-icon / pill-hearts 는 픽셀 비교
+// 결과 Section 5(mention/) 것과 완전히 동일한 이미지라 중복 저장하지 않고
+// 기존 파일을 그대로 참조한다(pill-cards / pill-mail 은 다른 렌더라 별도 저장).
+const GMENTION_STATS = [
+  {
+    key: "comment",
+    icon: "/images/0/cluster5/gmention/pill-cards.png",
+    iconHeight: "4.0449cqw", // 54px
+    num: "5 ",
+    rest: "/ 20 comment",
+  },
+  {
+    key: "mail",
+    icon: "/images/0/cluster5/gmention/pill-mail.png",
+    iconHeight: "4.1948cqw", // 56px
+    num: "0 ",
+    rest: "/ 20 comment",
+  },
+  {
+    key: "fm",
+    icon: "/images/0/cluster5/mention/pill-hearts.png", // Section 5 와 동일 에셋
+    iconHeight: "3.8951cqw", // 52px
+    num: "103",
+    rest: " FM",
+    tight: true, // Figma: 이 pill 만 line-height 19px
+  },
+] as const;
+
+const GMENTION_CARDS = [
+  {
+    key: "g1",
+    photo: "/images/0/cluster5/gmention/card-1.png",
+    avatar: "/images/0/cluster5/gmention/avatar-1.png",
+    flip: false,
+  },
+  {
+    key: "g2",
+    photo: "/images/0/cluster5/gmention/card-2.png",
+    avatar: "/images/0/cluster5/gmention/avatar-2.png",
+    flip: false,
+  },
+  {
+    key: "g3",
+    photo: "/images/0/cluster5/gmention/card-3.png",
+    avatar: "/images/0/cluster5/gmention/avatar-3.png",
+    flip: true, // Figma 3번째 이미지만 좌우 반전
+  },
+] as const;
+
+const GMENTION_CARD_KIND = "클러빙 평판(G)";
+const GMENTION_CARD_DATE = "2025 - 08 - 01 (월)";
+const GMENTION_CARD_TEXT =
+  "기업/실무자 멘션은 40자 입니다 40자는 실무자가 작성하고 평가하는 것...";
+// Figma 태그 배치: 1행 [pink, purple] / 2행 [lime]
+const GMENTION_CARD_TAG_ROWS = [
+  [
+    { key: "t1", label: "#리더쉽리더쉽쉽", tone: "pink" as const },
+    { key: "t2", label: "#신속함신속함함", tone: "purple" as const },
+  ],
+  [{ key: "t3", label: "#추진력추진력력", tone: "lime" as const }],
+];
+
+// Figma 1068:22230 "Mask Group" 의 외곽선(#FFAC00, stroke 2, 우하단 chamfer).
+// export 원본 path 를 그대로 인라인한다 — preserveAspectRatio="none" 이라
+// 부모(cqw)와 정확히 같은 비율로 늘어난다.
+const GmentionFmBorder = () => (
+  <svg
+    className="c5gcard__fm-border"
+    viewBox="0 0 133 52"
+    preserveAspectRatio="none"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
+    <path d="M1 1H132V33.5L116.28 51H1V1Z" stroke="#FFAC00" strokeWidth="2" />
+  </svg>
+);
+
+type GmentionCard = (typeof GMENTION_CARDS)[number];
+
+const GeneralMentionCard = ({ card }: { card: GmentionCard }) => (
+  <div className="c5gcard">
+    <div className="c5gcard__panel">
+      <div className="c5gcard__head">
+        <div className="c5gcard__headrow">
+          <span className="c5gcard__kind">{GMENTION_CARD_KIND}</span>
+          <span className="c5gcard__date">{GMENTION_CARD_DATE}</span>
+        </div>
+        <div className="c5gcard__rate">
+          <span className="c5gcard__starset">
+            {TOP3_CARD_STARS.map((kind, i) => {
+              const Icon = STAR_ICONS[kind];
+              return <Icon key={`${card.key}-star-${i}`} />;
+            })}
+          </span>
+          <span className="c5gcard__score">6 / 10</span>
+        </div>
+      </div>
+
+      <div className="c5gcard__body">
+        <div className="c5gcard__profile">
+          <img className="c5gcard__avatar" src={card.avatar} alt="" />
+          <div className="c5gcard__ident">
+            <p className="c5gcard__idrow">
+              <span className="c5gcard__b">김미현</span>
+              <span className="c5gcard__sep">|</span>
+              <span className="c5gcard__m">여</span>
+              <span className="c5gcard__sep">|</span>
+              <span className="c5gcard__m">24</span>
+              <span className="c5gcard__sep">|</span>
+              <span>
+                <span className="c5gcard__b">서울대</span>
+                <span className="c5gcard__r">학교</span>
+              </span>
+              <span className="c5gcard__sep">|</span>
+              <span>
+                <span className="c5gcard__b">미디어커뮤니케이션</span>
+                <span className="c5gcard__r">학과</span>
+              </span>
+            </p>
+            <p className="c5gcard__idrow">
+              <span>
+                <span className="c5gcard__b">엔터테인먼트 </span>
+                <span className="c5gcard__r">팀</span>
+              </span>
+              <span className="c5gcard__sep">|</span>
+              <span>
+                <span className="c5gcard__b">내돈내산 </span>
+                <span className="c5gcard__r">파트</span>
+              </span>
+              <span className="c5gcard__sep">|</span>
+              <span className="c5gcard__b">엔비디아구글테슬라쿵</span>
+            </p>
+          </div>
+        </div>
+
+        {/* Figma 좌표(94, 23)는 본문을 감싸는 315폭 프레임 기준이라
+            .c5gcard__textwrap 을 기준 컨테이너로 둔다(텍스트 박스 안이 아님). */}
+        <div className="c5gcard__textwrap">
+          <p className="c5gcard__text">{GMENTION_CARD_TEXT}</p>
+          <span className="c5gcard__go">
+            <ArrowIcon />
+          </span>
+        </div>
+
+        <div className="c5gcard__bottom">
+          <div className="c5gcard__fm">
+            <GmentionFmBorder />
+            <span className="c5gcard__fm-text">
+              {"123 "}
+              <span className="c5gcard__fm-unit">FM</span>
+            </span>
+            <span className="c5gcard__fm-chip">
+              <span className="c5gcard__fm-chip-shape">
+                <span className="c5gcard__fm-chip-text">명성도</span>
+              </span>
+            </span>
+          </div>
+
+          <div className="c5gcard__tags">
+            {GMENTION_CARD_TAG_ROWS.map((row, i) => (
+              <div key={`${card.key}-tagrow-${i}`} className="c5gcard__tagrow">
+                {row.map((tag) => (
+                  <span key={tag.key} className={`c5gcard__tag c5gcard__tag--${tag.tone}`}>
+                    {tag.label}
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div className={`c5gcard__photo${card.flip ? " c5gcard__photo--flip" : ""}`}>
+      <img src={card.photo} alt="" />
+    </div>
+  </div>
+);
+
 const Cluster5Content = () => {
   // org 계산 SoT: lib/cluster-route.ts resolveOrgFromLocation (?org= 쿼리
   // 우선, 그다음 canonical 경로 suffix, 둘 다 없으면 null → marketing 폴백).
@@ -2831,6 +3563,8 @@ const Cluster5Content = () => {
       <style>{top3CardsSectionStyles}</style>
       <style>{mentionSectionStyles}</style>
       <style>{mentionCardsStyles}</style>
+      <style>{gmentionSectionStyles}</style>
+      <style>{gmentionCardStyles}</style>
       <style>{sectionSpacingStyles}</style>
       <div className="cluster5-sections">
         <section className="cluster5-hero" style={orgVars}>
@@ -3097,6 +3831,129 @@ const Cluster5Content = () => {
             >
               <MentionScrollIcon />
             </span>
+          </div>
+        </section>
+
+        {/* Figma Group 2121454081(1068:22130) — Section 5 와 달리 카드 리스트가
+            배너 프레임(1068:22131) 안에 들어있어 형제 오버레이가 없다.
+            배너/헤더/우상단 아이콘은 Figma 스펙이 Section 5 와 동일해
+            .cluster5-mention__* 클래스를 그대로 재사용하고, 이 섹션에서
+            실제로 다른 것(종횡비·배경 이미지·아이콘 좌표·카드 리스트)만
+            .cluster5-gmention* 로 덮어쓴다. */}
+        <section className="cluster5-gmention" style={orgVars} aria-label="Cluv_General Mention">
+          <div className="cluster5-mention__banner">
+            <div className="cluster5-mention__bg" aria-hidden="true" />
+            <div className="cluster5-mention__scrim" aria-hidden="true" />
+
+            <div className="cluster5-mention__header">
+              <div className="cluster5-mention__heading">
+                <span className="cluster5-mention__eyebrow">
+                  <span className="cluster5-mention__eyebrow-text">Career Main Collection</span>
+                  <span className="cluster5-mention__badge" aria-hidden="true">
+                    <MentionBadgeIcon />
+                  </span>
+                </span>
+                <h2 className="cluster5-mention__title">Cluv_General Mention</h2>
+              </div>
+
+              <div className="cluster5-mention__meta">
+                <div className="cluster5-mention__type">
+                  <img
+                    className="cluster5-mention__type-icon"
+                    src="/images/0/cluster5/mention/type-icon.png"
+                    alt=""
+                  />
+                  <span className="cluster5-mention__type-text">
+                    <span className="cluster5-mention__type-label">Type by :</span>
+                    <span className="cluster5-mention__type-value">Cluving Mention card(G)</span>
+                  </span>
+                </div>
+
+                <div className="cluster5-mention__pills">
+                  {GMENTION_STATS.map((stat) => (
+                    <div key={stat.key} className="cluster5-mention__pill">
+                      <img
+                        className="cluster5-mention__pill-icon"
+                        style={{ height: stat.iconHeight }}
+                        src={stat.icon}
+                        alt=""
+                      />
+                      <p
+                        className={`cluster5-mention__pill-text${
+                          "tight" in stat && stat.tight ? " cluster5-mention__pill-text--tight" : ""
+                        }`}
+                      >
+                        <span className="cluster5-mention__pill-num">{stat.num}</span>
+                        <span>{stat.rest}</span>
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="cluster5-mention__tools" aria-hidden="true">
+                  <span className="cluster5-mention__tool cluster5-mention__tool--share">
+                    <MentionShareIcon />
+                  </span>
+                  <span className="cluster5-mention__tool cluster5-mention__tool--more">
+                    <MentionMoreIcon />
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Figma 1084:1816 — 섹션 하단 경계의 accent 구분선(상단 구분선은
+                Section 5 배너 하단 것이 그대로 경계가 되므로 두지 않는다). */}
+            <div className="cluster5-mention__rule" aria-hidden="true" />
+          </div>
+
+          {/* Figma 1068:22165 — 카드 리스트 + 상/하 원형 화살표.
+              Figma 상으로는 배너 프레임의 자식이지만 리스트(588~1260.83,
+              288~1194)가 배너(1335x1245) 안에 완전히 들어가 클리핑이 전혀
+              일어나지 않는다. 반대로 배너 안에 두면 ≤1199.98px 에서 배너의
+              overflow:hidden + 고정 aspect-ratio 에 카드가 잘리므로,
+              Section 5 와 동일하게 배너의 형제로 둔다(데스크톱 렌더 동일). */}
+          <div className="cluster5-gmention__list">
+            <span
+              className="cluster5-gmention__scroll-btn cluster5-gmention__scroll-btn--up"
+              aria-hidden="true"
+            >
+              <MentionScrollIcon />
+            </span>
+            <div className="cluster5-gmention__cards">
+              {GMENTION_CARDS.map((card) => (
+                <GeneralMentionCard key={card.key} card={card} />
+              ))}
+            </div>
+            <span
+              className="cluster5-gmention__scroll-btn cluster5-gmention__scroll-btn--down"
+              aria-hidden="true"
+            >
+              <MentionScrollIcon />
+            </span>
+          </div>
+
+          {/* 우상단 수정/검색 — Figma 정적 시각 요소(실동작 없음). */}
+          <div className="cluster5-mention__actions" aria-hidden="true">
+            <div className="cluster5-mention__icon-btn">
+              <svg viewBox="0 0 11.6667 11.3907" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M5.83333 2.8907L0.5 8.22404V10.8907H11.1667M5.83333 2.8907L7.74575 0.978267L7.7469 0.977133C8.01016 0.713878 8.14202 0.582017 8.29402 0.532629C8.42792 0.489124 8.57216 0.489124 8.70605 0.532629C8.85795 0.581982 8.98966 0.713693 9.25254 0.976575L10.4124 2.13644C10.6764 2.40045 10.8085 2.53252 10.8579 2.68474C10.9014 2.81863 10.9014 2.96286 10.8579 3.09676C10.8085 3.24887 10.6766 3.38073 10.413 3.64437L10.4124 3.64493L8.49999 5.55736L3.16667 10.8907L0.5 10.8907M5.83333 2.8907L8.49999 5.55736"
+                  stroke="white"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <div className="cluster5-mention__icon-btn">
+              <svg viewBox="0 0 11 11" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M7.16667 7.16667L10.5 10.5M4.38889 8.27778C2.24112 8.27778 0.5 6.53666 0.5 4.38889C0.5 2.24112 2.24112 0.5 4.38889 0.5C6.53666 0.5 8.27778 2.24112 8.27778 4.38889C8.27778 6.53666 6.53666 8.27778 4.38889 8.27778Z"
+                  stroke="white"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
           </div>
         </section>
       </div>
