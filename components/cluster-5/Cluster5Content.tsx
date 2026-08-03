@@ -724,6 +724,11 @@ const galleryBannerSectionStyles = `
     margin: 0 auto;
     aspect-ratio: 1346 / 1170;
     box-sizing: border-box;
+    /* 카드 내부 치수를 cqw로 쓰기 위한 컨테이너 선언. 그룹이 aspect-ratio로
+       가로세로 동일 배율로만 축소되므로 px -> cqw 환산(px / 1346 * 100)이
+       가로/세로 양축 모두에 그대로 성립한다. 이렇게 하면 이전 아이콘 버그
+       (고정 px가 스케일을 안 받아 9% 크게 렌더)가 카드에서 재발하지 않는다. */
+    container-type: inline-size;
   }
   .cluster5-gallery {
     position: absolute;
@@ -849,31 +854,35 @@ const top3SectionStyles = `
     position: absolute;
     left: 0;
     top: 4.0171%; /* 47px / 1170px */
-    z-index: 1;
+    z-index: 3;
     display: flex;
     flex-direction: column;
     align-items: center;
     width: 100%;
-    padding: 0 15px;
+    padding: 0 1.1144cqw;
     box-sizing: border-box;
     text-align: center;
   }
+  /* [정정] 타이포를 고정 px로 두면 aspect-ratio 그룹이 축소될 때 헤더만
+     스케일을 안 받아 요소마다 아래로 밀린다(1236px 폭 실측 기준 블록당
+     +6px 누적 → Figma diff에서 텍스트가 이중으로 보이는 원인이었다).
+     아이콘·카드와 동일하게 cqw(px / 1346 * 100)로 통일한다. */
   .cluster5-top3__title {
     margin: 0;
     font-family: "Manrope", "Pretendard", sans-serif;
     font-weight: 800;
-    font-size: 54px;
-    line-height: 74px;
+    font-size: 4.0119cqw; /* 54px */
+    line-height: 5.4978cqw; /* 74px */
     color: var(--white, #ffffff);
     text-transform: capitalize;
   }
   .cluster5-top3__subtitle {
-    margin: 20px 0 0;
-    max-width: 730px;
+    margin: 1.4859cqw 0 0;
+    max-width: 54.2348cqw; /* 730px */
     font-family: "Pretendard", sans-serif;
     font-weight: 400;
-    font-size: 16px;
-    line-height: 22px;
+    font-size: 1.1887cqw; /* 16px */
+    line-height: 1.6345cqw; /* 22px */
     color: rgba(255, 255, 255, 0.53);
   }
   .cluster5-top3__actions {
@@ -881,21 +890,21 @@ const top3SectionStyles = `
     flex-wrap: wrap;
     justify-content: center;
     align-items: center;
-    gap: 30px;
-    margin-top: 40px;
+    gap: 2.2288cqw; /* 30px */
+    margin-top: 2.9718cqw; /* 40px */
   }
   .cluster5-top3__btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 190px;
-    height: 50px;
-    border-radius: 12px;
+    width: 14.1159cqw; /* 190px */
+    height: 3.7147cqw; /* 50px */
+    border-radius: 0.8915cqw; /* 12px */
     box-sizing: border-box;
     font-family: "Manrope", "Pretendard", sans-serif;
     font-weight: 800;
-    font-size: 14px;
-    line-height: 14px;
+    font-size: 1.0401cqw; /* 14px */
+    line-height: 1.0401cqw;
     color: #161616;
     text-transform: capitalize;
   }
@@ -907,15 +916,35 @@ const top3SectionStyles = `
   }
 
   @media only screen and (max-width: 1199.98px) {
-    /* 오버레이 해제 — 배너 아래 일반 흐름으로 내려온다(위 showcase 규칙과 짝) */
+    /* 오버레이 해제 — 배너 아래 일반 흐름으로 내려온다(위 showcase 규칙과 짝).
+       데스크톱에서 cqw로 바꾼 값들도 이 구간에서는 전부 px로 되돌린다
+       (좁은 폭에서 cqw는 글자를 읽을 수 없을 만큼 작아지기 때문). */
     .cluster5-top3 {
       position: relative;
       top: auto;
       margin-top: 48px;
+      padding: 0 20px;
     }
     .cluster5-top3__title {
       font-size: 40px;
       line-height: 52px;
+    }
+    .cluster5-top3__subtitle {
+      margin-top: 20px;
+      max-width: 730px;
+      font-size: 16px;
+      line-height: 22px;
+    }
+    .cluster5-top3__actions {
+      gap: 20px;
+      margin-top: 32px;
+    }
+    .cluster5-top3__btn {
+      width: 190px;
+      height: 50px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 14px;
     }
   }
 
@@ -931,6 +960,525 @@ const top3SectionStyles = `
     .cluster5-top3__actions {
       gap: 16px 12px;
     }
+  }
+`;
+
+// Figma 기준: 동일 파일, node 1068:24543("Container", 1346x691, 그룹 offset
+// (0,353)) + 형제 노드 1068:24734("Component 5", 561x690, 그룹 offset
+// (393,353)) — Section 4 그룹의 마지막 구성요소인 "The Best TOP 3" 평판 카드
+// 캐러셀. 1068:24543 안에는 좌/우 사이드 카드 2장만 있고 가운데 큰 카드는
+// 별도 형제 노드라, 둘을 함께 구현해야 Figma 합성이 완성된다.
+//
+// 좌표는 Figma 메타데이터(중첩 offset 누적)와 실제 렌더 PNG 픽셀 스캔을
+// 교차 검증해 확정했다. 픽셀 스캔 결과 좌측 카드는 x 25~435(폭 411),
+// 우측 카드는 x 934~1330(폭 397)로 서로 폭이 달랐는데, 이는 두 카드 모두
+// 410.43px짜리 Component 5이지만 우측 카드가 부모 Container(1316px, 그룹
+// x 15~1331)에 의해 잘리기 때문이다 — 그래서 아래에서 .cluster5-cardrow에
+// overflow:hidden 클립 박스를 두어 동일한 잘림을 재현한다.
+//
+// 색상 정책: 화살표 버튼 배경 #FAAB07만 ORGANIZATION_CONFIG.marketing.
+// themeColor와 정확히 일치하므로 var(--cluster5-accent)로 치환한다. 별점
+// #F7BA48, 등급 배지 #45F882, 해시태그 #00FFBE/#EBF748, 명성도 아이콘
+// #FFE3AA는 어느 org 색상과도 대응하지 않는 이 컴포지션 고유값이라
+// TOP3 버튼 #DDF247과 동일하게 하드코딩 유지한다(억지 org 반응형 금지).
+//
+// 데이터: 히어로/통계 바/키워드맵과 동일하게 Figma placeholder 그대로의
+// 정적 마크업이다. 평판 API/DTO를 새로 연결하지 않는다(데이터 조회 로직
+// 변경 금지 원칙 — 실데이터 연동은 별도 지시가 있을 때 진행).
+//
+// [폰트 실측 — 중요] CDP CSS.getPlatformFontsForNode로 "선언된 폰트"가 아닌
+// "실제 렌더된 폰트"를 확인한 결과:
+//   - Rajdhani: next/font/google로 로드되지만 실제 패밀리명이
+//     `__Rajdhani_6184ad`(CSS 변수 --rajdhani)라서 `"Rajdhani"` 문자열로는
+//     매칭되지 않고 Malgun Gothic으로 폴백됐다. 그래서 var(--rajdhani)를
+//     먼저 두고 문자열을 폴백으로 남긴다(앱 내 기존 "Rajdhani" 선언들도
+//     동일한 잠재 이슈지만 그건 이 작업 범위 밖이라 건드리지 않는다).
+//   - Pretendard / Manrope: 이 앱은 두 폰트를 실제로 로드하지 않는다
+//     (Pretendard는 _cluster4-week.scss에 이미 문서화된 앱 전역 이슈,
+//     Manrope는 _cluster3.scss의 @import가 실행되지 않아 요청 자체가 없음).
+//     둘 다 Malgun Gothic으로 폴백되며, 이것이 Figma 대비 한글 텍스트 폭이
+//     넓게 나오는 유일한 잔여 원인이다. 웹폰트 신규 로드는 앱 전역 서체를
+//     바꾸는 변경이라 지시 없이 진행하지 않는다.
+//   - document.fonts.check()는 이 3개 폰트에 대해 전부 true를 반환했지만
+//     실제 렌더 폰트는 Malgun Gothic이었다 — check()만으로 폰트 적용을
+//     판정하면 안 된다(위양성).
+const top3CardsSectionStyles = `
+  /* ---- 카드 행 클립 박스 (Figma Container 1068:24544, 그룹 (15,393.5) 1316x610) ---- */
+  .cluster5-cardrow {
+    position: absolute;
+    left: 1.1144cqw;
+    top: 29.2348cqw;
+    width: 97.7712cqw;
+    height: 45.3195cqw;
+    overflow: hidden;
+    z-index: 1;
+  }
+
+  /* ---- 카드 공통 ---- */
+  .c5card {
+    position: absolute;
+    box-sizing: border-box;
+    background: #1e1e1e;
+    overflow: hidden;
+    font-synthesis: none;
+  }
+  .c5card--side {
+    top: 2.9703cqw;
+    width: 30.4926cqw; /* 410.43px */
+    height: 37.4473cqw; /* 504.04px */
+    border-radius: 2.2288cqw; /* 30px */
+    box-shadow: 0 0.3715cqw 2.2288cqw #0a0a0a;
+  }
+  .c5card--left { left: 0.76cqw; }
+  .c5card--right { left: 68.2935cqw; }
+  .c5card--center {
+    position: absolute;
+    left: 29.1976cqw;
+    top: 26.2259cqw;
+    width: 41.679cqw; /* 561px */
+    height: 51.263cqw; /* 690px */
+    border-radius: 1.1887cqw; /* 16px */
+    box-shadow: 0 0.3715cqw 2.2288cqw #0a0a0a;
+    z-index: 2;
+  }
+
+  .c5card__img {
+    position: absolute;
+    display: block;
+    object-fit: cover;
+  }
+  .c5card--side .c5card__img {
+    left: 0;
+    top: 0;
+    width: 29.4948cqw; /* 397px */
+    height: 45.6909cqw; /* 615px — 카드(504)보다 커서 아래가 잘린다(Figma 동일) */
+  }
+  .c5card--center .c5card__img {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    /* Figma: 이미지를 높이 127.8%로 늘리고 top -0.84% — cover + 상단 근접
+       object-position(3%)이 동일 결과(원본 829x1305 -> 커버 시 883px). */
+    object-position: 50% 3%;
+  }
+
+  /* ---- 날짜 배지 (좌상단 pill) ---- */
+  .c5card__date {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(1px);
+    -webkit-backdrop-filter: blur(1px);
+    border-radius: 9999px;
+    color: #ffffff;
+    font-family: "Manrope", "Pretendard", sans-serif;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .c5card--side .c5card__date {
+    left: 1.766cqw;
+    top: 0.9673cqw;
+    height: 1.9316cqw;
+    padding: 0 0.7429cqw;
+    font-size: 0.8915cqw;
+    line-height: 0.6686cqw;
+  }
+  .c5card--center .c5card__date {
+    left: 1.4859cqw;
+    top: 1.4859cqw;
+    height: 2.2288cqw;
+    padding: 0 0.7429cqw;
+    font-size: 1.3373cqw;
+    line-height: 1.3373cqw;
+  }
+
+  /* ---- 등급 배지 (우상단 검정 박스) ---- */
+  .c5card__cat {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    background: #000000;
+    border: 1px solid #414141;
+    border-radius: 0.2972cqw;
+    filter: drop-shadow(0 0.2972cqw 0.1858cqw rgba(255, 255, 255, 0.25));
+    color: #45f882;
+    font-family: "Pretendard", sans-serif;
+    font-weight: 400;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .c5card--side .c5card__cat {
+    padding: 0.1486cqw 0.8172cqw;
+    font-size: 1.1144cqw;
+    line-height: 1.7831cqw;
+  }
+  .c5card--left .c5card__cat { left: 19.5966cqw; top: 1.1159cqw; }
+  .c5card--right .c5card__cat { left: 21.6025cqw; top: 0.821cqw; }
+  .c5card--center .c5card__cat {
+    left: 30.3863cqw;
+    top: 1.4859cqw;
+    padding: 0.2972cqw 0.8172cqw;
+    font-size: 1.3373cqw;
+    line-height: 1.7831cqw;
+  }
+
+  /* ---- 하단 정보 패널 ---- */
+  .c5card__panel {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    box-sizing: border-box;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(1px);
+    -webkit-backdrop-filter: blur(1px);
+    border-bottom-left-radius: 1.1887cqw;
+    border-bottom-right-radius: 1.1887cqw;
+  }
+  .c5card--side .c5card__panel {
+    width: 29.4948cqw; /* 397px */
+    height: 13.2244cqw; /* 178px */
+    padding: 0.8172cqw 1.1887cqw 1.4859cqw 0.7429cqw;
+  }
+  .c5card--center .c5card__panel {
+    width: 100%;
+    height: 14.7103cqw; /* 198px */
+    padding: 1.1144cqw 1.1887cqw 1.4859cqw 1.1144cqw;
+  }
+
+  /* 프로필 행 (아바타 + 2줄 신원 정보) */
+  .c5card__profile {
+    display: flex;
+    align-items: center;
+    gap: 0.7429cqw;
+  }
+  .c5card__avatar {
+    display: block;
+    flex-shrink: 0;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+  .c5card--side .c5card__avatar { width: 2.9718cqw; height: 2.9718cqw; }
+  .c5card--center .c5card__avatar { width: 3.7147cqw; height: 3.7147cqw; }
+  .c5card__ident {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2229cqw;
+    color: #ffffff;
+    font-family: "Pretendard", sans-serif;
+  }
+  .c5card__idrow {
+    display: flex;
+    align-items: flex-start;
+    margin: 0;
+    white-space: nowrap;
+    line-height: 1.4116cqw;
+    /* font-family를 부모(.c5card__ident) 상속에 맡기면 안 된다 — 이 요소는
+       <p>라서 전역 스타일시트의 엘리먼트 선택자(p{...})가 상속값을 이겨
+       Khula로 렌더된다(CDP CSS.getPlatformFontsForNode로 확인). 클래스
+       선택자로 직접 지정해 특정성을 확보한다. */
+    font-family: "Pretendard", sans-serif;
+  }
+  .c5card--side .c5card__idrow { gap: 0.2229cqw; }
+  .c5card--center .c5card__idrow { gap: 0.3715cqw; }
+  .c5card--side .c5card__idrow { font-size: 0.8915cqw; }
+  .c5card--center .c5card__idrow { font-size: 1.1887cqw; }
+  .c5card__sep {
+    font-size: 1.0401cqw;
+    font-weight: 400;
+  }
+  .c5card__b { font-weight: 700; }
+  .c5card__m { font-weight: 500; }
+  .c5card__r { font-weight: 400; }
+
+  /* 별점 행 */
+  .c5card__stars {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    gap: 0.7429cqw;
+    left: 1.0401cqw;
+    height: 1.3373cqw;
+  }
+  .c5card--side .c5card__stars { top: 4.7548cqw; }
+  .c5card--center .c5card__stars { top: 6.0178cqw; }
+  .c5card__starset {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.2972cqw;
+  }
+  .c5card__star {
+    display: block;
+    width: 0.9443cqw;
+    height: 1.3373cqw;
+    flex-shrink: 0;
+  }
+  .c5card__score {
+    padding-left: 0.2972cqw;
+    color: rgba(255, 255, 255, 0.9);
+    line-height: 1.3373cqw;
+    white-space: nowrap;
+  }
+  .c5card--side .c5card__score {
+    font-family: var(--rajdhani), "Rajdhani", sans-serif;
+    font-size: 0.8915cqw;
+    letter-spacing: 0.0523cqw;
+  }
+  .c5card--center .c5card__score {
+    font-family: "Pretendard", sans-serif;
+    font-size: 0.8915cqw;
+  }
+
+  /* 해시태그 칩 */
+  .c5card__tags {
+    position: absolute;
+    display: flex;
+    align-items: flex-start;
+  }
+  .c5card--side .c5card__tags {
+    left: 12.4814cqw;
+    top: 4.7571cqw;
+    width: 16.5082cqw;
+    gap: 0.2972cqw;
+  }
+  .c5card--center .c5card__tags {
+    left: 18.7221cqw;
+    top: 5.8692cqw;
+    gap: 0.1486cqw;
+    align-items: center;
+  }
+  .c5card__tag {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 0.2972cqw 0.5349cqw;
+    border-radius: 0.2972cqw;
+    white-space: nowrap;
+    text-align: center;
+    /* 칩 폭은 Figma 고정(222.2px / 3분할). 폴백 폰트가 넓어 글자가 넘칠 때
+       옆 칩을 밀지 않고 칩 안에서 잘리도록 한다. */
+    overflow: hidden;
+  }
+  .c5card--side .c5card__tag {
+    flex: 1 0 0;
+    min-width: 1px;
+    font-family: var(--rajdhani), "Rajdhani", sans-serif;
+    font-weight: 500;
+    font-size: 0.5944cqw;
+    line-height: 0.7132cqw;
+  }
+  .c5card--center .c5card__tag {
+    flex: 0 0 auto;
+    font-family: "Pretendard", sans-serif;
+    font-weight: 500;
+    font-size: 0.8915cqw;
+    line-height: 0.8915cqw;
+  }
+  .c5card__tag--teal { background: rgba(0, 255, 190, 0.1); color: #00ffbe; }
+  .c5card__tag--lime { background: rgba(235, 247, 72, 0.1); color: #ebf748; }
+
+  /* 80자 본문 + 화살표 버튼 */
+  .c5card__text {
+    position: absolute;
+    left: 1.0401cqw;
+    margin: 0;
+    color: #ffffff;
+    font-family: "Pretendard", sans-serif;
+    font-weight: 600;
+    line-height: 1.6345cqw;
+    /* Figma의 텍스트 프레임은 높이 44px(2줄) 고정 클리핑이다. Pretendard가
+       실제로 로드되지 않아 Malgun Gothic(더 넓음)으로 폴백되면 같은 문구가
+       3줄이 되어 아래 명성도 행 위로 흘러넘친다 — Figma와 동일하게 2줄에서
+       자른다(문구 자체가 "..."로 끝나는 디자인이라 시각적으로도 일치). */
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .c5card--side .c5card__text {
+    top: 6.6865cqw;
+    width: 28.0832cqw;
+    height: 3.2689cqw;
+    font-size: 0.9658cqw;
+  }
+  .c5card--center .c5card__text {
+    top: 7.7266cqw;
+    width: 39.0045cqw;
+    height: 3.2689cqw;
+    font-size: 1.1887cqw;
+  }
+  .c5card__arrow {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.1144cqw;
+    height: 1.1144cqw;
+    border-radius: 0.3715cqw;
+    background: var(--cluster5-accent, #faab07);
+  }
+  .c5card--side .c5card__arrow { left: 25.6315cqw; top: 8.5438cqw; }
+  .c5card--center .c5card__arrow { left: 28.1575cqw; top: 9.584cqw; }
+  .c5card__arrow svg { display: block; width: 0.6686cqw; height: 0.6686cqw; }
+
+  /* 명성도 행 */
+  .c5card__fm {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    gap: 0.5944cqw;
+    left: 1.0401cqw;
+    height: 1.8054cqw;
+  }
+  .c5card--side .c5card__fm { top: 10.5498cqw; }
+  .c5card--center .c5card__fm { top: 11.5899cqw; }
+  .c5card__fm-link {
+    display: flex;
+    align-items: center;
+    gap: 0.2972cqw;
+    color: #ffffff;
+    white-space: nowrap;
+    line-height: 1.4487cqw;
+  }
+  .c5card--side .c5card__fm-link { font-family: var(--rajdhani), "Rajdhani", sans-serif; letter-spacing: 0.0523cqw; }
+  .c5card--center .c5card__fm-link { font-family: "Pretendard", sans-serif; }
+  .c5card__fm-icon { display: block; width: 1.0186cqw; height: 0.9658cqw; flex-shrink: 0; }
+  .c5card__fm-label { font-size: 1.1144cqw; font-weight: 400; }
+  .c5card__fm-value { font-size: 1.3373cqw; font-weight: 700; color: #f7ba48; }
+  .c5card__fm-divider {
+    width: 1px;
+    height: 1.1293cqw;
+    background: rgba(255, 255, 255, 0.1);
+    flex-shrink: 0;
+  }
+
+  /* ---- ≤1199.98px: showcase가 flow로 풀리면 카드도 배너 아래로 내려간다 ----
+     Figma에 모바일 스펙이 없어, 겹침 캐러셀 대신 세로 스택으로 자연 전환한다
+     (히어로/Keyword Map/헤더와 동일한 breakpoint·원칙). cqw 기준이 사라지지
+     않도록 .cluster5-showcase의 container-type은 유지된다. */
+  @media only screen and (max-width: 1199.98px) {
+    /* 겹침 캐러셀 해제 — 카드 3장 모두 동일 크기 스택.
+       ⚠ 아래 규칙들은 데스크톱의 ".c5card--side .c5card__X"(특정성 0,2,0)를
+       이겨야 하므로 반드시 ".c5card .c5card__X"(동일 0,2,0 + 소스 순서 뒤)로
+       쓴다. ".c5card__X"(0,1,0) 단독으로 쓰면 적용되지 않는다(실측 확인:
+       패널 높이가 cqw 고정값에 묶여 본문이 패널 밖으로 흘러넘쳤다). */
+    .cluster5-cardrow {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: 100%;
+      height: auto;
+      overflow: visible;
+      margin-top: 40px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 24px;
+    }
+    .c5card--side,
+    .c5card--center {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: 320px;
+      max-width: 100%;
+      height: auto;
+      border-radius: 20px;
+      box-shadow: 0 4px 18px #0a0a0a;
+    }
+    .c5card .c5card__img {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: 100%;
+      height: 300px;
+      object-position: 50% 20%;
+    }
+    .c5card .c5card__date {
+      left: 14px;
+      top: 12px;
+      height: 24px;
+      padding: 0 10px;
+      font-size: 12px;
+      line-height: 24px;
+    }
+    .c5card .c5card__cat {
+      left: auto;
+      right: 12px;
+      top: 12px;
+      padding: 2px 10px;
+      font-size: 13px;
+      line-height: 20px;
+    }
+    .c5card .c5card__panel {
+      position: relative;
+      width: 100%;
+      height: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      border-radius: 0;
+    }
+    .c5card .c5card__profile { gap: 10px; }
+    .c5card .c5card__avatar { width: 40px; height: 40px; }
+    .c5card .c5card__ident { gap: 3px; min-width: 0; }
+    .c5card .c5card__idrow {
+      gap: 4px;
+      font-size: 12px;
+      line-height: 18px;
+      white-space: normal;
+      flex-wrap: wrap;
+    }
+    .c5card .c5card__sep { font-size: 12px; }
+    .c5card .c5card__stars,
+    .c5card .c5card__tags,
+    .c5card .c5card__text,
+    .c5card .c5card__fm {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: auto;
+      height: auto;
+      gap: 8px;
+    }
+    .c5card .c5card__tags { flex-wrap: wrap; }
+    .c5card .c5card__star { width: 13px; height: 18px; }
+    .c5card .c5card__starset { gap: 4px; }
+    .c5card .c5card__score { font-size: 12px; line-height: 18px; letter-spacing: 0; }
+    .c5card .c5card__tag {
+      flex: 0 0 auto;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      line-height: 13px;
+    }
+    .c5card .c5card__text {
+      font-size: 13px;
+      line-height: 20px;
+      -webkit-line-clamp: 3;
+    }
+    .c5card .c5card__arrow {
+      position: relative;
+      left: auto;
+      top: auto;
+      display: inline-flex;
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      align-self: flex-end;
+    }
+    .c5card .c5card__arrow svg { width: 9px; height: 9px; }
+    .c5card .c5card__fm-icon { width: 14px; height: 13px; }
+    .c5card .c5card__fm-link { gap: 6px; line-height: 20px; letter-spacing: 0; }
+    .c5card .c5card__fm-label { font-size: 14px; }
+    .c5card .c5card__fm-value { font-size: 16px; }
+    .c5card .c5card__fm-divider { height: 15px; }
   }
 `;
 
@@ -964,6 +1512,181 @@ const sectionSpacingStyles = `
   }
 `;
 
+// Figma placeholder 데이터 그대로(1068:24612 / 1068:24736 텍스트 노드 원문).
+// 세 카드가 동일 인물/문구를 쓰는 것도 Figma 시안 그대로다.
+const TOP3_CARDS = [
+  {
+    key: "left",
+    variant: "side" as const,
+    position: "left" as const,
+    image: "/images/0/cluster5/top3/card-left.png",
+    avatar: "/images/0/cluster5/top3/avatar-side.png",
+    category: "클러빙 평판(M)",
+    text: "80자까지 쓴 내용을 확인할 수 있습니다~ 80자는 어떻게 채울까요 잘 한번 써봐서 80자를 채울 수 있도록 해주세요 80808080808080...",
+  },
+  {
+    key: "center",
+    variant: "center" as const,
+    position: "center" as const,
+    image: "/images/0/cluster5/top3/card-center.png",
+    avatar: "/images/0/cluster5/top3/avatar-center.png",
+    category: "클러빙 평판(M)",
+    text: "80자까지 쓴 내용을 확인할 수 있습니다~ 80자는 어떻게 채울까요 잘잘잘 한번 써봐서 80자를 채울 수 있도록 해주세요 808080808080...",
+  },
+  {
+    key: "right",
+    variant: "side" as const,
+    position: "right" as const,
+    image: "/images/0/cluster5/top3/card-right.png",
+    avatar: "/images/0/cluster5/top3/avatar-side.png",
+    category: "시니어 평판",
+    text: "80자까지 쓴 내용을 확인할 수 있습니다~ 80자는 어떻게 채울까요 잘 한번 써봐서 80자를 채울 수 있도록 해주세요 80808080808080...",
+  },
+] as const;
+
+const TOP3_CARD_DATE = "2025 - 08 - 01 (월)";
+const TOP3_CARD_TAGS = [
+  { key: "t1", label: "#추진력추진력추", tone: "teal" as const },
+  { key: "t2", label: "#리더쉽리더쉽쉽", tone: "lime" as const },
+  { key: "t3", label: "#신속함신속함함", tone: "lime" as const },
+];
+// 별점: 채운 별 3 + 빈 별 2 (Figma 원본 아이콘 순서 그대로, "6 / 10" 표기와 별개)
+const TOP3_CARD_STARS = ["full", "full", "full", "empty-a", "empty-b"] as const;
+
+// Figma export SVG 원본 path 그대로 인라인(꽃잎/갤러리 아이콘과 동일 기법).
+// 사이드/센터 카드용 export가 별도 id로 내려오지만 path는 완전히 동일해
+// (clipPath id만 다름) 한 벌만 유지한다.
+const StarFullIcon = () => (
+  <svg className="c5card__star" viewBox="0 0 12.71 18" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      d="M6.355 5.34588L2.61614 3.24873L3.45288 7.45362L0.307159 10.3557L4.56501 10.8641L6.355 14.7513L8.14499 10.8641L12.4028 10.3557L9.25712 7.45362L10.0939 3.24873L6.355 5.34588Z"
+      fill="#F7BA48"
+    />
+  </svg>
+);
+const StarEmptyAIcon = () => (
+  <svg className="c5card__star" viewBox="0 0 12.72 18" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      d="M6.35976 5.34588L2.61796 3.24873L3.45536 7.45362L0.307159 10.3557L4.56836 10.8641L6.35976 14.7513L8.15116 10.8641L12.4124 10.3557L9.26416 7.45362L10.1016 3.24873L6.35976 5.34588ZM6.35976 6.55333L8.60696 5.29292L8.10876 7.82432L10.0062 9.57195L7.44096 9.87911L6.35976 12.2199L5.27856 9.87911L2.71336 9.57195L4.61076 7.82432L4.11256 5.29292L6.35976 6.55333Z"
+      fill="#F7BA48"
+    />
+  </svg>
+);
+const StarEmptyBIcon = () => (
+  <svg className="c5card__star" viewBox="0 0 12.71 18" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      d="M6.355 5.34588L2.61614 3.24873L3.45288 7.45362L0.307159 10.3557L4.56501 10.8641L6.355 14.7513L8.14499 10.8641L12.4028 10.3557L9.25712 7.45362L10.0939 3.24873L6.355 5.34588ZM6.355 6.55333L8.60043 5.29292L8.10262 7.82432L9.99853 9.57195L7.43535 9.87911L6.355 12.2199L5.27465 9.87911L2.71147 9.57195L4.60738 7.82432L4.10957 5.29292L6.355 6.55333Z"
+      fill="#F7BA48"
+    />
+  </svg>
+);
+const STAR_ICONS = {
+  full: StarFullIcon,
+  "empty-a": StarEmptyAIcon,
+  "empty-b": StarEmptyBIcon,
+} as const;
+
+const FmIcon = () => (
+  <svg className="c5card__fm-icon" viewBox="0 0 13.71 13" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      d="M2.825 10.53C2.305 9.98111 1.90056 9.36 1.61167 8.66667C1.32278 7.97333 1.17833 7.25111 1.17833 6.5C1.17833 5.74889 1.32278 5.02667 1.61167 4.33333C1.90056 3.64 2.305 3.01889 2.825 2.47C2.91167 2.38333 2.955 2.28944 2.955 2.18833C2.955 2.08722 2.91167 1.99333 2.825 1.90667C2.73833 1.82 2.64444 1.77667 2.54333 1.77667C2.44222 1.77667 2.34833 1.82 2.26167 1.90667C1.655 2.51333 1.18556 3.21389 0.853333 4.00833C0.521111 4.80278 0.355 5.63333 0.355 6.5C0.355 7.36667 0.521111 8.19722 0.853333 8.99167C1.18556 9.78611 1.655 10.4867 2.26167 11.0933C2.34833 11.18 2.44222 11.2233 2.54333 11.2233C2.64444 11.2233 2.73833 11.18 2.825 11.0933C2.91167 11.0067 2.955 10.9128 2.955 10.8117C2.955 10.7106 2.91167 10.6167 2.825 10.53ZM4.55833 8.79667C4.15389 8.39222 3.87222 7.90833 3.71333 7.345C3.55444 6.78167 3.55444 6.21833 3.71333 5.655C3.87222 5.09167 4.15389 4.60778 4.55833 4.20333C4.645 4.11667 4.68833 4.01556 4.68833 3.9C4.68833 3.78444 4.645 3.69056 4.55833 3.61833C4.47167 3.54611 4.37056 3.51 4.255 3.51C4.13944 3.51 4.05278 3.55333 3.995 3.64C3.61944 4.01556 3.32333 4.44889 3.10667 4.94C2.89 5.43111 2.78167 5.95111 2.78167 6.5C2.78167 7.04889 2.89 7.56889 3.10667 8.06C3.32333 8.55111 3.61944 8.98444 3.995 9.36C4.05278 9.44667 4.13944 9.49 4.255 9.49C4.37056 9.49 4.47167 9.45389 4.55833 9.38167C4.645 9.30944 4.68833 9.21556 4.68833 9.1C4.68833 8.98444 4.645 8.88333 4.55833 8.79667ZM9.15167 9.36C9.23833 9.44667 9.33944 9.49 9.455 9.49C9.57056 9.49 9.65722 9.44667 9.715 9.36C10.0906 8.98444 10.3867 8.55111 10.6033 8.06C10.82 7.56889 10.9283 7.04889 10.9283 6.5C10.9283 5.95111 10.82 5.43111 10.6033 4.94C10.3867 4.44889 10.0906 4.01556 9.715 3.64C9.59944 3.52444 9.46944 3.48833 9.325 3.53167C9.18056 3.575 9.08667 3.66889 9.04333 3.81333C9 3.95778 9.03611 4.08778 9.15167 4.20333C9.55611 4.60778 9.83778 5.09167 9.99667 5.655C10.1556 6.21833 10.1556 6.78167 9.99667 7.345C9.83778 7.90833 9.55611 8.39222 9.15167 8.79667C9.065 8.88333 9.02167 8.98444 9.02167 9.1C9.02167 9.21556 9.065 9.30222 9.15167 9.36ZM10.885 11.0933C10.9717 11.18 11.0656 11.2233 11.1667 11.2233C11.2678 11.2233 11.3617 11.18 11.4483 11.0933C12.2861 10.2556 12.8494 9.28056 13.1383 8.16833C13.4272 7.05611 13.4272 5.94389 13.1383 4.83167C12.8494 3.71944 12.2861 2.74444 11.4483 1.90667C11.3617 1.82 11.2678 1.77667 11.1667 1.77667C11.0656 1.77667 10.9717 1.82 10.885 1.90667C10.7983 1.99333 10.755 2.08722 10.755 2.18833C10.755 2.28944 10.7983 2.38333 10.885 2.47C11.405 3.01889 11.8094 3.64 12.0983 4.33333C12.3872 5.02667 12.5317 5.74889 12.5317 6.5C12.5317 7.25111 12.3872 7.97333 12.0983 8.66667C11.8094 9.36 11.405 9.98111 10.885 10.53C10.7983 10.6167 10.755 10.7106 10.755 10.8117C10.755 10.9128 10.7983 11.0067 10.885 11.0933ZM8.50167 6.5C8.50167 6.03778 8.34278 5.64778 8.025 5.33C7.70722 5.01222 7.31722 4.86056 6.855 4.875C6.39278 4.88944 6.01 5.04833 5.70667 5.35167C5.40333 5.655 5.25167 6.03778 5.25167 6.5C5.25167 6.96222 5.40333 7.35222 5.70667 7.67C6.01 7.98778 6.39278 8.14667 6.855 8.14667C7.31722 8.14667 7.70722 7.98778 8.025 7.67C8.34278 7.35222 8.50167 6.96222 8.50167 6.5Z"
+      fill="#FFE3AA"
+    />
+  </svg>
+);
+const ArrowIcon = () => (
+  <svg viewBox="0 0 13.5 13.5" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      d="M1.91602 0.333984L11.25 9.65039V5.625C11.25 5.30859 11.3584 5.04199 11.5752 4.8252C11.792 4.6084 12.0586 4.5 12.375 4.5C12.6914 4.5 12.958 4.6084 13.1748 4.8252C13.3916 5.04199 13.5 5.30859 13.5 5.625V12.375C13.5 12.5977 13.4355 12.8057 13.3066 12.999C13.1777 13.1924 13.0078 13.3301 12.7969 13.4121C12.7383 13.4473 12.6709 13.4707 12.5947 13.4824C12.5186 13.4941 12.4453 13.5 12.375 13.5H5.625C5.30859 13.5 5.04199 13.3916 4.8252 13.1748C4.6084 12.958 4.5 12.6914 4.5 12.375C4.5 12.0586 4.6084 11.792 4.8252 11.5752C5.04199 11.3584 5.30859 11.25 5.625 11.25H9.65039L0.333984 1.91602C0.216797 1.81055 0.131836 1.6875 0.0791016 1.54688C0.0263672 1.40625 0 1.26562 0 1.125C0 0.984375 0.0263672 0.84375 0.0791016 0.703125C0.131836 0.5625 0.216797 0.439453 0.333984 0.333984C0.544922 0.111328 0.808594 0 1.125 0C1.44141 0 1.70508 0.111328 1.91602 0.333984Z"
+      fill="white"
+    />
+  </svg>
+);
+
+type Top3Card = (typeof TOP3_CARDS)[number];
+
+const Top3ReputationCard = ({ card }: { card: Top3Card }) => (
+  <div className={`c5card c5card--${card.variant} c5card--${card.position}`}>
+    <img className="c5card__img" src={card.image} alt="" />
+    <div className="c5card__date">{TOP3_CARD_DATE}</div>
+    <div className="c5card__cat">{card.category}</div>
+
+    <div className="c5card__panel">
+      <div className="c5card__profile">
+        <img className="c5card__avatar" src={card.avatar} alt="" />
+        <div className="c5card__ident">
+          <p className="c5card__idrow">
+            <span className="c5card__b">김미현</span>
+            <span className="c5card__sep">|</span>
+            <span className="c5card__m">여</span>
+            <span className="c5card__sep">|</span>
+            <span className="c5card__m">24</span>
+            <span className="c5card__sep">|</span>
+            <span>
+              <span className="c5card__b">서울대</span>
+              <span className="c5card__r">학교</span>
+            </span>
+            <span className="c5card__sep">|</span>
+            <span>
+              <span className="c5card__b">미디어커뮤니케이션</span>
+              <span className="c5card__r">학과</span>
+            </span>
+          </p>
+          <p className="c5card__idrow">
+            <span>
+              <span className="c5card__b">엔터테인먼트 </span>
+              <span className="c5card__r">팀</span>
+            </span>
+            <span className="c5card__sep">|</span>
+            <span>
+              <span className="c5card__b">내돈내산 </span>
+              <span className="c5card__r">파트</span>
+            </span>
+            <span className="c5card__sep">|</span>
+            <span className="c5card__b">엔비디아구글테슬라쿵</span>
+          </p>
+        </div>
+      </div>
+
+      <div className="c5card__stars">
+        <span className="c5card__starset">
+          {TOP3_CARD_STARS.map((kind, i) => {
+            const Icon = STAR_ICONS[kind];
+            return <Icon key={`${card.key}-star-${i}`} />;
+          })}
+        </span>
+        <span className="c5card__score">6 / 10</span>
+      </div>
+
+      <div className="c5card__tags">
+        {TOP3_CARD_TAGS.map((tag) => (
+          <span key={tag.key} className={`c5card__tag c5card__tag--${tag.tone}`}>
+            {tag.label}
+          </span>
+        ))}
+      </div>
+
+      <p className="c5card__text">{card.text}</p>
+      {/* 화살표는 .c5card__text의 자식이 아니라 패널의 형제여야 한다 —
+          Figma 좌표(345,115 / 379,129)가 패널 기준이라 텍스트 박스 안에
+          두면 기준점이 텍스트 박스로 바뀌어 오른쪽/아래로 밀린다. */}
+      <span className="c5card__arrow">
+        <ArrowIcon />
+      </span>
+
+      <div className="c5card__fm">
+        <span className="c5card__fm-link">
+          <FmIcon />
+          <span className="c5card__fm-label">명성도 : </span>
+          <span className="c5card__fm-value">325</span>
+          <span className="c5card__fm-label"> FM</span>
+        </span>
+        <span className="c5card__fm-divider" />
+      </div>
+    </div>
+  </div>
+);
+
 const Cluster5Content = () => {
   // org 계산 SoT: lib/cluster-route.ts resolveOrgFromLocation (?org= 쿼리
   // 우선, 그다음 canonical 경로 suffix, 둘 다 없으면 null → marketing 폴백).
@@ -988,6 +1711,7 @@ const Cluster5Content = () => {
       <style>{statsSectionStyles}</style>
       <style>{galleryBannerSectionStyles}</style>
       <style>{top3SectionStyles}</style>
+      <style>{top3CardsSectionStyles}</style>
       <style>{sectionSpacingStyles}</style>
       <div className="cluster5-sections">
         <section className="cluster5-hero" style={orgVars}>
@@ -1119,6 +1843,19 @@ const Cluster5Content = () => {
               <div className="cluster5-top3__btn cluster5-top3__btn--secondary">All collections 3</div>
             </div>
           </div>
+
+          {/* Figma 1068:24543(좌/우 사이드 카드) — 부모 Container 폭 1316px에
+              의해 우측 카드가 잘리는 것까지 overflow:hidden으로 재현 */}
+          <div className="cluster5-cardrow">
+            {TOP3_CARDS.filter((c) => c.variant === "side").map((card) => (
+              <Top3ReputationCard key={card.key} card={card} />
+            ))}
+          </div>
+          {/* Figma 1068:24734 — 가운데 큰 카드는 24543의 형제 노드라 클립 박스
+              바깥에 두어야 잘리지 않는다(그룹 정중앙 561x690) */}
+          {TOP3_CARDS.filter((c) => c.variant === "center").map((card) => (
+            <Top3ReputationCard key={card.key} card={card} />
+          ))}
         </section>
       </div>
     </>
