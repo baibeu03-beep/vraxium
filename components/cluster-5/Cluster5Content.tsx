@@ -701,13 +701,36 @@ const KEYWORD_COUNTS = [
 // 재사용). 아이콘은 실제 동작이 연결된 버튼이 아니라 Figma의 정적 시각
 // 요소이므로(API/데이터 조회 수정 금지 원칙상 새 인터랙션을 만들지 않음)
 // 순수 장식(button이 아닌 aria-hidden div)으로 구현했다.
+// [중대 정정 — 구조] 이전 구현은 배너(1068:24527)와 "The Best TOP 3"
+// 헤더(1068:24533)를 각각 독립 섹션으로 세로로 쌓았다(배너 아래 84px gap).
+// 이번에 상위 노드 1068:24526("Group 2121454081", 1346x1170)를 찾아내
+// 실제 구성이 전혀 다름을 확인했다 — 배너는 독립 섹션이 아니라 이 그룹의
+// **배경**이고, 헤더/카드가 그 위에 겹쳐 얹히는 오버레이 합성이다:
+//   Group 2121454081        (481,1476) 1346x1170  ← 실제 섹션 단위
+//     ├ Frame 2121457577    (492,1476) 1335x1170  offset( 11,   0) 배경 배너
+//     ├ Container(TOP 3)    (481,1523) 1346x 160  offset(  0,  47) 헤더 오버레이
+//     ├ Container(카드 캐러셀)(481,1829) 1346x 691  offset(  0, 353) ※ 미구현
+//     └ Component 5(중앙 큰 카드)(874,1829) 561x690 offset(393, 353) ※ 미구현
+// get_screenshot으로 그룹 전체를 렌더해 육안 확인까지 마쳤다. 즉 기존
+// 구현은 "1170px짜리 빈 사진 + 그 아래 텍스트"로 보였고, Figma는 "사진을
+// 배경으로 깔고 그 위에 헤더와 카드가 얹힌" 형태였다 — 사용자가 지적한
+// "Section 4가 Figma와 다르다"의 진짜 원인이 바로 이것이다.
+// 아래 % 값은 전부 그룹(1346x1170) 기준 실측 환산값이다.
 const galleryBannerSectionStyles = `
-  .cluster5-gallery {
+  .cluster5-showcase {
     position: relative;
     width: 100%;
-    max-width: 1335px;
+    max-width: 1346px;
     margin: 0 auto;
-    aspect-ratio: 1335 / 1170;
+    aspect-ratio: 1346 / 1170;
+    box-sizing: border-box;
+  }
+  .cluster5-gallery {
+    position: absolute;
+    left: 0.8172%; /* 11px / 1346px */
+    top: 0;
+    width: 99.1828%; /* 1335px / 1346px */
+    height: 100%;
     box-sizing: border-box;
     overflow: hidden;
   }
@@ -725,32 +748,64 @@ const galleryBannerSectionStyles = `
     background: rgba(0, 0, 0, 0.7);
   }
   .cluster5-gallery__actions {
+    /* [정정] 이전 구현은 이 컨테이너를 auto-width로 두고 자식(icon-btn)에
+       고정 px(22px, gap 5px)를 줬다 — .cluster5-gallery는 aspect-ratio로
+       모든 폭에서 비율대로 축소되는데, 아이콘만 고정 px라 실제 렌더
+       폭(예: 사이드바 있는 1920뷰포트=1236px, 스케일 92.58%)에서 Figma
+       대비 아이콘 뭉치가 더 크게 나오는 실측 버그가 있었다. get_screenshot로
+       Figma 노드를 브라우저와 동일 픽셀 크기(1236x1084)로 받아 sharp로
+       직접 픽셀 diff를 뜬 결과 아이콘 2개+gap의 bounding box가 Figma
+       45x20px 대비 브라우저 49x22px로 실측 9% 더 컸다(고정 22px/gap 5px가
+       스케일을 전혀 안 받았기 때문). 이제 이 컨테이너 자체를 Figma 실측
+       (get_metadata node 1068:24528, "Frame 2121457272") 크기인
+       49px/22px를 %로 박아 넣어(w=49/1335, h=22/1170) 자식 icon-btn이
+       그 안에서 다시 %로 스케일되게 했다 — 이렇게 하면 aspect-ratio
+       컨테이너가 줄어들 때 아이콘도 같은 비율로 함께 줄어든다. */
     position: absolute;
-    left: 92.96%; /* 1241px / 1335px */
-    top: 2.14%; /* 25px / 1170px */
+    left: 92.9588%; /* 1241px / 1335px */
+    top: 2.1368%; /* 25px / 1170px */
+    width: 3.6704%; /* 49px / 1335px — Figma "Frame 2121457272" 실측 폭 */
+    height: 1.8803%; /* 22px / 1170px — 위 프레임 실측 높이 */
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 10.2041%; /* 5px / 49px — actions 폭 기준 상대 gap */
   }
   .cluster5-gallery__icon-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
-    border-radius: 50px;
+    width: 44.898%; /* 22px / 49px(actions 폭) */
+    height: 100%; /* actions 높이(=22px 상당)를 그대로 채움 */
+    border-radius: 50%; /* 50px 고정 대신 %로 — 크기가 줄어도 항상 완전한 원 */
     background: var(--cluster5-accent, #faab07);
     backdrop-filter: blur(2.5px);
     -webkit-backdrop-filter: blur(2.5px);
     flex-shrink: 0;
   }
   .cluster5-gallery__icon-btn svg {
-    width: 16px;
-    height: 16px;
+    width: 72.7273%; /* 16px / 22px */
+    height: 72.7273%;
   }
-  /* 반응형 breakpoint 불필요 — aspect-ratio + % 기반 아이콘 좌표라 폭에
-     따라 전체가 비율 그대로 자연스럽게 축소된다(히어로/Keyword Map처럼
-     고정 px 텍스트 박스가 없어 별도 flow 전환이 필요 없음). */
+  /* 데스크톱은 aspect-ratio 컨테이너 + 위 %체인 덕분에 아이콘까지 포함해
+     전체가 비율 그대로 자연스럽게 축소된다. 다만 ≤1199.98px에서는 오버레이
+     헤더(고정 px 타이포)가 배너 위에서 넘칠 수 있어 아래에서 절대배치를
+     해제하고 배너→헤더 flow 순서로 전환한다(Figma에 모바일 스펙이 없어
+     "모바일은 자연스럽게 반응형" 원칙 적용 — 히어로/Keyword Map과 동일 기법). */
+  @media only screen and (max-width: 1199.98px) {
+    .cluster5-showcase {
+      aspect-ratio: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    .cluster5-gallery {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 1335 / 1170;
+    }
+  }
 `;
 
 // Figma 기준: 동일 파일, node 1068:24533("Container", 1346x160) — /cluster-5
@@ -789,12 +844,16 @@ const galleryBannerSectionStyles = `
 //     추가했다(Figma에 없는 방어적 추가, 모바일 자연 반응형 원칙).
 const top3SectionStyles = `
   .cluster5-top3 {
+    /* [정정] 독립 섹션이 아니라 .cluster5-showcase(=Figma Group 2121454081)
+       안에서 배너 위에 겹쳐지는 오버레이다. Figma offset (0, 47) 기준. */
+    position: absolute;
+    left: 0;
+    top: 4.0171%; /* 47px / 1170px */
+    z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
     width: 100%;
-    max-width: 1346px;
-    margin: 0 auto;
     padding: 0 15px;
     box-sizing: border-box;
     text-align: center;
@@ -848,6 +907,12 @@ const top3SectionStyles = `
   }
 
   @media only screen and (max-width: 1199.98px) {
+    /* 오버레이 해제 — 배너 아래 일반 흐름으로 내려온다(위 showcase 규칙과 짝) */
+    .cluster5-top3 {
+      position: relative;
+      top: auto;
+      margin-top: 48px;
+    }
     .cluster5-top3__title {
       font-size: 40px;
       line-height: 52px;
@@ -880,10 +945,10 @@ const sectionSpacingStyles = `
   .cluster5-stats {
     margin-top: 84px;
   }
-  .cluster5-gallery {
-    margin-top: 84px;
-  }
-  .cluster5-top3 {
+  /* 배너+헤더는 이제 하나의 합성 섹션(.cluster5-showcase)이므로 간격도 한 번만 준다.
+     이전의 .cluster5-gallery / .cluster5-top3 개별 margin-top은 두 요소가 독립
+     섹션이라는 잘못된 전제에서 나온 값이라 폐기. */
+  .cluster5-showcase {
     margin-top: 84px;
   }
   @media only screen and (max-width: 1199.98px) {
@@ -893,10 +958,7 @@ const sectionSpacingStyles = `
     .cluster5-stats {
       margin-top: 64px;
     }
-    .cluster5-gallery {
-      margin-top: 48px;
-    }
-    .cluster5-top3 {
+    .cluster5-showcase {
       margin-top: 48px;
     }
   }
@@ -1013,45 +1075,49 @@ const Cluster5Content = () => {
           ))}
         </section>
 
-        <section className="cluster5-gallery" style={orgVars} aria-label="포트폴리오 배너">
-          <div className="cluster5-gallery__bg" aria-hidden="true" />
-          <div className="cluster5-gallery__scrim" aria-hidden="true" />
-          <div className="cluster5-gallery__actions" aria-hidden="true">
-            <div className="cluster5-gallery__icon-btn">
-              <svg viewBox="0 0 11.6667 11.3907" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M5.83333 2.8907L0.5 8.22404V10.8907H11.1667M5.83333 2.8907L7.74575 0.978267L7.7469 0.977133C8.01016 0.713878 8.14202 0.582017 8.29402 0.532629C8.42792 0.489124 8.57216 0.489124 8.70605 0.532629C8.85795 0.581982 8.98966 0.713693 9.25254 0.976575L10.4124 2.13644C10.6764 2.40045 10.8085 2.53252 10.8579 2.68474C10.9014 2.81863 10.9014 2.96286 10.8579 3.09676C10.8085 3.24887 10.6766 3.38073 10.413 3.64437L10.4124 3.64493L8.49999 5.55736L3.16667 10.8907L0.5 10.8907M5.83333 2.8907L8.49999 5.55736"
-                  stroke="white"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
-            <div className="cluster5-gallery__icon-btn">
-              <svg viewBox="0 0 11 11" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M7.16667 7.16667L10.5 10.5M4.38889 8.27778C2.24112 8.27778 0.5 6.53666 0.5 4.38889C0.5 2.24112 2.24112 0.5 4.38889 0.5C6.53666 0.5 8.27778 2.24112 8.27778 4.38889C8.27778 6.53666 6.53666 8.27778 4.38889 8.27778Z"
-                  stroke="white"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+        {/* Figma Group 2121454081 — 배너를 배경으로 깔고 그 위에 헤더가 겹친다.
+            (카드 캐러셀 1068:24543 / 중앙 큰 카드 1068:24734 는 아직 미구현) */}
+        <section className="cluster5-showcase" style={orgVars} aria-label="베스트 평판 TOP 3">
+          <div className="cluster5-gallery" aria-hidden="true">
+            <div className="cluster5-gallery__bg" />
+            <div className="cluster5-gallery__scrim" />
+            <div className="cluster5-gallery__actions">
+              <div className="cluster5-gallery__icon-btn">
+                <svg viewBox="0 0 11.6667 11.3907" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path
+                    d="M5.83333 2.8907L0.5 8.22404V10.8907H11.1667M5.83333 2.8907L7.74575 0.978267L7.7469 0.977133C8.01016 0.713878 8.14202 0.582017 8.29402 0.532629C8.42792 0.489124 8.57216 0.489124 8.70605 0.532629C8.85795 0.581982 8.98966 0.713693 9.25254 0.976575L10.4124 2.13644C10.6764 2.40045 10.8085 2.53252 10.8579 2.68474C10.9014 2.81863 10.9014 2.96286 10.8579 3.09676C10.8085 3.24887 10.6766 3.38073 10.413 3.64437L10.4124 3.64493L8.49999 5.55736L3.16667 10.8907L0.5 10.8907M5.83333 2.8907L8.49999 5.55736"
+                    stroke="white"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
+              <div className="cluster5-gallery__icon-btn">
+                <svg viewBox="0 0 11 11" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path
+                    d="M7.16667 7.16667L10.5 10.5M4.38889 8.27778C2.24112 8.27778 0.5 6.53666 0.5 4.38889C0.5 2.24112 2.24112 0.5 4.38889 0.5C6.53666 0.5 8.27778 2.24112 8.27778 4.38889C8.27778 6.53666 6.53666 8.27778 4.38889 8.27778Z"
+                    stroke="white"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
             </div>
           </div>
-        </section>
 
-        <section className="cluster5-top3" aria-label="베스트 평판 TOP 3">
-          <h2 className="cluster5-top3__title">The Best TOP 3</h2>
-          <p className="cluster5-top3__subtitle">
-            누군가의 말 한마디는, 평생을 걸쳐 이룩해내는 원동력이 될 수 있습니다.
-            <br />
-            내가 받은 최고의 평판은 무엇인가요?
-            <br />
-            마음과 심장에 새겨진 평판을 골라보자구요! 😊
-          </p>
-          <div className="cluster5-top3__actions">
-            <div className="cluster5-top3__btn cluster5-top3__btn--primary">Discover more</div>
-            <div className="cluster5-top3__btn cluster5-top3__btn--secondary">All collections 3</div>
+          <div className="cluster5-top3">
+            <h2 className="cluster5-top3__title">The Best TOP 3</h2>
+            <p className="cluster5-top3__subtitle">
+              누군가의 말 한마디는, 평생을 걸쳐 이룩해내는 원동력이 될 수 있습니다.
+              <br />
+              내가 받은 최고의 평판은 무엇인가요?
+              <br />
+              마음과 심장에 새겨진 평판을 골라보자구요! 😊
+            </p>
+            <div className="cluster5-top3__actions">
+              <div className="cluster5-top3__btn cluster5-top3__btn--primary">Discover more</div>
+              <div className="cluster5-top3__btn cluster5-top3__btn--secondary">All collections 3</div>
+            </div>
           </div>
         </section>
       </div>
