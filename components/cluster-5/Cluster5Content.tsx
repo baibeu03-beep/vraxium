@@ -3037,6 +3037,1876 @@ const gmentionCardStyles = `
   }
 `;
 
+// =====================================================================
+// Section 7 — "Cluv_Manager Mention"
+//
+// Figma 기준: 동일 파일, node 1068:22436("Group 2121454082", 1335x1194.5,
+// 부모 Frame 633 = 1068:22048 기준 x=0 / y=5033) — 사용자가 지정한 selection.
+//
+// [조사 — selection 이 구현 대상 전체다]
+// 부모 Frame 633(1068:22048)의 자식을 전수 대조했다. 이번 그룹의 y구간
+// (5033~6227.5)에 걸치는 형제 프레임은 없다(Vector 15 = 1084:1817 이 y=6228
+// 로 그룹 바닥보다 0.5px 아래에 있을 뿐이고, 그룹 렌더에는 잡히지 않는다 —
+// 레퍼런스 PNG 마지막 12행을 accent 색으로 픽셀 스캔해 확인). Section 6 과
+// 동일하게 카드가 배너 프레임(1068:22437) 안에 들어있다.
+//
+// [조회 제약 — 명시]
+//   - get_metadata 는 1068:22437(배너 프레임)을 leaf 로 축약해 자식을 전혀
+//     반환하지 않는다. 내부 구조/좌표는 get_design_context + 레퍼런스 PNG
+//     픽셀 스캔(카드 x 38/468/898, y 286~776, 구분선 y=698)으로 확보했다.
+//   - Section 6(y 3788~5033)과 이번 섹션(y 5033~)은 같은 좌표계라 두 섹션
+//     사이 간격이 0px 임을 직접 확인했다(추정 아님).
+//
+// [레이어 / 구조] 그룹(1335x1194.5) 기준 상대좌표
+//   Frame 2121457572   (0,    0)    1335x1194.5  배경 배너(overflow clip)
+//     ├ 배경 이미지 — cover 가 아니라 (left 0.04%, top -102.37%,
+//     │   w 100%, h 223.52%) 로 잡힌 세로 크롭이다. % 기준이 전부 부모라
+//     │   absolute <img> 로 그대로 옮기면 컨테이너와 같이 스케일된다.
+//     ├ 스크림 2겹 — Section 5/6 과 다르다(좌측 페이드 없음):
+//     │   linear-gradient(180deg, #000 35.454%, transparent 49.979%) + 10% 검정
+//     ├ 헤더 블록      (112.5, 51)  1110 wide  (auto-layout, gap 50)
+//     └ 카드 행        (37.5, 286)  400x491 카드 3장, 가로 gap 30 (총 1260, 중앙)
+//   Frame 2121457272   (1241, 50)   49x22      수정/검색 아이콘 2개
+//
+// [Figma 가 앞 섹션과 의도적으로 다른 부분 — 통일하지 않는다]
+//   · 타이틀 42px (Section 6 은 36px). line-height 는 44 로 동일.
+//   · 카드가 세로 리스트가 아니라 가로 3열이고, 상하 스크롤 화살표가 없다.
+//   · 하단 accent 구분선이 그룹 안에 없다(Section 5/6 은 있었다).
+//   · 우상단 아이콘 y=50 (Section 6 은 25).
+//   · 스크림 조합이 다르다(위 참조).
+//
+// [재사용] 배너 컨테이너/스크림 레이어/헤더(눈썹·배지·타이틀·Type by·통계
+// pill·공유/더보기)/우상단 아이콘 버튼은 Figma 스펙이 Section 5/6 과 동일
+// (좌표 112.5/51/1110/gap 50, pill 76/13/10/12/6, 아이콘 22/16)해서 기존
+// .cluster5-mention__* 클래스를 그대로 재사용하고, 위에 적은 "실제로 다른
+// 것"만 이 블록에서 덮어쓴다. 아이콘 SVG 도 Figma export 를 파일 단위로 diff
+// 해 arrow/badge/badge-check/share/more/star 3종이 전부 동일함을 확인했으므로
+// 기존 컴포넌트를 재사용한다. 신규 SVG 는 카드 배지의 체크 1개뿐이다.
+//
+// [org 색상 정책 — 기존 SoT 그대로]
+//   #FAAB07 = marketing.themeColor → pill 숫자 / 우상단 아이콘 버튼 배경 /
+//             카드 본문 화살표 배지 → var(--cluster5-accent)
+//   #DDF247 / #1E1E1E / rgba(255,255,255,.2/.1) / #F7BA48 / #EBF748 /
+//   #8F00FF / #FC6C85 / #919191 → 고유값, 하드코딩 유지
+//
+// [스케일] Section 4~6 과 동일하게 container-type: inline-size + aspect-ratio,
+// 내부 치수 전량 cqw(px / 1335 * 100).
+//
+// [데이터] 순수 표현 계층. API/DTO/조회/권한/라우팅 무수정, 일반 /
+// mode=test / actAsTestUserId / demoUserId 가 완전히 동일한 DOM 을 탄다.
+const mmentionSectionStyles = `
+  .cluster5-mmention {
+    position: relative;
+    width: 100%;
+    max-width: 1335px;
+    margin: 0 auto;
+    aspect-ratio: 1335 / 1194.5;
+    box-sizing: border-box;
+    container-type: inline-size;
+    font-synthesis: none;
+  }
+  /* 배경은 cover 가 아니라 Figma 의 세로 크롭 좌표를 그대로 쓴다.
+     % 기준이 전부 부모 높이라 컨테이너가 줄면 같은 비율로 줄어든다. */
+  .cluster5-mmention__bgwrap {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
+  .cluster5-mmention__bgimg {
+    position: absolute;
+    left: 0.04%;
+    top: -102.37%;
+    width: 100%;
+    height: 223.52%;
+    max-width: none;
+    display: block;
+    object-fit: fill;
+  }
+  /* Figma 원본 2겹 그라디언트(Section 5/6 의 좌측 페이드가 여기엔 없다). */
+  .cluster5-mmention .cluster5-mention__scrim {
+    background:
+      linear-gradient(180deg, rgb(0, 0, 0) 35.454%, rgba(0, 0, 0, 0) 49.979%),
+      linear-gradient(90deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.1) 100%);
+  }
+  /* Figma 1068:22447 — 이 섹션만 타이틀이 42px 다(line-height 44 는 동일). */
+  .cluster5-mmention .cluster5-mention__title {
+    font-size: 3.1461cqw; /* 42px */
+  }
+  /* Figma 1068:22700 — (1241, 50) 49x22 */
+  .cluster5-mmention .cluster5-mention__actions {
+    left: 92.9588cqw; /* 1241px */
+    top: 3.7453cqw; /* 50px */
+    height: 1.6479cqw; /* 22px */
+  }
+
+  /* ---- 카드 행 (Figma 1068:22471 — top 286, gap 30, 좌우 중앙) ---- */
+  .cluster5-mmention__row {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: 21.4232cqw; /* 286px */
+    display: flex;
+    align-items: center;
+    gap: 2.2472cqw; /* 30px */
+    z-index: 2;
+  }
+
+  @media only screen and (max-width: 1199.98px) {
+    .cluster5-mmention {
+      aspect-ratio: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    .cluster5-mmention .cluster5-mention__title { font-size: 30px; }
+    .cluster5-mmention__row {
+      position: relative;
+      left: auto;
+      top: auto;
+      transform: none;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: stretch;
+      gap: 20px;
+      width: 100%;
+      margin: 32px auto 0;
+      padding: 0 16px;
+      box-sizing: border-box;
+    }
+  }
+  @media only screen and (max-width: 767.98px) {
+    .cluster5-mmention .cluster5-mention__title { font-size: 22px; }
+    .cluster5-mmention__row { gap: 16px; }
+  }
+`;
+
+// Figma 카드 1장 = Component 15/21/22 (400x491, bg #1E1E1E, radius 20).
+//   Container(이미지)  (10, 10)  380x235  radius 15, overflow clip
+//     └ 날짜칩 + 체크칩 오버레이 (9, 11) gap 4
+//   텍스트 블록        (19.5, 260) w 353  flex-col gap 8
+//     ├ 제목 "클러빙 평판(M)"  Pretendard EB 18/25
+//     ├ 본문 w349 Pretendard Medium 14/25 + 화살표 배지 (53, 29) 15x15
+//     └ 프로필 행 h50 (아바타 50 + 식별 2행)
+//   구분선            (10, 412) h1 rgba(255,255,255,.1)
+//   하단 블록          (19.5, 428) w 351 flex-col gap 8
+//     ├ 해시태그 3개 gap 5
+//     └ 별점 + 6/10  ↔  명성도 + 다이아 + 35 FM (justify-between)
+//
+// [Section 5/6 카드와 다른 점 — 통일하지 않는다]
+//   · "6 / 10" 이 Rajdhani 가 아니라 Pretendard Regular 다.
+//   · 명성도 표기가 칩이 아니라 "명성도 ◇ 35 FM" 텍스트 행이다.
+//   · 이미지가 카드 상단 전체를 차지하고 날짜/체크가 그 위에 얹힌다.
+const mmentionCardStyles = `
+  .c5mmcard {
+    position: relative;
+    flex-shrink: 0;
+    width: 29.9625cqw; /* 400px */
+    height: 36.779cqw; /* 491px */
+    background: #1e1e1e;
+    border-radius: 1.4981cqw; /* 20px */
+  }
+
+  /* 상단 이미지 + 오버레이 */
+  .c5mmcard__media {
+    position: absolute;
+    left: 0.7491cqw; /* 10px */
+    right: 0.7491cqw;
+    top: 0.7491cqw;
+    height: 17.603cqw; /* 235px */
+    border-radius: 1.1236cqw; /* 15px */
+    overflow: hidden;
+  }
+  .c5mmcard__media img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .c5mmcard__badges {
+    position: absolute;
+    left: 0.6742cqw; /* 9px */
+    top: 0.824cqw; /* 11px */
+    display: flex;
+    align-items: center;
+    gap: 0.2996cqw; /* 4px */
+  }
+  .c5mmcard__date {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.6367cqw 0.7491cqw; /* 8.5 / 10 */
+    box-sizing: border-box;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(1px);
+    -webkit-backdrop-filter: blur(1px);
+    color: var(--white, #ffffff);
+    font-family: "Pretendard", sans-serif;
+    font-weight: 700;
+    font-size: 0.8989cqw; /* 12px */
+    line-height: 0.6742cqw; /* 9px */
+    white-space: nowrap;
+  }
+  .c5mmcard__check {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.947cqw; /* 26px */
+    height: 1.947cqw;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(1px);
+    -webkit-backdrop-filter: blur(1px);
+    flex-shrink: 0;
+  }
+  .c5mmcard__check svg {
+    display: block;
+    width: 1.1031cqw; /* 14.727px */
+    height: 0.7854cqw; /* 10.4853px */
+  }
+
+  /* 텍스트 블록 */
+  .c5mmcard__text {
+    position: absolute;
+    left: 1.4607cqw; /* 19.5px */
+    top: 19.4757cqw; /* 260px */
+    width: 26.4419cqw; /* 353px */
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5993cqw; /* 8px */
+  }
+  .c5mmcard__title {
+    margin: 0;
+    padding: 0 0.1498cqw; /* px-2 */
+    width: 100%;
+    font-family: "Pretendard", sans-serif;
+    font-weight: 800;
+    font-size: 1.3483cqw; /* 18px */
+    line-height: 1.8727cqw; /* 25px */
+    color: var(--white, #ffffff);
+    white-space: nowrap;
+  }
+  .c5mmcard__desc-wrap {
+    position: relative;
+    width: 100%;
+    padding: 0 0.1498cqw;
+    box-sizing: border-box;
+  }
+  .c5mmcard__desc {
+    margin: 0;
+    width: 26.1423cqw; /* 349px */
+    font-family: "Pretendard", sans-serif;
+    font-weight: 500;
+    font-size: 1.0487cqw; /* 14px */
+    line-height: 1.8727cqw; /* 25px */
+    color: var(--white, #ffffff);
+    /* 전역 _typography.scss 의 p{word-break:keep-all; line-break:strict;
+       hyphens:auto; text-wrap:pretty} 를 이 클래스에서만 원복한다 —
+       Figma 는 어절 중간에서도 끊는다. */
+    word-break: normal;
+    line-break: auto;
+    hyphens: none;
+    text-wrap: wrap;
+    /* Figma 는 2줄 고정. 폴백 폰트가 넓어도 3줄로 번지지 않게 자른다. */
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .c5mmcard__go {
+    position: absolute;
+    /* Figma 의 left:53 은 px-2 가 걸린 행(1068:22489) 기준이고, absolute 자식의
+       left 는 padding box 가 아니라 border box 에서 잰다 → 2px 을 더해야
+       레퍼런스 PNG 실측 위치(카드 기준 x=74.5)와 맞는다. */
+    left: 4.1199cqw; /* 2 + 53 = 55px */
+    top: 2.1723cqw; /* 29px */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.1236cqw; /* 15px */
+    height: 1.1236cqw;
+    border-radius: 0.3745cqw; /* 5px */
+    background: var(--cluster5-accent, #faab07);
+  }
+  .c5mmcard__go svg {
+    display: block;
+    width: 0.7491cqw; /* 10px */
+    height: 0.7491cqw;
+    /* 반전 없이 그리면 화살표가 ↘ 로 렌더된다(Figma 는 ↗). */
+    transform: scaleY(-1);
+  }
+
+  /* 프로필 (Section 6 .c5gcard 와 동일 스펙이지만 카드 폭이 달라 별도 클래스) */
+  .c5mmcard__profile {
+    display: flex;
+    align-items: center;
+    gap: 0.7491cqw; /* 10px */
+    width: 100%;
+    height: 3.7453cqw; /* 50px */
+  }
+  .c5mmcard__avatar {
+    display: block;
+    flex-shrink: 0;
+    width: 3.7453cqw; /* 50px */
+    height: 3.7453cqw;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+  .c5mmcard__ident {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2247cqw; /* 3px */
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .c5mmcard__idrow {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.2247cqw; /* 3px */
+    margin: 0;
+    /* <p> 라 전역 p{...} 가 부모 상속을 이긴다 — 클래스에서 직접 지정. */
+    font-family: "Pretendard", sans-serif;
+    font-weight: 400;
+    font-size: 0.8989cqw; /* 12px */
+    line-height: 1.4232cqw; /* 19px */
+    color: var(--white, #ffffff);
+    white-space: nowrap;
+  }
+  .c5mmcard__b { font-weight: 700; }
+  .c5mmcard__m { font-weight: 500; }
+  .c5mmcard__r { font-weight: 400; }
+  .c5mmcard__sep { font-weight: 400; font-size: 1.0487cqw; /* 구분자만 14px */ }
+
+  /* 구분선 */
+  .c5mmcard__divider {
+    position: absolute;
+    left: 0.7491cqw; /* 10px */
+    right: 0.7491cqw;
+    top: 30.8614cqw; /* 412px */
+    height: 0.0749cqw; /* 1px */
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  /* 하단 블록 */
+  .c5mmcard__bottom {
+    position: absolute;
+    left: 1.4607cqw; /* 19.5px */
+    top: 32.0599cqw; /* 428px */
+    width: 26.2921cqw; /* 351px */
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5993cqw; /* 8px */
+  }
+  .c5mmcard__tags {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.3745cqw; /* 5px */
+  }
+  .c5mmcard__tag {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.2996cqw 0.5393cqw; /* 4 / 7.2 */
+    box-sizing: border-box;
+    border-radius: 0.2996cqw; /* 4px */
+    font-family: "Pretendard", sans-serif;
+    font-weight: 500;
+    font-size: 0.7491cqw; /* 10px */
+    line-height: 0.7491cqw;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .c5mmcard__tag--lime { background: rgba(235, 247, 72, 0.1); color: #ebf748; }
+  .c5mmcard__tag--pink { background: rgba(252, 108, 133, 0.1); color: #fc6c85; }
+  .c5mmcard__tag--purple { background: rgba(143, 0, 255, 0.1); color: #8f00ff; }
+
+  .c5mmcard__meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+  .c5mmcard__rate {
+    display: flex;
+    align-items: center;
+    gap: 0.7491cqw; /* 10px */
+  }
+  .c5mmcard__starset {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.2996cqw; /* 4px */
+  }
+  .c5mmcard__starset .c5card__star {
+    width: 0.952cqw; /* 12.71px */
+    height: 1.3483cqw; /* 18px */
+    /* Figma export path 는 상하 반전 좌표계다(Section 5/6 과 동일). */
+    transform: scaleY(-1);
+  }
+  .c5mmcard__score {
+    padding-left: 0.2996cqw; /* 4px */
+    font-family: "Pretendard", sans-serif;
+    font-weight: 400;
+    font-size: 0.8989cqw; /* 12px */
+    line-height: 1.3483cqw; /* 18px */
+    color: rgba(255, 255, 255, 0.9);
+    white-space: nowrap;
+  }
+  .c5mmcard__fm {
+    display: flex;
+    align-items: center;
+    gap: 0.3745cqw; /* 5px */
+    /* Figma 는 104px 고정(31 + 5 + 67)이지만, Pretendard 가 실제로 로드되지
+       않는 현재 전역 상태에서는 폴백(Malgun Gothic)의 "명성도" 가 31px 을 넘겨
+       다이아 아이콘 위로 겹친다. auto 로 두면 Pretendard 가 로드될 때는 동일한
+       104px 이 되고(30+5+67), 폴백에서도 겹치지 않는다. 이 블록은 부모가
+       justify-content: space-between 이라 어느 쪽이든 우측 끝 정렬은 같다. */
+    width: auto;
+  }
+  .c5mmcard__fm-label {
+    flex-shrink: 0;
+    font-family: "Pretendard", sans-serif;
+    font-weight: 400;
+    font-size: 0.8989cqw; /* 12px */
+    line-height: 1.4232cqw; /* 19px */
+    color: rgba(255, 255, 255, 0.8);
+    white-space: nowrap;
+  }
+  .c5mmcard__fm-value {
+    position: relative;
+    width: 5.0187cqw; /* 67px */
+    height: 1.6479cqw; /* 22px */
+    flex-shrink: 0;
+  }
+  .c5mmcard__fm-value svg {
+    position: absolute;
+    left: 0;
+    top: 0.1498cqw; /* 2px */
+    display: block;
+    width: 0.735cqw; /* 9.8125px */
+    height: 1.1985cqw; /* 16px */
+    transform: scaleY(-1); /* Figma export 좌표계 상하 반전 */
+  }
+  .c5mmcard__fm-num {
+    position: absolute;
+    left: 1.4981cqw; /* 20px */
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: "Pretendard", sans-serif;
+    font-weight: 800;
+    font-size: 1.1985cqw; /* 16px */
+    line-height: 1.6479cqw; /* 22px */
+    color: var(--white, #ffffff);
+    white-space: nowrap;
+  }
+
+  /* ---- ≤1199.98px: 카드 내부 절대배치 해제 → 세로 flow ---- */
+  @media only screen and (max-width: 1199.98px) {
+    .c5mmcard {
+      width: 100%;
+      max-width: 400px;
+      height: auto;
+      display: flex;
+      flex-direction: column;
+      padding: 10px 10px 16px;
+      box-sizing: border-box;
+      border-radius: 20px;
+    }
+    .c5mmcard__media {
+      position: relative;
+      left: auto;
+      right: auto;
+      top: auto;
+      width: 100%;
+      height: 220px;
+      border-radius: 15px;
+    }
+    .c5mmcard__badges { left: 9px; top: 11px; gap: 4px; }
+    .c5mmcard__date { padding: 8px 10px; font-size: 12px; line-height: 12px; }
+    .c5mmcard__check { width: 26px; height: 26px; }
+    .c5mmcard__check svg { width: 14.7px; height: 10.5px; }
+    .c5mmcard__text {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: 100%;
+      margin-top: 14px;
+      padding: 0 9.5px;
+      box-sizing: border-box;
+      gap: 8px;
+    }
+    .c5mmcard__title { font-size: 17px; line-height: 24px; }
+    .c5mmcard__desc { width: 100%; font-size: 13px; line-height: 22px; -webkit-line-clamp: 3; }
+    .c5mmcard__go {
+      position: relative;
+      left: auto;
+      top: auto;
+      align-self: flex-end;
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+    }
+    .c5mmcard__desc-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+    }
+    .c5mmcard__go svg { width: 10px; height: 10px; }
+    .c5mmcard__profile { height: auto; gap: 10px; }
+    .c5mmcard__avatar { width: 44px; height: 44px; }
+    .c5mmcard__idrow {
+      gap: 4px;
+      font-size: 12px;
+      line-height: 18px;
+      flex-wrap: wrap;
+      white-space: normal;
+    }
+    .c5mmcard__sep { font-size: 13px; }
+    .c5mmcard__divider {
+      position: relative;
+      left: auto;
+      right: auto;
+      top: auto;
+      width: 100%;
+      height: 1px;
+      margin-top: 14px;
+    }
+    .c5mmcard__bottom {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: 100%;
+      margin-top: 14px;
+      padding: 0 9.5px;
+      box-sizing: border-box;
+      gap: 10px;
+    }
+    .c5mmcard__tags { gap: 5px; flex-wrap: wrap; }
+    .c5mmcard__tag { padding: 4px 8px; border-radius: 4px; font-size: 11px; line-height: 13px; }
+    .c5mmcard__meta { gap: 10px; flex-wrap: wrap; }
+    .c5mmcard__rate { gap: 10px; }
+    .c5mmcard__starset { gap: 4px; }
+    .c5mmcard__starset .c5card__star { width: 13px; height: 18px; }
+    .c5mmcard__score { padding-left: 4px; font-size: 12px; line-height: 18px; }
+    .c5mmcard__fm { width: auto; gap: 5px; }
+    .c5mmcard__fm-label { width: auto; font-size: 12px; line-height: 19px; }
+    .c5mmcard__fm-value { width: 67px; height: 22px; }
+    .c5mmcard__fm-value svg { top: 2px; width: 9.8px; height: 16px; }
+    .c5mmcard__fm-num { left: 20px; font-size: 16px; line-height: 22px; }
+  }
+`;
+
+// =====================================================================
+// Section 8 — "Season_Mention"
+//
+// Figma 기준: 동일 파일, node 1068:22981("Frame 2121457679", 1263x1526,
+// 부모 Frame 633 = 1068:22048 기준 x=36 / y=6278) — 사용자가 지정한 selection.
+//
+// [조사 — selection 이 구현 대상 전체가 아니었다]
+// 부모 Frame 633 의 자식을 전수 대조한 결과, 이 프레임의 y 구간을 감싸는
+// 형제 노드가 둘 더 있었다:
+//   1084:1817 "Vector 15"        (84, 6228) 1168x2  ← 섹션 상단 accent 구분선
+//   1068:24516 "Frame 2121457272"(1262, 6281) 49x22 ← 수정/검색 아이콘
+// (하단 1084:1818 "Vector 16" 은 y=7804 = 프레임 바닥이지만, Section 7 이
+//  자기 하단 구분선을 그리지 않았던 것과 같은 이유로 다음 섹션의 상단 경계로
+//  넘긴다. 즉 이번 섹션은 "상단 구분선"만 그린다 — 구분선을 두 번 그리지 않는다.)
+//
+// [조회 제약 — 명시]
+//   - get_design_context 를 selection 전체에 걸면 출력이 토큰 한도를 넘어
+//     React 코드 대신 메타데이터만 돌아온다. 헤더(1068:22983) / 시즌 헤더바
+//     (1068:23018) / 이미지(1068:23029) / 카드(1068:23099) / 화살표(1068:23035) /
+//     "2/5"(1068:23281) / 페이지네이션(1068:23550) 을 각각 따로 조회해 스타일을
+//     확보했다. 패널 본문의 배경/보더는 어느 조회에도 나오지 않아 레퍼런스 PNG
+//     픽셀 스캔으로 확정했다: bg #141A23, border 1px rgba(80,93,106,.7).
+//
+// [Figma 가 앞 섹션과 의도적으로 다른 부분 — 통일하지 않는다]
+//   · 배경 배너가 없다. 페이지 배경(#0C0F14) 위에 바로 놓인다.
+//   · 프레임 폭이 1263 이다(1335 아님). 좌우 36px 인셋.
+//   · 헤더가 절대배치가 아니라 프레임 상단에 붙고, 폭 1155 / x=54(페이지 90).
+//   · 통계 pill 이 4개다(4번째 = 시즌 뱃지).
+//   · 시즌 헤더바 배경이 accent(#FAAB07) 이고 그 위 텍스트가 검정이다.
+//   · 카드가 2x2 그리드 + 좌/우 원형 화살표 + "n/5" 카운터 구조다.
+//   · 하단에 1—2 3 4 5 페이지네이션이 있다.
+//
+// [레이어 / 구조] 섹션 루트(1335 기준, y 는 구분선 상단 = 0) 좌표
+//   Vector 15        (84,   0)    1168x2      accent 구분선
+//   Frame 2121457679 (36,   51)   1263x1526   콘텐츠 프레임(배경 없음)
+//     ├ 헤더        (90,   51)    1155x195    auto-layout gap 50
+//     ├ 시즌 패널   (36,   276)   1263x584    + (36, 880) 1263x588  (gap 20)
+//     │    ├ 헤더바 1263x64  bg accent / radius-t 20 / border-l,r,t
+//     │    └ 본문   1263x520 bg #141A23 / border / radius-b 20
+//     │         ├ 이미지 (28,28) 361x464 radius 12 + 우상단 chamfer(75%/25%)
+//     │         └ 우측블록 (409,28) 842x462
+//     │              ← 화살표(38,250) 38x38 / 그리드(48,0) 746x462 / → (804,250)
+//     │              그리드 = 363x221 카드 4장, 가로·세로 gap 20
+//     └ 페이지네이션 (578.56, 1507) 177.87x16
+//   Frame 2121457272 (1262, 54)   49x22       수정/검색 아이콘
+//
+// [재사용] 눈썹/인증배지/타이틀/Type by/통계 pill/공유·더보기·아이콘 버튼은
+// px 스펙이 Section 5~7 과 동일하고, 이 섹션의 cqw 기준 컨테이너도 같은
+// 1335 이므로(프레임 1263 은 그 안의 94.6% 폭일 뿐, px 는 그대로다)
+// .cluster5-mention__* 클래스를 그대로 재사용하고 헤더의 left/width/타이틀
+// 크기만 덮어쓴다. 아이콘 SVG 도 파일 단위 diff 로 화살표/배지/별 3종이
+// 기존과 동일함을 확인해 재사용한다. 신규 SVG 는 4개뿐이다:
+// 시즌 네비 화살표(30.5x30.5, 기존 29.75 와 다른 변형) / 시계 / 폴더 / 세로 구분선.
+//
+// [org 색상 정책 — 기존 SoT 그대로]
+//   #FAAB07 = marketing.themeColor → 시즌 헤더바 배경 / 네비 화살표 stroke /
+//             pill 숫자 / 카드 화살표 배지 / 상단 구분선 → var(--cluster5-accent)
+//   #DDF247 / #141A23 / rgba(80,93,106,.7) / #222 / #868686 / #767676 /
+//   #F7BA48 / #EBF748 / #AAA → 고유값, 하드코딩 유지
+//
+// [데이터] 순수 표현 계층. API/DTO/조회/권한/라우팅 무수정.
+const seasonSectionStyles = `
+  .cluster5-season {
+    position: relative;
+    width: 100%;
+    max-width: 1335px;
+    margin: 0 auto;
+    /* 구분선 2 + 간격 49 + 프레임 1526 = 1577 */
+    aspect-ratio: 1335 / 1577;
+    box-sizing: border-box;
+    container-type: inline-size;
+    font-synthesis: none;
+  }
+  /* Figma 1084:1817 — 섹션 상단 경계의 accent 구분선 */
+  .cluster5-season__rule {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    transform: translateX(-50%);
+    width: 87.4906cqw; /* 1168px */
+    height: 0.1498cqw; /* 2px */
+    background: var(--cluster5-accent, #faab07);
+  }
+
+  /* ---- 헤더 — .cluster5-mention__* 재사용, 위치/폭/타이틀 크기만 덮어씀 ---- */
+  .cluster5-season .cluster5-mention__header {
+    left: 6.7416cqw; /* 페이지 x=90 (프레임 36 + 54) */
+    top: 3.8202cqw; /* 51px */
+    width: 86.5169cqw; /* 1155px */
+  }
+  .cluster5-season .cluster5-mention__title {
+    font-size: 3.1461cqw; /* 42px */
+  }
+  /* Figma 1068:24516 — (1262, 54) 49x22 */
+  .cluster5-season .cluster5-mention__actions {
+    left: 94.532cqw; /* 1262px */
+    top: 4.0449cqw; /* 54px */
+    height: 1.6479cqw; /* 22px */
+  }
+  /* 4번째 pill: "5"(Black Ops One 25) + " "(18) + "시즌"(Pretendard Medium 18) */
+  .cluster5-mention__pill-season { line-height: 1.4232cqw; /* 19px */ }
+  .cluster5-mention__pill-season .cluster5-mention__pill-num { font-size: 1.8727cqw; /* 25px */ }
+  .cluster5-mention__pill-unit {
+    font-family: "Pretendard", sans-serif;
+    font-weight: 500;
+  }
+
+  /* ---- 시즌 패널 ---- */
+  .cluster5-season__panels {
+    position: absolute;
+    left: 2.6966cqw; /* 36px */
+    top: 20.6742cqw; /* 276px */
+    width: 94.6067cqw; /* 1263px */
+    display: flex;
+    flex-direction: column;
+    gap: 1.4981cqw; /* 20px */
+  }
+  .cluster5-season__panel {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+  .cluster5-season__bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    height: 4.7940cqw; /* 64px */
+    /* Figma 의 내부 x=30 은 border-box(1263) 기준인데 CSS 는 보더 안쪽부터
+       padding 을 재므로, 보더 1px 을 뺀 29px 을 줘야 실측이 맞는다. */
+    padding: 1.0487cqw 2.1723cqw; /* 14 / 30 - 1 = 29 */
+    box-sizing: border-box;
+    background: var(--cluster5-accent, #faab07);
+    border: 0.0749cqw solid rgba(80, 93, 106, 0.7);
+    border-bottom: 0;
+    border-radius: 1.4981cqw 1.4981cqw 0 0; /* 20px */
+  }
+  .cluster5-season__bar-left {
+    display: flex;
+    align-items: center;
+    gap: 1.4981cqw; /* 20px */
+  }
+  .cluster5-season__bar-title {
+    font-family: "Pretendard", sans-serif;
+    font-weight: 600;
+    font-size: 1.7978cqw; /* 24px */
+    line-height: 2.6966cqw; /* 36px */
+    color: var(--black, #000000);
+    white-space: nowrap;
+  }
+  .cluster5-season__bar-range,
+  .cluster5-season__bar-count {
+    font-family: "Pretendard", sans-serif;
+    font-weight: 600;
+    font-size: 1.3483cqw; /* 18px */
+    line-height: 2.6966cqw; /* 36px */
+    color: var(--black, #000000);
+    /* nowrap 이 아니라 pre — "3 " 뒤 공백이 span 경계에서 접혀 "3comment" 로
+       붙어 렌더되던 것을 실측으로 확인(Section 5 pill 과 동일 함정). */
+    white-space: pre;
+  }
+  .cluster5-season__bar-strong { font-weight: 800; }
+  .cluster5-season__bar-sep {
+    display: block;
+    flex-shrink: 0;
+    width: 0.0749cqw; /* 1px */
+    height: 1.4981cqw; /* 20px */
+    background: #767676;
+  }
+  .cluster5-season__verified {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.4494cqw; /* 아이콘(16) 과 텍스트 사이 = Figma Margin pl-22 - 16 = 6px */
+    padding-right: 1.0487cqw; /* 14px */
+    font-family: "Pretendard", sans-serif;
+    font-weight: 500;
+    font-size: 1.3483cqw; /* 18px */
+    line-height: 1.1985cqw; /* 16px */
+    color: var(--white, #ffffff);
+    white-space: nowrap;
+  }
+  .cluster5-season__verified svg {
+    display: block;
+    flex-shrink: 0;
+    width: 1.1985cqw; /* 16px */
+    height: 1.1985cqw;
+    /* Figma export 좌표계 상하 반전(별/하트/화살표와 동일 세트) */
+    transform: scaleY(-1);
+  }
+
+  .cluster5-season__body {
+    position: relative;
+    width: 100%;
+    height: 38.9513cqw; /* 520px */
+    box-sizing: border-box;
+    background: #141a23;
+    border: 0.0749cqw solid rgba(80, 93, 106, 0.7);
+    border-top: 0;
+    border-radius: 0 0 1.4981cqw 1.4981cqw; /* 20px */
+  }
+  .cluster5-season__photo {
+    position: absolute;
+    /* Figma 의 x=28 은 border-box(1263) 기준이지만 CSS absolute 는 padding
+       box(= 좌측 보더 1px 안쪽)에서 재므로 1px 을 빼야 실측이 맞는다.
+       세로는 본문에 상단 보더가 없어(border-top:0) 보정이 필요 없다. */
+    left: 2.0225cqw; /* 28 - 1 = 27px */
+    top: 2.0974cqw; /* 28px */
+    width: 27.0412cqw; /* 361px */
+    height: 34.7566cqw; /* 464px */
+    border-radius: 0.8989cqw; /* 12px */
+    overflow: hidden;
+  }
+  .cluster5-season__photo-inner {
+    width: 100%;
+    height: 100%;
+    /* Figma mask(1068:23033): M0 0 H270.75 L361 116 V464 H0 Z
+       → 우상단 chamfer 270.75/361 = 75%, 116/464 = 25% */
+    clip-path: polygon(0 0, 75% 0, 100% 25%, 100% 100%, 0 100%);
+    background: var(--black, #000000);
+  }
+  .cluster5-season__photo img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .cluster5-season__deck {
+    position: absolute;
+    left: 30.5618cqw; /* 409 - 1 = 408px (좌측 보더 보정, 위 주석 참조) */
+    top: 2.0974cqw; /* 28px */
+    width: 63.0712cqw; /* 842px */
+    height: 34.6067cqw; /* 462px */
+  }
+  .cluster5-season__nav {
+    position: absolute;
+    /* [실측] get_metadata 가 보고하는 화살표 인스턴스 좌표(38, 250)는 회전된
+       노드의 변환 원점이라 실제 렌더 위치와 다르다. 레퍼런스 PNG 를 accent
+       색으로 픽셀 스캔하니 두 화살표 모두 박스가 deck 기준 y=212 이고,
+       x 는 각각 0 / 804 였다(그 아래 y=252 의 "n/5" 카운터와도 앞뒤가 맞는다).
+       좌표를 그대로 믿었다면 좌측 화살표가 카드 그리드(deck x 48~794) 밑에
+       깔려 보이지 않았다 — 실제로 첫 구현에서 그렇게 렌더됐다. */
+    top: 15.8801cqw; /* 212px */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.8464cqw; /* 38px */
+    height: 2.8464cqw;
+  }
+  .cluster5-season__nav--prev { left: 0; }
+  .cluster5-season__nav--next { left: 60.2247cqw; /* 804px */ }
+  .cluster5-season__nav svg {
+    display: block;
+    width: 2.2846cqw; /* 30.5px */
+    height: 2.2846cqw;
+  }
+  /* Arrow_Circle_Down 을 좌/우로 돌린다 */
+  .cluster5-season__nav--prev svg { transform: rotate(90deg); }
+  .cluster5-season__nav--next svg { transform: rotate(-90deg); }
+  .cluster5-season__counter {
+    position: absolute;
+    left: 60.8240cqw; /* 812px */
+    top: 18.8764cqw; /* 252px */
+    width: 1.6479cqw; /* 22px */
+    font-family: "Pretendard", sans-serif;
+    font-weight: 500;
+    font-size: 1.0487cqw; /* 14px */
+    line-height: 1.1985cqw; /* 16px */
+    color: #aaaaaa;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .cluster5-season__counter-cur { color: var(--white, #ffffff); }
+  .cluster5-season__grid {
+    position: absolute;
+    left: 3.5955cqw; /* 48px */
+    top: 0;
+    width: 55.8801cqw; /* 746px */
+    display: grid;
+    grid-template-columns: repeat(2, 27.191cqw); /* 363px */
+    gap: 1.4981cqw; /* 20px */
+  }
+
+  /* ---- 페이지네이션 (Figma 1068:23550) ---- */
+  .cluster5-season__pager {
+    position: absolute;
+    left: 43.3378cqw; /* 578.5635px */
+    top: 112.8839cqw; /* 1507px */
+    display: flex;
+    align-items: center;
+    gap: 1.4981cqw; /* 20px */
+    font-family: "Manrope", "Pretendard", sans-serif;
+    font-weight: 800;
+    font-size: 1.1985cqw; /* 16px */
+    line-height: 1.1985cqw;
+    color: var(--white, #ffffff);
+  }
+  /* 전역 스타일시트에 span{line-height:26px} 이 있어 상속을 이긴다 —
+     페이지네이션 숫자가 16px 이 아니라 26px 높이로 잡히던 것을 실측으로 확인. */
+  .cluster5-season__pager > span { line-height: 1.1985cqw; /* 16px */ }
+  .cluster5-season__pager-cur { color: #ddf247; }
+  .cluster5-season__pager-bar {
+    display: block;
+    width: 2.2472cqw; /* 30px */
+    height: 0.0749cqw; /* 1px */
+    background: #ddf247;
+  }
+
+  /* ---- ≤1199.98px: 절대배치 해제 → flow ---- */
+  @media only screen and (max-width: 1199.98px) {
+    .cluster5-season {
+      aspect-ratio: auto;
+      display: flex;
+      flex-direction: column;
+      padding: 0 16px 8px;
+      box-sizing: border-box;
+    }
+    .cluster5-season__rule {
+      position: relative;
+      left: auto;
+      top: auto;
+      transform: none;
+      width: 100%;
+      max-width: 1168px;
+      height: 2px;
+      margin: 0 auto;
+    }
+    .cluster5-season .cluster5-mention__header {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: 100%;
+      align-items: center;
+      gap: 24px;
+      padding: 28px 0 0;
+    }
+    .cluster5-season .cluster5-mention__title { font-size: 30px; }
+    .cluster5-mention__pill-season { line-height: 22px; }
+    .cluster5-mention__pill-season .cluster5-mention__pill-num { font-size: 20px; }
+    .cluster5-season__panels {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: 100%;
+      margin-top: 32px;
+      gap: 24px;
+    }
+    .cluster5-season__bar {
+      height: auto;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      padding: 12px 18px;
+      border-width: 1px;
+      border-bottom: 0;
+      border-radius: 16px 16px 0 0;
+    }
+    .cluster5-season__bar-left { flex-wrap: wrap; gap: 10px; }
+    .cluster5-season__bar-title { font-size: 18px; line-height: 26px; }
+    .cluster5-season__bar-range,
+    .cluster5-season__bar-count { font-size: 14px; line-height: 26px; }
+    .cluster5-season__bar-sep { width: 1px; height: 16px; }
+    .cluster5-season__verified { font-size: 14px; line-height: 16px; gap: 6px; padding-right: 0; }
+    .cluster5-season__verified svg { width: 16px; height: 16px; }
+    .cluster5-season__body {
+      height: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 16px;
+      border-width: 1px;
+      border-top: 0;
+      border-radius: 0 0 16px 16px;
+    }
+    .cluster5-season__photo {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: 100%;
+      height: 260px;
+      border-radius: 12px;
+    }
+    .cluster5-season__deck {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: 100%;
+      height: auto;
+      padding: 0 46px;
+      box-sizing: border-box;
+    }
+    .cluster5-season__nav { top: 50%; margin-top: -19px; width: 38px; height: 38px; }
+    .cluster5-season__nav--prev { left: 0; }
+    .cluster5-season__nav--next { left: auto; right: 0; }
+    .cluster5-season__nav svg { width: 30.5px; height: 30.5px; }
+    .cluster5-season__counter {
+      position: absolute;
+      left: auto;
+      right: 4px;
+      top: 50%;
+      margin-top: 20px;
+      width: 22px;
+      font-size: 14px;
+      line-height: 16px;
+    }
+    .cluster5-season__grid {
+      position: relative;
+      left: auto;
+      width: 100%;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .cluster5-season__pager {
+      position: relative;
+      left: auto;
+      top: auto;
+      justify-content: center;
+      margin: 28px auto 0;
+      gap: 20px;
+      font-size: 16px;
+      line-height: 16px;
+    }
+    .cluster5-season__pager > span { line-height: 16px; }
+    .cluster5-season__pager-bar { width: 30px; height: 1px; }
+  }
+
+  @media only screen and (max-width: 767.98px) {
+    .cluster5-season .cluster5-mention__title { font-size: 22px; }
+    .cluster5-season__grid { grid-template-columns: minmax(0, 1fr); }
+    .cluster5-season__deck { padding: 0 42px; }
+    .cluster5-season__photo { height: 200px; }
+  }
+`;
+
+// Figma 카드 1장 = 1068:23099 계열 (363x221, bg #222, border 1px #868686,
+// radius 20, drop-shadow 0 0 10px rgba(255,255,255,.5), padding 20, gap 10).
+//   Container(323x118) gap 10
+//     ├ 메타행: [폴더 + "명성도    123 FM"(#DDF247)] [시계 + 날짜(white, opacity .6)]
+//     ├ Heading5 h27 pb8  "시즈닝 평판" Pretendard EB 20/27
+//     ├ Heading6 h27 pb8  본문 14/27 + 화살표 배지 (218.97, 6) 15x15
+//     ├ 해시태그 2개 gap 6
+//     └ (absolute 146.97, 30.37) 별 5 + "6 / 10"
+//   HorizontalBorder  border-top rgba(255,255,255,.08), flex:1
+//   프로필행 h50 : 아바타 50 + 식별 2행
+const seasonCardStyles = `
+  .c5scard {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.7491cqw; /* 10px */
+    width: 100%;
+    height: 16.5543cqw; /* 221px */
+    /* Figma 의 Container x=20 / w=323 은 카드 border-box(363) 기준이다.
+       CSS 는 보더 안쪽에서 padding 을 재므로 1px 을 뺀 19px 을 줘야
+       콘텐츠가 20..343(=323폭)에 정확히 놓인다. */
+    padding: 1.4232cqw; /* 20 - 1 = 19px */
+    box-sizing: border-box;
+    background: #222222;
+    border: 0.0749cqw solid #868686;
+    border-radius: 1.4981cqw; /* 20px */
+    box-shadow: 0 0 0.7491cqw rgba(255, 255, 255, 0.5); /* 10px */
+  }
+  .c5scard__top {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.7491cqw; /* 10px */
+    width: 100%;
+  }
+  .c5scard__meta {
+    display: flex;
+    align-items: flex-start;
+    width: 100%;
+  }
+  .c5scard__metaitem {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.4494cqw; /* Figma Margin pl-22 - 아이콘 16 = 6px */
+    padding-right: 1.0487cqw; /* 14px */
+    font-family: "Pretendard", sans-serif;
+    font-weight: 500;
+    font-size: 1.0487cqw; /* 14px */
+    line-height: 1.1985cqw; /* 16px */
+    white-space: pre;
+  }
+  .c5scard__metaitem--fm { width: 10.9363cqw; /* 146px */ color: #ddf247; }
+  .c5scard__metaitem--date { opacity: 0.6; color: var(--white, #ffffff); }
+  .c5scard__metaitem svg {
+    display: block;
+    flex-shrink: 0;
+    width: 1.1985cqw; /* 16px */
+    height: 1.1985cqw;
+  }
+  /* 시계 아이콘만 Figma export 좌표계가 상하 반전이다(폴더는 정방향). */
+  .c5scard__metaitem--date svg { transform: scaleY(-1); }
+
+  .c5scard__title {
+    margin: 0;
+    width: 100%;
+    height: 2.0225cqw; /* 27px */
+    padding-bottom: 0.5993cqw; /* 8px */
+    box-sizing: border-box;
+    font-family: "Pretendard", sans-serif;
+    font-weight: 800;
+    font-size: 1.4981cqw; /* 20px */
+    line-height: 2.0225cqw; /* 27px */
+    color: var(--white, #ffffff);
+    white-space: nowrap;
+  }
+  .c5scard__desc-wrap {
+    position: relative;
+    width: 100%;
+    height: 2.0225cqw; /* 27px */
+    padding-bottom: 0.5993cqw; /* 8px */
+    box-sizing: border-box;
+  }
+  .c5scard__desc {
+    margin: 0;
+    font-family: "Pretendard", sans-serif;
+    font-weight: 500;
+    font-size: 1.0487cqw; /* 14px */
+    line-height: 2.0225cqw; /* 27px */
+    color: var(--white, #ffffff);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .c5scard__go {
+    position: absolute;
+    left: 16.4022cqw; /* 218.97px */
+    top: 0.4494cqw; /* 6px */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.1236cqw; /* 15px */
+    height: 1.1236cqw;
+    border-radius: 0.3745cqw; /* 5px */
+    background: var(--cluster5-accent, #faab07);
+  }
+  .c5scard__go svg {
+    display: block;
+    width: 0.7491cqw; /* 10px */
+    height: 0.7491cqw;
+    /* 반전 없이 그리면 화살표가 ↘ 로 렌더된다(Figma 는 ↗). */
+    transform: scaleY(-1);
+  }
+
+  .c5scard__tags {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4494cqw; /* 6px */
+  }
+  .c5scard__tag {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.2996cqw 0.5393cqw; /* 4 / 7.2 */
+    box-sizing: border-box;
+    border-radius: 0.2996cqw; /* 4px */
+    background: rgba(235, 247, 72, 0.1);
+    color: #ebf748;
+    font-family: "Pretendard", sans-serif;
+    font-weight: 500;
+    font-size: 0.7491cqw; /* 10px */
+    line-height: 0.7491cqw;
+    text-align: center;
+    white-space: nowrap;
+  }
+  /* Figma 는 별점 행을 Container(20,16.5) 기준 (146.97, 30.37) 절대배치한다 */
+  .c5scard__rate {
+    position: absolute;
+    left: 11.0075cqw; /* 146.97px */
+    top: 2.2749cqw; /* 30.37px */
+    display: flex;
+    align-items: center;
+    gap: 0.7491cqw; /* 10px */
+  }
+  .c5scard__starset {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.2996cqw; /* 4px */
+  }
+  .c5scard__starset .c5card__star {
+    width: 0.952cqw; /* 12.71px */
+    height: 1.3483cqw; /* 18px */
+    /* Figma export path 는 상하 반전 좌표계다(Section 5~7 과 동일). */
+    transform: scaleY(-1);
+  }
+  .c5scard__score {
+    padding-left: 0.2996cqw; /* 4px */
+    font-family: "Pretendard", sans-serif;
+    font-weight: 400;
+    font-size: 0.8989cqw; /* 12px */
+    line-height: 1.3483cqw; /* 18px */
+    letter-spacing: 0.0527cqw; /* 0.704px */
+    color: rgba(255, 255, 255, 0.9);
+    white-space: nowrap;
+  }
+
+  .c5scard__divider {
+    flex: 1 1 0;
+    min-height: 0;
+    width: 100%;
+    border-top: 0.0749cqw solid rgba(255, 255, 255, 0.08);
+  }
+  .c5scard__profile {
+    display: flex;
+    align-items: center;
+    gap: 0.7491cqw; /* 10px */
+    width: 100%;
+    height: 3.7453cqw; /* 50px */
+  }
+  .c5scard__avatar {
+    display: block;
+    flex-shrink: 0;
+    width: 3.7453cqw; /* 50px */
+    height: 3.7453cqw;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+  .c5scard__ident {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2247cqw; /* 3px */
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .c5scard__idrow {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.2247cqw; /* 3px */
+    margin: 0;
+    /* <p> 라 전역 p{...} 가 부모 상속을 이긴다 — 클래스에서 직접 지정. */
+    font-family: "Pretendard", sans-serif;
+    font-weight: 400;
+    font-size: 0.8989cqw; /* 12px */
+    line-height: 1.4232cqw; /* 19px */
+    color: var(--white, #ffffff);
+    white-space: nowrap;
+  }
+  .c5scard__b { font-weight: 700; }
+  .c5scard__m { font-weight: 500; }
+  .c5scard__r { font-weight: 400; }
+  .c5scard__sep { font-weight: 400; font-size: 1.0487cqw; /* 구분자만 14px */ }
+
+  @media only screen and (max-width: 1199.98px) {
+    .c5scard {
+      height: auto;
+      gap: 10px;
+      padding: 15px;
+      border-width: 1px;
+      border-radius: 16px;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+    }
+    .c5scard__top { gap: 8px; }
+    .c5scard__meta { flex-wrap: wrap; gap: 4px 0; }
+    .c5scard__metaitem { font-size: 12px; line-height: 16px; gap: 6px; padding-right: 10px; }
+    .c5scard__metaitem--fm { width: auto; }
+    .c5scard__metaitem svg { width: 14px; height: 14px; }
+    .c5scard__title { height: auto; padding-bottom: 0; font-size: 17px; line-height: 24px; }
+    .c5scard__desc-wrap {
+      height: auto;
+      padding-bottom: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .c5scard__desc { font-size: 13px; line-height: 20px; flex: 1 1 auto; min-width: 0; }
+    .c5scard__go {
+      position: relative;
+      left: auto;
+      top: auto;
+      flex-shrink: 0;
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+    }
+    .c5scard__go svg { width: 10px; height: 10px; }
+    .c5scard__tags { gap: 6px; flex-wrap: wrap; }
+    .c5scard__tag { padding: 4px 8px; border-radius: 4px; font-size: 11px; line-height: 13px; }
+    .c5scard__rate {
+      position: relative;
+      left: auto;
+      top: auto;
+      gap: 10px;
+    }
+    .c5scard__starset { gap: 4px; }
+    .c5scard__starset .c5card__star { width: 13px; height: 18px; }
+    .c5scard__score { padding-left: 4px; font-size: 12px; line-height: 18px; letter-spacing: 0; }
+    .c5scard__divider { flex: 0 0 auto; border-top-width: 1px; margin: 2px 0; }
+    .c5scard__profile { height: auto; gap: 10px; }
+    .c5scard__avatar { width: 44px; height: 44px; }
+    .c5scard__idrow {
+      gap: 4px;
+      font-size: 12px;
+      line-height: 18px;
+      flex-wrap: wrap;
+      white-space: normal;
+    }
+    .c5scard__sep { font-size: 13px; }
+  }
+`;
+
+// =====================================================================
+// Section 9 — "Weekly_Mention" (Figma 페이지 프레임의 마지막 섹션)
+//
+// Figma 기준: 동일 파일, node 1068:23557("Frame 2121457680", 1263x1818,
+// 부모 Frame 633 = 1068:22048 기준 x=36 / y=7883) — 사용자가 지정한 selection.
+//
+// [조사 — selection 이 구현 대상 전체가 아니었다]
+// 부모 Frame 633 자식 전수 대조 결과 이 프레임을 감싸는 형제가 셋 더 있다:
+//   1084:1818 "Vector 16"         (84, 7804) 1168x2  ← 섹션 상단 accent 구분선
+//   1068:24521 "Frame 2121457687" (1246, 7885) 49x22 ← 수정/검색 아이콘
+//   1084:1819 "Vector 17"         (84, 9701) 1168x2  ← 섹션 하단 accent 구분선
+// Vector 16 은 Section 8 이 자기 하단 구분선을 그리지 않고 넘긴 것이므로 이번
+// 섹션이 상단에 그린다. Vector 17 은 Frame 633(높이 9718)의 마지막 요소이고
+// 뒤에 넘겨받을 섹션이 없으므로 이번 섹션이 하단에도 그린다 —
+// 즉 이 섹션만 위/아래 구분선을 둘 다 갖는다.
+//
+// [조회 제약 — 명시]
+//   - selection 전체에 get_metadata / get_design_context 를 걸면 토큰 한도를
+//     넘는다(각각 139k / 초과). 헤더(1068:23569)와 카드 1장(1068:23597)을 따로
+//     조회해 스타일을 확보하고, 행/카드 배치는 메타데이터 좌표로 확정했다.
+//   - 카드 사진 12장과 아바타 12장은 download_assets 가 순서를 보장하지 않아,
+//     레퍼런스 PNG(네이티브 1263x1819)에서 각 카드 위치를 잘라 후보 이미지와
+//     상관 비교해 매칭했다(사진은 상단 60%만 비교해 하단 그라디언트 회피).
+//
+// [레이어 / 구조] 섹션 루트(1335 기준, y 는 상단 구분선 위 = 0) 좌표
+//   Vector 16        (84,    0)     1168x2      상단 구분선
+//   Frame 2121457680 (36,    79)    1263x1818   콘텐츠 프레임(배경 없음)
+//     ├ 헤더        (100.5, 79)     1134x195    auto-layout gap 50
+//     ├ 카드 3행    (36,    344)    1263x1471   행 높이 477, 행 간격 20
+//     │    행마다 300x463 카드 4장, 가로 x = 0 / 320 / 640 / 960 (gap 20)
+//     └ 페이지네이션 (578.56, 1836) 177.87x16
+//   Frame 2121457687 (1246,  81)    49x22       수정/검색 아이콘
+//   Vector 17        (84,    1897)  1168x2      하단 구분선
+//
+// [Figma 가 앞 섹션과 의도적으로 다른 부분 — 통일하지 않는다]
+//   · 헤더 폭 1134 / x=64.5 (Section 8 은 1155 / 54).
+//   · 2번째 pill 이 "/ 60 comment"(Section 8 은 / 70), 4번째가 "5 주차".
+//   · 시즌 패널·네비 화살표 없이 12장 카드 그리드만 있다.
+//   · 카드 사진 하단에 검정 그라디언트가 얹힌다.
+//   · 프로필 식별 정보가 2행이 아니라 3행이고 행 간격이 1px 이다.
+//
+// [재사용] 눈썹/인증배지/타이틀/Type by/통계 pill(4번째 포함)/아이콘 버튼은
+// px 스펙이 Section 5~8 과 동일하고 cqw 기준 컨테이너도 같은 1335 이므로
+// .cluster5-mention__* 를 그대로 재사용하고 헤더의 left/top/width 만 덮어쓴다.
+// 아이콘·에셋도 파일 단위로 대조해 **신규 SVG 0개 / 신규 헤더 아이콘 0개**다:
+//   arrow=ArrowIcon, 별 3종=STAR_ICONS, 하트=MentionHeartIcon,
+//   다이아=MentionFmIcon, 인증배지=MentionBadgeIcon,
+//   type-icon=mention/, pill-cards·pill-mail=gmention/,
+//   pill-hearts=mention/, 주차 pill=season/pill-season.png
+//
+// [org 색상 정책 — 기존 SoT 그대로]
+//   #FAAB07 = marketing.themeColor → 상/하 구분선 / pill 숫자 / 카드 화살표
+//             배지 / "성장(성공)" 라벨 → var(--cluster5-accent)
+//   #DDF247 / #1E1E1E / #FFEAA4 / #EBF748 / rgba(255,255,255,.1/.2/.3)
+//             → 고유값, 하드코딩 유지
+//
+// [데이터] 순수 표현 계층. API/DTO/조회/권한/라우팅 무수정.
+const weeklySectionStyles = `
+  .cluster5-weekly {
+    position: relative;
+    width: 100%;
+    max-width: 1335px;
+    margin: 0 auto;
+    /* 상단 구분선 2 + 간격 77 + 프레임 1818 + 하단 구분선 2 = 1899 */
+    aspect-ratio: 1335 / 1899;
+    box-sizing: border-box;
+    container-type: inline-size;
+    font-synthesis: none;
+  }
+  .cluster5-weekly__rule {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 87.4906cqw; /* 1168px */
+    height: 0.1498cqw; /* 2px */
+    background: var(--cluster5-accent, #faab07);
+  }
+  .cluster5-weekly__rule--top { top: 0; }
+  .cluster5-weekly__rule--bottom { top: 142.0974cqw; /* 1897px */ }
+
+  /* ---- 헤더 — .cluster5-mention__* 재사용, 위치/폭/타이틀 크기만 덮어씀 ---- */
+  .cluster5-weekly .cluster5-mention__header {
+    left: 7.5281cqw; /* 페이지 x=100.5 (프레임 36 + 64.5) */
+    top: 5.9176cqw; /* 79px */
+    width: 84.9438cqw; /* 1134px */
+  }
+  .cluster5-weekly .cluster5-mention__title {
+    font-size: 3.1461cqw; /* 42px */
+  }
+  /* Figma 1068:24521 — (1246, 81) 49x22 */
+  .cluster5-weekly .cluster5-mention__actions {
+    left: 93.3333cqw; /* 1246px */
+    top: 6.0674cqw; /* 81px */
+    height: 1.6479cqw; /* 22px */
+  }
+
+  /* ---- 카드 그리드 (Figma Frame 2121457697) ---- */
+  .cluster5-weekly__grid {
+    position: absolute;
+    left: 2.6966cqw; /* 36px */
+    top: 25.7678cqw; /* 344px */
+    width: 94.6067cqw; /* 1263px */
+    display: grid;
+    grid-template-columns: repeat(4, 22.4719cqw); /* 300px */
+    /* 행 높이 477 = 카드 463 + 14, 행 간격 20 → 실제 세로 간격 34 */
+    row-gap: 2.5468cqw; /* 34px */
+    column-gap: 1.4981cqw; /* 20px */
+  }
+
+  /* ---- 페이지네이션 (Figma 1068:24509) ---- */
+  .cluster5-weekly__pager {
+    position: absolute;
+    left: 43.3378cqw; /* 578.5635px */
+    top: 137.5281cqw; /* 1836px */
+    display: flex;
+    align-items: center;
+    gap: 1.4981cqw; /* 20px */
+    font-family: "Manrope", "Pretendard", sans-serif;
+    font-weight: 800;
+    font-size: 1.1985cqw; /* 16px */
+    line-height: 1.1985cqw;
+    color: var(--white, #ffffff);
+  }
+  /* 전역 span{line-height:26px} 이 상속을 이긴다(Section 8 에서 실측 확인). */
+  .cluster5-weekly__pager > span { line-height: 1.1985cqw; }
+  .cluster5-weekly__pager-cur { color: #ddf247; }
+  .cluster5-weekly__pager-bar {
+    display: block;
+    width: 2.2472cqw; /* 30px */
+    height: 0.0749cqw; /* 1px */
+    background: #ddf247;
+  }
+
+  @media only screen and (max-width: 1199.98px) {
+    .cluster5-weekly {
+      aspect-ratio: auto;
+      display: flex;
+      flex-direction: column;
+      padding: 0 16px 8px;
+      box-sizing: border-box;
+    }
+    .cluster5-weekly__rule {
+      position: relative;
+      left: auto;
+      top: auto;
+      transform: none;
+      width: 100%;
+      max-width: 1168px;
+      height: 2px;
+      margin: 0 auto;
+    }
+    .cluster5-weekly__rule--bottom { margin-top: 32px; }
+    .cluster5-weekly .cluster5-mention__header {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: 100%;
+      align-items: center;
+      gap: 24px;
+      padding: 28px 0 0;
+    }
+    .cluster5-weekly .cluster5-mention__title { font-size: 30px; }
+    .cluster5-weekly__grid {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: 100%;
+      margin-top: 32px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      row-gap: 20px;
+      column-gap: 20px;
+    }
+    .cluster5-weekly__pager {
+      position: relative;
+      left: auto;
+      top: auto;
+      justify-content: center;
+      margin: 28px auto 0;
+      gap: 20px;
+      font-size: 16px;
+      line-height: 16px;
+    }
+    .cluster5-weekly__pager > span { line-height: 16px; }
+    .cluster5-weekly__pager-bar { width: 30px; height: 1px; }
+  }
+  @media only screen and (max-width: 991.98px) {
+    .cluster5-weekly__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media only screen and (max-width: 767.98px) {
+    .cluster5-weekly .cluster5-mention__title { font-size: 22px; }
+    .cluster5-weekly__grid { grid-template-columns: minmax(0, 1fr); }
+  }
+`;
+
+// Figma 카드 = Component 15 계열 (300x463, bg #1E1E1E, radius 20). 내부가
+// 전부 절대좌표라 그대로 옮긴다(카드 자체는 cqw 라 부모와 같이 축소된다).
+//   Container(이미지) (10,10) 280x235 radius 15 overflow-clip
+//     ├ 사진 280x234 object-cover + 하단 검정 그라디언트
+//     └ 날짜칩 + 하트칩 (9,11) gap 4
+//   시즌/주차 라인   (25.5, 256)  "…4주차 ㅣ 25주차 ㅣ " + "성장(성공)"(accent)
+//   위클리 평판 행   (25, 286) w249 justify-between: 라벨칩 / 요약 + 화살표 배지
+//   프로필          (25.5, 322.5) 아바타 50 + 식별 3행(gap 1)
+//   구분선          (12.5, 392) right 7.5 h1
+//   해시태그        (25.5, 402) / 별점+6/10 (153.5, 402)
+//   명성도 행        (23.5, 429) w251
+const weeklyCardStyles = `
+  .c5wcard {
+    position: relative;
+    width: 22.4719cqw; /* 300px */
+    height: 34.6816cqw; /* 463px */
+    background: #1e1e1e;
+    border-radius: 1.4981cqw; /* 20px */
+  }
+  .c5wcard__media {
+    position: absolute;
+    left: 0.7491cqw; /* 10px */
+    right: 0.7491cqw;
+    top: 0.7491cqw;
+    height: 17.603cqw; /* 235px */
+    border-radius: 1.1236cqw; /* 15px */
+    overflow: hidden;
+  }
+  .c5wcard__media img {
+    display: block;
+    width: 100%;
+    height: 17.5281cqw; /* 234px */
+    object-fit: cover;
+  }
+  /* Figma: bg-gradient-to-t from-[rgba(0,0,0,0)] 68.648% to-[rgba(0,0,0,0.5)] 90.574% */
+  .c5wcard__media::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0) 68.648%, rgba(0, 0, 0, 0.5) 90.574%);
+    pointer-events: none;
+  }
+  .c5wcard__badges {
+    position: absolute;
+    left: 0.6742cqw; /* 9px */
+    top: 0.824cqw; /* 11px */
+    display: flex;
+    align-items: center;
+    gap: 0.2996cqw; /* 4px */
+    z-index: 1;
+  }
+  .c5wcard__date {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.6367cqw 0.7491cqw; /* 8.5 / 10 */
+    box-sizing: border-box;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(1px);
+    -webkit-backdrop-filter: blur(1px);
+    color: var(--white, #ffffff);
+    font-family: "Pretendard", sans-serif;
+    font-weight: 800;
+    font-size: 0.8989cqw; /* 12px */
+    line-height: 0.6742cqw; /* 9px */
+    white-space: nowrap;
+  }
+  .c5wcard__like {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.947cqw; /* 26px */
+    height: 1.947cqw;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(1px);
+    -webkit-backdrop-filter: blur(1px);
+    flex-shrink: 0;
+  }
+  .c5wcard__like svg {
+    display: block;
+    width: 0.9738cqw; /* 13px */
+    height: 0.8351cqw; /* 11.1465px */
+    transform: scaleY(-1); /* Figma export 좌표계 상하 반전 */
+  }
+
+  .c5wcard__season {
+    position: absolute;
+    left: 1.9101cqw; /* 25.5px */
+    top: 19.176cqw; /* 256px */
+    margin: 0;
+    font-family: "Pretendard", sans-serif;
+    font-weight: 600;
+    font-size: 0.8989cqw; /* 12px */
+    line-height: 1.8727cqw; /* 25px */
+    color: var(--white, #ffffff);
+    /* Figma 원문에 전각 공백 조합이 있어 접히지 않게 pre */
+    white-space: pre;
+  }
+  .c5wcard__season-status { color: var(--cluster5-accent, #faab07); }
+
+  .c5wcard__row {
+    position: absolute;
+    left: 1.8727cqw; /* 25px */
+    top: 21.4232cqw; /* 286px */
+    width: 18.6517cqw; /* 249px */
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .c5wcard__kind {
+    display: flex;
+    align-items: center;
+    padding: 0.1498cqw 0.5993cqw; /* 2 / 8 */
+    box-sizing: border-box;
+    background: #ffeaa4;
+    color: var(--black, #000000);
+    font-family: "Cafe24Ohsquare", "Pretendard", sans-serif;
+    font-weight: 400;
+    font-size: 1.0487cqw; /* 14px */
+    line-height: 1.4981cqw; /* 20px */
+    white-space: nowrap;
+  }
+  .c5wcard__summary {
+    display: flex;
+    align-items: center;
+    gap: 0.3745cqw; /* 5px */
+  }
+  .c5wcard__summary-text {
+    width: 7.9401cqw; /* 106px */
+    font-family: "Pretendard", sans-serif;
+    font-weight: 500;
+    font-size: 1.0487cqw; /* 14px */
+    line-height: 1.8727cqw; /* 25px */
+    color: var(--white, #ffffff);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .c5wcard__go {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 1.1236cqw; /* 15px */
+    height: 1.1236cqw;
+    border-radius: 0.3745cqw; /* 5px */
+    background: var(--cluster5-accent, #faab07);
+  }
+  .c5wcard__go svg {
+    display: block;
+    width: 0.7491cqw; /* 10px */
+    height: 0.7491cqw;
+    /* 반전 없이 그리면 화살표가 ↘ 로 렌더된다(Figma 는 ↗). */
+    transform: scaleY(-1);
+  }
+
+  .c5wcard__profile {
+    position: absolute;
+    left: 1.9101cqw; /* 25.5px */
+    top: 24.1573cqw; /* 322.5px */
+    display: flex;
+    align-items: center;
+    gap: 0.7491cqw; /* 10px */
+    width: 18.7266cqw; /* 250px */
+  }
+  .c5wcard__avatar {
+    display: block;
+    flex-shrink: 0;
+    width: 3.7453cqw; /* 50px */
+    height: 3.7453cqw;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+  .c5wcard__ident {
+    display: flex;
+    flex-direction: column;
+    gap: 0.0749cqw; /* 1px */
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .c5wcard__idrow {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.2247cqw; /* 3px */
+    margin: 0;
+    /* <p> 라 전역 p{...} 가 부모 상속을 이긴다 — 클래스에서 직접 지정. */
+    font-family: "Pretendard", sans-serif;
+    font-weight: 400;
+    font-size: 0.8989cqw; /* 12px */
+    line-height: 1.4232cqw; /* 19px */
+    color: var(--white, #ffffff);
+    white-space: nowrap;
+  }
+  .c5wcard__b { font-weight: 700; }
+  .c5wcard__m { font-weight: 500; }
+  .c5wcard__r { font-weight: 400; }
+  .c5wcard__sep { font-weight: 400; font-size: 1.0487cqw; /* 구분자만 14px */ }
+
+  .c5wcard__divider {
+    position: absolute;
+    left: 0.9363cqw; /* 12.5px */
+    right: 0.5618cqw; /* 7.5px */
+    top: 29.3633cqw; /* 392px */
+    height: 0.0749cqw; /* 1px */
+    background: rgba(255, 255, 255, 0.1);
+  }
+  .c5wcard__tags {
+    position: absolute;
+    left: 1.9101cqw; /* 25.5px */
+    top: 30.1124cqw; /* 402px */
+    display: flex;
+    align-items: flex-start;
+  }
+  .c5wcard__tag {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.2996cqw 0.5393cqw; /* 4 / 7.2 */
+    box-sizing: border-box;
+    border-radius: 0.2996cqw; /* 4px */
+    background: rgba(235, 247, 72, 0.1);
+    color: #ebf748;
+    font-family: "Pretendard", sans-serif;
+    font-weight: 500;
+    font-size: 0.7491cqw; /* 10px */
+    line-height: 0.7491cqw;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .c5wcard__rate {
+    position: absolute;
+    left: 11.4981cqw; /* 153.5px */
+    top: 30.1124cqw; /* 402px */
+    display: flex;
+    align-items: center;
+    gap: 0.4494cqw; /* 6px */
+  }
+  .c5wcard__starset {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.2996cqw; /* 4px */
+  }
+  .c5wcard__starset .c5card__star {
+    width: 0.952cqw; /* 12.71px */
+    height: 1.3483cqw; /* 18px */
+    /* Figma export path 는 상하 반전 좌표계다(Section 5~8 과 동일). */
+    transform: scaleY(-1);
+  }
+  .c5wcard__score {
+    padding-left: 0.2996cqw; /* 4px */
+    font-family: "Pretendard", sans-serif;
+    font-weight: 400;
+    font-size: 0.8989cqw; /* 12px */
+    line-height: 1.3483cqw; /* 18px */
+    color: rgba(255, 255, 255, 0.9);
+    white-space: nowrap;
+  }
+
+  .c5wcard__fm {
+    position: absolute;
+    left: 1.7603cqw; /* 23.5px */
+    top: 32.1348cqw; /* 429px */
+    width: 18.8015cqw; /* 251px */
+    display: flex;
+    align-items: center;
+    gap: 0.3745cqw; /* 5px */
+  }
+  .c5wcard__fm-label {
+    font-family: "Pretendard", sans-serif;
+    font-weight: 400;
+    font-size: 0.8989cqw; /* 12px */
+    line-height: 1.4232cqw; /* 19px */
+    color: rgba(255, 255, 255, 0.3);
+    white-space: nowrap;
+  }
+  .c5wcard__fm svg {
+    display: block;
+    flex-shrink: 0;
+    width: 0.735cqw; /* 9.8125px */
+    height: 1.1985cqw; /* 16px */
+    transform: scaleY(-1); /* Figma export 좌표계 상하 반전 */
+  }
+  .c5wcard__fm-value {
+    font-family: "Pretendard", sans-serif;
+    font-weight: 700;
+    font-size: 1.1985cqw; /* 16px */
+    line-height: 1.6479cqw; /* 22px */
+    color: var(--white, #ffffff);
+    white-space: nowrap;
+  }
+
+  /* ---- ≤1199.98px: 카드 내부 절대배치 해제 → 세로 flow ---- */
+  @media only screen and (max-width: 1199.98px) {
+    .c5wcard {
+      width: 100%;
+      height: auto;
+      display: flex;
+      flex-direction: column;
+      padding: 10px 10px 16px;
+      box-sizing: border-box;
+      border-radius: 20px;
+    }
+    .c5wcard__media {
+      position: relative;
+      left: auto;
+      right: auto;
+      top: auto;
+      width: 100%;
+      height: 200px;
+      border-radius: 15px;
+    }
+    .c5wcard__media img { height: 100%; }
+    .c5wcard__badges { position: absolute; left: 9px; top: 11px; gap: 4px; }
+    .c5wcard__date { padding: 8px 10px; font-size: 12px; line-height: 12px; }
+    .c5wcard__like { width: 26px; height: 26px; }
+    .c5wcard__like svg { width: 13px; height: 11.15px; }
+    .c5wcard__season {
+      position: relative;
+      left: auto;
+      top: auto;
+      margin-top: 12px;
+      padding: 0 6px;
+      font-size: 12px;
+      line-height: 20px;
+      white-space: normal;
+    }
+    .c5wcard__row {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: 100%;
+      margin-top: 8px;
+      padding: 0 6px;
+      box-sizing: border-box;
+      gap: 8px;
+    }
+    .c5wcard__kind { padding: 2px 8px; font-size: 13px; line-height: 20px; }
+    .c5wcard__summary { gap: 5px; min-width: 0; }
+    .c5wcard__summary-text { width: auto; max-width: 120px; font-size: 13px; line-height: 20px; }
+    .c5wcard__go { width: 18px; height: 18px; border-radius: 5px; }
+    .c5wcard__go svg { width: 10px; height: 10px; }
+    .c5wcard__profile {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: 100%;
+      margin-top: 12px;
+      padding: 0 6px;
+      box-sizing: border-box;
+      gap: 10px;
+    }
+    .c5wcard__avatar { width: 44px; height: 44px; }
+    .c5wcard__ident { gap: 2px; }
+    .c5wcard__idrow {
+      gap: 4px;
+      font-size: 12px;
+      line-height: 18px;
+      flex-wrap: wrap;
+      white-space: normal;
+    }
+    .c5wcard__sep { font-size: 13px; }
+    .c5wcard__divider {
+      position: relative;
+      left: auto;
+      right: auto;
+      top: auto;
+      width: 100%;
+      height: 1px;
+      margin-top: 12px;
+    }
+    .c5wcard__tags {
+      position: relative;
+      left: auto;
+      top: auto;
+      margin-top: 12px;
+      padding: 0 6px;
+    }
+    .c5wcard__tag { padding: 4px 8px; border-radius: 4px; font-size: 11px; line-height: 13px; }
+    .c5wcard__rate {
+      position: relative;
+      left: auto;
+      top: auto;
+      margin-top: 8px;
+      padding: 0 6px;
+      gap: 8px;
+    }
+    .c5wcard__starset { gap: 4px; }
+    .c5wcard__starset .c5card__star { width: 13px; height: 18px; }
+    .c5wcard__score { padding-left: 4px; font-size: 12px; line-height: 18px; }
+    .c5wcard__fm {
+      position: relative;
+      left: auto;
+      top: auto;
+      width: 100%;
+      margin-top: 8px;
+      padding: 0 6px;
+      box-sizing: border-box;
+      gap: 5px;
+    }
+    .c5wcard__fm-label { font-size: 12px; line-height: 19px; }
+    .c5wcard__fm svg { width: 9.8px; height: 16px; }
+    .c5wcard__fm-value { font-size: 16px; line-height: 22px; }
+  }
+`;
+
 const sectionSpacingStyles = `
   .cluster5-sections {
     display: flex;
@@ -3069,6 +4939,26 @@ const sectionSpacingStyles = `
   .cluster5-gmention {
     margin-top: 0;
   }
+  /* [Figma 실측] Section 6 그룹(1068:22130)은 y=3788~5033, Section 7 그룹
+     (1068:22436)은 y=5033~6227.5 — 역시 정확히 맞닿는다. 간격 0px 이고,
+     Section 6 배너 하단의 accent 구분선이 그대로 Section 7 의 상단 경계다.
+     (Section 7 그룹 안에는 구분선 레이어가 없다 — 페이지 레벨 Vector 15 가
+     y=6228 로 그룹 바깥에 있고, 다음 섹션의 상단 경계 역할을 한다.) */
+  .cluster5-mmention {
+    margin-top: 0;
+  }
+  /* [Figma 실측] Section 7 그룹(1068:22436)은 y=5033~6227.5, 이번 섹션의 상단
+     구분선(1084:1817)은 y=6228 이다 — 간격 0.5px, 사실상 맞닿는다. 0으로 둔다.
+     (섹션 내부에서 구분선 → 프레임 사이 49px 을 이미 재현하고 있다.) */
+  .cluster5-season {
+    margin-top: 0;
+  }
+  /* [Figma 실측] Section 8 프레임 바닥(y=7804)과 이번 섹션 상단 구분선
+     (1084:1818, y=7804)이 정확히 같은 지점이다. 간격 0. 섹션 내부에서
+     구분선 → 프레임 사이 77px 을 재현한다. */
+  .cluster5-weekly {
+    margin-top: 0;
+  }
   @media only screen and (max-width: 1199.98px) {
     .cluster5-keyword {
       margin-top: 32px;
@@ -3080,6 +4970,15 @@ const sectionSpacingStyles = `
       margin-top: 48px;
     }
     .cluster5-gmention {
+      margin-top: 48px;
+    }
+    .cluster5-mmention {
+      margin-top: 48px;
+    }
+    .cluster5-season {
+      margin-top: 48px;
+    }
+    .cluster5-weekly {
       margin-top: 48px;
     }
   }
@@ -3647,6 +5546,575 @@ const GeneralMentionCard = ({ card }: { card: GmentionCard }) => (
   </div>
 );
 
+// =====================================================================
+// Section 7 데이터 / 아이콘 — 전부 Figma placeholder 원문 그대로의 정적
+// 마크업이다(Section 1~6 과 동일 정책).
+//
+// [에셋] Figma raw image 를 내려받아 다운스케일한 뒤 기존 자산과 픽셀 비교한
+// 결과, pill 3종과 Type by 아이콘이 전부 기존 파일과 동일해 중복 저장하지 않고
+// 그대로 참조한다(pill-cards/pill-mail = gmention, pill-hearts/type-icon =
+// mention). 새로 저장한 것은 배너 + 카드 3장 + 아바타 3장뿐이다.
+const MMENTION_STATS = [
+  {
+    key: "comment",
+    icon: "/images/0/cluster5/gmention/pill-cards.png", // Section 6 과 동일 에셋
+    iconHeight: "4.0449cqw", // 54px
+    num: "1 ",
+    rest: "/ 3 comment",
+  },
+  {
+    key: "mail",
+    icon: "/images/0/cluster5/gmention/pill-mail.png", // Section 6 과 동일 에셋
+    iconHeight: "4.1948cqw", // 56px
+    num: "- ",
+    rest: "/ - comment",
+  },
+  {
+    key: "fm",
+    icon: "/images/0/cluster5/mention/pill-hearts.png", // Section 5 와 동일 에셋
+    iconHeight: "3.8951cqw", // 52px
+    num: "103",
+    rest: " FM",
+    tight: true, // Figma: 이 pill 만 line-height 19px
+  },
+] as const;
+
+const MMENTION_CARDS = [
+  {
+    key: "m1",
+    photo: "/images/0/cluster5/mmention/card-1.png",
+    avatar: "/images/0/cluster5/mmention/avatar-1.png",
+  },
+  {
+    key: "m2",
+    photo: "/images/0/cluster5/mmention/card-2.png",
+    avatar: "/images/0/cluster5/mmention/avatar-2.png",
+  },
+  {
+    key: "m3",
+    photo: "/images/0/cluster5/mmention/card-3.png",
+    avatar: "/images/0/cluster5/mmention/avatar-3.png",
+  },
+] as const;
+
+const MMENTION_CARD_DATE = "2025 - 08 - 01 (월)";
+const MMENTION_CARD_TITLE = "클러빙 평판(M)";
+const MMENTION_CARD_TEXT =
+  "클러빙 평판(M)은 40자 입니다 40자는 실무자가 작성하고 평가하는 것...";
+// Figma 태그 순서: 추진력(lime) → 리더쉽(pink) → 신속함(purple)
+const MMENTION_CARD_TAGS = [
+  { key: "t1", label: "#추진력추진력력", tone: "lime" as const },
+  { key: "t2", label: "#리더쉽리더쉽쉽", tone: "pink" as const },
+  { key: "t3", label: "#신속함신속함함", tone: "purple" as const },
+];
+
+// Figma "Interface / Check"(1005:19437) — 이번 섹션에서 유일하게 새로 필요한
+// SVG. export 원본 path 그대로 인라인(나머지 아이콘은 파일 diff 로 기존
+// 컴포넌트와 동일함을 확인하고 재사용).
+const MmentionCheckIcon = () => (
+  <svg viewBox="0 0 14.727 10.4853" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      d="M1 5.24268L5.24264 9.48532L13.727 1"
+      stroke="white"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+type MmentionCard = (typeof MMENTION_CARDS)[number];
+
+const ManagerMentionCard = ({ card }: { card: MmentionCard }) => (
+  <div className="c5mmcard">
+    <div className="c5mmcard__media">
+      <img src={card.photo} alt="" />
+      <div className="c5mmcard__badges">
+        <span className="c5mmcard__date">{MMENTION_CARD_DATE}</span>
+        <span className="c5mmcard__check">
+          <MmentionCheckIcon />
+        </span>
+      </div>
+    </div>
+
+    <div className="c5mmcard__text">
+      <p className="c5mmcard__title">{MMENTION_CARD_TITLE}</p>
+      {/* Figma 좌표(53, 29)는 본문을 감싸는 프레임 기준이라 이 래퍼를
+          기준 컨테이너로 둔다(텍스트 박스 안이 아님). */}
+      <div className="c5mmcard__desc-wrap">
+        <p className="c5mmcard__desc">{MMENTION_CARD_TEXT}</p>
+        <span className="c5mmcard__go">
+          <ArrowIcon />
+        </span>
+      </div>
+
+      <div className="c5mmcard__profile">
+        <img className="c5mmcard__avatar" src={card.avatar} alt="" />
+        <div className="c5mmcard__ident">
+          <p className="c5mmcard__idrow">
+            <span className="c5mmcard__b">김미현</span>
+            <span className="c5mmcard__sep">|</span>
+            <span className="c5mmcard__m">여</span>
+            <span className="c5mmcard__sep">|</span>
+            <span className="c5mmcard__m">24</span>
+            <span className="c5mmcard__sep">|</span>
+            <span>
+              <span className="c5mmcard__b">서울대</span>
+              <span className="c5mmcard__r">학교</span>
+            </span>
+            <span className="c5mmcard__sep">|</span>
+            <span>
+              <span className="c5mmcard__b">미디어커뮤니케이션</span>
+              <span className="c5mmcard__r">학과</span>
+            </span>
+          </p>
+          <p className="c5mmcard__idrow">
+            <span>
+              <span className="c5mmcard__b">엔터테인먼트 </span>
+              <span className="c5mmcard__r">팀</span>
+            </span>
+            <span className="c5mmcard__sep">|</span>
+            <span>
+              <span className="c5mmcard__b">내돈내산 </span>
+              <span className="c5mmcard__r">파트</span>
+            </span>
+            <span className="c5mmcard__sep">|</span>
+            <span className="c5mmcard__b">엔비디아구글테슬라쿵</span>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div className="c5mmcard__divider" aria-hidden="true" />
+
+    <div className="c5mmcard__bottom">
+      <div className="c5mmcard__tags">
+        {MMENTION_CARD_TAGS.map((tag) => (
+          <span key={tag.key} className={`c5mmcard__tag c5mmcard__tag--${tag.tone}`}>
+            {tag.label}
+          </span>
+        ))}
+      </div>
+      <div className="c5mmcard__meta">
+        <div className="c5mmcard__rate">
+          <span className="c5mmcard__starset">
+            {TOP3_CARD_STARS.map((kind, i) => {
+              const Icon = STAR_ICONS[kind];
+              return <Icon key={`${card.key}-star-${i}`} />;
+            })}
+          </span>
+          <span className="c5mmcard__score">6 / 10</span>
+        </div>
+        <div className="c5mmcard__fm">
+          <span className="c5mmcard__fm-label">명성도</span>
+          <span className="c5mmcard__fm-value">
+            <MentionFmIcon />
+            <span className="c5mmcard__fm-num">35 FM</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+// =====================================================================
+// Section 8 데이터 / 아이콘 — 전부 Figma placeholder 원문 그대로의 정적 마크업.
+//
+// [에셋] 다운스케일 후 기존 자산과 픽셀 비교한 결과 Type by 아이콘과 pill 3종이
+// 전부 기존 파일과 동일해 중복 저장하지 않고 참조한다. 새로 저장한 것은
+// 시즌 pill(방패) 1개 + 시즌 이미지 2장 + 아바타 8장뿐이다.
+const SEASON_STATS = [
+  {
+    key: "comment",
+    icon: "/images/0/cluster5/gmention/pill-cards.png", // Section 6 과 동일 에셋
+    iconHeight: "4.0449cqw", // 54px
+    num: "45 ",
+    rest: "/ 70 comment",
+  },
+  {
+    key: "mail",
+    icon: "/images/0/cluster5/gmention/pill-mail.png", // Section 6 과 동일 에셋
+    iconHeight: "4.1948cqw", // 56px
+    num: "32 ",
+    rest: "/ 70 comment",
+  },
+  {
+    key: "fm",
+    icon: "/images/0/cluster5/mention/pill-hearts.png", // Section 5 와 동일 에셋
+    iconHeight: "3.8951cqw", // 52px
+    num: "103",
+    rest: " FM",
+    tight: true, // Figma: line-height 19px
+  },
+] as const;
+
+// Figma 1068:23011 — 4번째 pill 만 숫자 25px + 단위가 Pretendard Medium 18px
+const SEASON_COUNT_PILL = {
+  icon: "/images/0/cluster5/season/pill-season.png",
+  iconHeight: "3.8951cqw", // 52px
+  num: "5",
+  unit: "시즌",
+};
+
+const SEASON_CARD_FM = "명성도    123 FM";
+const SEASON_CARD_DATE = "2025 - 08 - 01 (월)";
+const SEASON_CARD_TITLE = "시즈닝 평판";
+const SEASON_CARD_TEXT = "20자는 이 정도입 20자는 이 정도입...";
+const SEASON_CARD_TAGS = ["#추진력추진력추", "#추진력추진력추"];
+
+const SEASON_PANELS = [
+  {
+    key: "s1",
+    photo: "/images/0/cluster5/season/season-1.png",
+    title: { year: "2025", mid: "년, ", season: "여름", tail: " 시즌" },
+    range: "2025 - 02 - 03 (월) ~ 2025 - 03 - 03 (일)",
+    count: "3",
+    counter: "2",
+    cards: [
+      { key: "s1c1", avatar: "/images/0/cluster5/season/avatar-1.png" },
+      { key: "s1c2", avatar: "/images/0/cluster5/season/avatar-2.png" },
+      { key: "s1c3", avatar: "/images/0/cluster5/season/avatar-3.png" },
+      { key: "s1c4", avatar: "/images/0/cluster5/season/avatar-4.png" },
+    ],
+  },
+  {
+    key: "s2",
+    photo: "/images/0/cluster5/season/season-2.png",
+    title: { year: "2025", mid: "년, ", season: "여름", tail: " 시즌" },
+    range: "2025 - 02 - 03 (월) ~ 2025 - 03 - 03 (일)",
+    count: "3",
+    counter: "1",
+    cards: [
+      { key: "s2c1", avatar: "/images/0/cluster5/season/avatar-5.png" },
+      { key: "s2c2", avatar: "/images/0/cluster5/season/avatar-6.png" },
+      { key: "s2c3", avatar: "/images/0/cluster5/season/avatar-7.png" },
+      { key: "s2c4", avatar: "/images/0/cluster5/season/avatar-8.png" },
+    ],
+  },
+] as const;
+
+const SEASON_PAGES = ["2", "3", "4", "5"];
+
+// Figma export SVG 원본 path 그대로 인라인. 이번 섹션에서 새로 필요한 것만
+// 정의한다(화살표 배지/인증 배지/별 3종은 파일 diff 로 기존과 동일함을 확인).
+//
+// 시즌 네비 화살표: 30.5x30.5 로, Section 5/6 의 MentionScrollIcon(30.5x29.75)
+// 과 다른 변형이다. 좌/우 방향은 CSS rotate 로 만든다.
+const SeasonNavIcon = () => (
+  <svg viewBox="0 0 30.5 30.5" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      d="M20 16.8333L15.25 21.5833L10.5 16.8333M15.25 21.5833V8.91667M29.5 15.25C29.5 7.37994 23.1201 1 15.25 1C7.37994 1 1 7.37994 1 15.25C1 23.1201 7.37994 29.5 15.25 29.5C23.1201 29.5 29.5 23.1201 29.5 15.25Z"
+      stroke="var(--cluster5-accent, #faab07)"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+// 시계(+) 아이콘 — 시즌 헤더바의 "Verified" 와 카드 날짜가 같은 path 를 쓴다
+// (두 export 파일을 diff 해 동일함을 확인). 색만 다르게 준다.
+const SeasonClockIcon = () => (
+  <svg viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      d="M6.5 13C5.85417 13 5.22396 12.9062 4.60938 12.7188C3.99479 12.5312 3.42188 12.2604 2.89062 11.9062C2.35938 11.5521 1.88802 11.125 1.47656 10.625C1.0651 10.125 0.739583 9.57812 0.5 8.98438C0.25 8.39062 0.09375 7.77344 0.03125 7.13281C-0.03125 6.49219 0 5.85938 0.125 5.23438C0.25 4.59896 0.463542 3.9974 0.765625 3.42969C1.06771 2.86198 1.44792 2.35417 1.90625 1.90625C2.35417 1.44792 2.86198 1.06771 3.42969 0.765625C3.9974 0.463542 4.59896 0.25 5.23438 0.125C5.85938 0 6.49219 -0.03125 7.13281 0.03125C7.77344 0.09375 8.39062 0.25 8.98438 0.5C9.57812 0.739583 10.125 1.0651 10.625 1.47656C11.125 1.88802 11.5521 2.35938 11.9062 2.89062C12.2604 3.42188 12.5312 3.99479 12.7188 4.60938C12.9062 5.22396 13 5.85417 13 6.5C13 6.92708 12.9583 7.35417 12.875 7.78125C12.7917 8.19792 12.6693 8.60156 12.5078 8.99219C12.3464 9.38281 12.1458 9.75521 11.9062 10.1094C11.6667 10.4635 11.3958 10.7917 11.0938 11.0938C10.7917 11.3958 10.4635 11.6667 10.1094 11.9062C9.75521 12.1458 9.38281 12.3464 8.99219 12.5078C8.60156 12.6693 8.19792 12.7917 7.78125 12.875C7.35417 12.9583 6.92708 13 6.5 13ZM6.5 1C5.95833 1 5.42708 1.07812 4.90625 1.23438C4.38542 1.39062 3.89583 1.61979 3.4375 1.92188C2.98958 2.22396 2.59375 2.58594 2.25 3.00781C1.90625 3.42969 1.63021 3.89062 1.42188 4.39062C1.21354 4.90104 1.08333 5.42448 1.03125 5.96094C0.979167 6.4974 1.00521 7.03646 1.10938 7.57812C1.21354 8.10938 1.39323 8.61458 1.64844 9.09375C1.90365 9.57292 2.22396 10.0052 2.60938 10.3906C2.99479 10.776 3.42708 11.0964 3.90625 11.3516C4.38542 11.6068 4.89062 11.7865 5.42188 11.8906C5.96354 11.9948 6.5026 12.0208 7.03906 11.9688C7.57552 11.9167 8.09896 11.7865 8.60938 11.5781C9.10938 11.3698 9.57031 11.0938 9.99219 10.75C10.4141 10.4062 10.776 10.0104 11.0781 9.5625C11.3802 9.10417 11.6094 8.61458 11.7656 8.09375C11.9219 7.57292 12 7.04167 12 6.5C12 5.77083 11.8594 5.07031 11.5781 4.39844C11.2969 3.72656 10.901 3.13021 10.3906 2.60938C9.86979 2.09896 9.27344 1.70312 8.60156 1.42188C7.92969 1.14062 7.22917 1 6.5 1ZM10.5 6.5C10.5 6.4375 10.487 6.375 10.4609 6.3125C10.4349 6.25 10.401 6.19271 10.3594 6.14062C10.3073 6.09896 10.25 6.0651 10.1875 6.03906C10.125 6.01302 10.0625 6 10 6H6.5C6.4375 6 6.375 6.01302 6.3125 6.03906C6.25 6.0651 6.19271 6.09896 6.14062 6.14062C6.09896 6.19271 6.0651 6.25 6.03906 6.3125C6.01302 6.375 6 6.4375 6 6.5V10C6 10.0625 6.01302 10.125 6.03906 10.1875C6.0651 10.25 6.09896 10.3073 6.14062 10.3594C6.19271 10.401 6.25 10.4349 6.3125 10.4609C6.375 10.487 6.4375 10.5 6.5 10.5C6.5625 10.5 6.625 10.487 6.6875 10.4609C6.75 10.4349 6.80729 10.401 6.85938 10.3594C6.90104 10.3073 6.9349 10.25 6.96094 10.1875C6.98698 10.125 7 10.0625 7 10V7H10C10.0625 7 10.125 6.98698 10.1875 6.96094C10.25 6.9349 10.3073 6.90104 10.3594 6.85938C10.401 6.80729 10.4349 6.75 10.4609 6.6875C10.487 6.625 10.5 6.5625 10.5 6.5Z"
+      fill="currentColor"
+    />
+  </svg>
+);
+
+// 명성도 폴더 아이콘 (13x11, #DDF247)
+const SeasonFolderIcon = () => (
+  <svg viewBox="0 0 13 11" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path
+      d="M12 9H6.70312L5 10.7031C4.95833 10.7552 4.90885 10.7995 4.85156 10.8359C4.79427 10.8724 4.73438 10.901 4.67188 10.9219C4.60938 10.9531 4.54688 10.974 4.48438 10.9844C4.42188 10.9948 4.35938 11 4.29688 11H1C0.864583 11 0.736979 10.974 0.617188 10.9219C0.497396 10.8698 0.390625 10.7969 0.296875 10.7031C0.203125 10.6094 0.130208 10.5026 0.078125 10.3828C0.0260417 10.263 0 10.1354 0 10V0.96875C0 0.833333 0.0234375 0.708333 0.0703125 0.59375C0.117188 0.479167 0.1875 0.375 0.28125 0.28125C0.375 0.1875 0.479167 0.117188 0.59375 0.0703125C0.708333 0.0234375 0.833333 0 0.96875 0H12.0625C12.1875 0 12.3073 0.0234375 12.4219 0.0703125C12.5365 0.117188 12.6354 0.1875 12.7188 0.28125C12.8125 0.364583 12.8828 0.463542 12.9297 0.578125C12.9766 0.692708 13 0.8125 13 0.9375V8C13 8.13542 12.974 8.26302 12.9219 8.38281C12.8698 8.5026 12.7969 8.60938 12.7031 8.70312C12.6094 8.79688 12.5026 8.86979 12.3828 8.92188C12.263 8.97396 12.1354 9 12 9ZM1 10H4.29688L5.29688 9H1V10ZM12 1H1V8H12V1Z"
+      fill="#DDF247"
+    />
+  </svg>
+);
+
+type SeasonCardData = (typeof SEASON_PANELS)[number]["cards"][number];
+
+const SeasonMentionCard = ({ card }: { card: SeasonCardData }) => (
+  <div className="c5scard">
+    <div className="c5scard__top">
+      <div className="c5scard__meta">
+        <span className="c5scard__metaitem c5scard__metaitem--fm">
+          <SeasonFolderIcon />
+          {SEASON_CARD_FM}
+        </span>
+        <span className="c5scard__metaitem c5scard__metaitem--date">
+          <SeasonClockIcon />
+          {SEASON_CARD_DATE}
+        </span>
+      </div>
+
+      <p className="c5scard__title">{SEASON_CARD_TITLE}</p>
+
+      {/* Figma 좌표(218.97, 6)는 본문 행 기준이라 이 래퍼를 기준 컨테이너로 둔다 */}
+      <div className="c5scard__desc-wrap">
+        <p className="c5scard__desc">{SEASON_CARD_TEXT}</p>
+        <span className="c5scard__go">
+          <ArrowIcon />
+        </span>
+      </div>
+
+      <div className="c5scard__tags">
+        {SEASON_CARD_TAGS.map((label, i) => (
+          <span key={`${card.key}-tag-${i}`} className="c5scard__tag">
+            {label}
+          </span>
+        ))}
+      </div>
+
+      {/* Figma 는 별점 행을 본문 컨테이너 기준으로 절대배치한다(제목 오른쪽) */}
+      <div className="c5scard__rate">
+        <span className="c5scard__starset">
+          {TOP3_CARD_STARS.map((kind, i) => {
+            const Icon = STAR_ICONS[kind];
+            return <Icon key={`${card.key}-star-${i}`} />;
+          })}
+        </span>
+        <span className="c5scard__score">6 / 10</span>
+      </div>
+    </div>
+
+    <div className="c5scard__divider" aria-hidden="true" />
+
+    <div className="c5scard__profile">
+      <img className="c5scard__avatar" src={card.avatar} alt="" />
+      <div className="c5scard__ident">
+        <p className="c5scard__idrow">
+          <span className="c5scard__b">김미현</span>
+          <span className="c5scard__sep">|</span>
+          <span className="c5scard__m">여</span>
+          <span className="c5scard__sep">|</span>
+          <span className="c5scard__m">24</span>
+          <span className="c5scard__sep">|</span>
+          <span>
+            <span className="c5scard__b">서울대</span>
+            <span className="c5scard__r">학교</span>
+          </span>
+          <span className="c5scard__sep">|</span>
+          <span>
+            <span className="c5scard__b">미디어커뮤니케이션</span>
+            <span className="c5scard__r">학과</span>
+          </span>
+        </p>
+        <p className="c5scard__idrow">
+          <span>
+            <span className="c5scard__b">엔터테인먼트 </span>
+            <span className="c5scard__r">팀</span>
+          </span>
+          <span className="c5scard__sep">|</span>
+          <span>
+            <span className="c5scard__b">내돈내산 </span>
+            <span className="c5scard__r">파트</span>
+          </span>
+          <span className="c5scard__sep">|</span>
+          <span className="c5scard__b">엔비디아구글테슬라쿵</span>
+        </p>
+      </div>
+    </div>
+  </div>
+);
+
+type SeasonPanelData = (typeof SEASON_PANELS)[number];
+
+const SeasonPanel = ({ panel }: { panel: SeasonPanelData }) => (
+  <div className="cluster5-season__panel">
+    <div className="cluster5-season__bar">
+      <div className="cluster5-season__bar-left">
+        <span className="cluster5-season__bar-title">
+          <span className="cluster5-season__bar-strong">{panel.title.year}</span>
+          {panel.title.mid}
+          <span className="cluster5-season__bar-strong">{panel.title.season}</span>
+          {panel.title.tail}
+        </span>
+        <span className="cluster5-season__bar-sep" aria-hidden="true" />
+        <span className="cluster5-season__bar-range">{panel.range}</span>
+        <span className="cluster5-season__bar-sep" aria-hidden="true" />
+        <span className="cluster5-season__bar-count">
+          <span className="cluster5-season__bar-strong">{`${panel.count} `}</span>
+          comment
+        </span>
+      </div>
+      <span className="cluster5-season__verified">
+        <SeasonClockIcon />
+        Verified
+      </span>
+    </div>
+
+    <div className="cluster5-season__body">
+      <div className="cluster5-season__photo">
+        <div className="cluster5-season__photo-inner">
+          <img src={panel.photo} alt="" />
+        </div>
+      </div>
+
+      <div className="cluster5-season__deck">
+        <span className="cluster5-season__nav cluster5-season__nav--prev" aria-hidden="true">
+          <SeasonNavIcon />
+        </span>
+        <div className="cluster5-season__grid">
+          {panel.cards.map((card) => (
+            <SeasonMentionCard key={card.key} card={card} />
+          ))}
+        </div>
+        <span className="cluster5-season__nav cluster5-season__nav--next" aria-hidden="true">
+          <SeasonNavIcon />
+        </span>
+        <p className="cluster5-season__counter">
+          <span className="cluster5-season__counter-cur">{panel.counter}</span>/5
+        </p>
+      </div>
+    </div>
+  </div>
+);
+
+// =====================================================================
+// Section 9 데이터 / 아이콘 — 전부 Figma placeholder 원문 그대로의 정적 마크업.
+//
+// [에셋] 헤더 아이콘 5종은 다운스케일 후 픽셀 비교 결과 전부 기존 파일과
+// 동일해 그대로 참조한다(신규 0개). 새로 저장한 것은 카드 사진 12장 +
+// 아바타 12장뿐이며, 각각 레퍼런스 PNG 의 카드 위치와 상관 비교해 순서를 맞췄다.
+const WEEKLY_STATS = [
+  {
+    key: "comment",
+    icon: "/images/0/cluster5/gmention/pill-cards.png", // Section 6 과 동일 에셋
+    iconHeight: "4.0449cqw", // 54px
+    num: "45 ",
+    rest: "/ 70 comment",
+  },
+  {
+    key: "mail",
+    icon: "/images/0/cluster5/gmention/pill-mail.png", // Section 6 과 동일 에셋
+    iconHeight: "4.1948cqw", // 56px
+    num: "32 ",
+    rest: "/ 60 comment",
+  },
+  {
+    key: "fm",
+    icon: "/images/0/cluster5/mention/pill-hearts.png", // Section 5 와 동일 에셋
+    iconHeight: "3.8951cqw", // 52px
+    num: "103",
+    rest: " FM",
+    tight: true, // Figma: line-height 19px
+  },
+] as const;
+
+// Figma 1068:23587 — 4번째 pill(숫자 25px + 단위 Pretendard Medium 18px).
+// 아이콘은 Section 8 의 시즌 pill 과 동일 파일이다(픽셀 비교 확인).
+const WEEKLY_COUNT_PILL = {
+  icon: "/images/0/cluster5/season/pill-season.png",
+  iconHeight: "3.8951cqw", // 52px
+  num: "5",
+  unit: "주차",
+};
+
+const WEEKLY_CARD_DATE = "2025 - 08 - 01 (월)";
+const WEEKLY_CARD_SEASON = "2025년 여름 시즌, 4주차  ㅣ  25주차  ㅣ  ";
+const WEEKLY_CARD_STATUS = "성장(성공)";
+const WEEKLY_CARD_KIND = "위클리 평판";
+const WEEKLY_CARD_SUMMARY = "10자는 이 정도입...";
+const WEEKLY_CARD_TAG = "#추진력추진력추";
+const WEEKLY_CARD_FM = "75 FM";
+
+const WEEKLY_CARDS = Array.from({ length: 12 }, (_, i) => ({
+  key: `w${i + 1}`,
+  photo: `/images/0/cluster5/weekly/card-${i + 1}.png`,
+  avatar: `/images/0/cluster5/weekly/avatar-${i + 1}.png`,
+}));
+
+const WEEKLY_PAGES = ["2", "3", "4", "5"];
+
+type WeeklyCardData = (typeof WEEKLY_CARDS)[number];
+
+const WeeklyMentionCard = ({ card }: { card: WeeklyCardData }) => (
+  <div className="c5wcard">
+    <div className="c5wcard__media">
+      <img src={card.photo} alt="" />
+      <div className="c5wcard__badges">
+        <span className="c5wcard__date">{WEEKLY_CARD_DATE}</span>
+        <span className="c5wcard__like">
+          <MentionHeartIcon />
+        </span>
+      </div>
+    </div>
+
+    <p className="c5wcard__season">
+      {WEEKLY_CARD_SEASON}
+      <span className="c5wcard__season-status">{WEEKLY_CARD_STATUS}</span>
+    </p>
+
+    <div className="c5wcard__row">
+      <span className="c5wcard__kind">{WEEKLY_CARD_KIND}</span>
+      <span className="c5wcard__summary">
+        <span className="c5wcard__summary-text">{WEEKLY_CARD_SUMMARY}</span>
+        <span className="c5wcard__go">
+          <ArrowIcon />
+        </span>
+      </span>
+    </div>
+
+    <div className="c5wcard__profile">
+      <img className="c5wcard__avatar" src={card.avatar} alt="" />
+      <div className="c5wcard__ident">
+        <p className="c5wcard__idrow">
+          <span className="c5wcard__b">김미현</span>
+          <span className="c5wcard__sep">|</span>
+          <span className="c5wcard__m">여</span>
+          <span className="c5wcard__sep">|</span>
+          <span className="c5wcard__m">24</span>
+          <span className="c5wcard__sep">|</span>
+          <span className="c5wcard__b">엔비디아구글테슬라쿵</span>
+        </p>
+        <p className="c5wcard__idrow">
+          <span>
+            <span className="c5wcard__b">서울대</span>
+            <span className="c5wcard__r">학교</span>
+          </span>
+          <span className="c5wcard__sep">|</span>
+          <span>
+            <span className="c5wcard__b">미디어커뮤니케이션</span>
+            <span className="c5wcard__m">학과</span>
+          </span>
+        </p>
+        <p className="c5wcard__idrow">
+          <span className="c5wcard__b">엔터테인먼트팀</span>
+          <span className="c5wcard__sep">|</span>
+          <span>
+            <span className="c5wcard__b">내돈내산 </span>
+            <span className="c5wcard__r">파트</span>
+          </span>
+        </p>
+      </div>
+    </div>
+
+    <div className="c5wcard__divider" aria-hidden="true" />
+
+    <div className="c5wcard__tags">
+      <span className="c5wcard__tag">{WEEKLY_CARD_TAG}</span>
+    </div>
+
+    <div className="c5wcard__rate">
+      <span className="c5wcard__starset">
+        {TOP3_CARD_STARS.map((kind, i) => {
+          const Icon = STAR_ICONS[kind];
+          return <Icon key={`${card.key}-star-${i}`} />;
+        })}
+      </span>
+      <span className="c5wcard__score">6 / 10</span>
+    </div>
+
+    <div className="c5wcard__fm">
+      <span className="c5wcard__fm-label">명성도</span>
+      <MentionFmIcon />
+      <span className="c5wcard__fm-value">{WEEKLY_CARD_FM}</span>
+    </div>
+  </div>
+);
+
 const Cluster5Content = () => {
   // org 계산 SoT: lib/cluster-route.ts resolveOrgFromLocation (?org= 쿼리
   // 우선, 그다음 canonical 경로 suffix, 둘 다 없으면 null → marketing 폴백).
@@ -3676,6 +6144,12 @@ const Cluster5Content = () => {
       <style>{mentionCardsStyles}</style>
       <style>{gmentionSectionStyles}</style>
       <style>{gmentionCardStyles}</style>
+      <style>{mmentionSectionStyles}</style>
+      <style>{mmentionCardStyles}</style>
+      <style>{seasonSectionStyles}</style>
+      <style>{seasonCardStyles}</style>
+      <style>{weeklySectionStyles}</style>
+      <style>{weeklyCardStyles}</style>
       <style>{sectionSpacingStyles}</style>
       <div className="cluster5-sections">
         <section className="cluster5-hero" style={orgVars}>
@@ -4066,6 +6540,343 @@ const Cluster5Content = () => {
               </svg>
             </div>
           </div>
+        </section>
+
+        {/* Figma Group 2121454082(1068:22436) — Section 6 과 같은 "배너 안에
+            콘텐츠" 합성이지만 카드가 세로 리스트가 아니라 가로 3열이고
+            스크롤 화살표가 없다. 배너/헤더/우상단 아이콘의 Figma 스펙이
+            Section 5/6 과 동일해 .cluster5-mention__* 클래스를 재사용하고,
+            실제로 다른 것(종횡비 1335/1194.5, 배경 크롭 방식, 스크림, 타이틀
+            42px, 아이콘 좌표, 카드 행)만 .cluster5-mmention* 로 덮어쓴다. */}
+        <section className="cluster5-mmention" style={orgVars} aria-label="Cluv_Manager Mention">
+          <div className="cluster5-mention__banner">
+            {/* Figma 는 cover 가 아니라 (left 0.04% / top -102.37% / w 100% /
+                h 223.52%) 세로 크롭이다 — % 기준이 전부 부모라 <img> 절대배치로
+                옮기면 컨테이너와 같은 비율로 스케일된다. */}
+            <div className="cluster5-mmention__bgwrap" aria-hidden="true">
+              <img
+                className="cluster5-mmention__bgimg"
+                src="/images/0/cluster5/mmention/Banner-bg.png"
+                alt=""
+              />
+            </div>
+            <div className="cluster5-mention__scrim" aria-hidden="true" />
+
+            <div className="cluster5-mention__header">
+              <div className="cluster5-mention__heading">
+                <span className="cluster5-mention__eyebrow">
+                  <span className="cluster5-mention__eyebrow-text">Career Main Collection</span>
+                  <span className="cluster5-mention__badge" aria-hidden="true">
+                    <MentionBadgeIcon />
+                  </span>
+                </span>
+                <h2 className="cluster5-mention__title">Cluv_Manager Mention</h2>
+              </div>
+
+              <div className="cluster5-mention__meta">
+                <div className="cluster5-mention__type">
+                  <img
+                    className="cluster5-mention__type-icon"
+                    src="/images/0/cluster5/mention/type-icon.png"
+                    alt=""
+                  />
+                  <span className="cluster5-mention__type-text">
+                    <span className="cluster5-mention__type-label">Type by :</span>
+                    <span className="cluster5-mention__type-value">Cluving Mention card(M)</span>
+                  </span>
+                </div>
+
+                <div className="cluster5-mention__pills">
+                  {MMENTION_STATS.map((stat) => (
+                    <div key={stat.key} className="cluster5-mention__pill">
+                      <img
+                        className="cluster5-mention__pill-icon"
+                        style={{ height: stat.iconHeight }}
+                        src={stat.icon}
+                        alt=""
+                      />
+                      <p
+                        className={`cluster5-mention__pill-text${
+                          "tight" in stat && stat.tight ? " cluster5-mention__pill-text--tight" : ""
+                        }`}
+                      >
+                        <span className="cluster5-mention__pill-num">{stat.num}</span>
+                        <span>{stat.rest}</span>
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="cluster5-mention__tools" aria-hidden="true">
+                  <span className="cluster5-mention__tool cluster5-mention__tool--share">
+                    <MentionShareIcon />
+                  </span>
+                  <span className="cluster5-mention__tool cluster5-mention__tool--more">
+                    <MentionMoreIcon />
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Figma 1068:22471 — 400x491 카드 3장, gap 30, 좌우 중앙.
+              Section 6 과 같은 이유(≤1199.98px 에서 배너 overflow 에 잘림)로
+              배너의 형제로 둔다 — 데스크톱 렌더는 동일하다. */}
+          <div className="cluster5-mmention__row">
+            {MMENTION_CARDS.map((card) => (
+              <ManagerMentionCard key={card.key} card={card} />
+            ))}
+          </div>
+
+          {/* 우상단 수정/검색 — Figma 정적 시각 요소(실동작 없음). */}
+          <div className="cluster5-mention__actions" aria-hidden="true">
+            <div className="cluster5-mention__icon-btn">
+              <svg viewBox="0 0 11.6667 11.3907" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M5.83333 2.8907L0.5 8.22404V10.8907H11.1667M5.83333 2.8907L7.74575 0.978267L7.7469 0.977133C8.01016 0.713878 8.14202 0.582017 8.29402 0.532629C8.42792 0.489124 8.57216 0.489124 8.70605 0.532629C8.85795 0.581982 8.98966 0.713693 9.25254 0.976575L10.4124 2.13644C10.6764 2.40045 10.8085 2.53252 10.8579 2.68474C10.9014 2.81863 10.9014 2.96286 10.8579 3.09676C10.8085 3.24887 10.6766 3.38073 10.413 3.64437L10.4124 3.64493L8.49999 5.55736L3.16667 10.8907L0.5 10.8907M5.83333 2.8907L8.49999 5.55736"
+                  stroke="white"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <div className="cluster5-mention__icon-btn">
+              <svg viewBox="0 0 11 11" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M7.16667 7.16667L10.5 10.5M4.38889 8.27778C2.24112 8.27778 0.5 6.53666 0.5 4.38889C0.5 2.24112 2.24112 0.5 4.38889 0.5C6.53666 0.5 8.27778 2.24112 8.27778 4.38889C8.27778 6.53666 6.53666 8.27778 4.38889 8.27778Z"
+                  stroke="white"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+          </div>
+        </section>
+
+        {/* Figma Frame 2121457679(1068:22981) + 형제 Vector 15(상단 구분선) /
+            Frame 2121457272(우상단 아이콘). 앞 섹션들과 달리 배경 배너가 없고
+            프레임 폭이 1263(좌우 36px 인셋)이다. 헤더의 눈썹/배지/타이틀/
+            Type by/통계 pill/아이콘 버튼은 px 스펙이 Section 5~7 과 동일해
+            .cluster5-mention__* 를 재사용하고, 이 섹션에서 실제로 다른 것만
+            .cluster5-season* 로 덮어쓴다. */}
+        <section className="cluster5-season" style={orgVars} aria-label="Season_Mention">
+          <div className="cluster5-season__rule" aria-hidden="true" />
+
+          <div className="cluster5-mention__header">
+            <div className="cluster5-mention__heading">
+              <span className="cluster5-mention__eyebrow">
+                <span className="cluster5-mention__eyebrow-text">Career Main Collection</span>
+                <span className="cluster5-mention__badge" aria-hidden="true">
+                  <MentionBadgeIcon />
+                </span>
+              </span>
+              <h2 className="cluster5-mention__title">Season_Mention</h2>
+            </div>
+
+            <div className="cluster5-mention__meta">
+              <div className="cluster5-mention__type">
+                <img
+                  className="cluster5-mention__type-icon"
+                  src="/images/0/cluster5/mention/type-icon.png"
+                  alt=""
+                />
+                <span className="cluster5-mention__type-text">
+                  <span className="cluster5-mention__type-label">Type by :</span>
+                  <span className="cluster5-mention__type-value">Seasoning Mention card</span>
+                </span>
+              </div>
+
+              <div className="cluster5-mention__pills">
+                {SEASON_STATS.map((stat) => (
+                  <div key={stat.key} className="cluster5-mention__pill">
+                    <img
+                      className="cluster5-mention__pill-icon"
+                      style={{ height: stat.iconHeight }}
+                      src={stat.icon}
+                      alt=""
+                    />
+                    <p
+                      className={`cluster5-mention__pill-text${
+                        "tight" in stat && stat.tight ? " cluster5-mention__pill-text--tight" : ""
+                      }`}
+                    >
+                      <span className="cluster5-mention__pill-num">{stat.num}</span>
+                      <span>{stat.rest}</span>
+                    </p>
+                  </div>
+                ))}
+                {/* Figma 1068:23011 — 이 섹션에만 있는 4번째 pill */}
+                <div className="cluster5-mention__pill">
+                  <img
+                    className="cluster5-mention__pill-icon"
+                    style={{ height: SEASON_COUNT_PILL.iconHeight }}
+                    src={SEASON_COUNT_PILL.icon}
+                    alt=""
+                  />
+                  <p className="cluster5-mention__pill-text cluster5-mention__pill-season">
+                    <span className="cluster5-mention__pill-num">{SEASON_COUNT_PILL.num}</span>
+                    <span>{" "}</span>
+                    <span className="cluster5-mention__pill-unit">{SEASON_COUNT_PILL.unit}</span>
+                  </p>
+                </div>
+              </div>
+              {/* Section 5~7 과 달리 이 섹션 헤더에는 공유/더보기 아이콘이 없다
+                  (Figma Frame 2121457651 의 자식은 Type by 와 pill 그룹 둘뿐).
+                  넣으면 gap 107 이 두 번 더해져 1155 폭을 넘어 섹션 밖으로
+                  삐져나간다 — 실측으로 확인. */}
+            </div>
+          </div>
+
+          <div className="cluster5-season__panels">
+            {SEASON_PANELS.map((panel) => (
+              <SeasonPanel key={panel.key} panel={panel} />
+            ))}
+          </div>
+
+          {/* Figma 1068:23550 — 1 — 2 3 4 5 */}
+          <div className="cluster5-season__pager" aria-hidden="true">
+            <span className="cluster5-season__pager-cur">1</span>
+            <span className="cluster5-season__pager-bar" />
+            {SEASON_PAGES.map((n) => (
+              <span key={n}>{n}</span>
+            ))}
+          </div>
+
+          {/* 우상단 수정/검색 — Figma 정적 시각 요소(실동작 없음). */}
+          <div className="cluster5-mention__actions" aria-hidden="true">
+            <div className="cluster5-mention__icon-btn">
+              <svg viewBox="0 0 11.6667 11.3907" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M5.83333 2.8907L0.5 8.22404V10.8907H11.1667M5.83333 2.8907L7.74575 0.978267L7.7469 0.977133C8.01016 0.713878 8.14202 0.582017 8.29402 0.532629C8.42792 0.489124 8.57216 0.489124 8.70605 0.532629C8.85795 0.581982 8.98966 0.713693 9.25254 0.976575L10.4124 2.13644C10.6764 2.40045 10.8085 2.53252 10.8579 2.68474C10.9014 2.81863 10.9014 2.96286 10.8579 3.09676C10.8085 3.24887 10.6766 3.38073 10.413 3.64437L10.4124 3.64493L8.49999 5.55736L3.16667 10.8907L0.5 10.8907M5.83333 2.8907L8.49999 5.55736"
+                  stroke="white"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <div className="cluster5-mention__icon-btn">
+              <svg viewBox="0 0 11 11" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M7.16667 7.16667L10.5 10.5M4.38889 8.27778C2.24112 8.27778 0.5 6.53666 0.5 4.38889C0.5 2.24112 2.24112 0.5 4.38889 0.5C6.53666 0.5 8.27778 2.24112 8.27778 4.38889C8.27778 6.53666 6.53666 8.27778 4.38889 8.27778Z"
+                  stroke="white"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+          </div>
+        </section>
+
+        {/* Figma Frame 2121457680(1068:23557) + 형제 Vector 16(상단 구분선) /
+            Vector 17(하단 구분선) / Frame 2121457687(우상단 아이콘).
+            페이지 프레임의 마지막 섹션이라 아래로 넘길 섹션이 없어 이 섹션만
+            위/아래 구분선을 둘 다 그린다. 헤더는 Section 5~8 과 px 스펙이
+            동일해 .cluster5-mention__* 를 재사용하고 left/top/width 만 덮어쓴다. */}
+        <section className="cluster5-weekly" style={orgVars} aria-label="Weekly_Mention">
+          <div className="cluster5-weekly__rule cluster5-weekly__rule--top" aria-hidden="true" />
+
+          <div className="cluster5-mention__header">
+            <div className="cluster5-mention__heading">
+              <span className="cluster5-mention__eyebrow">
+                <span className="cluster5-mention__eyebrow-text">Career Main Collection</span>
+                <span className="cluster5-mention__badge" aria-hidden="true">
+                  <MentionBadgeIcon />
+                </span>
+              </span>
+              <h2 className="cluster5-mention__title">Weekly_Mention</h2>
+            </div>
+
+            <div className="cluster5-mention__meta">
+              <div className="cluster5-mention__type">
+                <img
+                  className="cluster5-mention__type-icon"
+                  src="/images/0/cluster5/mention/type-icon.png"
+                  alt=""
+                />
+                <span className="cluster5-mention__type-text">
+                  <span className="cluster5-mention__type-label">Type by :</span>
+                  <span className="cluster5-mention__type-value">Weekly Mention card</span>
+                </span>
+              </div>
+
+              <div className="cluster5-mention__pills">
+                {WEEKLY_STATS.map((stat) => (
+                  <div key={stat.key} className="cluster5-mention__pill">
+                    <img
+                      className="cluster5-mention__pill-icon"
+                      style={{ height: stat.iconHeight }}
+                      src={stat.icon}
+                      alt=""
+                    />
+                    <p
+                      className={`cluster5-mention__pill-text${
+                        "tight" in stat && stat.tight ? " cluster5-mention__pill-text--tight" : ""
+                      }`}
+                    >
+                      <span className="cluster5-mention__pill-num">{stat.num}</span>
+                      <span>{stat.rest}</span>
+                    </p>
+                  </div>
+                ))}
+                <div className="cluster5-mention__pill">
+                  <img
+                    className="cluster5-mention__pill-icon"
+                    style={{ height: WEEKLY_COUNT_PILL.iconHeight }}
+                    src={WEEKLY_COUNT_PILL.icon}
+                    alt=""
+                  />
+                  <p className="cluster5-mention__pill-text cluster5-mention__pill-season">
+                    <span className="cluster5-mention__pill-num">{WEEKLY_COUNT_PILL.num}</span>
+                    <span>{" "}</span>
+                    <span className="cluster5-mention__pill-unit">{WEEKLY_COUNT_PILL.unit}</span>
+                  </p>
+                </div>
+              </div>
+              {/* Section 8 과 마찬가지로 이 섹션 헤더에도 공유/더보기 아이콘이 없다
+                  (Figma Frame 2121457651 의 자식은 Type by 와 pill 그룹 둘뿐). */}
+            </div>
+          </div>
+
+          <div className="cluster5-weekly__grid">
+            {WEEKLY_CARDS.map((card) => (
+              <WeeklyMentionCard key={card.key} card={card} />
+            ))}
+          </div>
+
+          {/* Figma 1068:24509 — 1 — 2 3 4 5 */}
+          <div className="cluster5-weekly__pager" aria-hidden="true">
+            <span className="cluster5-weekly__pager-cur">1</span>
+            <span className="cluster5-weekly__pager-bar" />
+            {WEEKLY_PAGES.map((n) => (
+              <span key={n}>{n}</span>
+            ))}
+          </div>
+
+          {/* 우상단 수정/검색 — Figma 정적 시각 요소(실동작 없음). */}
+          <div className="cluster5-mention__actions" aria-hidden="true">
+            <div className="cluster5-mention__icon-btn">
+              <svg viewBox="0 0 11.6667 11.3907" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M5.83333 2.8907L0.5 8.22404V10.8907H11.1667M5.83333 2.8907L7.74575 0.978267L7.7469 0.977133C8.01016 0.713878 8.14202 0.582017 8.29402 0.532629C8.42792 0.489124 8.57216 0.489124 8.70605 0.532629C8.85795 0.581982 8.98966 0.713693 9.25254 0.976575L10.4124 2.13644C10.6764 2.40045 10.8085 2.53252 10.8579 2.68474C10.9014 2.81863 10.9014 2.96286 10.8579 3.09676C10.8085 3.24887 10.6766 3.38073 10.413 3.64437L10.4124 3.64493L8.49999 5.55736L3.16667 10.8907L0.5 10.8907M5.83333 2.8907L8.49999 5.55736"
+                  stroke="white"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <div className="cluster5-mention__icon-btn">
+              <svg viewBox="0 0 11 11" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M7.16667 7.16667L10.5 10.5M4.38889 8.27778C2.24112 8.27778 0.5 6.53666 0.5 4.38889C0.5 2.24112 2.24112 0.5 4.38889 0.5C6.53666 0.5 8.27778 2.24112 8.27778 4.38889C8.27778 6.53666 6.53666 8.27778 4.38889 8.27778Z"
+                  stroke="white"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+          </div>
+
+          <div className="cluster5-weekly__rule cluster5-weekly__rule--bottom" aria-hidden="true" />
         </section>
       </div>
     </>
