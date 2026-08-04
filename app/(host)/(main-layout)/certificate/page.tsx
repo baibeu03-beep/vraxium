@@ -1,5 +1,6 @@
 "use client";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import Animations from "@/components/shared/Animations";
 import Breadcrumb from "@/components/shared/Breadcrumb";
@@ -98,6 +99,7 @@ function CertificateContent() {
   const [errors, setErrors] = useState<CertificateFieldError[]>([]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState<null | "preview" | "png" | "pdf">(null);
+  const [heroFailed, setHeroFailed] = useState(false);
 
   const previewUrlRef = useRef<string | null>(null);
   const setPreview = useCallback((url: string | null) => {
@@ -295,16 +297,36 @@ function CertificateContent() {
       <Breadcrumb title="활동 증명 발급" />
       <section className="pb-120" style={{ paddingTop: 24 }}>
         <div className="container">
+          {/* 제목 배너 → Hero 순서(/vacation 과 동일하게 배너가 먼저 온다). */}
           <header className="certificate-banner">
             <span className="certificate-banner__badge">
-              <i className="ti ti-certificate" aria-hidden="true"></i>CERTIFICATE
+              <i className="ti ti-certificate" aria-hidden="true"></i>CLUB CERTIFICATE
             </span>
-            <h1 className="certificate-banner__title">클럽 활동 증명서 발급</h1>
+            <h1 className="certificate-banner__title">활동 증명서 발급</h1>
             <span className="certificate-banner__bar" aria-hidden="true"></span>
             <p className="certificate-banner__subtitle">
-              입력한 내용이 증명서 서식에 합성되어 PNG · PDF 로 발급됩니다
+              현재 활동 정보를 확인하고 나만의 증명서를 발급하세요
             </p>
           </header>
+
+          {/* Hero — 순수 장식(텍스트 미겹침). 로드 실패 시 is-fallback 으로 그라데이션만 남아
+              높이가 유지되므로 아래 폼 레이아웃이 밀리지 않는다. */}
+          <section
+            className={`certificate-hero${heroFailed ? " is-fallback" : ""}`}
+            aria-hidden="true"
+          >
+            {!heroFailed ? (
+              <Image
+                src="/images/0/certificate.png"
+                alt=""
+                fill
+                priority
+                sizes="(max-width: 860px) 100vw, 1200px"
+                className="certificate-hero__image"
+                onError={() => setHeroFailed(true)}
+              />
+            ) : null}
+          </section>
 
           {loadError ? (
             <div className="certificate-notice certificate-notice--error">

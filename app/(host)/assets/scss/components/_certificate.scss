@@ -7,8 +7,15 @@
 .certificate-page {
   --cert-accent: #faab07;
   --cert-accent-contrast: #111;
+  --cert-accent-soft: rgba(250, 171, 7, 0.14);
+  --cert-accent-glow: rgba(250, 171, 7, 0.28);
+  // 증명서 서식·Hero 이미지가 금장 톤이라 강조색 보조로 골드를 둔다.
+  // 배지 테두리 그라데이션과 Hero 링에만 쓰고 본문에는 쓰지 않는다(가독성 유지).
+  --cert-gold: #d9b46a;
+  --cert-gold-soft: rgba(217, 180, 106, 0.22);
   --cert-surface: rgba(255, 255, 255, 0.045);
   --cert-border: rgba(255, 255, 255, 0.09);
+  --cert-border-strong: rgba(255, 255, 255, 0.16);
   --cert-field-bg: #1d212b;
   --cert-field-border: rgba(255, 255, 255, 0.28);
   --cert-text: #eef0f3;
@@ -16,29 +23,83 @@
   --cert-danger: #ff5c5c;
 
   // 현재 발급 대상은 엥크레 전용이라 실질적으로 이 테마만 활성화된다.
+  // 엥크레 대표색(핑크) + 서식의 금장(골드) 조합.
   &.certificate-encre {
     --cert-accent: #ff4b70;
     --cert-accent-contrast: #fff;
+    --cert-accent-soft: rgba(255, 75, 112, 0.14);
+    --cert-accent-glow: rgba(255, 75, 112, 0.3);
   }
 
   color: var(--cert-text);
 }
 
+// ── Hero 이미지 ─────────────────────────────────────────────────────────────
+// 텍스트를 겹치지 않는 순수 장식 배너. next/image 의 fill 을 쓰므로 position:relative 필수.
+// 이미지 로드 실패 시에도 높이가 CSS 로 고정돼 레이아웃이 무너지지 않고,
+// .is-fallback 이 붙으면 골드/핑크 그라데이션만 남는다.
+.certificate-hero {
+  position: relative;
+  width: 100%;
+  height: 320px;
+  margin-bottom: 24px;
+  border-radius: 20px;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 160% at 15% 20%, var(--cert-gold-soft), transparent 62%),
+    linear-gradient(120deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+  border: 1px solid var(--cert-border);
+  box-shadow: 0 0 0 4px var(--cert-accent-soft);
+
+  &__image {
+    object-fit: cover;
+    // 주요 피사체(액자 증명서)가 좌측에 있어 가로 크롭 시 왼쪽을 살린다.
+    object-position: 38% center;
+  }
+
+  // 이미지 위쪽에 옅은 어둠을 얹어 아래 배너와의 경계를 부드럽게 한다.
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(180deg, transparent 55%, rgba(10, 12, 16, 0.45) 100%);
+  }
+}
+
 // ── 상단 배너 ────────────────────────────────────────────────────────────────
+// 디자인 준용: _vacation.scss 의 .vacation-banner (배지/제목/장식바/부제 규격 동일).
+// ⚠️ 클래스를 재사용하지 않고 값만 복제한다 — /vacation 과 스타일이 결합되면
+//    한쪽 수정이 다른 쪽 회귀로 이어진다. 지금은 사용처가 2곳이라 공통 primitive
+//    추출은 보류하고, 3번째 페이지가 생기면 그때 section-banner 로 승격한다.
 .certificate-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
   margin-bottom: 28px;
+  padding: 42px 24px;
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 140% at 50% -10%, var(--cert-accent-soft), transparent 60%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+  border: 1px solid var(--cert-border-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 
   &__badge {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 14px;
+    gap: 6px;
+    padding: 6px 13px;
     border-radius: 999px;
+    background: var(--cert-accent-soft);
     border: 1px solid var(--cert-accent);
     color: var(--cert-accent);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.14em;
+    font-family: "Pretendard", sans-serif;
+    font-size: 12.5px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
 
     i {
       font-size: 15px;
@@ -46,26 +107,40 @@
   }
 
   &__title {
-    margin: 14px 0 0;
-    font-size: 40px;
-    line-height: 1.2;
-    font-weight: 700;
-    color: var(--cert-text);
+    margin: 0;
+    font-family: "Pretendard", sans-serif;
+    font-size: 46px;
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    line-height: 1.12;
+    text-align: center;
+    // 좁은 폭에서 "활동 증명 / 서 발급" 처럼 단어 중간이 끊기는 것을 막고
+    // 어절 경계(공백)에서만 줄바꿈시킨다. 크기·굵기·자간은 vacation 과 동일.
+    word-break: keep-all;
+    // 화이트 → 대표색 그라데이션 텍스트(vacation 과 동일 규격).
+    background: linear-gradient(112deg, #ffffff 38%, var(--cert-accent) 108%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
   }
 
   &__bar {
-    display: block;
-    width: 64px;
-    height: 3px;
-    margin: 16px 0 12px;
-    background: var(--cert-accent);
+    width: 68px;
+    height: 4px;
     border-radius: 2px;
+    background: var(--cert-accent);
+    box-shadow: 0 0 14px var(--cert-accent-glow);
   }
 
   &__subtitle {
     margin: 0;
-    font-size: 15px;
+    font-family: "Pretendard", sans-serif;
+    font-size: 15.5px;
+    font-weight: 500;
     color: var(--cert-text-muted);
+    text-align: center;
+    word-break: keep-all;
   }
 }
 
@@ -356,7 +431,44 @@
 }
 
 // ── 반응형 ──────────────────────────────────────────────────────────────────
+// 브레이크포인트·좌우 패딩은 /vacation 과 동일(860px / 16px).
 @media (max-width: 860px) {
+  .certificate-page {
+    .container {
+      max-width: 100%;
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+  }
+
+  .certificate-hero {
+    // 모바일은 낮은 배너형. 이 높이에서는 세로가 아니라 가로가 잘리므로
+    // object-position 을 더 왼쪽으로 당겨 액자 증명서가 항상 보이게 한다.
+    height: 190px;
+    margin-bottom: 16px;
+    border-radius: 16px;
+    box-shadow: 0 0 0 3px var(--cert-accent-soft);
+
+    &__image {
+      object-position: 32% center;
+    }
+  }
+
+  .certificate-banner {
+    padding: 30px 18px;
+    gap: 12px;
+    margin-bottom: 20px;
+    border-radius: 16px;
+
+    &__title {
+      font-size: 31px;
+    }
+
+    &__subtitle {
+      font-size: 14px;
+    }
+  }
+
   .certificate-layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -371,9 +483,5 @@
 
   .certificate-preview {
     position: static;
-  }
-
-  .certificate-banner__title {
-    font-size: 30px;
   }
 }

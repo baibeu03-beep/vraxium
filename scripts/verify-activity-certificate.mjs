@@ -131,9 +131,17 @@ function diff(a, b) {
   return `only-first=${[...A].filter((x) => !B.has(x)).join(",")} only-second=${[...B].filter((x) => !A.has(x)).join(",")}`;
 }
 
-/** 최종 이미지에서 QR 영역을 잘라 실제로 디코딩한다. */
+/**
+ * 최종 이미지에서 QR 영역을 잘라 실제로 디코딩한다.
+ *
+ * ⚠️ 반드시 QR 이 실제로 놓인 영역만 정확히 잘라야 한다.
+ *    템플릿의 금장 장식 프레임까지 넉넉히 포함해 자르면 jsQR 이 그 반복 무늬를
+ *    파인더 패턴으로 오인해 실패한다(URL 이 길어져 QR 이 조밀해질수록 잘 발생).
+ *    좌표는 lib/certificates/activityCertificateTemplate.ts 의 qr 설정과 일치시킬 것.
+ */
+const QR_BOX = { left: 838, top: 831, size: 116 };
 async function decodeQr(png) {
-  const region = { left: 820, top: 815, width: 150, height: 145 };
+  const region = { left: QR_BOX.left, top: QR_BOX.top, width: QR_BOX.size, height: QR_BOX.size };
   const { data, info } = await sharp(png)
     .extract(region)
     .resize({ width: region.width * 4, kernel: "nearest" })
