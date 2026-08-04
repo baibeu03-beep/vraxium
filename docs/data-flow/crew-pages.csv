@@ -1,0 +1,92 @@
+page,api,dto,data_items,local_transform,displayed_value,mode_variation,risk
+/ (home-one),-,-,정적 템플릿(랜덤 이미지 배정만),createHomeImageAssignments() 서버 랜덤,히어로/배너/카드 이미지,none,low
+/index-two[-ec|-ok|-px],GET /api/profile/summary,"{reliabilityRate,completionRate,practicalCounts,badges,seasonHistories}",일정 신뢰도·활동 이행율·실무 4카운트·배지(별/번개/방패)·시즌 이력,포맷(숫자 → % 문자열)·시즌명 영문→한글 매핑,사이드바 이력서 카드 수치,demoUserId/actAs 미지원(세션 전용),medium — summary route 에 stale-schema seasons 쿼리 존재(deferred)
+/index-two[-ec|-ok|-px],-,-,나머지 섹션 전부 벤더 템플릿 정적,-,정적,none,low
+/career,GET /api/profile/,"result.data(user_profiles raw) + practicalCounts + practicalStats + point + badges + growthInfo + gradeStats + seasonHistories + resumeCardSettings + reliabilityRate + completionRate",이력서 카드 전 항목,"이름 성/이름 분리, 시즌명 한글화, 전체주차 분모 date 차 계산, 역할 라벨 매핑",resume-card 좌측 사이드바,demoUserId → targetUserId 폴드(useDemoUserMode),high — 표시 파생값 다수가 프론트 재계산
+/career,GET /api/educations,data[](학력 행),학교명·학과·학년·학점,mask.school/mask.major 마스킹 + formatMajor trim,이력서 학력 라인,비로그인 마스킹,medium
+/career,GET /api/auth/check-status,"{success,status}",승인 상태,status==='approved' 불리언화,편집 버튼 노출 게이트,세션 전용,low
+(cluster-pages)/layout 이력서 사이드바,GET /api/profile/,동일(위 /career 와 동일 DTO),이력서 카드 전 항목,동일,cluster-1~10 · cluster-4-card 전 페이지 좌측 카드,demoUserId 폴드,high — 모든 cluster 페이지에 공유되는 단일 소비처
+(cluster-pages)/layout 이력서 사이드바,GET /api/educations,data[],학교·학과,마스킹,이력서 학력 라인,비로그인 마스킹,medium
+(main-layout)/layout QA 가드,GET /api/qa-mode/access,"{allowed,reason}",QA 배포 접근 허용 여부,판정 실패 시 blocked(보수적),차단 화면 or children,QA 배포에서만 마운트(NEXT_PUBLIC_APP_ENV),medium
+/cluster-1[-ec|-px],-,-,자체 API 없음(home-two 템플릿 컴포넌트),-,정적 배너/피처,none,low
+/cluster-2[-ec|-px],GET /api/photos?userId&org,"{data:{sidebarPhoto,mainPhoto,subPhotos[],defaultPhotos}}",프로필 사진 1 + 메인 1 + 서브 4,없음(그대로 주입) + link preload,갤러리 육각형 이미지,demoUserId 시 apiUrl 이 쿼리 부착,low
+/cluster-2[-ec|-px],PUT /api/photos,"{success}",사진 저장,저장 후 clearProfileCache + invalidateDedupe,저장 결과 팝업,demoUserId 부착 시 대상 유저 고정,medium — 저장 후 캐시 무효화 누락 시 stale 복원
+/cluster-2[-ec|-px],GET /api/slogans,"{data:{slogan1..3:{option,content,rating},engName}}",슬로건 3종 + 평점 + 작성자 영문명,없음,슬로건 카드,demoUserId 부착,low
+/cluster-2[-ec|-px],GET /api/videos,"{data:{videoUrl1..3,engName}}",유튜브 영상 3개,getYouTubeThumbnail(url) 로 썸네일 URL 파생,영상 카드 썸네일,demoUserId 부착 · videos API 는 raw 이름 반환(마스킹은 클라 게이트),medium — 이름 마스킹이 클라이언트 단일 게이트
+/cluster-2[-ec|-px],GET /api/educations,data[],학력 카드 N개,정렬/1번 학력 primary 판정,학력 섹션,demoUserId 부착,medium
+/cluster-2[-ec|-px],GET /api/edit-windows/permission?resource_key=cluster2.primary_education,"{data:{canEdit,reason,expiresAt}}",1번 학력 수정 가능 여부,canEditWithQaOwnerOverride(isAdmin·isAuthenticated·isOwner·hasEditWindow) 재판정,1번 학력 수정 버튼 활성/비활성,QA 소유자 override(QA_OWNER_EDIT_ENABLED) · isDemo 시 인증 우회,high — 게이트 재판정(의미 변경)
+/cluster-2[-ec|-px],GET /api/edit-windows/permission?resource_key=cluster2.review_links,"{data:{canEdit}}",클럽 리뷰 링크 수정 가능 여부,동일 override 로직,리뷰 링크 수정 버튼,QA 소유자 override,high
+/cluster-2[-ec|-px],GET /api/introductions,"{data:{growth_story,social_experience,career_direction,work_style,personal_story}}",자기소개 5카드,필드명 → 카드 index 매핑,자기소개 카드 본문,demoUserId 부착,low
+/cluster-2[-ec|-px],GET /api/review-link,"{data:{cluvingReviewLink,links[]}}",주차 리뷰 링크 10슬롯,REVIEW_LINK_WEEK_INDICES(30·3·6…27) 로 슬롯↔주차 매핑,리뷰 링크 목록,demoUserId 부착,medium — 슬롯 인덱스 매핑이 프론트 상수
+/cluster-2[-ec|-px],GET /api/schools/search?query&eduLevel,"{schools[]}",학교 검색 결과,없음,학교 자동완성 드롭다운,none,low
+/cluster-2[-ec|-px],POST /api/photos/upload,"{url}",업로드 이미지 URL,없음,업로드 미리보기,demoUserId 부착,low
+/cluster-3[-ec|-px],GET /api/profile?userId,"{reliabilityRate,gradeStats:{avgPercentile,grade,gradeLabel},data.eng_name,data.display_name}",일정 신뢰도·품계(백분위/번호/라벨)·영문/한글 이름,없음(품계 재계산 금지 정책) · topPercent=gradeStats.avgPercentile 그대로,CLUB FINAL INDEX 상단 지표,demoUserId 는 urlUserId 로만 폴드(demoQS 미부착),medium — avgPercentile 은 admin club-rank 우선/캐시 폴백(백엔드)
+/cluster-3[-ec|-px],GET /api/cluster3/stats-cards?userId,"{data:{process:{growthStatusKey,growthStatus,growthStatusLabel,growthStartDate,growthEndDate,isBeCluving},period:{successWeeks,successWeeksPending,failWeeks,personalRestWeeks,personalRestWeeksPending,officialRestWeeks,growableWeeks,personalRestSeasons,successSeasons},points:{totalStars,totalShields,totalLightning}}}",성장 진행 상태 · 기간 집계 9종 · 포인트 3종,growthStatusKey → GROWTH_STATUS_LABEL_BY_KEY 직독(키 없으면 라벨 문자열 fallback),Process/Period/Point 3 카드,demoQS 미부착 — 데모(localStorage)면 호출 자체 스킵,medium — 데모 모드는 완전히 다른 더미 시드 사용
+/cluster-3[-ec|-px],GET /api/portfolio-channel-cards?userId,"{cards[]:{cardIndex,channelName,platform,management,startYear/Month/Day,rating,status,link,images[],insight,experience,metrics,topMetricName,topMetricValue}}",채널 카드 16슬롯,cardIndex(1~16)→배열 위치 매핑 · 미저장 슬롯은 emptyCard 유지,채널 카드 그리드,demoUserId 는 urlUserId 폴드,medium
+/cluster-3[-ec|-px],GET /api/portfolio-top-cards?userId,"{cards[]}",대표(TOP)/상세 카드,슬라이더 [0]~[9] 매핑 · 이미지 없으면 getChannelCardImage 폴백,아웃풋 카드 프리뷰,demoUserId 폴드,medium — 채널카드 이미지 fallback
+/cluster-3[-ec|-px],GET /api/edit-windows/permission?resource_key=cluster3.output_cards,"{data:{canEdit,reason,expiresAt}}",아웃풋 카드 수정 창,canEditOwnedResource / QA owner override 재판정,수정 버튼 활성,QA 소유자 override,high
+/cluster-3[-ec|-px],GET /api/edit-windows/permission?resource_key=cluster3.detail_cards,"{data:{canEdit,reason,expiresAt}}",상세 카드 수정 창,동일,수정 버튼 활성,QA 소유자 override,high
+/cluster-3[-ec|-px],PUT /api/portfolio-channel-cards · PUT /api/portfolio-top-cards,"{success} 또는 plain-text 413",저장 결과,readJsonSafe 로 비-JSON 413 처리 · 4MB 사전 검증,저장 팝업,demoUserId 부착,medium
+/cluster-3[-ec|-px],GET /api/auth/check-status,"{status}",승인 상태,불리언화,편집 게이트,세션 전용,low
+/cluster-4[-ec|-px] (Weekly Growth 목록),GET /api/profile?userId&context=cluster41,"{data.id,growthPeriodStats,growthInfo:{startWeekInfo,endWeekInfo,status,growthStatus,startDate},currentSeasonInfo,seasonHistories[]}",성장 시작/종료 주차 · 성장 상태 · 현재 시즌/주차 · 시즌 이력,"weekNumberLabel() 로 0주차→전환 주차 라벨링, 연도 %100 2자리 변환",WEEKLY GROWTH 요약 카드,demoQS 부착 · context=cluster41 경량 분기,medium — 라벨 재구성(포맷)
+/cluster-4[-ec|-px],GET /api/cluster4/weekly-cards?userId,"AdminCluster4WeeklyCardDto[] (weekId,weekNumber,weekLabel,displayTitle,startDate,endDate,statusLabel,statusTone,points{star,shield,pointC,lightning},infoRate/experienceRate/competencyRate/careerRate,lines[],reputationSummary,colleagueSummary,weeklyReputations[],weeklyColleagues[],teamName,partName,roleLabel,crewClassPositionCode,membershipStatusLabel,accumulatedApprovedWeeks,totalRequiredWeeks,isOnboarding)",주차 카드 목록 전체,"isRegularActivityWeekDto 필터(전환주차 제외), 4허브 rate 합산으로 주차 성장률 재계산, competency empty-zero 게이트, 평판/동료 분자=표시배열 우선, 성장중단 배지 endWeekInfo 매칭",주차 카드 리스트/필터/페이지네이션,demoQS 부착 · modeQS 는 상수 ""(비활성),high — 상단 성장률을 DTO growthRate 대신 프론트 합산으로 재계산(의미 변경)
+/cluster-4[-ec|-px],GET /api/cluster3/stats-cards?userId,"{data:{period:{growableWeeks,successWeeks,failWeeks,personalRestWeeks,personalRestSeasons},process:{growthStatusKey}}}",성장 가능/성공/실패/휴식 주차 · 성장 상태 키,admin stats-cards 우선 → 없으면 /api/profile growthPeriodStats 폴백,Details 카드 6행,demoQS 부착,medium — 이중 소스 폴백
+/cluster-4-1[-ec|-px] (Season Growth),GET /api/profile/?userId,"data(user_profiles raw), growthInfo, growthPeriodStats, seasonHistories, teams/parts/userTeamParts/userRoleHistory",인적사항 · 성장 정보 · 팀/파트/역할 이력,userTeamParts/userRoleHistory 부재 시 profile data 기반 최소 1행 합성,area-8 시즌 활동 상태 표,demoQS 부착,high — 데이터 부재 시 프론트가 행을 합성(fallback 생성)
+/cluster-4-1[-ec|-px],GET /api/cluster4/weekly-growth?userId,"{data:{seasonSummary,seasonPointSummary,seasonSummaries[],seasonActivityStatuses[]}}",시즌 요약 · 시즌 누적 포인트 · 시즌 목록 · 시즌 활동 상태,없음(백엔드 DTO 그대로),area-1 타이틀 · area-4 포인트,demoQS 부착,low
+/cluster-4-1[-ec|-px],GET /api/cluster4/weekly-cards?userId,"{areaSixCircles,seasonAreaProgress[],areaSixCirclesBySeason,seasonAreaProgressBySeason,seasonActivityStatusesBySeason}",원형 6지표 · 진행률 7종 · 시즌별 맵,선택 시즌(seasonKey)으로 맵 인덱싱(circlesView/progressView),area-6 원형 · area-7 진행바,demoQS 부착 · dedupedJson 30s 캐시,medium — 스냅샷 전용(live 재계산 금지)
+/cluster-4-1[-ec|-px],GET /api/educations?userId,data[],학과/학교,formatMajor + 마스킹,인적사항 학력,없음,medium
+/cluster-4-1[-ec|-px],GET /api/season-reputations?targetUserId&seasonHistoryId,data[],시즌 평판 목록(rating/comment/keyword/작성자 프로필),UUID 형식 사전 검증 후 호출 · 없으면 [],시즌 평판 카드,demoQS 부착,medium
+/cluster-4-1[-ec|-px],GET /api/reputation-keywords,data[],평판 키워드 목록,데모면 로컬 상수 REPUTATION_KEYWORDS 로 교체,키워드 드롭다운,데모 모드는 API 미호출,low
+/cluster-4-1[-ec|-px],GET/PUT /api/season-review,"{data:{rating,content}}",시즌 리뷰,없음,시즌 리뷰 모달,demoUserId 부착,low
+/cluster-4-1[-ec|-px],GET /api/edit-windows/permission?resource_key=cluster4.seasonReview,"{data:{canEdit}}",시즌 리뷰 작성 창,unlockAll/unlockSeasonReview URL 플래그 OR 조건,리뷰 작성 버튼,디버그 unlock 파라미터,high — URL 플래그로 게이트 우회 가능
+/cluster-4-1[-ec|-px],GET /api/edit-windows/permission?resource_key=cluster4.seasonReputation,"{data:{canEdit}}",시즌 평판 작성 창,동일 unlock OR 조건,평판 작성 버튼,디버그 unlock 파라미터,high
+/cluster-4-1[-ec|-px],Supabase 클라이언트 직접 쿼리 weeks + season_definitions,"{id,week_number,is_official_rest,holiday_name,season_key,season_definitions{season_key,season_type,season_label,year}}",현재 주차/시즌,"seasonNameMap 영문→한글, isBreakSeason 파싱, isTransitionWeek(), isOfficialRestWeek(), resolveTransitionSpan()",현재 시즌 안내 문구,데모 모드면 쿼리 스킵,high — 현재 주차·전환/휴식 판정을 클라이언트에서 재계산(의미 변경)
+/cluster-4-card[-ec|-px] (인덱스 리다이렉트),Supabase 클라이언트 직접 쿼리 weeks(started_at/ended_at),"{id,started_at,ended_at,seasons{name}}",오늘 날짜가 속한 주차 id,"new Date().toISOString() 오늘 계산(UTC), break 시즌 이름 문자열 포함 검사",주차 카드로 router.replace,demoMode(localStorage)면 dw-01 더미로 직행,high — UTC 기준 오늘 계산(KST 불일치) + 컬럼명이 다른 화면(start_date/end_date)과 상이
+/cluster-4-card[-ec|-px]/[weekId],GET /api/cluster4/weekly-cards?userId,"AdminCluster4WeeklyCardDto[] + lines[]",주차 카드 메타 + 4허브 라인 전체,"N-1 carry-forward(직전 주차 라인을 현재 주차로 재태깅), 휴식(공식) 주차 가드, clampAdminOutputs, coalesceAdminOutputImages, placeholder 라인 제거",section1 헤더 · 4허브 카드 · 라인 모달,demoQS 부착 · modeQS 상수 "",high — 라인 귀속 주차를 프론트가 변경(의미 변경)
+/cluster-4-card[-ec|-px]/[weekId],GET /api/profile/?userId,"data(user_profiles raw) + growthInfo + point/badges",카드 주인 인적사항 · 조직(organizationSlug) · 포인트,cardOwnerOrg 도출 → 동료 후보 필터에 사용,프로필 영역/동료 모달 게이트,demoQS 부착,medium
+/cluster-4-card[-ec|-px]/[weekId],GET /api/educations?userId,data[],학교·학과,마스킹 + formatMajor,프로필 영역,비로그인 마스킹,medium
+/cluster-4-card[-ec|-px]/[weekId],GET /api/career-records?week_id&user_id,"data[]:{project_id,enhancement_status,...}",주차 경력 프로젝트 레코드,"careerStats = min(len,5) / pending은 resultsDecided(=브라우저 시각 ≥ 주차시작+10d12h1m) 이후에만 enhanced 승격",실무 경력 허브 카운트,demoQS 부착 · 개인휴식이면 0 강제,high — 브라우저 시계 기반 상태 승격(의미 변경)
+/cluster-4-card[-ec|-px]/[weekId],GET /api/weekly-reputations?targetUserId&weekCardId,"data[]:{id,rating,comment,keyword,createdAt,fromProfile}",주차 평판 목록,"displayedReputations=slice(0,4), 분자=표시배열 길이 우선, FM=표시 rating 합",주차 평판 카드 4칸 · 명성도,demoQS 부착,medium — precomputed summary 대신 표시배열 우선(의도된 정책)
+/cluster-4-card[-ec|-px]/[weekId],POST/PUT/DELETE /api/weekly-reputations,"{success}",평판 작성/수정/삭제,삭제 후 refetch + weeklyCardsRefreshKey bump,평판 카드 갱신,demoUserId 부착 시 세션 없이 대상 고정,medium
+/cluster-4-card[-ec|-px]/[weekId],GET /api/weekly-colleagues?userId&weekCardId,"data[]:{colleague{id,name,gender,age,profileImg,university,major,team,part,nickname,role,membershipLevel},rank,message}",연계 동료 목록,"displayedColleagues=slice(0,3), 각 필드 null→'-' 치환",연계 동료 3칸,demoQS 부착,medium
+/cluster-4-card[-ec|-px]/[weekId],GET /api/crews?excludeUserId&org,"data[]:{id,name,organizationSlug,...}",동료 후보 목록,cardOwnerOrg 없으면 조회 자체 차단,동료 선택 모달,없음,medium — org 미확정 시 후보 0
+/cluster-4-card[-ec|-px]/[weekId],GET /api/weekly-reviews?weekCardId&userId,"{data:{id,weekCardId,rating,content,created_at,updated_at}}",주차 리뷰,없음,주차 리뷰 모달,apiUrl 이 demoUserId 부착(세션 없이 조회),low
+/cluster-4-card[-ec|-px]/[weekId],GET /api/cluster4/week-confirmations?weekId&userId,"{data:{confirmed}}",주차 확인 여부,confirmed===true 만 confirmed 처리(그 외 pending),주차 확인 버튼 상태,클라 viewerUserId 에 actAs 미포함,medium
+/cluster-4-card[-ec|-px]/[weekId],POST /api/cluster4/week-confirmations,"{success}",주차 확인 저장,소유자 전용(어드민 우회 없음),확인 완료 표시,demoUserId 부착,medium
+/cluster-4-card[-ec|-px]/[weekId],GET /api/cluster4/weekly-line-enhancement/?userId&weekId,"CrewWeekLineEnhancementDetailDto{seasonWeekTitle,periodText,statusText,statusClass,resultMessage,conditions[],points[],rows[]{stableKey,result,resultLabel,resultTone,lineName,hub,hubLabel,kind,growthRequirement,estimatedDurationMinutes,pointA,pointB,pointC,rating},acts[],summary,cumulativeWeeks,pointACriterion,crew,weeklyHelp,actPointNames}",디테일 로그 전체,"sortLineRows/sortActRows 정렬, buildCrewActSummary 재집계, resolveCrewActResult(PointC>0=미스), formatLineDuration",Detail Log 모달,demoQS 부착 · 끝 슬래시 필수(308 방지),high — 액트 성공/실패를 프론트가 PointC 로 재판정
+/cluster-4-card[-ec|-px]/[weekId],POST /api/activity-details · POST /api/activity-details/upload-image,"{success}",라인 제출 내용/이미지 저장,cluster4OutputImages 슬롯0 예약 규칙으로 slice 후 전송,저장 결과,demoUserId 부착,high — 슬롯 예약 규칙 불일치 시 운영진 이미지 덮어씀
+/cluster-4-card[-ec|-px]/[weekId],GET /api/edit-windows/permission?resource_key=cluster4.weeklyColleagues&week_id,"{data:{canEdit}}",동료 작성 창,"isDemoMode / session.isAdmin&&!demoUserId 단축 허용, 실패 시 보수적 닫힘",동료 작성 버튼,데모/어드민 단축 경로,high
+/cluster-4-card[-ec|-px]/[weekId],GET /api/edit-windows/permission?resource_key=cluster4.weeklyReviews&week_id,"{data:{canEdit}}",주차 리뷰 작성 창,실패 시 시간창 fallback,리뷰 작성 버튼,데모/어드민 단축 경로,high — 권한 실패 시 시간창 폴백(모달 열림+403 유발 이력)
+/cluster-4-card[-ec|-px]/[weekId],GET /api/edit-windows/permission?resource_key=cluster4.weeklyReputation&week_id,"{data:{canEdit}}",평판 작성 창,실패 시 시간창 fallback,평판 작성 버튼,데모/어드민 단축 경로,high
+/cluster-4-card[-ec|-px]/[weekId],GET /api/reputation-keywords,data[],키워드 목록,데모면 로컬 상수,키워드 드롭다운,데모 모드 API 스킵,low
+/cluster-4-card[-ec|-px]/[weekId],GET /api/help-contents · /api/help-contents/{key},"{contents}",도움말 본문,module-level inflight 캐시,도움말 모달,none,low
+/cluster-4-card[-ec|-px]/[weekId],GET /api/auth/check-status,"{status}",승인 상태,불리언화,편집 게이트,세션 전용,low
+/cluster-5[-ec|-px],-,-,없음(공사중 정적),-,공사중 배경 + 텍스트,none,low
+/cluster-6[-ec|-px],-,-,없음(공사중 정적),-,공사중 배경 + 텍스트,none,low
+/cluster-7[-ec|-px],-,-,없음(공사중 정적),-,공사중 배경 + 텍스트,none,low
+/cluster-8[-ec|-px],-,-,없음(공사중 정적),-,공사중 배경 + 텍스트,none,low
+/cluster-9[-ec|-px],-,-,없음(공사중 정적),-,공사중 배경 + 텍스트,none,low
+/cluster-10[-ec|-px],-,-,없음(공사중 정적),-,공사중 배경 + 텍스트,none,low
+/crews,GET /api/crews?org&page&pageSize&name&school&status,"{success,data[]:{id,name,gender,age,profileImg,university,major,team,part,nickname,club,className,universityMajor,status,growthStatus,displayGrowthStatus,totalStars,approvedWeeks,successWeeks,organizationSlug},total,filteredTotal}",크루 카드 목록,"organizationSlug===org 재필터, statusLabel(displayGrowthStatus==='graduated'?'활동 졸업':'활동 중') 2분류 축약, toStarCount 방어적 숫자화, [team,club] 중 첫 유효값",크루 카드 그리드 + 페이지네이션,mode=test URL 전파 비활성(주석) — 스코프는 배포 env,high — 10종 성장상태를 2종으로 축약 표시(의미 축소) · fallback graft 가 stale 노출 이력
+/crews,-,-,이름/학교/학과/나이 마스킹,useDataMasking(mask.crewName/school/major),카드 텍스트,비로그인 전체 마스킹 · 로그인/데모 raw,high — 마스킹이 클라이언트 단일 게이트
+/weekly-ranking,GET /api/weekly-league?org&seasonKey,"{success,cards[]:WeeklyCardData{id,seasonName,dateRangeText,leagueResultStatus,leagueRecordStatus,resultConfirmed,restReason,imageUrl,pointACriterion,growthSuccessRate,growthChallengeRate,totalCrews,growthChallenge,growthSuccess,growthFail,personalRest,winningTeamImage,top3[]}}",주차 리그 집계 카드,"getSeasonFilterValue/parseYearSeason 로 시즌 옵션 재구성, isConfirmed=resultConfirmed ?? (record==='공표 중'||'검수 완료'), isTallying 분기로 값 대신 'N' 표시, isOngoing 시 진행바 0",주차 리그 카드 리스트,mode/actAs URL 무관(서버 readScopeMode=배포 env),high — 확정 여부를 프론트가 문자열 매칭으로 재판정
+/weekly-ranking/[weekId],GET /api/weekly-league?org&seasonKey,"동일 cards[] 중 id 일치 1건 (+teams[],top10,top10Focus,top10Growth,weeklyLeagueMvp,crewRankShowcase,cluvActivityFlow,weeklyComment,heroImage,representativeImage,seasonRest)",주차 상세 전 항목,리스트와 동일 로더/URL 재사용 · id 매칭만,상세 페이지 전 섹션,동일,medium — 리스트 응답에 없는 weekId 는 notfound
+/vacation,GET /api/vacation?org,"{viewerOrg,eligibleWeeks[]:{weekId,weekNumber,seasonKey,seasonType,startDate,endDate},myApplications[]:{groupId,displayStatus,category,weeks[],spanStart,spanEnd,reason,createdAt,cancelState},summary:{fulfilledWeeks,upcomingWeeks}}",휴식 신청 가능 주차 · 내 신청 내역 · 요약,"contiguousPrefix() 로 연속 주차만 유지, MAX_VACATION_WEEKS 검증, addDaysIso 7일 간격 판정",휴식 신청 폼 + 내역 목록,demo.appendDemoUserParams 로 demoUserId 부착,medium — 연속성 검증이 프론트 재계산(서버도 검증)
+/vacation,POST/DELETE /api/vacation,"{success}",신청/취소,cancelState 기반 사전 차단 문구,팝업,demoUserId 부착,medium
+/sign-in,POST /api/members/find,"{...FindResult}",기존 회원 조회 결과,없음,회원 찾기 모달 결과,none,medium — vraxium 프록시 + admin 조회 2-repo 배포 의존
+/sign-up,-,-,NextAuth 소셜 로그인만,-,로그인 버튼,none,low
+/auth/post-login,GET /api/auth/check-status,"{success,status}",승인 상태,status 별 라우팅 분기,리다이렉트,세션 전용,low
+/auth/access,-,-,정적 안내,-,안내 문구,none,low
+/profile,-,-,벤더 템플릿 정적(더미),-,정적 탭,none,low
+/public-profile,-,-,벤더 템플릿 정적(더미),-,정적 탭,none,low
+/leaderboard,-,-,벤더 템플릿 정적(더미),-,정적 표,none,low
+/badges,-,-,벤더 템플릿 정적(더미),-,정적 배지,none,low
+/chat,-,-,벤더 템플릿 정적,-,정적,none,low
+/blog · /blog/[id],-,-,벤더 템플릿 정적,-,정적,none,low
+/shop · /shop/[id],-,-,벤더 템플릿 정적,-,정적,none,low
+/games · /games/[slug],-,-,벤더 템플릿 정적(일부는 /crews 로 redirect),-,정적,none,low
+/tournaments · /tournaments/[id],-,-,벤더 템플릿 정적,-,정적,none,low
+/package · /package/[id],-,-,벤더 템플릿 정적,-,정적,none,low
+/about-us · /faq · /contact-us · /checkout,-,-,벤더 템플릿 정적,-,정적,none,low
+/nftg-original · /nftg-original/two,-,-,벤더 템플릿 정적,-,정적,none,low
+/404,-,-,정적,-,정적,none,low

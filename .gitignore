@@ -11,7 +11,8 @@ node_modules/
 
 # next.js
 /.next/
-/.next-verify/
+# NEXT_VERIFY_DIST_DIR 로 만드는 격리 빌드 디렉터리 (.next-verify-s6, -wr 등 접미사 포함)
+/.next-verify*/
 /out/
 
 # production
@@ -61,3 +62,12 @@ scripts/check_prod_deploy.mjs
 # generated artifacts (screenshots, dev logs)
 scripts/*.png
 *.log
+
+# Figma 대조용 검증 스크린샷 (100MB+ — 레포에 넣지 않는다)
+docs/verify/
+
+# 잘못된 dist 디렉터리로 떨어진 next 빌드 산출물
+/1/
+
+# 일회성 스크래치 데이터
+scratch_backfill_ids.json
