@@ -4,6 +4,24 @@ const nextConfig = {
   // dev 서버(next dev)와 production 검증 빌드(next build/start)가 같은 .next 를
   // 공유하면 서로 출력을 덮어써 MODULE_NOT_FOUND 로 깨지는 함정 회피용.
   distDir: process.env.NEXT_VERIFY_DIST_DIR || ".next",
+  experimental: {
+    // sharp 는 네이티브 바인딩 — 서버 번들에 인라인되면 Vercel 에서 깨진다.
+    serverComponentsExternalPackages: ["sharp"],
+    // 증명서 API 는 런타임에 배경 PNG/한글 폰트를 fs 로 읽는다. public/ 하위는 정적
+    // 레이어로만 업로드되고 Next 파일 트레이서는 런타임 path.join 을 볼 수 없으므로,
+    // 서버리스 함수 번들에 명시적으로 포함시킨다(미포함 시 운영에서만 503 이 뜬다).
+    // ⚠️ 키는 App Router 엔트리 경로((host) 같은 라우트 그룹 포함)에 매칭되므로 앞에 **/ 를
+    //    붙여 그룹 세그먼트를 흡수한다. 이 글로브로 트레이스에 public/certificates ·
+    //    public/fonts 가 실제로 포함되는 것을 next build 산출물에서 확인했다.
+    //    변경 시 .next/server/app/**/route.js.nft.json 을 다시 확인할 것
+    //    (경로가 Windows 에서는 역슬래시로 기록된다).
+    outputFileTracingIncludes: {
+      "**/api/certificates/activity/**": [
+        "./public/images/certificate-encre.png",
+        "./public/fonts/**/*",
+      ],
+    },
+  },
   images: {
     // unoptimized: true, // 성능 최적화를 위해 비활성화 (Next.js 이미지 최적화 사용)
     remotePatterns: [

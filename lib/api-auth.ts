@@ -127,6 +127,60 @@ export async function resolveWriteActor(
   return { ok: true, userId: gate.context.targetUserId, isDemo: false, isAdmin: gate.context.isAdmin };
 }
 
+export type EffectiveUserResult =
+  | { ok: true; userId: string; source: "demo" | "actAs" | "session" }
+  | { ok: false; status: number; code: string; message: string };
+
+/**
+ * 읽기/쓰기 공용 "실사용자(effective user)" 단일 해석기.
+ *
+ * 우선순위:
+ *   1. demoUserId (body → query, test_user_markers 검증)
+ *   2. actAsTestUserId (query, mode=test 일 때만, test_user_markers 검증)
+ *   3. 로그인 세션 → user_profiles.user_id
+ *
+ * resolveWriteActor/resolveWriteUserId 와의 차이:
+ *   그쪽은 actAsTestUserId 를 "검증"만 하고 requireOwnerOrAdmin(extractTargetUserId(...)) 로
+ *   흘러가므로 actAs 가 실제 acting user 가 되지 않는다. 본 함수는 actAs 를 실사용자로
+ *   승격시켜, 일반/테스트/데모 세 경로가 이 함수 한 곳에서만 갈라지고 이후 로직(DTO·검증·
+ *   생성 함수)은 완전히 동일하게 흐르도록 한다.
+ *
+ * ⚠️ body/query 의 userId·targetUserId 는 절대 읽지 않는다(getUserProfile 에도 null 을
+ *    넘긴다) — 요청으로 발급/조회 대상을 바꿀 수 없다.
+ */
+export async function resolveEffectiveUserId(
+  request: Request,
+  body?: unknown,
+): Promise<EffectiveUserResult> {
+  let demoUserId: string | null = null;
+  try {
+    demoUserId = await resolveDemoProfileUserIdFromRequest(request, body);
+  } catch (e) {
+    if (e instanceof DemoModeError) {
+      return { ok: false, status: e.status, code: "DEMO_USER_INVALID", message: e.message };
+    }
+    throw e;
+  }
+  if (demoUserId) return { ok: true, userId: demoUserId, source: "demo" };
+
+  const actAs = await validateActAsTestUserId(request);
+  if (actAs.error) {
+    return {
+      ok: false,
+      status: actAs.error.status,
+      code: "ACT_AS_INVALID",
+      message: actAs.error.message,
+    };
+  }
+  if (actAs.userId) return { ok: true, userId: actAs.userId, source: "actAs" };
+
+  const { profile, error } = await getUserProfile<{ user_id: string }>("user_id", null);
+  if (error) {
+    return { ok: false, status: error.status, code: "SESSION_REQUIRED", message: error.message };
+  }
+  return { ok: true, userId: profile.user_id, source: "session" };
+}
+
 export type WriteUserResult =
   | { ok: true; userId: string; isDemo: boolean }
   | { ok: false; status: number; message: string };

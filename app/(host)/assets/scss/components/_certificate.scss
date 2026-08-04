@@ -1,0 +1,379 @@
+// /certificate — 활동 증명 발급 페이지.
+// _vacation.scss 와 동일한 규약: 조직별 대표색을 CSS 변수로 스코프하고,
+// 860px 단일 브레이크포인트에서 2열 → 1열로 붕괴시킨다.
+// 입력 필드는 반투명 흰색 대신 불투명 슬레이트(#1d212b)를 쓴다 — 근-검정 테마에서
+// 반투명 필드는 배경에 묻혀 사라진다(휴식 신청 페이지에서 실측된 이슈).
+
+.certificate-page {
+  --cert-accent: #faab07;
+  --cert-accent-contrast: #111;
+  --cert-surface: rgba(255, 255, 255, 0.045);
+  --cert-border: rgba(255, 255, 255, 0.09);
+  --cert-field-bg: #1d212b;
+  --cert-field-border: rgba(255, 255, 255, 0.28);
+  --cert-text: #eef0f3;
+  --cert-text-muted: #99a0ab;
+  --cert-danger: #ff5c5c;
+
+  // 현재 발급 대상은 엥크레 전용이라 실질적으로 이 테마만 활성화된다.
+  &.certificate-encre {
+    --cert-accent: #ff4b70;
+    --cert-accent-contrast: #fff;
+  }
+
+  color: var(--cert-text);
+}
+
+// ── 상단 배너 ────────────────────────────────────────────────────────────────
+.certificate-banner {
+  margin-bottom: 28px;
+
+  &__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--cert-accent);
+    color: var(--cert-accent);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+
+    i {
+      font-size: 15px;
+    }
+  }
+
+  &__title {
+    margin: 14px 0 0;
+    font-size: 40px;
+    line-height: 1.2;
+    font-weight: 700;
+    color: var(--cert-text);
+  }
+
+  &__bar {
+    display: block;
+    width: 64px;
+    height: 3px;
+    margin: 16px 0 12px;
+    background: var(--cert-accent);
+    border-radius: 2px;
+  }
+
+  &__subtitle {
+    margin: 0;
+    font-size: 15px;
+    color: var(--cert-text-muted);
+  }
+}
+
+// ── 안내 배너(템플릿/폰트 미등록 등) ─────────────────────────────────────────
+.certificate-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 18px;
+  margin-bottom: 22px;
+  border-radius: 10px;
+  border: 1px solid var(--cert-border);
+  background: var(--cert-surface);
+  font-size: 14px;
+  line-height: 1.6;
+
+  i {
+    flex: 0 0 auto;
+    margin-top: 2px;
+    font-size: 18px;
+  }
+
+  &--warn {
+    border-color: rgba(250, 171, 7, 0.45);
+    color: #ffd479;
+  }
+
+  &--error {
+    border-color: rgba(255, 92, 92, 0.45);
+    color: #ff9a9a;
+  }
+}
+
+// ── 레이아웃 ────────────────────────────────────────────────────────────────
+.certificate-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.certificate-form {
+  padding: 26px;
+  border-radius: 14px;
+  border: 1px solid var(--cert-border);
+  background: var(--cert-surface);
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 20px;
+  }
+}
+
+.certificate-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+
+  &--wide {
+    grid-column: 1 / -1;
+  }
+
+  &__label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--cert-text);
+
+    > span:first-child {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    i {
+      color: var(--cert-accent);
+      font-size: 15px;
+    }
+  }
+
+  &__foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-top: 6px;
+    min-height: 18px;
+  }
+
+  &__error {
+    font-size: 12px;
+    color: var(--cert-danger);
+    line-height: 1.4;
+  }
+
+  &__hint {
+    font-size: 12px;
+    color: transparent;
+  }
+
+  &__count {
+    flex: 0 0 auto;
+    font-size: 12px;
+    color: var(--cert-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+// 값의 출처 배지 — 자동 조회 / 서식 기본값 / 직접 입력.
+.certificate-badge {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+
+  &--auto {
+    border-color: rgba(94, 214, 143, 0.5);
+    color: #7fe3a8;
+  }
+
+  &--preset {
+    border-color: rgba(255, 214, 120, 0.5);
+    color: #ffd479;
+  }
+
+  &--manual {
+    border-color: var(--cert-field-border);
+    color: var(--cert-text-muted);
+  }
+}
+
+.certificate-form__hint {
+  margin: 0 0 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--cert-border);
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--cert-text-muted);
+
+  .certificate-badge {
+    margin: 0 4px;
+  }
+}
+
+.certificate-input {
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--cert-field-border);
+  background: var(--cert-field-bg);
+  color: var(--cert-text);
+  font-size: 15px;
+  line-height: 1.5;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+
+  &::placeholder {
+    color: var(--cert-text-muted);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: var(--cert-accent);
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.06);
+  }
+
+  &.is-invalid {
+    border-color: var(--cert-danger);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  // 브라우저 기본 날짜 피커 아이콘이 어두운 배경에서 보이도록.
+  &[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    opacity: 0.65;
+    cursor: pointer;
+  }
+}
+
+.certificate-textarea {
+  resize: vertical;
+  min-height: 132px;
+  font-family: inherit;
+}
+
+// ── 버튼 ────────────────────────────────────────────────────────────────────
+.certificate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+
+  &--preview {
+    margin-top: 16px;
+  }
+}
+
+.certificate-btn {
+  padding: 11px 22px;
+  border-radius: 8px;
+  border: 1px solid var(--cert-field-border);
+  background: transparent;
+  color: var(--cert-text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, opacity 0.16s ease;
+
+  &:hover:not(:disabled) {
+    border-color: var(--cert-accent);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  &--primary {
+    border-color: var(--cert-accent);
+    background: var(--cert-accent);
+    color: var(--cert-accent-contrast);
+
+    &:hover:not(:disabled) {
+      filter: brightness(1.08);
+    }
+  }
+}
+
+// ── 미리보기 ────────────────────────────────────────────────────────────────
+.certificate-preview {
+  position: sticky;
+  top: 96px;
+  padding: 20px;
+  border-radius: 14px;
+  border: 1px solid var(--cert-border);
+  background: var(--cert-surface);
+
+  &__figure {
+    margin: 0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+
+    img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+  }
+
+  &__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-height: 320px;
+    text-align: center;
+    color: var(--cert-text-muted);
+    border: 1px dashed var(--cert-field-border);
+    border-radius: 10px;
+
+    i {
+      font-size: 40px;
+      color: var(--cert-accent);
+      opacity: 0.75;
+    }
+
+    p {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+  }
+}
+
+// ── 반응형 ──────────────────────────────────────────────────────────────────
+@media (max-width: 860px) {
+  .certificate-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .certificate-form {
+    padding: 20px;
+
+    &__grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .certificate-preview {
+    position: static;
+  }
+
+  .certificate-banner__title {
+    font-size: 30px;
+  }
+}
