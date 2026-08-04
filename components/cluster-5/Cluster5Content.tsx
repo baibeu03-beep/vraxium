@@ -60,12 +60,31 @@ import { resolveOrgFromLocation, ORGANIZATION_CONFIG } from "@/lib/cluster-route
 // 을 명시해 브라우저가 임의로 가짜 굵게/기울임을 합성하지 못하도록
 // 막는다.
 const heroStyles = `
+  /* [스케일 보정] /cluster-3 첫 섹션(.cluster3-section1)을 Playwright
+     getBoundingClientRect/getComputedStyle 로 실측한 값을 "레이아웃 리듬
+     레퍼런스"로 삼아 히어로 스케일을 다시 잡았다. cluster-3 의 CSS 를 복사한
+     것이 아니라, 실측한 비율만 가져왔다:
+       · bg 밴드 높이 736px, 그 안에서 콘텐츠는 60px(상단) ~ 491.6px 까지 →
+         이미지가 콘텐츠보다 244px 더 아래로 뻗어 "큰 첫 섹션"을 만든다.
+       · 타이틀 72px / line-height 75.6px(=1.05), 섹션 상단에서 60px.
+       · 타이틀 박스 bottom → 첫 본문 top = 정확히 60px.
+       · 본문 24px, 좌우 인셋 40px 씩(본문폭 = 섹션폭의 93.8%).
+     기존 히어로는 482px 높이 · 본문 20px · 본문폭 1075px(87.0%)이라 같은
+     화면 안에서 한 단계 작게 보였다.
+
+     min-height 482 → 700: Hero.png 원본이 1456x816(비율 1.784)인데 482px
+     높이에서는 박스 비율이 2.62 라 background-size:cover 가 이미지 세로의
+     약 45% 를 잘라내고 있었다("배경이 작게 보인다"의 실제 원인). 실제 히어로
+     폭 1236~1265px 기준 1265/1.784 ≈ 709px 이므로 700px 에서는 crop 이
+     거의 0 에 수렴한다. 동시에 콘텐츠가 490px 에서 끝나 그 아래로 210px 의
+     이미지 여백이 남는데, 이는 cluster-3 의 244px 와 같은 리듬이다.
+     이미지 파일·검정 scrim·filter 는 손대지 않았다. */
   .cluster5-hero {
     position: relative;
     width: 100%;
     box-sizing: border-box;
     overflow: hidden;
-    min-height: 482px;
+    min-height: 700px;
   }
   .cluster5-hero__bg {
     position: absolute;
@@ -80,11 +99,25 @@ const heroStyles = `
     inset: 0;
     background: rgba(0, 0, 0, 0.7);
   }
+  /* height:482px 고정 → min-height + padding-top 으로 전환.
+     본문 5줄을 절대좌표(top:195/261/…)로 고정하던 방식은 본문 폰트를
+     20 → 24px 로 키우는 순간 깨진다: l4("이 세상 어느 누구도 …") 한 줄의
+     실측 잉크 폭이 20px 에서 이미 1073.8px 로 1075px 박스에 겨우 들어가
+     있어, 24px(≈1288px)에서는 반드시 2줄로 감기고 절대좌표 상 다음 줄과
+     겹친다. 그래서 본문 블록만 flow 로 바꾸고(아래 .cluster5-hero__line),
+     블록 시작 y 는 padding-top 으로 고정한다 — 줄이 늘어도 아래로 밀릴 뿐
+     겹치지 않는다. 타이틀 2겹은 계속 absolute 라 flow 를 차지하지 않으므로
+     padding-top 196px 이 그대로 "첫 본문 top" 이 된다(타이틀 박스
+     bottom 60 + 75.6 = 135.6px → gap 60.4px, cluster-3 실측 60px 과 동일).
+     padding-bottom 40px 은 본문이 예외적으로 더 감겼을 때의 안전 여백일 뿐,
+     정상 렌더(콘텐츠 490px)에서는 min-height 700px 이 이겨 영향이 없다. */
   .cluster5-hero__content {
     position: relative;
     z-index: 1;
     width: 100%;
-    height: 482px;
+    box-sizing: border-box;
+    min-height: 700px;
+    padding: 196px 0 40px;
     font-synthesis: none;
   }
 
@@ -107,7 +140,12 @@ const heroStyles = `
     font-family: var(--khula), "Khula", "Pretendard", sans-serif;
     font-weight: 800;
     font-size: 72px;
-    line-height: 82px;
+    /* cluster-3 .section1-title 실측: font-size 72px / line-height 75.6px
+       (=1.05). 폰트 크기는 원래부터 동일했고 line-height 만 82px 로 6.4px
+       더 헐거워 타이틀 박스가 그만큼 아래로 밀려 있었다. 1.05 로 맞추면
+       타이틀 박스 bottom 이 섹션 상단 기준 135.6px 로 cluster-3 와 정확히
+       일치한다. */
+    line-height: 1.05;
     letter-spacing: 0;
     text-transform: uppercase;
     text-align: center;
@@ -118,37 +156,90 @@ const heroStyles = `
     white-space: normal;
     word-break: keep-all;
   }
+  /* [타이틀 효과 정렬] cluster-3 의 제목은 별도 shadow DOM 레이어가 아니라
+     .section1-title 한 개에 걸린 text-shadow 2겹이다(브라우저 실측:
+     pseudo-element 없음, -webkit-text-stroke 0px, filter none):
+         rgb(17,17,17)             3px 3px 0px   ← 검정 오프셋
+         rgba(33,231,134,0.7)      4px 4px 0px   ← 색 깊이 레이어
+     즉 그림자가 글자의 "오른쪽-아래"로 떨어지고, 그 바깥으로 색 레이어가
+     1px 더 나온다. 반면 cluster-5 는 검정 h2 레이어가 흰 글자의
+     "왼쪽-위"(실측 offset white−black = +3.54, +3)에 있어 방향이 반대였고,
+     색 깊이 레이어가 아예 없어 납작해 보였다.
+
+     DOM(2겹 h2)은 그대로 두고 — 이 페이지 구조를 바꾸지 않는다 — 좌표만
+     뒤집어 cluster-3 과 같은 적층 순서를 만든다:
+       흰색 = 기준 위치(top 60, translateX(-50%))  → cluster-3 title rect 와 동일
+       검정 = 흰색 대비 (+3px, +3px) 오른쪽-아래   → cluster-3 의 3px 3px 0 #111
+       그 위에 text-shadow 1px 1px 로 색 레이어를 얹으면 흰색 기준 (+4, +4)
+       → cluster-3 의 4px 4px 0 와 동일한 깊이
+     색만 cluster-3 의 고정 초록 대신 이 페이지의 기존 org accent 변수를
+     쓴다(ORGANIZATION_CONFIG → --cluster5-accent). 새 색상 map 이나 org
+     분기를 추가하지 않으며, 세 org 에서 offset/크기/자간은 완전히 같고
+     accent 색만 달라진다 — 기존 org 정책 그대로다.
+     letter-spacing 은 두 페이지 모두 computed 'normal' 로 이미 동일,
+     -webkit-text-stroke 도 양쪽 0px 이라 stroke 는 도입하지 않는다. */
   .cluster5-hero__title-shadow {
-    top: 50px;
-    color: var(--black, #000000);
+    top: 63px;
+    transform: translateX(calc(-50% + 3px));
+    /* cluster-3 은 순수 검정이 아니라 #111 */
+    color: #111111;
+    /* 구형 브라우저용 폴백 → color-mix 지원 시 아래 선언이 이김 */
+    text-shadow: 1px 1px 0 var(--cluster5-accent, #fed402);
+    text-shadow: 1px 1px 0 color-mix(in srgb, var(--cluster5-accent, #fed402) 70%, transparent);
     z-index: 0;
     pointer-events: none;
     user-select: none;
   }
   .cluster5-hero__title {
-    /* Figma: 검정 레이어 origin(0,0) 대비 흰색 레이어 offset (+3.54px, +3px) */
-    top: 53px;
-    transform: translateX(calc(-50% + 3.54px));
+    /* cluster-3 .section1-title 과 동일한 기준 위치(섹션 상단 +60px,
+       중앙 정렬). 기존의 +3.54px 가로 오프셋은 검정 레이어 쪽으로 옮겼다. */
+    top: 60px;
+    transform: translateX(-50%);
     color: var(--white, #ffffff);
     z-index: 1;
   }
 
-  /* ---- 본문 / 강조문 공통 ---- */
+  /* ---- 본문 / 강조문 공통 ----
+     absolute + width:1075px → flow + 좌우 40px 인셋.
+     · 폭: cluster-3 실측에서 본문 블록은 섹션폭 1291px 중 1211px(93.8%),
+       즉 좌우 40px 씩 인셋이었다. 기존 히어로는 1075/1236 = 87.0% 로 더
+       좁아 같은 화면에서 글줄이 답답해 보였다. calc(100% - 80px) 로 같은
+       40px 인셋 비율을 재현한다(히어로 1236~1265px → 본문 1156~1185px,
+       93.6%). min() 상한 1200px 는 사이드바가 접혀 컬럼이 비정상적으로
+       넓어질 때 글줄이 과하게 길어지는 것만 막는 안전장치다.
+     · cluster-3 도 타이틀은 중앙 정렬, 본문 블록은 좌측 정렬이다. 그
+       정렬 관계를 그대로 따른다(블록은 중앙 배치, 텍스트는 좌측 정렬). */
   .cluster5-hero__line {
-    position: absolute;
-    left: 50%;
-    transform: translateX(-537.5px); /* = 1075px 폭 블록 중앙 정렬, Figma calc(50% - 537px)와 동일 수학 */
-    width: 1075px;
-    margin: 0;
+    position: static;
+    width: min(1200px, calc(100% - 80px));
+    margin: 0 auto;
+    /* [본문 시작선 정렬] 브라우저 실측으로 확인한 차이의 원인:
+       cluster-3 의 .section1-description 은 좌우 40px 인셋 위에
+       transform: translateX(clamp(0px, 2.2vw, 72px)) 우측 이동이 한 겹 더
+       걸려 있고, 이건 cluster-2 첫 섹션도 공유하는 공용 패턴이다. 실측값
+       (1920 뷰포트, 부모 폭 1204):
+         cluster-3  본문 relativeLeft 82.24 / rightGap -2.24 / startRatio 0.0683
+         cluster-5  본문 relativeLeft 40.00 / rightGap 40.00 / startRatio 0.0332
+       차이 42.24px = 2.2vw @1920 로 정확히 일치한다. 그래서 고정 px 를
+       복사하지 않고 같은 clamp 식을 쓴다 — 뷰포트가 달라져도 두 페이지가
+       같은 비율로 함께 움직인다. 폭(1124px, widthRatio 0.9336)은 이미
+       cluster-3 과 동일하므로 건드리지 않는다. */
+    transform: translateX(clamp(0px, 2.2vw, 72px));
     font-family: "HakgyoansimTuho", "Pretendard", "Noto Sans KR", sans-serif;
     font-weight: 400;
     letter-spacing: 0;
     font-synthesis: none;
+    word-break: keep-all;
+    overflow-wrap: break-word;
   }
+  /* cluster-2/3/4 첫 섹션 본문은 전부 24px 로 통일되어 있다(cluster-3 실측
+     24px / line-height 26px). 히어로만 20px/22px 이라 한 단계 작았다.
+     Figma 의 본문:강조문 비율(20:24 = 1:1.2)은 그대로 두고 블록 전체를
+     x1.2 로 스케일한다 — 폰트 패밀리(HakgyoansimTuho)는 그대로 유지. */
   .cluster5-hero__line--body {
     color: var(--white, #ffffff);
-    font-size: 20px;
-    line-height: 22px;
+    font-size: 24px;
+    line-height: 26px;
   }
   .cluster5-hero__line--highlight {
     /* org 강조색 — var() 폴백(#fed402/#fff1aa)은 커스텀 프로퍼티가 미설정일
@@ -162,27 +253,32 @@ const heroStyles = `
     background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    font-size: 24px;
-    line-height: 22px;
+    /* 본문 x1.2 (24 x 1.2 = 28.8) — Figma 의 본문:강조문 비율 유지.
+       line-height 는 22px → 34px. 기존엔 line-height(22) < font-size(24)
+       라 background-clip:text 의 페인트 박스가 글리프보다 낮아 그라디언트
+       상·하단이 미세하게 잘리고 있었다. */
+    font-size: 28.8px;
+    line-height: 34px;
   }
   .cluster5-hero__line--attribution {
     color: var(--white, #ffffff);
-    font-size: 20px;
-    line-height: 22px;
+    font-size: 24px;
+    line-height: 26px;
   }
 
-  /* Figma 실측 y좌표(레퍼런스 PNG 픽셀 스캔으로 검증) 기준에서, 타이틀-본문
-     간격만 +40px 보정한 값. cluster-2/3/4/4-1의 .section1-title(72px) →
-     .section1-description 첫 문단 간격을 Playwright getBoundingClientRect로
-     실측한 결과 4개 페이지 전부 정확히 60px(72px 대비 0.833 비율)로 통일되어
-     있었음. Figma 원본 gap(20px)은 이 리듬과 어긋나 있어, 본문 내부 줄 간격
-     (l1→l4→l6→highlight→attribution의 상대 간격)은 그대로 보존한 채 전체
-     블록만 40px 아래로 이동해 title bottom 기준 60px gap을 재현했다. */
-  .cluster5-hero__line--l1 { top: 195px; }
-  .cluster5-hero__line--l4 { top: 261px; }
-  .cluster5-hero__line--l6 { top: 305px; }
-  .cluster5-hero__line--highlight { top: 364px; }
-  .cluster5-hero__line--attribution { top: 393px; }
+  /* 본문 블록 내부 간격 — Figma 절대좌표(top:195/261/305/364/393)에서
+     "줄 사이 실제 여백"만 추출해 margin 으로 옮긴 값이다. 20px/22px 기준
+     원본 여백은 l1→l4 22px, l4→l6 22px, l6→강조 15px, 강조→출처 7px 였고,
+     본문 블록 전체를 x1.2 로 스케일했으므로 여백도 같은 배율로 26/26/18/8
+     이 된다. 즉 Figma 의 본문 내부 리듬은 비율 그대로 보존되고, 블록의
+     시작 y 만 .cluster5-hero__content 의 padding-top(196px)이 잡는다.
+     블록 시작 196px 은 타이틀 박스 bottom(60 + 75.6 = 135.6px) 기준
+     gap 60.4px 로, cluster-2/3/4/4-1 이 공통으로 쓰는 60px 리듬과 같다. */
+  .cluster5-hero__line--l1 { margin-bottom: 26px; }
+  .cluster5-hero__line--l4 { margin-bottom: 26px; }
+  .cluster5-hero__line--l6 { margin-bottom: 18px; }
+  .cluster5-hero__line--highlight { margin-bottom: 8px; }
+  .cluster5-hero__line--attribution { margin-bottom: 0; }
 
   /* ---- ≤1199.98px: 절대배치 해제, 자연스러운 flow 레이아웃으로 전환 ---- */
   @media only screen and (max-width: 1199.98px) {
@@ -207,18 +303,29 @@ const heroStyles = `
       white-space: normal;
     }
     .cluster5-hero__title-shadow {
-      transform: none;
+      /* 데스크톱과 같은 방향(오른쪽-아래 +3/+3)을 이 구간에서도 유지.
+         transform 은 레이아웃에 영향을 주지 않으므로 흰 레이어의
+         margin-top 계산은 그대로 성립한다. */
+      transform: translate(3px, 3px);
     }
     .cluster5-hero__title {
-      margin-top: -60px; /* shadow 레이어와 겹치도록 흰 레이어를 그 위로 끌어올림 */
-      transform: translate(3.54px, 3px);
+      /* shadow 레이어와 겹치도록 흰 레이어를 그 위로 끌어올림.
+         [수정] 이 구간의 .cluster5-hero__content 는 flex + gap:20px 이라
+         -60px(=line-height) 만으로는 gap 20px 이 남아 검정 레이어가 흰
+         레이어 위로 23px 삐져나와 타이틀이 두 번 찍혀 보였다(실측:
+         shadow y=32 / title y=55, 의도한 오프셋은 +3px). line-height +
+         gap 만큼 끌어올려야 한다 → 60 + 20 = 80px. */
+      margin-top: -80px;
+      transform: none;
     }
     .cluster5-hero__line {
-      position: static;
-      transform: none;
       width: 100%;
-      word-break: keep-all;
-      overflow-wrap: break-word;
+      /* 이 구간은 flex + gap 이 간격을 잡으므로, 데스크톱 flow 용
+         margin-bottom(26/26/18/8)을 반드시 0 으로 되돌려야 이중 여백이
+         생기지 않는다. 좌우 인셋도 padding 72px 이 담당하므로 데스크톱용
+         우측 이동(clamp)도 해제한다. */
+      margin: 0;
+      transform: none;
     }
     .cluster5-hero__line--l1 { margin-top: 12px; }
     .cluster5-hero__line--highlight { margin-top: 4px; }
@@ -229,6 +336,7 @@ const heroStyles = `
       min-height: 0;
     }
     .cluster5-hero__content {
+      min-height: 0;
       padding: 28px 48px 40px;
       gap: 16px;
     }
@@ -238,16 +346,18 @@ const heroStyles = `
       line-height: 46px;
     }
     .cluster5-hero__title {
-      margin-top: -46px;
+      margin-top: -62px; /* line-height 46 + gap 16 */
     }
+    /* 데스크톱 본문이 20 → 24px 로 올라간 만큼 축소 구간도 같은 x1.2 로
+       비례 이동(18→22, 21→26). 축소 곡선의 기울기는 그대로다. */
     .cluster5-hero__line--body,
     .cluster5-hero__line--attribution {
-      font-size: 18px;
-      line-height: 24px;
+      font-size: 22px;
+      line-height: 28px;
     }
     .cluster5-hero__line--highlight {
-      font-size: 21px;
-      line-height: 26px;
+      font-size: 26px;
+      line-height: 32px;
     }
   }
 
@@ -262,16 +372,17 @@ const heroStyles = `
       line-height: 30px;
     }
     .cluster5-hero__title {
-      margin-top: -30px;
+      margin-top: -44px; /* line-height 30 + gap 14 */
     }
+    /* 위 구간과 동일하게 x1.2 비례 이동(15→18, 17→20). */
     .cluster5-hero__line--body,
     .cluster5-hero__line--attribution {
-      font-size: 15px;
-      line-height: 21px;
+      font-size: 18px;
+      line-height: 25px;
     }
     .cluster5-hero__line--highlight {
-      font-size: 17px;
-      line-height: 23px;
+      font-size: 20px;
+      line-height: 27px;
     }
   }
 `;
