@@ -68,17 +68,28 @@ function fontCandidates(): string[] {
   ];
 }
 
+// ⚠️⚠️ 아래 경로는 반드시 **리터럴 세그먼트**로만 join 한다.
+//    한때
+//        path.join(process.cwd(), "public", ...TEMPLATE.publicRelativePath.split("/"))
+//    처럼 동적으로 만들었더니, @vercel/nft(빌드 트레이서)가 대상 파일을 특정하지 못해
+//    보수적으로 public/images 디렉터리 **전체(약 395MB / 1078개 파일)** 를 세 함수
+//    번들에 밀어 넣었다. 그 결과 Vercel 배포가
+//        "api/certificates/activity/context is 429.66mb ... exceeds 250mb"
+//    로 실패했다(실측). 다른 API 라우트는 public/images 를 0개 트레이스한다.
+//    설정값과 어긋나지 않도록 아래에서 문자열로 대조한다(경로 조합을 다시 만들지 말 것).
+const TEMPLATE_PUBLIC_RELATIVE = "images/certificate-encre.png";
+if (ACTIVITY_CERTIFICATE_TEMPLATE.publicRelativePath !== TEMPLATE_PUBLIC_RELATIVE) {
+  throw new Error(
+    `[certificates] 템플릿 경로 불일치: 설정=${ACTIVITY_CERTIFICATE_TEMPLATE.publicRelativePath}, ` +
+      `로더=${TEMPLATE_PUBLIC_RELATIVE}. activityCertificateAssets.ts 의 리터럴 경로를 함께 수정할 것.`,
+  );
+}
+
 /** 서식 이미지 경로. CERTIFICATE_TEMPLATE_PATH 설정 시 그 경로만 사용한다. */
 function templateCandidates(): string[] {
   const override = process.env.CERTIFICATE_TEMPLATE_PATH?.trim();
   if (override) return [override];
-  return [
-    path.join(
-      process.cwd(),
-      "public",
-      ...ACTIVITY_CERTIFICATE_TEMPLATE.publicRelativePath.split("/"),
-    ),
-  ];
+  return [path.join(process.cwd(), "public", "images", "certificate-encre.png")];
 }
 
 async function readFirstExisting(candidates: string[]): Promise<Buffer | null> {
