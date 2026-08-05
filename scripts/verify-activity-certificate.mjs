@@ -16,6 +16,7 @@ import { createClient } from "@supabase/supabase-js";
 import { encode } from "next-auth/jwt";
 import sharp from "sharp";
 import jsQR from "jsqr";
+import { PDFDocument, decodePDFRawStream } from "pdf-lib";
 
 const args = process.argv.slice(2);
 const BASE = (args.find((a) => !a.startsWith("--")) ?? "http://localhost:3011").replace(/\/$/, "");
@@ -151,6 +152,122 @@ async function decodeQr(png) {
   return jsQR(new Uint8ClampedArray(data), info.width, info.height)?.data ?? null;
 }
 
+// ── PDF 기하 검사 ───────────────────────────────────────────────────────────
+// A4 세로 페이지 + 비율 유지 contain 배치가 실제 파일에 반영됐는지 본다.
+//
+// 페이지 크기는 pdf-lib 로 읽고, 이미지 배치는 콘텐츠 스트림의 CTM 에서 읽는다.
+// ⚠️ 콘텐츠 스트림은 Flate 압축되어 있으므로 원본 바이트를 정규식으로 훑을 수 없다
+//    (그러면 매치 0건이 되어 "검출 실패"만 남는다). 반드시 디코드한 뒤 파싱한다.
+// ⚠️ pdf-lib 의 drawImage 는 이동과 배율을 **별개의 cm 로** 내보낸다:
+//        q / 1 0 0 1 x y cm / 1 0 0 1 0 0 cm / w 0 0 h 0 0 cm / /Image Do / Q
+//    따라서 하나만 골라 읽으면 안 되고 순서대로 행렬을 합성해야 한다.
+const A4_PT = { width: 595.28, height: 841.89 };
+const TEMPLATE_PX = { width: 1086, height: 1448 };
+
+/** PDF cm 연산: CTM' = M x CTM. 행렬은 [a b c d e f]. */
+function concatMatrix(m, ctm) {
+  return [
+    m[0] * ctm[0] + m[1] * ctm[2],
+    m[0] * ctm[1] + m[1] * ctm[3],
+    m[2] * ctm[0] + m[3] * ctm[2],
+    m[2] * ctm[1] + m[3] * ctm[3],
+    m[4] * ctm[0] + m[5] * ctm[2] + ctm[4],
+    m[4] * ctm[1] + m[5] * ctm[3] + ctm[5],
+  ];
+}
+
+function pageContentStream(doc, page) {
+  const contents = page.node.Contents();
+  const streams = typeof contents?.asArray === "function" ? contents.asArray() : [contents];
+  let out = "";
+  for (const entry of streams) {
+    const stream = doc.context.lookup(entry) ?? entry;
+    out += Buffer.from(decodePDFRawStream(stream).decode()).toString("latin1");
+  }
+  return out;
+}
+
+async function inspectPdf(buffer) {
+  const doc = await PDFDocument.load(buffer);
+  const pages = doc.getPages();
+  const { width, height } = pages[0].getSize();
+  const content = pageContentStream(doc, pages[0]);
+
+  // 이미지 XObject 를 그리는 `Do` 직전까지의 CTM 을 합성한다.
+  let ctm = [1, 0, 0, 1, 0, 0];
+  const stack = [];
+  let image = null;
+  for (const line of content.split(/\r?\n/).map((l) => l.trim())) {
+    if (line === "q") {
+      stack.push(ctm);
+      continue;
+    }
+    if (line === "Q") {
+      ctm = stack.pop() ?? [1, 0, 0, 1, 0, 0];
+      continue;
+    }
+    const cm = line.match(/^(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm$/);
+    if (cm) {
+      ctm = concatMatrix(cm.slice(1).map(Number), ctm);
+      continue;
+    }
+    if (image === null && /^\/\S+ Do$/.test(line)) {
+      // 이미지 XObject 는 단위 정사각형 (0,0)-(1,1) 을 그린다 → CTM 이 곧 배치 사각형.
+      image = { w: ctm[0], h: ctm[3], x: ctm[4], y: ctm[5], skew: Math.abs(ctm[1]) + Math.abs(ctm[2]) };
+    }
+  }
+
+  return { pageCount: pages.length, width, height, image };
+}
+
+function checkPdfGeometry(label, info) {
+  check(info.pageCount === 1, `[${label}] PDF 1페이지`, `pages=${info.pageCount}`);
+  check(
+    Math.abs(info.width - A4_PT.width) < 0.5 && Math.abs(info.height - A4_PT.height) < 0.5,
+    `[${label}] 페이지 = A4 세로 595.28x841.89pt`,
+    `${info.width}x${info.height}`,
+  );
+  if (!info.image) {
+    check(false, `[${label}] 이미지 배치 행렬(cm) 검출`);
+    return;
+  }
+  const { w, h, x, y } = info.image;
+
+  check(info.image.skew < 1e-9, `[${label}] 회전/기울임 없음`, `skew=${info.image.skew}`);
+  // 잘림 없음 — 그려진 사각형이 페이지 안에 완전히 들어간다.
+  check(
+    x >= -0.01 && y >= -0.01 && x + w <= info.width + 0.01 && y + h <= info.height + 0.01,
+    `[${label}] 이미지가 페이지 밖으로 나가지 않음(잘림 없음)`,
+    `x=${x} y=${y} w=${w} h=${h}`,
+  );
+  // 비율 유지 — 원본 종횡비와 같다.
+  const srcRatio = TEMPLATE_PX.width / TEMPLATE_PX.height;
+  check(
+    Math.abs(w / h - srcRatio) < 0.001,
+    `[${label}] 종횡비 유지(${srcRatio.toFixed(4)})`,
+    `${(w / h).toFixed(4)}`,
+  );
+  // 중앙 정렬 — 좌우 여백, 상하 여백이 각각 같다.
+  check(
+    Math.abs(x - (info.width - w - x)) < 0.05 && Math.abs(y - (info.height - h - y)) < 0.05,
+    `[${label}] 상하좌우 중앙 정렬`,
+    `좌${x.toFixed(2)}/우${(info.width - w - x).toFixed(2)} 상${(info.height - h - y).toFixed(2)}/하${y.toFixed(2)}`,
+  );
+  // 여백 최소화 — 폭이 먼저 한계에 닿으므로 좌우 여백이 설정값(5mm=14.17pt)과 같아야 한다.
+  const marginPt = 14.17;
+  check(
+    Math.abs(x - marginPt) < 0.2,
+    `[${label}] 좌우 여백 = 5mm(=${marginPt}pt), 폭이 가용 영역에 꽉 참`,
+    `x=${x.toFixed(2)}`,
+  );
+  const mm = (pt) => (pt / 72) * 25.4;
+  console.log(
+    `        인쇄 크기 ${mm(w).toFixed(1)}x${mm(h).toFixed(1)}mm · ` +
+      `여백 좌우 ${mm(x).toFixed(1)}mm / 상하 ${mm(y).toFixed(1)}mm · ` +
+      `유효 ${(TEMPLATE_PX.width / (w / 72)).toFixed(0)}dpi`,
+  );
+}
+
 const VALID_BODY = {
   clubName: "엥크레",
   industryField: "엔터테인먼트/미디어",
@@ -279,6 +396,16 @@ async function main() {
         png.res.headers.get("x-certificate-height") === "1448",
       `[${view.name}] 실제 템플릿 크기 1086x1448`,
     );
+  }
+
+  section("7-A. PDF = A4 세로 · 비율 유지 · 잘림 없음");
+  for (const view of VIEWS) {
+    const buf = results[view.name].pdf.buffer;
+    if (!buf) {
+      check(false, `[${view.name}] PDF 본문 수신`);
+      continue;
+    }
+    checkPdfGeometry(view.name, await inspectPdf(buf));
   }
 
   section("8. 일반/test/demo 산출물 상호 동일성");
