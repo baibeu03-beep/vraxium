@@ -417,7 +417,7 @@ function ActivityCertificatePanel({ visible }: { visible: boolean }) {
               </div>
               <p className="certificate-preview__pdf-note">
                 <i className="ti ti-info-circle" aria-hidden="true"></i>
-                PDF는 A4 인쇄용으로 생성되며 사방에 약 12.7mm의 안전 여백이 포함됩니다.
+                PDF는 A4 용지에 증명서 전체가 최대 크기로 배치됩니다.
               </p>
             </>
           ) : (
@@ -438,13 +438,29 @@ function ActivityCertificatePanel({ visible }: { visible: boolean }) {
 
 // ── 경력 증명서 탭 ────────────────────────────────────────────────────────────
 
+/** 서버(resolveOrgFromLocation)가 확정한 조직 — canonical + 표/증명 문구용 표시 필드. */
+interface CareerCertificateOrgInfoDto {
+  key: string;
+  orgSlug: OrgSlug;
+  displayName: string;
+  verificationAffiliation: string;
+}
+
+type CareerCertificateMissingField = "university" | "department";
+
 interface CareerCertificateContextDto {
   success: true;
-  user: { userId: string; name: string | null; birthDate: string | null };
-  /** 서버(resolveOrgFromLocation)가 확정한 조직 — canonical + 표시용 slug/한글명. */
-  org: { organization: string; orgSlug: OrgSlug; displayNameKo: string } | null;
+  user: {
+    userId: string;
+    name: string | null;
+    birthDate: string | null;
+    /** "{대학교명} {학과명}" — 서버 자동 조회. 둘 다 있을 때만 값이 있다. */
+    academicRecord: string | null;
+  };
+  organization: CareerCertificateOrgInfoDto | null;
   defaults: Record<CareerCertificateInputField, string | null>;
   sources: Record<string, "db" | "manual">;
+  missingFields: CareerCertificateMissingField[];
   eligibility: { allowed: boolean; reason: string; message: string | null };
   template: {
     templateId: string;
@@ -463,8 +479,6 @@ interface CareerCertificateContextDto {
 const CAREER_FIELD_PLACEHOLDER: Record<CareerCertificateInputField, string> = {
   name: "이름",
   birthDate: "",
-  affiliation: "예) 주식회사 아우름",
-  education: "예) 경영학과",
   taskName: "예) SNS 콘텐츠 기획 및 운영",
   careerStartDate: "",
   careerEndDate: "",
@@ -646,6 +660,30 @@ function CareerCertificatePanel({ visible, org }: { visible: boolean; org: OrgSl
     else setForm(emptyCareerCertificateInput());
   }, [applyDefaults, dto, popup, setPreview]);
 
+  /** 소속·학적사항 — 더 이상 입력이 아니라 서버 자동 조회 읽기 전용 표시. */
+  const renderReadOnlyField = (key: string, label: string, value: string | null, hint: string) => (
+    <div className="certificate-field" key={key}>
+      <label className="certificate-field__label" htmlFor={`cert-career-${key}`}>
+        <span>
+          <i className="ti ti-chevron-right" aria-hidden="true"></i>
+          {label}
+        </span>
+        <span className="certificate-badge certificate-badge--auto">자동 조회</span>
+      </label>
+      <input
+        id={`cert-career-${key}`}
+        type="text"
+        className="certificate-input certificate-input--readonly"
+        value={value ?? ""}
+        placeholder={value ? undefined : "등록된 정보가 없습니다"}
+        readOnly
+      />
+      <div className="certificate-field__foot">
+        <span className="certificate-field__autohint">{hint}</span>
+      </div>
+    </div>
+  );
+
   const renderField = (key: CareerCertificateInputField) => {
     const label = CAREER_CERTIFICATE_FIELD_LABELS[key];
     const isDate = CAREER_DATE_SET.has(key);
@@ -710,7 +748,9 @@ function CareerCertificatePanel({ visible, org }: { visible: boolean; org: OrgSl
         </div>
       ) : null}
 
-      {!loading && !eligible ? (
+      {/* 학적사항 미등록은 아래 전용 안내(missingFields)가 따로 뜨므로 여기선 중복 표시하지
+          않는다 — org 경로 문제일 때만(reason !== ACADEMIC_RECORD_MISSING) 이 배너를 쓴다. */}
+      {!loading && !eligible && dto?.eligibility.reason !== "ACADEMIC_RECORD_MISSING" ? (
         <div className="certificate-notice certificate-notice--warn">
           <i className="ti ti-lock" aria-hidden="true"></i>
           <span>
@@ -727,16 +767,46 @@ function CareerCertificatePanel({ visible, org }: { visible: boolean; org: OrgSl
         </div>
       ) : null}
 
+      {!loading && dto?.organization && dto.missingFields.length > 0 ? (
+        <div className="certificate-notice certificate-notice--warn">
+          <i className="ti ti-school-off" aria-hidden="true"></i>
+          <span>
+            학적사항 정보가 등록되지 않았습니다. <a href="/cluster-2/">학력 정보 등록/수정</a> 페이지에서
+            대학교와 학과를 먼저 등록해주세요.
+          </span>
+        </div>
+      ) : null}
+
       <div className="certificate-layout">
         <div className="certificate-form">
           <p className="certificate-form__hint">
             <span className="certificate-badge certificate-badge--auto">자동 조회</span>
-            는 현재 로그인 정보에서 가져온 값이고,
+            는 현재 로그인 정보 또는 신청 조직 경로에서 서버가 자동으로 채운 값이고,
             <span className="certificate-badge certificate-badge--manual">직접 입력</span>
-            은 확정된 데이터 원천이 없어 직접 채워야 하는 항목입니다. 모두 수정할 수 있습니다.
-            하단 증명 문구의 소속 표기는 현재 접속한 조직 경로 기준으로 서버가 자동 생성합니다.
+            은 확정된 데이터 원천이 없어 직접 채워야 하는 항목입니다. 소속·학적사항은 읽기
+            전용이며, 하단 증명 문구도 같은 조직 컨텍스트에서 서버가 자동 생성합니다.
           </p>
-          <div className="certificate-form__grid">{CAREER_CERTIFICATE_INPUT_FIELDS.map(renderField)}</div>
+          <div className="certificate-form__grid">
+            {renderField("name")}
+            {renderField("birthDate")}
+            {renderReadOnlyField(
+              "affiliation",
+              "소속",
+              dto?.organization?.displayName ?? null,
+              "신청 조직을 기준으로 자동 입력됩니다.",
+            )}
+            {renderReadOnlyField(
+              "academicRecord",
+              "학적사항",
+              dto?.user.academicRecord ?? null,
+              "등록된 사용자 정보를 기준으로 자동 입력됩니다.",
+            )}
+            {renderField("taskName")}
+            {renderField("careerStartDate")}
+            {renderField("careerEndDate")}
+            {renderField("careerDescription")}
+            {renderField("issueDate")}
+          </div>
           <div className="certificate-actions">
             <button
               type="button"
@@ -792,7 +862,7 @@ function CareerCertificatePanel({ visible, org }: { visible: boolean; org: OrgSl
               </div>
               <p className="certificate-preview__pdf-note">
                 <i className="ti ti-info-circle" aria-hidden="true"></i>
-                PDF는 A4 인쇄용으로 생성되며 사방에 약 12.7mm의 안전 여백이 포함됩니다.
+                PDF는 A4 용지에 증명서 전체가 최대 크기로 배치됩니다.
               </p>
             </>
           ) : (

@@ -202,22 +202,28 @@ function checkPdfGeometry(label, info) {
     `[${label}] 상하좌우 중앙 정렬`,
     `좌${x.toFixed(2)}/우${(info.width - w - x).toFixed(2)} 상${(info.height - h - y).toFixed(2)}/하${y.toFixed(2)}`,
   );
-  const marginPt = 36.0;
-  const widthFirst = TEMPLATE_PX.width / TEMPLATE_PX.height > (info.width - 2 * marginPt) / (info.height - 2 * marginPt);
+  // 별도 안전 여백 없음(marginMm=0) — 종횡비가 먼저 한계에 닿는 방향은 0pt(페이지 꽉 참),
+  // 반대 방향은 종횡비 차이로 인한 자투리 여백만 남는다(잘림 방지를 위한 정상 동작).
+  const widthFirst = TEMPLATE_PX.width / TEMPLATE_PX.height > info.width / info.height;
   if (widthFirst) {
-    check(Math.abs(x - marginPt) < 0.2, `[${label}] 좌우 여백 = 12.7mm(=${marginPt}pt)`, `x=${x.toFixed(2)}`);
-    check(y >= marginPt - 0.2, `[${label}] 상하 여백 >= 12.7mm`, `y=${y.toFixed(2)}`);
+    check(Math.abs(x - 0) < 0.2, `[${label}] 좌우 여백 = 0pt(안전 여백 없음)`, `x=${x.toFixed(2)}`);
+    check(y >= -0.2, `[${label}] 상하 여백 >= 0pt(자투리만)`, `y=${y.toFixed(2)}`);
   } else {
-    check(Math.abs(y - marginPt) < 0.2, `[${label}] 상하 여백 = 12.7mm(=${marginPt}pt)`, `y=${y.toFixed(2)}`);
-    check(x >= marginPt - 0.2, `[${label}] 좌우 여백 >= 12.7mm`, `x=${x.toFixed(2)}`);
+    check(Math.abs(y - 0) < 0.2, `[${label}] 상하 여백 = 0pt(안전 여백 없음)`, `y=${y.toFixed(2)}`);
+    check(x >= -0.2, `[${label}] 좌우 여백 >= 0pt(자투리만)`, `x=${x.toFixed(2)}`);
   }
+  const mm = (pt) => (pt / 72) * 25.4;
+  console.log(
+    `        x=${x.toFixed(2)}pt y=${y.toFixed(2)}pt drawWidth=${w.toFixed(2)}pt drawHeight=${h.toFixed(2)}pt · ` +
+      `인쇄 크기 ${mm(w).toFixed(1)}x${mm(h).toFixed(1)}mm · 여백 좌우 ${mm(x).toFixed(1)}mm / 상하 ${mm(y).toFixed(1)}mm`,
+  );
 }
 
+// ⚠️ affiliation/education 은 더 이상 body 로 보내지 않는다 — 소속은 신청 조직에서,
+//    학적사항은 사용자의 등록된 학력 정보에서 서버가 자동으로 확정한다.
 const VALID_BODY = {
   name: "홍길동",
   birthDate: "2000-08-06",
-  affiliation: "주식회사 아우름",
-  education: "경영학과",
   taskName: "SNS 콘텐츠 기획 및 운영",
   careerStartDate: "2025-01-06",
   careerEndDate: "2025-12-28",
@@ -268,16 +274,33 @@ async function main() {
       check(res.status === 200, `[${org}/${view.name}] 200`, `status=${res.status}`);
       check(body?.user?.userId === primary.user_id, `[${org}/${view.name}] effective user 일치`);
       check(
-        body?.org?.orgSlug === org && body?.org?.organization === SLUG_TO_ORG_CANONICAL[org],
-        `[${org}/${view.name}] org echo(orgSlug=${org}, organization=${SLUG_TO_ORG_CANONICAL[org]}) — lib/cluster-route.ts resolveOrgFromLocation 재사용 확인`,
-        JSON.stringify(body?.org),
+        body?.organization?.orgSlug === org && body?.organization?.key === SLUG_TO_ORG_CANONICAL[org],
+        `[${org}/${view.name}] organization echo(orgSlug=${org}, key=${SLUG_TO_ORG_CANONICAL[org]}) — lib/cluster-route.ts resolveOrgFromLocation 재사용 확인`,
+        JSON.stringify(body?.organization),
       );
       check(
-        body?.org?.displayNameKo === ORG_DISPLAY_NAME_KO[org],
-        `[${org}/${view.name}] org.displayNameKo = ${ORG_DISPLAY_NAME_KO[org]}(ORGANIZATION_CONFIG 파생)`,
-        body?.org?.displayNameKo,
+        body?.organization?.displayName === ORG_DISPLAY_NAME_KO[org],
+        `[${org}/${view.name}] organization.displayName = ${ORG_DISPLAY_NAME_KO[org]}(표의 소속 칸, ORGANIZATION_CONFIG 파생)`,
+        body?.organization?.displayName,
+      );
+      check(
+        body?.organization?.verificationAffiliation === ORG_PHRASE[org],
+        `[${org}/${view.name}] organization.verificationAffiliation = 하단 증명 문구용 긴 소속(표 소속과 다른 필드)`,
+        body?.organization?.verificationAffiliation,
       );
       check(body?.eligibility?.allowed === true, `[${org}/${view.name}] 발급 자격 통과`);
+      // 이 3명은 실제 user_educations 대표 학력이 있는 테스트 유저다(사전 DB 조회로 확인) —
+      // academicRecord 가 합성값("-" 등) 없이 "{학교} {학과}" 그대로 채워져야 한다.
+      check(
+        typeof body?.user?.academicRecord === "string" && body.user.academicRecord.includes(" "),
+        `[${org}/${view.name}] user.academicRecord 자동 조회됨(공백 join)`,
+        body?.user?.academicRecord,
+      );
+      check(
+        Array.isArray(body?.missingFields) && body.missingFields.length === 0,
+        `[${org}/${view.name}] missingFields=[](학적사항 완전 등록)`,
+        JSON.stringify(body?.missingFields),
+      );
     }
   }
 
@@ -286,7 +309,7 @@ async function main() {
     const noOrg = await get(`/api/certificates/career/context/`, { cookie });
     check(noOrg.res.status === 200, "org 없음: context 자체는 200", `status=${noOrg.res.status}`);
     check(noOrg.body?.eligibility?.allowed === false, "org 없음: eligibility.allowed=false");
-    check(noOrg.body?.org === null, "org 없음: org=null");
+    check(noOrg.body?.organization === null, "org 없음: organization=null");
     const badOrg = await get(`/api/certificates/career/context/?org=not-a-real-org`, { cookie });
     check(badOrg.body?.eligibility?.allowed === false, "org=잘못된값: eligibility.allowed=false");
   }
@@ -303,9 +326,16 @@ async function main() {
     JSON.stringify(contexts["encre.session"].defaults) === JSON.stringify(contexts["encre.demo"].defaults),
     "자동 조회 defaults 값까지 동일(session vs demo)",
   );
+  check(
+    contexts["encre.session"].user.academicRecord === contexts["encre.demo"].user.academicRecord,
+    "academicRecord 값까지 동일(session vs demo)",
+  );
   check(contexts["encre.session"].defaults.name === primary.display_name, "이름 자동 조회 = 실제 프로필");
   check(contexts["encre.session"].sources.name === "db", "sources.name = db");
-  check(contexts["encre.session"].sources.affiliation === "manual", "sources.affiliation = manual(권위 원천 없음)");
+  check(
+    !("affiliation" in contexts["encre.session"].sources) && !("education" in contexts["encre.session"].sources),
+    "sources 에 affiliation/education 키 자체가 없음(더 이상 사용자 입력이 아님)",
+  );
 
   check((await get("/api/certificates/career/context/?org=encre")).res.status === 401, "미로그인 401");
 
@@ -377,26 +407,34 @@ async function main() {
     check(sha256(pngs.encre) !== sha256(pngs.phalanx), "encre ≠ phalanx PNG 바이트");
     check(sha256(pngs.oranke) !== sha256(pngs.phalanx), "oranke ≠ phalanx PNG 바이트");
 
-    // 증명 문구 박스(x 106~941, y 1132~1237) 밖의 픽셀은 org 와 무관하게 완전히 동일해야 한다
-    // (다른 값 입력이 전혀 없으므로 — 이 검증 자체가 "문구 영역만 바뀐다"의 직접 증거다).
-    const BOX = { left: 106, top: 1132, width: 941 - 106, height: 1237 - 1132 };
+    // org 가 바뀌면 두 영역만 달라져야 한다: ① 하단 증명 문구 박스(x 106~941, y 1132~1237),
+    // ② 인적 사항 표의 "소속" 칸(x 240~520, y 668~740 — affiliation 슬롯도 이제 조직
+    // 표시명을 그리므로 org 에 따라 달라진다). 그 외 픽셀(성명·생년월일·학적사항·경력
+    // 사항·발급일 등)은 org 와 무관하게 완전히 동일해야 한다.
+    const BOXES = [
+      { left: 106, top: 1132, width: 941 - 106, height: 1237 - 1132 }, // 하단 증명 문구
+      { left: 240, top: 668, width: 520 - 240, height: 740 - 668 }, // 소속 칸(인적사항 2행 좌측)
+    ];
     async function outsideBoxHash(png) {
-      const img = sharp(png);
-      const meta = await img.metadata();
+      const meta = await sharp(png).metadata();
       const full = await sharp(png).raw().toBuffer();
-      // 박스 영역만 0 으로 지운 뒤 전체를 해시 — 박스 밖이 완전히 같으면 해시가 같다.
       const channels = meta.channels ?? 3;
       const buf = Buffer.from(full);
-      for (let y = BOX.top; y < BOX.top + BOX.height; y++) {
-        for (let x = BOX.left; x < BOX.left + BOX.width; x++) {
-          const idx = (y * meta.width + x) * channels;
-          for (let c = 0; c < channels; c++) buf[idx + c] = 0;
+      for (const BOX of BOXES) {
+        for (let y = BOX.top; y < BOX.top + BOX.height; y++) {
+          for (let x = BOX.left; x < BOX.left + BOX.width; x++) {
+            const idx = (y * meta.width + x) * channels;
+            for (let c = 0; c < channels; c++) buf[idx + c] = 0;
+          }
         }
       }
       return crypto.createHash("sha256").update(buf).digest("hex");
     }
     const [oE, oO, oP] = await Promise.all([outsideBoxHash(pngs.encre), outsideBoxHash(pngs.oranke), outsideBoxHash(pngs.phalanx)]);
-    check(oE === oO && oE === oP, "증명 문구 박스 밖 픽셀은 조직과 무관하게 완전 동일(=문구 영역만 변경)");
+    check(
+      oE === oO && oE === oP,
+      "소속 칸·증명 문구 박스 밖 픽셀은 조직과 무관하게 완전 동일(=조직 관련 두 영역만 변경)",
+    );
   }
 
   // ── 10. issueDate 만 바꾸면 날짜 영역만 바뀜 ────────────────────────────
@@ -426,9 +464,13 @@ async function main() {
     check(ha === hb, "발급일 박스 밖 픽셀은 완전 동일(=날짜 영역만 변경)");
   }
 
-  // ── 11. body 로 신원·조직 변경 시도 ──────────────────────────────────────
-  section("11. body 로 발급 대상·조직 변경 시도 → 400");
-  for (const key of ["userId", "user_id", "targetUserId", "organizationSlug", "org", "organization", "templatePath"]) {
+  // ── 11. body 로 신원·조직·소속·학적사항 변경 시도 ────────────────────────────
+  section("11. body 로 발급 대상·조직·소속·학적사항 변경 시도 → 400");
+  for (const key of [
+    "userId", "user_id", "targetUserId", "organizationSlug", "org", "organization", "templatePath",
+    // 소속·학적사항은 더 이상 사용자 입력이 아니다 — body 에 실으면 존재 자체로 400.
+    "affiliation", "education", "academicRecord", "organizationDisplayName", "university", "department",
+  ]) {
     const r = await post(`/api/certificates/career/preview/?org=encre`, {
       ...VALID_BODY,
       [key]: users.oranke.user_id,
@@ -439,18 +481,21 @@ async function main() {
       `status=${r.res.status} code=${r.json?.code}`,
     );
   }
-  section("11(b). body.affiliation 은 정상 필드(차단 대상 아님) — 값은 반영되지만 조직 문구는 불변");
+  section("11(b). body.affiliation 을 위조해도 발급 결과(소속 칸)는 불변 — 400 으로 아예 거부되므로 반영 자체가 불가능함을 확인");
   {
-    const r = await post(
+    // 위 11번에서 이미 400 을 확인했지만, 여기서는 "그 요청이 거부된 뒤에도 정상 발급이
+    // 여전히 서버 값(엥크레)으로 나온다"는 것까지 이어서 확인한다 — 즉 클라이언트가
+    // affiliation 스푸핑을 시도해도 성공 경로가 아예 없다.
+    const spoofed = await post(
       `/api/certificates/career/preview/?org=encre`,
       { ...VALID_BODY, affiliation: "다른회사" },
       { cookie },
     );
-    check(r.res.status === 200 && r.res.headers.get("content-type") === "image/png", "body.affiliation 있어도 200(정상 필드)");
-    // org=encre 로 발급했으므로 문구 밖 픽셀은 동일해야 하지만 소속 값 자체(표 안)는 달라졌어야 한다.
+    check(spoofed.res.status === 400 && spoofed.json?.code === "BODY_FIELD_FORBIDDEN", "affiliation 위조 시도 자체가 400으로 거부됨");
+    const clean = await post(`/api/certificates/career/preview/?org=encre`, VALID_BODY, { cookie });
     check(
-      sha256(r.buffer) !== sha256(results["encre.session"].png.buffer),
-      "소속 값이 다르면 표 영역 픽셀이 달라짐(정상 입력 반영)",
+      sha256(clean.buffer) === sha256(results["encre.session"].png.buffer),
+      "정상 요청(affiliation 없음)은 항상 서버 확정값(엥크레)으로만 렌더 — 세션 재확인",
     );
   }
   section("11(c). org 없이 발급 시도 → 403");
@@ -466,7 +511,7 @@ async function main() {
     { label: "종료일 < 시작일", body: { ...VALID_BODY, careerEndDate: "2024-01-01" }, field: "careerEndDate", code: "DATE_RANGE" },
     { label: "필수값 누락", body: { ...VALID_BODY, taskName: "" }, field: "taskName", code: "REQUIRED" },
     { label: "공백 문자열", body: { ...VALID_BODY, name: "   " }, field: "name", code: "REQUIRED" },
-    { label: "길이 초과", body: { ...VALID_BODY, education: "가".repeat(21) }, field: "education", code: "MAX_LENGTH" },
+    { label: "길이 초과", body: { ...VALID_BODY, taskName: "가".repeat(31) }, field: "taskName", code: "MAX_LENGTH" },
   ];
   for (const c of CASES) {
     const seen = [];
@@ -482,7 +527,6 @@ async function main() {
   section("12(b). 장문이 영역을 초과하면 잘라내지 않고 422 FIELD_OVERFLOW");
   const overflowBody = {
     ...VALID_BODY,
-    affiliation: "가".repeat(30),
     taskName: "가".repeat(30),
     careerDescription: "가".repeat(200),
   };
@@ -491,7 +535,6 @@ async function main() {
   check(
     overflowRes.res.status === 422 &&
       overflowRes.json?.code === "VALIDATION_FAILED" &&
-      overflowFields.includes("affiliation") &&
       overflowFields.includes("taskName") &&
       overflowFields.includes("careerDescription") &&
       (overflowRes.json?.fieldErrors ?? []).every((e) => e.code === "FIELD_OVERFLOW"),
@@ -502,8 +545,6 @@ async function main() {
   section("12(c). 현실적인 긴 입력(공백 포함 자연문)은 정상 렌더");
   const longButRealBody = {
     ...VALID_BODY,
-    affiliation: "주식회사 아우름 엔터테인먼트 미디어사업부",
-    education: "미디어커뮤니케이션학과",
     taskName: "브랜드 마케팅 콘텐츠 기획 및 SNS 채널 운영 총괄",
     careerDescription:
       "SNS 채널 전반의 콘텐츠 기획과 제작을 담당하였으며, 인플루언서 협업 캠페인 기획부터 실행, 성과 분석까지 전 과정을 총괄하였습니다.",

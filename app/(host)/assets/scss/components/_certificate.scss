@@ -163,6 +163,17 @@
     font-size: 18px;
   }
 
+  a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    font-weight: 700;
+
+    &:hover {
+      opacity: 0.85;
+    }
+  }
+
   &--warn {
     border-color: rgba(250, 171, 7, 0.45);
     color: #ffd479;
@@ -313,6 +324,14 @@
     color: transparent;
   }
 
+  // 자동 조회 읽기 전용 필드(소속·학적사항) 아래 보이는 안내 문구 — __hint 와 달리
+  // 항상 표시된다(색이 투명하지 않음).
+  &__autohint {
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--cert-text-muted);
+  }
+
   &__count {
     flex: 0 0 auto;
     font-size: 12px;
@@ -389,6 +408,20 @@
   &:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  // 자동 조회 읽기 전용 필드(소속·학적사항) — disabled 와 다르다: "발급 자격이 없어
+  // 막힌 값"이 아니라 "서버가 이미 확정해 고칠 필요가 없는 값"이므로 흐리게 죽이지
+  // 않고 은은한 강조 배경만 준다. focus 도 받지 않는다(readOnly, disabled 아님).
+  &--readonly {
+    background: var(--cert-accent-soft);
+    border-color: var(--cert-field-border);
+    cursor: default;
+
+    &:focus {
+      box-shadow: none;
+      border-color: var(--cert-field-border);
+    }
   }
 
   // 브라우저 기본 날짜 피커 아이콘이 어두운 배경에서 보이도록.

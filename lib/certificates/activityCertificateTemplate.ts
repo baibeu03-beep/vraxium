@@ -183,15 +183,20 @@ export const ACTIVITY_CERTIFICATE_TEMPLATE = {
    *    잘림 없이 넣으려면 **폭 기준**으로 맞춰야 하고, 그 결과 위아래 여백이 남는다.
    *    이는 회피 불가능하다 — 없애려면 잘라내야 하는데 잘림 금지가 우선이다.
    *
-   * marginMm: 12.7mm — 사방 안전 여백(요구 규격). mmToPt(12.7) = 36.00pt 로 딱 떨어진다
-   *   (12.7mm 는 25.4mm 의 정확히 절반이라 반올림 오차가 없다).
+   * ⚠️ 이 블록은 참고용 문서일 뿐 실제 값의 SoT 가 아니다 — 실제 페이지/여백 값은
+   *    lib/certificates/certificatePdf.ts 의 PAGE_WIDTH_MM/PAGE_HEIGHT_MM/MARGIN_MM
+   *    상수(활동·경력 증명서 공용)가 유일한 출처다. 값을 바꾸려면 그쪽을 고칠 것 —
+   *    여기 숫자만 고치면 실제 PDF 는 바뀌지 않는다(과거 이 필드가 실제로 안 쓰이는데도
+   *    12.7 로 남아있어 실제 동작과 어긋난 적이 있었다).
+   *
+   * marginMm: 0 — 별도 안전 여백 없이 A4 안에서 최대 크기(contain)로 배치한다.
    */
   pdf: {
     pageSize: "A4",
     orientation: "portrait",
     pageWidthMm: 210,
     pageHeightMm: 297,
-    marginMm: 12.7,
+    marginMm: 0,
   },
 
   /** 기본 글자색 — 템플릿의 기존 본문 색(짙은 먹빛 갈색)에 맞춤. */

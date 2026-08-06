@@ -253,22 +253,14 @@ function checkPdfGeometry(label, info) {
     `[${label}] 상하좌우 중앙 정렬`,
     `좌${x.toFixed(2)}/우${(info.width - w - x).toFixed(2)} 상${(info.height - h - y).toFixed(2)}/하${y.toFixed(2)}`,
   );
-  // 폭이 먼저 한계에 닿으므로 좌우 여백이 설정값(12.7mm=36.00pt)과 같아야 한다.
-  const marginPt = 36.0;
-  check(
-    Math.abs(x - marginPt) < 0.2,
-    `[${label}] 좌우 여백 = 12.7mm(=${marginPt}pt), 폭이 가용 영역에 꽉 참`,
-    `x=${x.toFixed(2)}`,
-  );
-  // 상하 여백도 12.7mm 이상이어야 한다(세로는 종횡비 차이로 더 크게 남는다).
-  check(
-    y >= marginPt - 0.2,
-    `[${label}] 상하 여백 >= 12.7mm(=${marginPt}pt)`,
-    `y=${y.toFixed(2)}`,
-  );
+  // 별도 안전 여백 없음(marginMm=0) — 폭이 먼저 한계에 닿으므로 좌우는 0pt(페이지 꽉 참),
+  // 상하는 종횡비 차이로 인한 자투리 여백만 남는다(잘림 방지를 위한 정상 동작).
+  check(Math.abs(x - 0) < 0.2, `[${label}] 좌우 여백 = 0pt(안전 여백 없음), 폭이 페이지에 꽉 참`, `x=${x.toFixed(2)}`);
+  check(y >= -0.2, `[${label}] 상하 여백 >= 0pt(종횡비 차이로 인한 자투리만)`, `y=${y.toFixed(2)}`);
   const mm = (pt) => (pt / 72) * 25.4;
   console.log(
-    `        인쇄 크기 ${mm(w).toFixed(1)}x${mm(h).toFixed(1)}mm · ` +
+    `        x=${x.toFixed(2)}pt y=${y.toFixed(2)}pt drawWidth=${w.toFixed(2)}pt drawHeight=${h.toFixed(2)}pt · ` +
+      `인쇄 크기 ${mm(w).toFixed(1)}x${mm(h).toFixed(1)}mm · ` +
       `여백 좌우 ${mm(x).toFixed(1)}mm / 상하 ${mm(y).toFixed(1)}mm · ` +
       `유효 ${(TEMPLATE_PX.width / (w / 72)).toFixed(0)}dpi`,
   );

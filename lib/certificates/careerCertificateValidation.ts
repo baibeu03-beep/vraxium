@@ -145,20 +145,28 @@ export function buildVerificationText(org: Organization): string {
 }
 
 /**
- * 검증된 입력 + 조직 컨텍스트 → 템플릿 슬롯별 인쇄 문자열(한 줄 슬롯) + 증명 문구(블록).
- * 미리보기와 최종 발급이 같은 함수를 쓰므로 표기가 어긋날 수 없다.
+ * 검증된 입력 + 조직 컨텍스트 + 서버 확정 학적사항 → 템플릿 슬롯별 인쇄 문자열(한 줄
+ * 슬롯) + 증명 문구(블록). 미리보기와 최종 발급이 같은 함수를 쓰므로 표기가 어긋날 수 없다.
+ *
+ * ⚠️ organizationDisplayName(소속 칸)과 academicRecord(학과사항 칸)는 더 이상
+ *    CareerCertificateInput 에 없다 — 둘 다 사용자 입력이 아니라 서버가 조직 컨텍스트/
+ *    학력 정보로 확정한 값이라, 호출부(careerCertificateApi.ts)가 이 두 값을 별도
+ *    인자로 넘긴다. body 에 같은 이름의 값이 와도 이 함수가 애초에 그걸 받지 않으므로
+ *    반영될 경로가 없다.
  */
 export function buildCareerRenderValues(
   input: CareerCertificateInput,
   org: Organization,
+  organizationDisplayName: string,
+  academicRecord: string,
 ): { slots: Record<CareerCertificateRenderSlot, string>; careerDescription: string; verificationText: string } {
   const [y, m, d] = isValidIsoDate(input.issueDate) ? input.issueDate.split("-") : ["", "", ""];
   return {
     slots: {
       name: input.name,
       birthDate: formatSingleDate(input.birthDate),
-      affiliation: input.affiliation,
-      education: input.education,
+      affiliation: organizationDisplayName,
+      academicRecord,
       taskName: input.taskName,
       careerPeriod: formatDateRange(input.careerStartDate, input.careerEndDate),
       // 템플릿에 "년/월/일" 글자만 고정 인쇄 — 활동증명서와 달리 "20" 접두사가 없어

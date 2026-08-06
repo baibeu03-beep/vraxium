@@ -27,12 +27,16 @@
 //    server-only 모듈(fs·sharp·qrcode 등)을 절대 import 하지 않는다.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 사용자가 폼에서 입력/수정하는 값의 키. */
+/**
+ * 사용자가 폼에서 입력/수정하는 값의 키.
+ * ⚠️ "affiliation"(소속) · "education"(학적사항)은 여기 없다 — 더 이상 사용자 입력이
+ *    아니다. 소속은 신청 조직 컨텍스트에서, 학적사항은 사용자의 등록된 학력 정보에서
+ *    서버가 자동으로 확정한다(careerCertificateContext.ts 참고). 폼에는 읽기 전용으로만
+ *    표시한다.
+ */
 export type CareerCertificateInputField =
   | "name"
   | "birthDate"
-  | "affiliation"
-  | "education"
   | "taskName"
   | "careerStartDate"
   | "careerEndDate"
@@ -42,8 +46,6 @@ export type CareerCertificateInputField =
 export const CAREER_CERTIFICATE_INPUT_FIELDS: readonly CareerCertificateInputField[] = [
   "name",
   "birthDate",
-  "affiliation",
-  "education",
   "taskName",
   "careerStartDate",
   "careerEndDate",
@@ -54,8 +56,6 @@ export const CAREER_CERTIFICATE_INPUT_FIELDS: readonly CareerCertificateInputFie
 export const CAREER_CERTIFICATE_FIELD_LABELS: Record<CareerCertificateInputField, string> = {
   name: "성명",
   birthDate: "생년월일",
-  affiliation: "소속",
-  education: "학과사항",
   taskName: "업무명",
   careerStartDate: "경력 시작일",
   careerEndDate: "경력 종료일",
@@ -80,8 +80,6 @@ export const CAREER_CERTIFICATE_MULTILINE_FIELDS: readonly CareerCertificateInpu
 export const CAREER_CERTIFICATE_INPUT_MAX_LENGTH: Record<CareerCertificateInputField, number> = {
   name: 20,
   birthDate: 10,
-  affiliation: 30,
-  education: 20,
   taskName: 30,
   careerStartDate: 10,
   careerEndDate: 10,
@@ -94,12 +92,16 @@ export const CAREER_CERTIFICATE_INPUT_MAX_LENGTH: Record<CareerCertificateInputF
  * 입력 필드와 1:1이 아니다 — 경력 시작일/종료일은 "기간" 칸 하나에 합쳐 찍히고,
  * 발급일은 년/월/일이 떨어져 있어 세 슬롯으로, 증명 문구는 조직 컨텍스트로 서버가
  * 만든 문장이 별도 멀티라인 슬롯(verificationText)으로 찍힌다.
+ *
+ * "affiliation"(소속 칸)과 "academicRecord"(학과사항 칸, 옛 "education")는 입력 필드가
+ * 아니지만 렌더 슬롯으로는 그대로 남는다 — 템플릿 위 물리적 위치는 안 바뀌었고, 값의
+ * 출처만 "사용자 입력"에서 "서버가 조직 컨텍스트/학력 정보로 확정한 값"으로 바뀌었다.
  */
 export type CareerCertificateRenderSlot =
   | "name"
   | "birthDate"
   | "affiliation"
-  | "education"
+  | "academicRecord"
   | "taskName"
   | "careerPeriod"
   | "issueYear"
@@ -110,7 +112,7 @@ export const CAREER_CERTIFICATE_RENDER_SLOTS: readonly CareerCertificateRenderSl
   "name",
   "birthDate",
   "affiliation",
-  "education",
+  "academicRecord",
   "taskName",
   "careerPeriod",
   "issueYear",
@@ -167,13 +169,16 @@ export const CAREER_CERTIFICATE_TEMPLATE = {
   width: 1055,
   height: 1491,
 
-  /** PDF 출력 규격 — activityCertificateTemplate.ts 와 동일 규격(공용 renderCertificatePdfA4). */
+  /**
+   * PDF 출력 규격 — activityCertificateTemplate.ts 와 동일 규격(공용 renderCertificatePdfA4).
+   * ⚠️ 참고용 문서일 뿐 SoT 아님 — 실제 값은 certificatePdf.ts 상수 참고(그쪽 주석 참고).
+   */
   pdf: {
     pageSize: "A4",
     orientation: "portrait",
     pageWidthMm: 210,
     pageHeightMm: 297,
-    marginMm: 12.7,
+    marginMm: 0,
   },
 
   /** 기본 글자색 — 템플릿의 기존 라벨 색(짙은 먹빛)에 맞춤. */
@@ -193,15 +198,20 @@ export const CAREER_CERTIFICATE_TEMPLATE = {
     },
 
     // ── 인적 사항 2행: 소속 / 학과사항 (표 y 668~739, baseline 712) ──
+    // ⚠️ 라벨은 아직 "학과사항" 이다(2026-08-06 확인 — public/images/certified.png 픽셀
+    //    크롭 재확인 결과 "학적사항" 으로 교체되지 않음). 값의 의미는 학적사항(학교+학과)
+    //    으로 바뀌었지만 이 칸의 좌표/크기는 "학과사항" 라벨을 기준으로 실측한 것 그대로다
+    //    — 템플릿이 "학적사항" 으로 교체되면 좌표를 다시 실측해야 할 수 있다(라벨 폭이
+    //    바뀌면 값 칸 시작 x 도 달라질 수 있음).
     affiliation: {
       x: 382, y: 712, align: "center",
       fontSize: 32, minFontSize: 12, maxWidth: 260,
-      note: "소속 값 칸(x 246~519)",
+      note: "소속 값 칸(x 246~519) — 신청 조직 표시명(예: 엥크레)만 그린다. 사용자 입력 아님.",
     },
-    education: {
+    academicRecord: {
       x: 792, y: 712, align: "center",
       fontSize: 32, minFontSize: 14, maxWidth: 280,
-      note: "학과사항 값 칸(x 646~938)",
+      note: "학과사항 값 칸(x 646~938) — \"{대학교명} {학과명}\" 자동 조회값만 그린다. 사용자 입력 아님.",
     },
 
     // ── 경력 사항 1행: 업무명 / 기간 (표 y 835~932, baseline 895) ──

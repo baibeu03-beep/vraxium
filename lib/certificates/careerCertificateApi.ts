@@ -1,8 +1,12 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import {
+  buildCareerOrgInfo,
+  loadCareerAcademicRecord,
   loadCareerCertificateUserContext,
+  missingAcademicFields,
   resolveCareerCertificateOrg,
+  type CareerCertificateOrgInfo,
   type CareerCertificateUserContext,
 } from "./careerCertificateContext";
 import { CertificateAssetError, CERTIFICATE_ASSET_MESSAGES } from "./careerCertificateAssets";
@@ -30,15 +34,14 @@ export { certificateErrorPayload, readJsonBody, resolveCertificateActor, type Ac
 
 // 경력 증명 발급 API 3종(context · preview · issue)이 공유하는 진입 로직.
 // activityCertificateApi.ts 와 동일 구조 — 공통 부분(신원 차단 키·actor 해석)은
-// certificateApiShared.ts 를 그대로 쓰고, 여기서는 경력 증명서 고유의 차단 키(조직)만
-// 더한다.
+// certificateApiShared.ts 를 그대로 쓰고, 여기서는 경력 증명서 고유의 차단 키(조직·
+// 소속·학적사항)만 더한다.
 //
-// ⚠️ "affiliation" 은 여기서 막지 않는다 — 인적 사항 표의 "소속" 칸에 들어가는
-//    정상 동적 입력 필드다(careerCertificateTemplate.ts 의 CareerCertificateInputField
-//    참고). 하단 증명 문구의 조직 표기는 이 값을 전혀 참조하지 않고 서버가 확정한
-//    org(쿼리, 아래)로만 CAREER_CERTIFICATE_ORGANIZATION_COPY 를 조회해 만들므로,
-//    body.affiliation 을 아무리 조작해도 증명 문구의 조직 표기는 바뀌지 않는다 —
-//    막아야 할 것은 "org/organization/organizationSlug" 자체다.
+// ⚠️ affiliation/education 은 더 이상 정상 입력 필드가 아니다(이전 버전에서는 소속을
+//    사용자가 직접 입력했으나, 지금은 신청 조직 컨텍스트에서 서버가 확정한다 — 이제
+//    body 에 affiliation/education/academicRecord/organizationDisplayName 이 오면
+//    무시하지 않고 존재 자체를 400 으로 거부한다. CareerCertificateInput 타입 자체에도
+//    이 키들이 없으므로, 설령 차단을 깜빡해도 값이 반영될 코드 경로가 없다(이중 방어).
 
 const FORBIDDEN_BODY_KEYS = [
   ...IDENTITY_FORBIDDEN_BODY_KEYS,
@@ -47,6 +50,15 @@ const FORBIDDEN_BODY_KEYS = [
   "organizationSlug",
   "organization_slug",
   "org",
+  // 소속·학적사항은 더 이상 사용자 입력이 아니다 — 서버가 조직 컨텍스트/학력 정보로
+  // 확정한다. body 로 스푸핑을 시도하면 전부 400.
+  "affiliation",
+  "education",
+  "academicRecord",
+  "academic_record",
+  "organizationDisplayName",
+  "university",
+  "department",
 ] as const;
 
 function findForbiddenBodyKeyForCareer(body: unknown): string | null {
@@ -88,15 +100,18 @@ export function certificateErrorResponse(e: unknown): NextResponse | null {
 export interface PreparedCareerCertificate {
   userId: string;
   org: Organization;
+  orgInfo: CareerCertificateOrgInfo;
   context: CareerCertificateUserContext;
+  academicRecord: string;
   input: CareerCertificateInput;
   rendered: RenderedCertificate;
 }
 
 /**
  * preview 와 issue 가 **동일하게** 호출하는 준비 파이프라인.
- * org 는 요청 URL(?org=)에서만 읽는다 — body 는 findForbiddenBodyKeyForCareer 가
- * org 계열 키 존재 자체를 400 으로 거부하므로 여기 도달한 시점엔 body 에 없다.
+ * org 는 요청 URL(?org=)에서만 읽는다. 소속(표시명)과 학적사항은 요청 body 를 전혀
+ * 참조하지 않고 이 함수 안에서 서버가 새로 확정한다 — 클라이언트가 이전 preview 응답의
+ * 값을 그대로 돌려보내도(혹은 조작해도) 결과에 영향을 주지 않는다.
  */
 export async function prepareCareerCertificate(
   request: Request,
@@ -109,7 +124,7 @@ export async function prepareCareerCertificate(
       response: NextResponse.json(
         certificateErrorPayload(
           "body",
-          "요청 본문에 사용자 식별자·발급 대상·조직 정보를 포함할 수 없습니다.",
+          "요청 본문에 사용자 식별자·발급 대상·조직·소속·학적사항 정보를 포함할 수 없습니다.",
           { code: "BODY_FIELD_FORBIDDEN", key: forbiddenKey },
         ),
         { status: 400 },
@@ -135,8 +150,27 @@ export async function prepareCareerCertificate(
       ),
     };
   }
+  const orgInfo = buildCareerOrgInfo(org);
 
-  const context = await loadCareerCertificateUserContext(actor.userId);
+  // 학적사항 — 세 경로 모두 동일하게 서버가 재조회(요청으로 절대 대체 불가).
+  const [context, academic] = await Promise.all([
+    loadCareerCertificateUserContext(actor.userId),
+    loadCareerAcademicRecord(actor.userId),
+  ]);
+  const missingFields = missingAcademicFields(academic.university, academic.department);
+  if (missingFields.length > 0 || !academic.formatted) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        certificateErrorPayload(
+          "academicRecord",
+          "학적사항 정보가 등록되지 않았습니다. /cluster-2 에서 학력 정보를 먼저 등록해주세요.",
+          { code: "ACADEMIC_RECORD_MISSING", missingFields },
+        ),
+        { status: 422 },
+      ),
+    };
+  }
 
   const validation = validateCareerCertificateInput(body);
   if (!validation.ok) {
@@ -153,10 +187,23 @@ export async function prepareCareerCertificate(
   }
 
   try {
-    const rendered = await renderCareerCertificatePng(validation.value, org);
+    const rendered = await renderCareerCertificatePng(
+      validation.value,
+      org,
+      orgInfo.displayName,
+      academic.formatted,
+    );
     return {
       ok: true,
-      value: { userId: actor.userId, org, context, input: validation.value, rendered },
+      value: {
+        userId: actor.userId,
+        org,
+        orgInfo,
+        context,
+        academicRecord: academic.formatted,
+        input: validation.value,
+        rendered,
+      },
     };
   } catch (e) {
     const mapped = certificateErrorResponse(e);
