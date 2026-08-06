@@ -59,10 +59,11 @@ const Sidebar = () => {
   const vacationNavHref = buildOrgNavHref("/vacation/", pathname, searchParams);
   // 3번째 아이콘(증명 발급) → /certificate. 4번째(휴식 신청)와 동일한 규약으로 공통 헬퍼를
   // 거쳐 org(?org= > cluster suffix)와 mode/actAsTestUserId/demoUserId 를 전 구간 유지한다.
-  // ⚠️ 현재 활동 증명서는 엥크레(encre) 전용이므로 다른 조직 컨텍스트에서는 비활성으로 둔다.
-  //    실제 발급 자격은 서버가 프로필의 organization_slug 로 다시 판정한다(이건 UI 힌트).
+  // /certificate 는 활동증명서(엥크레 전용)와 경력증명서(엥크레·오랑캐·팔랑크스 공용) 두
+  // 탭을 갖는다 — 진입 아이콘 자체는 vacation 과 동일하게 조직 무관 활성화하고(더 이상
+  // encre 로 고정하지 않는다), 활동증명서 탭의 조직 자격 안내는 페이지 내부에서 서버가
+  // 다시 판정해 보여준다(이건 단지 UI 힌트).
   const certificateNavHref = buildOrgNavHref("/certificate/", pathname, searchParams);
-  const certificateOrg = resolveCurrentOrgSlug(pathname, searchParams?.get("org") ?? null);
   // 첫 진입 화면(/ · /home)에서 preventDefault 로 이동을 막는 1·2번 아이콘의 표시용 href.
   // 값은 cosmetic(클릭 시 이동 안 함)이라 nav href 를 그대로 재사용한다.
   const crewsHref = crewsNavHref;
@@ -70,7 +71,6 @@ const Sidebar = () => {
   const normalizedPath = (pathname ?? "/").replace(/\/+$/, "");
   const isFirstEntryHome = normalizedPath === "" || normalizedPath === "/home";
   const applyCustomNav = !isFirstEntryHome;
-  const certificateEnabled = applyCustomNav && certificateOrg === "encre";
   const prefetchedWeeklyHref = useRef<string | null>(null);
   const prefetchWeeklyRanking = useCallback(() => {
     const org = resolveCurrentOrgSlug(pathname, searchParams?.get("org") ?? null);
@@ -161,8 +161,11 @@ const Sidebar = () => {
                     {/* 3번째: 증명 발급(구 "졸업 절차" 비활성 앵커). 4번째(휴식 신청)와 동일한
                         규약 — 첫 진입 화면(/ · /home) 외 모든 페이지에서 아이콘을 certificate 로
                         바꾸고 /certificate?org=…&mode=… 로 이동한다(org/mode/actAs/demo 유지).
-                        / · /home 에서는 org 컨텍스트가 없어 기존 동작(ti-tag, 이동 차단)을 유지. */}
-                    {certificateEnabled ? (
+                        /certificate 는 조직 무관 공용(활동증명서 탭=엥크레 전용, 경력증명서
+                        탭=3개 조직 공용) — vacation 아이콘과 동일하게 applyCustomNav 로만
+                        게이트한다. / · /home 에서는 org 컨텍스트가 없어 기존 동작(ti-tag,
+                        이동 차단)을 유지. */}
+                    {applyCustomNav ? (
                       <Link href={certificateNavHref} aria-label="증명 발급" title="증명 발급">
                         <i className="ti ti-certificate"></i>
                         <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
@@ -170,14 +173,7 @@ const Sidebar = () => {
                         </svg>
                       </Link>
                     ) : (
-                      <a
-                        href="#"
-                        onClick={(e) => e.preventDefault()}
-                        aria-label="증명 발급"
-                        title={applyCustomNav ? "증명 발급 (엥크레 전용)" : "증명 발급"}
-                        aria-disabled="true"
-                        style={{ cursor: "default" }}
-                      >
+                      <a href="#" onClick={(e) => e.preventDefault()} aria-label="증명 발급" title="증명 발급" style={{ cursor: "default" }}>
                         <i className="ti ti-tag"></i>
                         <svg className="progress-circle svg-content" width="100%" height="100%" viewBox="-1 -1 102 102">
                           <path d="M50,1 a49,49 0 0,1 0,98 a49,49 0 0,1 0,-98" />

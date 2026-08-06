@@ -20,6 +20,10 @@ const nextConfig = {
         "./public/images/certificate-encre.png",
         "./public/fonts/**/*",
       ],
+      "**/api/certificates/career/**": [
+        "./public/images/certified.png",
+        "./public/fonts/**/*",
+      ],
     },
   },
   images: {

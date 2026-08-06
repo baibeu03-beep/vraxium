@@ -174,6 +174,72 @@
   }
 }
 
+// ── 탭(활동증명서 / 경력증명서) ───────────────────────────────────────────────
+.certificate-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 22px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--cert-border);
+  background: var(--cert-surface);
+  width: fit-content;
+  max-width: 100%;
+}
+
+.certificate-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--cert-text-muted);
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+
+  i {
+    font-size: 16px;
+  }
+
+  &:hover:not(.is-active) {
+    color: var(--cert-text);
+  }
+
+  &.is-active {
+    background: var(--cert-accent);
+    border-color: var(--cert-accent);
+    color: var(--cert-accent-contrast);
+  }
+}
+
+// hidden 속성으로 감춰진 탭 패널의 잔여 sticky/그리드 영향을 완전히 제거.
+.certificate-tabpanel[hidden] {
+  display: none;
+}
+
+// PDF 인쇄 여백 안내 — 미리보기 액션 버튼 아래.
+.certificate-preview__pdf-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--cert-text-muted);
+
+  i {
+    flex: 0 0 auto;
+    margin-top: 1px;
+    font-size: 13px;
+    color: var(--cert-accent);
+  }
+}
+
 // ── 레이아웃 ────────────────────────────────────────────────────────────────
 .certificate-layout {
   display: grid;
@@ -467,6 +533,17 @@
     &__subtitle {
       font-size: 14px;
     }
+  }
+
+  .certificate-tabs {
+    width: 100%;
+  }
+
+  .certificate-tab {
+    flex: 1 1 0;
+    justify-content: center;
+    padding: 10px 12px;
+    font-size: 13.5px;
   }
 
   .certificate-layout {

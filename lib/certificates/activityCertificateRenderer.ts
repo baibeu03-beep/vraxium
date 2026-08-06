@@ -1,14 +1,11 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import sharp from "sharp";
-import { PDFDocument, PageSizes } from "pdf-lib";
-import type { Font } from "opentype.js";
 import {
   ACTIVITY_CERTIFICATE_TEMPLATE,
   CERTIFICATE_FIELD_LABELS,
   CERTIFICATE_RENDER_SLOTS,
   type CertificateRenderSlot,
-  type CertificateSlotSpec,
 } from "./activityCertificateTemplate";
 import {
   buildRenderValues,
@@ -16,122 +13,32 @@ import {
   type CertificateFieldError,
 } from "./activityCertificateValidation";
 import { loadCertificateAssets } from "./activityCertificateAssets";
+import {
+  CertificateLayoutError,
+  CertificateRenderError,
+  glyphPathData,
+  isFieldError,
+  layoutSingleLine,
+  type LaidOutLine,
+} from "./certificateGlyphRender";
+import { A4_PORTRAIT_PT, renderCertificatePdfA4 } from "./certificatePdf";
+
+export { CertificateLayoutError, CertificateRenderError };
+export { A4_PORTRAIT_PT };
 
 // 활동 증명서 이미지 생성 — preview 와 issue 가 공유하는 유일한 생성 경로.
 // ─────────────────────────────────────────────────────────────────────────────
 // 파이프라인: 템플릿 PNG + (opentype.js 로 벡터 path 화한 텍스트 레이어) + QR PNG
-//             → sharp composite.
-//
-// 왜 <text> 가 아니라 <path> 인가:
-//   1. 서버(특히 Vercel)의 fontconfig/librsvg 폰트 등록 상태에 전혀 의존하지 않는다.
-//      SVG 안에 폰트 참조가 남지 않으므로 한글 두부(tofu)가 원천적으로 불가능하다.
-//   2. getAdvanceWidth 로 잰 폭이 곧 렌더될 폭이라 maxWidth/축소 판정이 실제 결과와
-//      어긋날 수 없다.
-//   3. 사용자 문자열이 XML 직렬화기에 도달하지 않는다 → SVG 주입면 0.
+//             → sharp composite. 텍스트 레이아웃 엔진(글리프 직렬화·측정·자동 축소)은
+//             certificateGlyphRender.ts 공용 구현을 그대로 쓴다 — 여기서는 활동
+//             증명서 고유의 슬롯 목록/좌표만 다룬다(경력 증명서 분기 없음).
 //
 // 템플릿에 이미 인쇄된 것(제목·라벨·고정 문구·사슴 금장·도장·[ 주 ]·년/월/일)은 다시
 // 그리지 않는다. 서버가 얹는 것은 빈칸 값과 QR 뿐이다.
 //
-// PDF 는 여기서 만든 PNG 버퍼를 재렌더 없이 그대로 임베드한다(위치 불일치 불가능).
+// PDF 는 certificatePdf.ts 의 공용 renderCertificatePdfA4 를 그대로 써서, 여기서 만든
+// PNG 버퍼를 재렌더 없이 그대로 임베드한다(위치 불일치 불가능).
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** 렌더 자체가 불가능한 내부 오류(글리프 경로 생성 실패 등). 사용자 입력 탓이 아니다. */
-export class CertificateRenderError extends Error {
-  status = 500;
-
-  constructor(message: string) {
-    super(message);
-    this.name = "CertificateRenderError";
-  }
-}
-
-export class CertificateLayoutError extends Error {
-  status = 422;
-  errors: CertificateFieldError[];
-
-  constructor(errors: CertificateFieldError[]) {
-    super(errors[0]?.message ?? "증명서 레이아웃 오류");
-    this.name = "CertificateLayoutError";
-    this.errors = errors;
-  }
-}
-
-// ── 글리프 path 직렬화 ───────────────────────────────────────────────────────
-//
-// ⚠️ opentype.js 2.0.0 의 Path.toPathData() 를 쓰지 않는다.
-//    특정 부동소수 좌표에서 좌표 하나를 리터럴 "NaN" 으로 출력한다(실측: `MNaN 64.51`).
-//    그러면 librsvg 가 그 서브패스 이후를 조용히 버려 "오랑캐"가 "오라"로 렌더되는 등
-//    글자가 소리 없이 사라진다. 예외도 경고도 없다. 증명서는 법적 문서이므로 이런
-//    무성 손실은 허용할 수 없어 직접 직렬화한다. (되돌리지 말 것.)
-
-interface PathCommand {
-  type: string;
-  x?: number;
-  y?: number;
-  x1?: number;
-  y1?: number;
-  x2?: number;
-  y2?: number;
-}
-
-function coord(value: number | undefined): string | null {
-  if (typeof value !== "number" || !Number.isFinite(value)) return null;
-  const rounded = Math.round(value * 100) / 100;
-  return Number.isFinite(rounded) ? String(rounded) : null;
-}
-
-function serializeGlyphPath(commands: PathCommand[]): string | null {
-  let out = "";
-  for (const c of commands) {
-    switch (c.type) {
-      case "M":
-      case "L": {
-        const x = coord(c.x);
-        const y = coord(c.y);
-        if (x === null || y === null) return null;
-        out += `${c.type}${x} ${y}`;
-        break;
-      }
-      case "C": {
-        const parts = [c.x1, c.y1, c.x2, c.y2, c.x, c.y].map(coord);
-        if (parts.some((p) => p === null)) return null;
-        out += `C${parts.join(" ")}`;
-        break;
-      }
-      case "Q": {
-        const parts = [c.x1, c.y1, c.x, c.y].map(coord);
-        if (parts.some((p) => p === null)) return null;
-        out += `Q${parts.join(" ")}`;
-        break;
-      }
-      case "Z":
-        out += "Z";
-        break;
-      default:
-        return null;
-    }
-  }
-  return out;
-}
-
-// ── 측정 / 배치 ─────────────────────────────────────────────────────────────
-
-function measure(font: Font, text: string, size: number): number {
-  return font.getAdvanceWidth(text, size, { kerning: true });
-}
-
-/**
- * 폰트에 없는 글자는 opentype 이 .notdef(빈/네모 path)로 그려 조용한 두부가 된다.
- * 대체하지 않고 검증 오류로 사용자에게 알린다.
- */
-function findUnsupportedChars(font: Font, text: string): string[] {
-  const missing = new Set<string>();
-  for (const ch of text) {
-    if (ch === " ") continue;
-    if (font.charToGlyphIndex(ch) === 0) missing.add(ch);
-  }
-  return Array.from(missing);
-}
 
 /** 슬롯 라벨 — 오류 메시지에 쓰는 사람이 읽는 이름. */
 const SLOT_LABELS: Record<CertificateRenderSlot, string> = {
@@ -164,49 +71,6 @@ const SLOT_TO_INPUT_FIELD: Record<CertificateRenderSlot, string> = {
   issueMonth: "issueDate",
   issueDay: "issueDate",
 };
-
-interface LaidOutSlot {
-  slot: CertificateRenderSlot;
-  spec: CertificateSlotSpec;
-  text: string;
-  fontSize: number;
-}
-
-/**
- * 슬롯 하나의 배치를 결정. 모든 칸이 한 줄이므로 줄바꿈은 없고 축소만 한다.
- *   fontSize 부터 1px 씩 minFontSize 까지 줄이며 maxWidth 안에 들어가는 크기를 찾는다.
- *   끝내 못 찾으면 잘라내지 않고 FIELD_OVERFLOW — 값이 잘린 증명서를 만들지 않는다.
- */
-function layoutSlot(
-  font: Font,
-  slot: CertificateRenderSlot,
-  text: string,
-  spec: CertificateSlotSpec,
-): LaidOutSlot | CertificateFieldError {
-  const label = SLOT_LABELS[slot];
-  const field = SLOT_TO_INPUT_FIELD[slot];
-
-  const missing = findUnsupportedChars(font, text);
-  if (missing.length > 0) {
-    return {
-      field,
-      code: "UNSUPPORTED_CHARACTER",
-      message: `${label}에 증명서 서체가 지원하지 않는 문자가 있습니다: ${missing.slice(0, 5).join(" ")}`,
-    };
-  }
-
-  for (let size = spec.fontSize; size >= spec.minFontSize; size -= 1) {
-    if (measure(font, text, size) <= spec.maxWidth) {
-      return { slot, spec, text, fontSize: size };
-    }
-  }
-
-  return {
-    field,
-    code: "FIELD_OVERFLOW",
-    message: `${label}이(가) 증명서의 기입 칸을 벗어납니다. 더 짧게 입력해주세요.`,
-  };
-}
 
 // ── 렌더 ────────────────────────────────────────────────────────────────────
 
@@ -244,38 +108,35 @@ export async function renderActivityCertificatePng(
   const height = meta.height ?? tpl.height;
 
   const errors: CertificateFieldError[] = [];
-  const laidOut: LaidOutSlot[] = [];
+  const laidOut: LaidOutLine[] = [];
   for (const slot of CERTIFICATE_RENDER_SLOTS) {
     const text = values[slot];
     if (!text) continue; // 빈 슬롯은 그리지 않는다(검증에서 이미 필수값을 걸렀다).
-    const result = layoutSlot(font, slot, text, tpl.slots[slot]);
-    if ("code" in result) errors.push(result);
+    const spec = tpl.slots[slot];
+    const result = layoutSingleLine(
+      font,
+      text,
+      spec,
+      tpl.defaultTextColor,
+      SLOT_TO_INPUT_FIELD[slot],
+      SLOT_LABELS[slot],
+    );
+    if (isFieldError(result)) errors.push(result as CertificateFieldError);
     else laidOut.push(result);
   }
   if (errors.length > 0) throw new CertificateLayoutError(errors);
 
   // 색상별로 <g> 를 묶는다 — 활동 형태만 분홍 배너 위라 흰색이다.
-  // fill 값은 프리즈된 템플릿 상수에서만 온다(사용자 입력 미유입).
   const pathsByColor = new Map<string, string[]>();
-  for (const { slot, spec, text, fontSize } of laidOut) {
-    const advance = measure(font, text, fontSize);
-    const x =
-      spec.align === "left"
-        ? spec.x
-        : spec.align === "center"
-          ? spec.x - advance / 2
-          : spec.x - advance;
-    const commands = font.getPath(text, x, spec.y, fontSize, { kerning: true })
-      .commands as unknown as PathCommand[];
-    const d = serializeGlyphPath(commands);
+  for (const line of laidOut) {
+    const d = glyphPathData(font, line.text, line.x, line.y, line.fontSize);
     if (d === null) {
-      throw new CertificateRenderError(`슬롯 '${slot}' 의 글리프 경로를 생성하지 못했습니다.`);
+      throw new CertificateRenderError(`텍스트 '${line.text}' 의 글리프 경로를 생성하지 못했습니다.`);
     }
     if (d.length === 0) continue;
-    const color = spec.color ?? tpl.defaultTextColor;
-    const list = pathsByColor.get(color) ?? [];
+    const list = pathsByColor.get(line.color) ?? [];
     list.push(`<path d="${d}"/>`);
-    pathsByColor.set(color, list);
+    pathsByColor.set(line.color, list);
   }
 
   const groups = Array.from(pathsByColor, ([color, paths]) => `<g fill="${color}">${paths.join("")}</g>`);
@@ -310,88 +171,13 @@ export async function renderActivityCertificatePng(
 }
 
 // ── PDF (A4 세로) ───────────────────────────────────────────────────────────
+// 공용 구현(certificatePdf.ts)을 그대로 재노출한다 — 경력 증명서와 동일 함수.
 
-const MM_TO_PT = 72 / 25.4;
-
-/** mm → pt. 소수 2자리로 반올림해 A4 가 정확히 595.28 x 841.89(뷰어 표준값)가 되게 한다. */
-function mmToPt(mm: number): number {
-  return Math.round(mm * MM_TO_PT * 100) / 100;
-}
-
-/** A4 세로 페이지 규격(pt). pdf-lib 의 PageSizes.A4 와 동일한 값이어야 한다. */
-export const A4_PORTRAIT_PT = {
-  width: mmToPt(ACTIVITY_CERTIFICATE_TEMPLATE.pdf.pageWidthMm),
-  height: mmToPt(ACTIVITY_CERTIFICATE_TEMPLATE.pdf.pageHeightMm),
-  margin: mmToPt(ACTIVITY_CERTIFICATE_TEMPLATE.pdf.marginMm),
-} as const;
-
-// 설정 mm 값에서 계산한 페이지 크기가 pdf-lib 의 표준 A4 와 어긋나면 즉시 실패시킨다.
-// (뷰어/프린터가 "A4" 로 인식하지 못하는 어중간한 페이지가 조용히 나가는 것을 막는다.)
-{
-  const [a4Width, a4Height] = PageSizes.A4;
-  if (A4_PORTRAIT_PT.width !== a4Width || A4_PORTRAIT_PT.height !== a4Height) {
-    throw new Error(
-      `[certificates] A4 페이지 규격 불일치: 계산=${A4_PORTRAIT_PT.width}x${A4_PORTRAIT_PT.height}, ` +
-        `pdf-lib PageSizes.A4=${a4Width}x${a4Height}`,
-    );
-  }
-}
-
-/**
- * 렌더된 PNG 를 **A4 세로 1페이지** PDF 로 감싼다.
- * 재렌더가 없으므로 PNG 와 PDF 의 내용·텍스트 위치는 100% 동일하다(같은 PNG 바이트를
- * 그대로 임베드 — 텍스트/QR 을 PDF 용으로 다시 그리지 않는다).
- *
- * 배치 규칙:
- *   · 페이지 = 항상 A4 세로(210x297mm = 595.28x841.89pt). 이미지 픽셀 크기와 무관하다.
- *   · 사방 안전 여백 = 12.7mm(=36.00pt, mmToPt(12.7) 은 반올림 오차 없이 정확히 떨어진다).
- *   · 이미지 = 비율을 유지한 채 여백을 뺀 가용 영역에 들어가는 **최대 배율**(contain).
- *     scale = min(가용폭/이미지폭, 가용높이/이미지높이) 이므로 잘림·왜곡이 발생할 수 없다.
- *   · 상하좌우 중앙 정렬 — 불필요한 추가 여백 없이 가용 영역을 꽉 채운다.
- *
- * 템플릿(0.750)과 A4 가용 영역(184.6:271.6=0.680) 종횡비가 달라 폭이 먼저 한계에
- * 닿는다 → 좌우는 12.7mm 그대로, 위아래는 그보다 큰 여백이 남는다. 잘라내지 않는 한
- * 피할 수 없는 결과다.
- *
- * ⚠️ 페이지 크기를 이미지 픽셀/DPI 로 잡지 않는다(예: 150dpi 로 잡으면 183.9x245.2mm 같은
- *    비표준 용지가 되어 뷰어가 인쇄 시 "용지에 맞춤" 축소를 걸고 100% 배율 출력이
- *    A4 에 맞지 않는다). 페이지는 항상 고정 A4, 여백도 항상 고정 12.7mm — 이미지 크기는
- *    contain 배율에만 영향을 준다. (되돌리지 말 것.)
- */
 export async function renderActivityCertificatePdf(
   rendered: RenderedCertificate,
   issueDateIso: string,
 ): Promise<Buffer> {
-  const { width: pageWidth, height: pageHeight, margin } = A4_PORTRAIT_PT;
-  const availWidth = pageWidth - margin * 2;
-  const availHeight = pageHeight - margin * 2;
-
-  const doc = await PDFDocument.create();
-  const image = await doc.embedPng(rendered.png);
-
-  const scale = Math.min(availWidth / image.width, availHeight / image.height);
-  const drawWidth = image.width * scale;
-  const drawHeight = image.height * scale;
-  // PDF 좌표계 원점은 좌하단. 중앙 정렬이라 상하 대칭이므로 y 계산도 동일하다.
-  const drawX = (pageWidth - drawWidth) / 2;
-  const drawY = (pageHeight - drawHeight) / 2;
-
-  const page = doc.addPage([pageWidth, pageHeight]);
-  page.drawImage(image, { x: drawX, y: drawY, width: drawWidth, height: drawHeight });
-
-  // pdf-lib 는 기본적으로 현재 시각을 CreationDate/ModDate 에 박는다 → 같은 입력인데도
-  // 호출할 때마다 파일 바이트가 달라진다. 증명서 문서의 날짜는 "발급일" 이므로 그 값으로
-  // 고정해 동일 입력 → 동일 산출물(재현 가능)이 되게 한다.
-  const stamp = /^\d{4}-\d{2}-\d{2}$/.test(issueDateIso)
-    ? new Date(`${issueDateIso}T00:00:00.000Z`)
-    : new Date(0);
-  doc.setCreationDate(stamp);
-  doc.setModificationDate(stamp);
-  doc.setProducer("vraxium");
-  doc.setCreator("vraxium");
-
-  const bytes = await doc.save();
-  return Buffer.from(bytes);
+  return renderCertificatePdfA4(rendered, issueDateIso);
 }
 
 // ── 파일명 ──────────────────────────────────────────────────────────────────
