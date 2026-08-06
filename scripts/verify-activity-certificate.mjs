@@ -140,7 +140,7 @@ function diff(a, b) {
  *    파인더 패턴으로 오인해 실패한다(URL 이 길어져 QR 이 조밀해질수록 잘 발생).
  *    좌표는 lib/certificates/activityCertificateTemplate.ts 의 qr 설정과 일치시킬 것.
  */
-const QR_BOX = { left: 838, top: 831, size: 116 };
+const QR_BOX = { left: 1920, top: 1896, size: 240 };
 async function decodeQr(png) {
   const region = { left: QR_BOX.left, top: QR_BOX.top, width: QR_BOX.size, height: QR_BOX.size };
   const { data, info } = await sharp(png)
@@ -162,7 +162,7 @@ async function decodeQr(png) {
 //        q / 1 0 0 1 x y cm / 1 0 0 1 0 0 cm / w 0 0 h 0 0 cm / /Image Do / Q
 //    따라서 하나만 골라 읽으면 안 되고 순서대로 행렬을 합성해야 한다.
 const A4_PT = { width: 595.28, height: 841.89 };
-const TEMPLATE_PX = { width: 1086, height: 1448 };
+const TEMPLATE_PX = { width: 2475, height: 3300 };
 
 /** PDF cm 연산: CTM' = M x CTM. 행렬은 [a b c d e f]. */
 function concatMatrix(m, ctm) {
@@ -253,12 +253,18 @@ function checkPdfGeometry(label, info) {
     `[${label}] 상하좌우 중앙 정렬`,
     `좌${x.toFixed(2)}/우${(info.width - w - x).toFixed(2)} 상${(info.height - h - y).toFixed(2)}/하${y.toFixed(2)}`,
   );
-  // 여백 최소화 — 폭이 먼저 한계에 닿으므로 좌우 여백이 설정값(5mm=14.17pt)과 같아야 한다.
-  const marginPt = 14.17;
+  // 폭이 먼저 한계에 닿으므로 좌우 여백이 설정값(12.7mm=36.00pt)과 같아야 한다.
+  const marginPt = 36.0;
   check(
     Math.abs(x - marginPt) < 0.2,
-    `[${label}] 좌우 여백 = 5mm(=${marginPt}pt), 폭이 가용 영역에 꽉 참`,
+    `[${label}] 좌우 여백 = 12.7mm(=${marginPt}pt), 폭이 가용 영역에 꽉 참`,
     `x=${x.toFixed(2)}`,
+  );
+  // 상하 여백도 12.7mm 이상이어야 한다(세로는 종횡비 차이로 더 크게 남는다).
+  check(
+    y >= marginPt - 0.2,
+    `[${label}] 상하 여백 >= 12.7mm(=${marginPt}pt)`,
+    `y=${y.toFixed(2)}`,
   );
   const mm = (pt) => (pt / 72) * 25.4;
   console.log(
@@ -392,9 +398,9 @@ async function main() {
       `[${view.name}] preview 와 발급 PNG 바이트 동일`,
     );
     check(
-      png.res.headers.get("x-certificate-width") === "1086" &&
-        png.res.headers.get("x-certificate-height") === "1448",
-      `[${view.name}] 실제 템플릿 크기 1086x1448`,
+      png.res.headers.get("x-certificate-width") === "2475" &&
+        png.res.headers.get("x-certificate-height") === "3300",
+      `[${view.name}] 실제 템플릿 크기 2475x3300`,
     );
   }
 
@@ -488,6 +494,8 @@ async function main() {
     { label: "공백 문자열", body: { ...VALID_BODY, name: "   " }, field: "name", code: "REQUIRED" },
     { label: "길이 초과", body: { ...VALID_BODY, graduationGrade: "가".repeat(21) }, field: "graduationGrade", code: "MAX_LENGTH" },
     { label: "숫자 아닌 주차", body: { ...VALID_BODY, activityWeeks: "삼십" }, field: "activityWeeks", code: "INVALID_NUMBER" },
+    // 템플릿에 "20"이 고정 인쇄되어 있어 발급일은 2000년 미만을 거부해야 한다.
+    { label: "발급일 2000년 미만(템플릿 '20' 고정 인쇄)", body: { ...VALID_BODY, issueDate: "1999-12-31" }, field: "issueDate", code: "DATE_OUT_OF_BOUNDS" },
   ];
   for (const c of CASES) {
     const seen = [];
@@ -504,18 +512,28 @@ async function main() {
     );
   }
 
-  section("12(b). 칸을 벗어나는 값은 잘라내지 않고 오류");
-  // 길이 제한(20자)은 통과하지만 이름 칸(maxWidth 195, minFontSize 16)에는
-  // 최소 크기로도 들어가지 않는 값 → 축소를 다 시도한 뒤 오류가 나야 한다.
-  const overflow = await post(`/api/certificates/activity/preview/${VIEWS[2].qs}`, {
+  section("12(b). 모든 필드가 maxLength 까지 채워져도 칸 안에 들어가는지");
+  // 새 템플릿(2475x3300) 실측 후 각 슬롯의 minFontSize 를 "maxWidth / maxLength" 기준으로
+  // 다시 잡아, 글자 제한(maxLength)을 꽉 채워도 항상 칸 안에 들어가도록 설계했다(구
+  // 템플릿의 이름 칸은 이 여유가 없어 20자를 채우면 FIELD_OVERFLOW 가 났었다 — 그건 칸이
+  // 좁았던 구 템플릿의 한계였지 의도한 안전장치 시연용이 아니었으므로, 새 템플릿에서는
+  // "꽉 채워도 성공해야 한다"로 기대치를 뒤집는다). 자르지 않고 그리는 것 자체(잘라내지
+  // 않고 오류로 처리하는 layoutSlot 의 FIELD_OVERFLOW 분기)는 코드에 그대로 남아있다.
+  const maxLenBody = {
     ...VALID_BODY,
+    clubName: "가".repeat(20),
+    industryField: "가".repeat(30),
     name: "가".repeat(20),
-  });
+    clubEliteCode: "A".repeat(30),
+    graduationGrade: "가".repeat(20),
+    activityForm: "가".repeat(20),
+    activityWeeks: "999",
+  };
+  const maxLenRes = await post(`/api/certificates/activity/preview/${VIEWS[2].qs}`, maxLenBody);
   check(
-    overflow.res.status === 422 &&
-      overflow.json?.fieldErrors?.some((e) => e.code === "FIELD_OVERFLOW"),
-    "maxWidth 초과 → FIELD_OVERFLOW (자동 truncate 없음)",
-    `status=${overflow.res.status} ${JSON.stringify(overflow.json?.fieldErrors ?? "")}`,
+    maxLenRes.res.status === 200 && maxLenRes.res.headers.get("content-type") === "image/png",
+    "모든 필드 maxLength 동시 입력 → 200(잘리거나 넘치지 않고 렌더 성공)",
+    `status=${maxLenRes.res.status} ${JSON.stringify(maxLenRes.json ?? "").slice(0, 200)}`,
   );
 
   const badFormat = await post(`/api/certificates/activity/issue/${q(VIEWS[2], "format=svg")}`, VALID_BODY);

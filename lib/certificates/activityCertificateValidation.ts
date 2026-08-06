@@ -25,6 +25,14 @@ export const CERTIFICATE_MIN_YEAR = 1900;
 export const CERTIFICATE_MAX_YEAR_OFFSET = 1;
 export const CERTIFICATE_MAX_WEEKS = 999;
 
+/**
+ * 발급일 전용 최소 연도. 템플릿(2026-08-06 교체본)의 발급일 줄에 "20" 이 고정
+ * 인쇄되어 있어(20[ ]년 [ ]월 [ ]일) 서버가 그리는 값은 연도의 마지막 두 자리뿐이다
+ * (buildRenderValues 참고). 2000년 이전으로 두면 "20"+마지막 두 자리가 실제 연도와
+ * 다른 값을 인쇄하게 되므로, 다른 날짜 필드(1900년 허용)와 달리 발급일만 더 좁게 막는다.
+ */
+export const CERTIFICATE_ISSUE_DATE_MIN_YEAR = 2000;
+
 export type CertificateFieldErrorCode =
   | "REQUIRED"
   | "INVALID_DATE"
@@ -186,12 +194,15 @@ export function validateActivityCertificateInput(
         continue;
       }
       const year = Number(text.slice(0, 4));
-      if (year < CERTIFICATE_MIN_YEAR || year > maxYear) {
+      const minYear = key === "issueDate" ? CERTIFICATE_ISSUE_DATE_MIN_YEAR : CERTIFICATE_MIN_YEAR;
+      if (year < minYear || year > maxYear) {
         errors.push(
           err(
             key,
             "DATE_OUT_OF_BOUNDS",
-            `${label}은(는) ${CERTIFICATE_MIN_YEAR}년 ~ ${maxYear}년 사이여야 합니다.`,
+            key === "issueDate"
+              ? `${label}은(는) 템플릿에 "20"이 고정 인쇄되어 있어 ${minYear}년 ~ ${maxYear}년 사이여야 합니다.`
+              : `${label}은(는) ${minYear}년 ~ ${maxYear}년 사이여야 합니다.`,
           ),
         );
       }
@@ -256,7 +267,9 @@ export function buildRenderValues(
     activityPeriod: formatActivityPeriod(input.activityStartDate, input.activityEndDate),
     activityWeeks: String(Number(input.activityWeeks)),
     activityForm: input.activityForm,
-    issueYear: y,
+    // 템플릿에 "20"이 고정 인쇄되어 있다("20 [ ]년 ...") — 마지막 두 자리만 그린다.
+    // 검증에서 issueDate 는 이미 2000년 이상으로 좁혀뒀으므로 y 는 항상 "20xx" 형태다.
+    issueYear: y ? y.slice(2) : "",
     // 템플릿이 "년 월 일" 이라 월/일은 앞의 0 을 떼고 자연스럽게 표기한다(YYYY 년 M 월 D 일).
     issueMonth: m ? String(Number(m)) : "",
     issueDay: d ? String(Number(d)) : "",
