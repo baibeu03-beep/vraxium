@@ -140,7 +140,9 @@ function diff(a, b) {
  *    파인더 패턴으로 오인해 실패한다(URL 이 길어져 QR 이 조밀해질수록 잘 발생).
  *    좌표는 lib/certificates/activityCertificateTemplate.ts 의 qr 설정과 일치시킬 것.
  */
-const QR_BOX = { left: 1920, top: 1896, size: 240 };
+// activityCertificateTemplate.ts 의 qr 설정과 일치시킬 것 — 2026-08-07 A4 비율 교체본에서
+// top 이 1896 → 2054 로 이동했다(세로만 13/12배 스케일, left/size 는 가로 불변이라 그대로).
+const QR_BOX = { left: 1920, top: 2054, size: 240 };
 async function decodeQr(png) {
   const region = { left: QR_BOX.left, top: QR_BOX.top, width: QR_BOX.size, height: QR_BOX.size };
   const { data, info } = await sharp(png)
@@ -162,7 +164,10 @@ async function decodeQr(png) {
 //        q / 1 0 0 1 x y cm / 1 0 0 1 0 0 cm / w 0 0 h 0 0 cm / /Image Do / Q
 //    따라서 하나만 골라 읽으면 안 되고 순서대로 행렬을 합성해야 한다.
 const A4_PT = { width: 595.28, height: 841.89 };
-const TEMPLATE_PX = { width: 2475, height: 3300 };
+// 2026-08-07 A4 비율 교체본: 2475x3300 → 2475x3575(세로만 13/12배). 이미지를 교체하면
+// 반드시 여기도 같이 갱신할 것 — activityCertificateTemplate.ts 의 width/height 와 동일해야
+// 종횡비·PDF 여백 방향 검증(아래 checkPdfGeometry)이 실제 파일과 어긋나지 않는다.
+const TEMPLATE_PX = { width: 2475, height: 3575 };
 
 /** PDF cm 연산: CTM' = M x CTM. 행렬은 [a b c d e f]. */
 function concatMatrix(m, ctm) {
@@ -253,10 +258,21 @@ function checkPdfGeometry(label, info) {
     `[${label}] 상하좌우 중앙 정렬`,
     `좌${x.toFixed(2)}/우${(info.width - w - x).toFixed(2)} 상${(info.height - h - y).toFixed(2)}/하${y.toFixed(2)}`,
   );
-  // 별도 안전 여백 없음(marginMm=0) — 폭이 먼저 한계에 닿으므로 좌우는 0pt(페이지 꽉 참),
-  // 상하는 종횡비 차이로 인한 자투리 여백만 남는다(잘림 방지를 위한 정상 동작).
-  check(Math.abs(x - 0) < 0.2, `[${label}] 좌우 여백 = 0pt(안전 여백 없음), 폭이 페이지에 꽉 참`, `x=${x.toFixed(2)}`);
-  check(y >= -0.2, `[${label}] 상하 여백 >= 0pt(종횡비 차이로 인한 자투리만)`, `y=${y.toFixed(2)}`);
+  // 별도 안전 여백 없음(marginMm=0) — contain-fit(scale=min(pageW/imgW, pageH/imgH))이라
+  // 이미지 종횡비와 A4 종횡비 중 어느 쪽이 더 "좁은"지에 따라 꽉 차는 축이 갈린다.
+  // srcRatio(가로/세로) > A4 비율이면 이미지가 상대적으로 더 넓어 폭이 먼저 한계에
+  // 닿고(좌우 0pt, 상하에 자투리), srcRatio < A4 비율이면 반대로 이미지가 상대적으로 더
+  // 좁고 길어 높이가 먼저 한계에 닿는다(상하 0pt, 좌우에 자투리) — 어느 쪽이든 "꽉 차는
+  // 축의 여백=0, 남는 축의 여백>=0"이라는 불변식은 같다. 이미지를 교체해 종횡비가 바뀌면
+  // 자동으로 반대 축을 검사하도록 부등호로 분기한다(하드코딩된 축을 고정하지 않는다).
+  const pageRatio = A4_PT.width / A4_PT.height;
+  if (srcRatio >= pageRatio) {
+    check(Math.abs(x - 0) < 0.2, `[${label}] 좌우 여백 = 0pt(안전 여백 없음), 폭이 페이지에 꽉 참`, `x=${x.toFixed(2)}`);
+    check(y >= -0.2, `[${label}] 상하 여백 >= 0pt(종횡비 차이로 인한 자투리만)`, `y=${y.toFixed(2)}`);
+  } else {
+    check(Math.abs(y - 0) < 0.2, `[${label}] 상하 여백 = 0pt(안전 여백 없음), 높이가 페이지에 꽉 참`, `y=${y.toFixed(2)}`);
+    check(x >= -0.2, `[${label}] 좌우 여백 >= 0pt(종횡비 차이로 인한 자투리만)`, `x=${x.toFixed(2)}`);
+  }
   const mm = (pt) => (pt / 72) * 25.4;
   console.log(
     `        x=${x.toFixed(2)}pt y=${y.toFixed(2)}pt drawWidth=${w.toFixed(2)}pt drawHeight=${h.toFixed(2)}pt · ` +
@@ -403,9 +419,10 @@ async function main() {
       `[${view.name}] preview 와 발급 PNG 바이트 동일`,
     );
     check(
-      png.res.headers.get("x-certificate-width") === "2475" &&
-        png.res.headers.get("x-certificate-height") === "3300",
-      `[${view.name}] 실제 템플릿 크기 2475x3300`,
+      png.res.headers.get("x-certificate-width") === String(TEMPLATE_PX.width) &&
+        png.res.headers.get("x-certificate-height") === String(TEMPLATE_PX.height),
+      `[${view.name}] 실제 템플릿 크기 ${TEMPLATE_PX.width}x${TEMPLATE_PX.height}`,
+      `${png.res.headers.get("x-certificate-width")}x${png.res.headers.get("x-certificate-height")}`,
     );
   }
 

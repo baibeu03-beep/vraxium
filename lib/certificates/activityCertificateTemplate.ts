@@ -3,17 +3,26 @@
 // 좌표 · 글자 크기 · 정렬 · 최대 폭 · 색상은 전부 이 파일에만 둔다. 렌더 함수와 API,
 // 컴포넌트 어디에도 하드코딩하지 않는다.
 //
-// 좌표는 public/images/certificate-encre.png (2475x3300, 2026-08-06 교체본) 의 실제
-// 픽셀을 스크립트로 실측한 값이다 — sharp raw 버퍼를 읽어 금색 테두리 선의 RGB(대략
+// 좌표는 public/images/certificate-encre.png (2475x3575, 2026-08-07 A4 비율 교체본) 의
+// 실제 픽셀을 스크립트로 실측한 값이다 — sharp raw 버퍼를 읽어 금색 테두리 선의 RGB(대략
 // R>140,G>90,B>20 대 채도가 높은 금갈색) 런(run)을 스캔해 각 입력칸의 좌/우/상/하
 // 경계를 픽셀 단위로 찾고, 계산한 사각형을 빨간 선으로 원본 위에 합성해 육안으로 다시
 // 대조했다([ 주 ] 괄호와 "20 년 월 일" 처럼 금색이 아닌 고정 글자는 별도로 짙은 텍스트
 // 색(~#1f1a15) 런을 스캔해 위치를 잡았다). 템플릿 이미지를 교체하면 반드시 다시
-// 실측해야 한다 — 이전 템플릿(1086x1448)과 좌표를 그대로 재사용하지 말 것. 이미지 전체
-// 크기는 old*2.279 배(1086→2475, 1448→3300)로 정확히 스케일됐지만, 칸 배치는 그 배율을
-// 따르지 않는다(실측 결과 클럽명 칸 폭은 old*2.53, 산업/직무 칸 폭은 old*2.30 — 디자인이
-// 다시 그려졌다는 뜻이다. 반드시 픽셀을 다시 스캔해서 잡을 것, 전체 배율을 곱해 추정하지
-// 말 것).
+// 실측해야 한다.
+//
+// ⚠️ 2026-08-07 교체(2475x3300 → 2475x3575): 이번엔 가로는 그대로 두고 세로만 정확히
+//    13/12배(=3575/3300) 균일 확대된 것으로 실측 확인됐다(금테두리 상/하단, Resume Link
+//    흰 박스 경계, 발급일 고정 텍스트 잉크 위치 전부 old_y*13/12 예측값과 0~2px 오차로
+//    일치 — 세로만 늘린 순수 스케일이지 디자인 재배치가 아니다). 그래서 이번엔 모든 슬롯의
+//    y 를 old_y*13/12 로 일괄 환산했다. x·maxWidth·fontSize 는 가로가 안 바뀌었으므로
+//    그대로 유지했다.
+//
+//    ※ 과거(1086x1448 → 2475x3300) 교체 때는 가로세로 동시에 바뀌면서 칸별 배율이 서로
+//    달랐다(클럽명 칸 폭은 old*2.53, 산업/직무 칸 폭은 old*2.30 — 디자인이 다시 그려짐).
+//    그래서 "전체 배율을 곱해 추정하지 말 것"이 원칙이었지만, 이번처럼 한쪽 축만 바뀌고
+//    그 축이 픽셀 단위로 정확한 유리수 배율(13/12)로 실측 확인되는 경우는 예외 —
+//    반드시 먼저 실측으로 스케일 여부/배율을 검증한 뒤에만 일괄 환산을 쓴다.
 //
 // 템플릿 이미지에 이미 그려져 있는 것(제목·고정 문구·라벨·사슴 금장·도장·서명·[ 주 ]
 // 괄호·"20"·년/월/일 글자)은 서버가 다시 그리지 않는다. 서버가 얹는 것은 빈칸의 사용자
@@ -163,13 +172,13 @@ export interface CertificateSlotSpec {
 /**
  * 엥크레 활동 증명서 템플릿.
  *
- * 실측 기준(2026-08-06, 2475x3300 교체본 — sharp raw 버퍼 스캔 + 오버레이 육안 대조):
- *   1행(클럽명/산업) 박스 y=1285(상변)/1407(하변)
- *   2행(이름/생년월일/코드) 박스 y=1577/1692
- *   3행(졸업품계/활동기간) 박스 y=1857/1972 · "[ 주 ]" 괄호 텍스트 y=1897~1937
- *   활동형태 분홍 배너 fill x=287~680, y=2122~2200
- *   Resume Link 흰 박스(순백 픽셀 기준) x=1904~2175, y=1881~2150
- *   발급일 "20 [ ]년 [ ]월 [ ]일" 고정 글자 y=2630~2670
+ * 실측 기준(2026-08-07, 2475x3575 A4 비율 교체본 — sharp raw 버퍼 스캔 + 오버레이 육안
+ * 대조, 세로만 13/12 배 스케일로 확인 후 old_y*13/12 로 재계산·재실측):
+ *   1행(클럽명/산업) 박스 y=1393(상변)/1524(하변)
+ *   2행(이름/생년월일/코드) 박스 y=1708/1833
+ *   3행(졸업품계/활동기간) 박스 y=2012/2136
+ *   Resume Link 흰 박스(순백 픽셀 기준) x=1904~2175(가로 불변), y=2038~2329
+ *   발급일 "20 [ ]년 [ ]월 [ ]일" 고정 글자 잉크 y≈2857~2889
  */
 export const ACTIVITY_CERTIFICATE_TEMPLATE = {
   templateId: "activity-certificate-encre-v2",
@@ -183,7 +192,7 @@ export const ACTIVITY_CERTIFICATE_TEMPLATE = {
 
   /** 실측 크기. 렌더 시에는 파일 메타데이터를 읽어 실제 값을 우선 사용한다. */
   width: 2475,
-  height: 3300,
+  height: 3575,
 
   /**
    * PDF 출력 규격 — 페이지는 **항상 A4 세로**다. 증명서는 A4 용지에 인쇄되는 문서이므로
@@ -221,60 +230,61 @@ export const ACTIVITY_CERTIFICATE_TEMPLATE = {
   },
 
   slots: {
-    // ── 1행: 클럽명 / 산업·직무 분야 (박스 y 1285~1407, 중앙 1346) ──
+    // ── 1행: 클럽명 / 산업·직무 분야 (박스 y 1393~1524, 중앙 1458 ≈ old 1346*13/12) ──
     clubName: {
-      // 박스 x 850~1229 의 기하학적 중앙. 좌측은 사슴 금장(x≈529~855)이 살짝 겹치지만
-      // 실측 결과 겹침이 박스 테두리(x=850)까지만 닿고 안쪽까지 들어오지 않는다.
-      x: 1040, y: 1367, align: "center",
+      // 박스 x 850~1229 의 기하학적 중앙(가로는 이번 교체로 안 바뀌어 old 그대로). 좌측은
+      // 사슴 금장(x≈529~855)이 살짝 겹치지만 실측 결과 겹침이 박스 테두리(x=850)까지만
+      // 닿고 안쪽까지 들어오지 않는다.
+      x: 1040, y: 1481, align: "center",
       fontSize: 60, minFontSize: 16, maxWidth: 331,
       note: "1행 좌측 칸(x 850~1229)",
     },
     industryField: {
-      x: 1772, y: 1367, align: "center",
+      x: 1772, y: 1481, align: "center",
       fontSize: 60, minFontSize: 26, maxWidth: 804,
       note: "1행 우측 칸(x 1346~2198)",
     },
 
-    // ── 2행: 이름 / 생년월일 / Club Elite Code (박스 y 1577~1692, 중앙 1635) ──
+    // ── 2행: 이름 / 생년월일 / Club Elite Code (박스 y 1708~1833, 중앙 1770.5) ──
     name: {
-      x: 493, y: 1656, align: "center",
+      x: 493, y: 1794, align: "center",
       fontSize: 58, minFontSize: 22, maxWidth: 449,
       note: "2행 1칸(x 244~741)",
     },
     birthDate: {
-      x: 1134, y: 1656, align: "center",
+      x: 1134, y: 1794, align: "center",
       fontSize: 58, minFontSize: 37, maxWidth: 454,
       note: "2행 2칸(x 883~1385)",
     },
     clubEliteCode: {
-      x: 1868, y: 1656, align: "center",
+      x: 1868, y: 1794, align: "center",
       fontSize: 58, minFontSize: 20, maxWidth: 613,
       note: "2행 3칸(x 1537~2198)",
     },
 
-    // ── 3행: 졸업 품계 / 활동 기간 / [ N 주 ] (박스 y 1857~1972, 중앙 1915) ──
+    // ── 3행: 졸업 품계 / 활동 기간 / [ N 주 ] (박스 y 2012~2136, 중앙 2074) ──
     graduationGrade: {
-      x: 487, y: 1936, align: "center",
+      x: 487, y: 2097, align: "center",
       fontSize: 58, minFontSize: 21, maxWidth: 438,
       note: "3행 1칸(x 244~730)",
     },
     activityPeriod: {
       // "YYYY. MM. DD. ~ YYYY. MM. DD." (29자) 고정 길이 한 줄이라 다른 3행 칸보다
       // 기본 크기를 낮게 시작한다(그래도 넉넉히 들어가 축소가 거의 걸리지 않는다).
-      x: 1220, y: 1930, align: "center",
+      x: 1220, y: 2091, align: "center",
       fontSize: 44, minFontSize: 21, maxWidth: 626,
       note: "3행 2칸(x 883~1557) — 시작일~종료일 합쳐 1칸",
     },
     activityWeeks: {
-      // 템플릿에 이미 인쇄된 "[" (x≈1611~1615) 와 "주"(x≈1700~) 사이의 빈 공간.
-      x: 1658, y: 1937, align: "center",
+      // 템플릿에 이미 인쇄된 "[" (x≈1611~1615) 와 "주"(x≈1700~) 사이의 빈 공간(가로 불변).
+      x: 1658, y: 2098, align: "center",
       fontSize: 56, minFontSize: 32, maxWidth: 73,
-      note: "[ N 주 ] 괄호 안 숫자(x 1615~1700, baseline y=1937 실측)",
+      note: "[ N 주 ] 괄호 안 숫자(x 1615~1700, baseline y=old 1937*13/12)",
     },
 
-    // ── 활동 형태: 분홍 배너 위(배너 fill x 287~680, y 2122~2200) ──
+    // ── 활동 형태: 분홍 배너 위(배너 fill x 287~680 불변, y 2299~2383 ≈ old*13/12) ──
     activityForm: {
-      x: 484, y: 2176, align: "center",
+      x: 484, y: 2357, align: "center",
       fontSize: 44, minFontSize: 17, maxWidth: 353,
       // 진분홍 배너 위라 기본 먹빛으로는 읽히지 않는다 — 이 슬롯만 흰색.
       color: "#ffffff",
@@ -283,41 +293,44 @@ export const ACTIVITY_CERTIFICATE_TEMPLATE = {
 
     // ── 발급일: 템플릿에 "20 [ ]년 [ ]월 [ ]일" 이 인쇄되어 있다 ──
     // "20" 이 고정 인쇄라 연도는 마지막 두 자리만 그린다(buildRenderValues 참고).
-    // 각 빈칸은 인접한 고정 글자 사이의 실측 간격이며, 칸 중앙에 정렬한다.
+    // 각 빈칸은 인접한 고정 글자 사이의 실측 간격이며(가로 불변), 칸 중앙에 정렬한다.
     issueYear: {
-      x: 1100, y: 2670, align: "center",
+      x: 1100, y: 2893, align: "center",
       fontSize: 56, minFontSize: 32, maxWidth: 57,
       note: "'20' (x 1021~1063) 과 '년' (x 1136~1168) 사이",
     },
     issueMonth: {
-      x: 1216, y: 2670, align: "center",
+      x: 1216, y: 2893, align: "center",
       fontSize: 56, minFontSize: 32, maxWidth: 79,
       note: "'년' (x 1136~1168) 과 '월' (x 1263~1294) 사이",
     },
     issueDay: {
-      x: 1354, y: 2670, align: "center",
+      x: 1354, y: 2893, align: "center",
       fontSize: 56, minFontSize: 32, maxWidth: 103,
       note: "'월' (x 1263~1294) 과 '일' (x 1413~1444) 사이",
     },
   } satisfies Record<CertificateRenderSlot, CertificateSlotSpec>,
 
   /**
-   * QR 코드 배치 — Resume Link 흰 박스(순백 픽셀 기준 x 1904~2175, y 1881~2150,
-   * 271x269) 안쪽. 박스보다 작게 넣어 흰 여백 자체가 추가 quiet zone 역할을 하게 한다.
+   * QR 코드 배치 — Resume Link 흰 박스(순백 픽셀 기준 x 1904~2175(가로 불변),
+   * y 2038~2329, 271x291) 안쪽. 박스보다 작게 넣어 흰 여백 자체가 추가 quiet zone
+   * 역할을 하게 한다. size(240)는 가로 폭 제약(271)이 그대로라 이번 교체로 바꾸지
+   * 않았다 — 세로만 늘어난 교체라 세로 여유만 늘었을 뿐 가로 여유는 그대로다.
    */
   qr: {
     left: 1920,
-    top: 1896,
+    top: 2054,
     size: 240,
     /** QR 자체 quiet zone(모듈 단위). 흰 박스 여백(각 변 약 15~16px)과 합쳐 스캔 안정성을 확보. */
     marginModules: 2,
-    note: "Resume Link 흰 박스(x 1904~2175, y 1881~2150) 중앙",
+    note: "Resume Link 흰 박스(x 1904~2175, y 2038~2329) 중앙",
   },
 } as const;
 
 // 실측한 Resume Link 흰 박스(순백 픽셀 기준, qr 설정과 별개로 보관 — 재실측 없이 qr
 // 좌표만 손대면 이 자가 점검이 즉시 실패해 박스 밖으로 QR 이 나가는 걸 막는다).
-const RESUME_LINK_WHITE_BOX = { left: 1904, top: 1881, right: 2175, bottom: 2150 } as const;
+// 2026-08-07 교체본에서 재실측(가로는 불변, 세로만 old*13/12 로 이동).
+const RESUME_LINK_WHITE_BOX = { left: 1904, top: 2038, right: 2175, bottom: 2329 } as const;
 {
   const { left, top, size } = ACTIVITY_CERTIFICATE_TEMPLATE.qr;
   const withinBox =
