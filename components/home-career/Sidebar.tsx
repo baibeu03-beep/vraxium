@@ -23,6 +23,7 @@ import { LoadingPanel } from "@/components/ui/loading/LoadingPanel";
 import { progressStatusToSeasonKey, RESUME_SEASON_BADGE_TEXT, type SeasonStatusKey } from "@/lib/cluster4-status-label";
 import { resolvePersonDisplayNames } from "@/lib/koreanRomanization";
 import { useDemoUserMode } from "@/hooks/useDemoUserMode";
+import { EllipsisTooltip } from "@/components/ui/tooltip";
 
 const koreaRegions: { [key: string]: string[] } = koreaRegionsData;
 const DEFAULT_PHONE_COMMENT = "평일 오전 10시 ~ 오후 20시 사이에 언제든지 연락가능합니다. 주말은 문자나 텍스트로만 부탁드려요! 😊";
@@ -2974,7 +2975,9 @@ const Sidebar = () => {
                                 {/* approved_weeks null = admin 그래프트 실패(분자 미확정) — 레거시 stale 값 대신 '-' (2026-06-05) */}
                                 {history.approved_weeks ?? "-"}주 <span style={{ color: "#767676" }}>/ {displayTotalWeeks}주</span>
                               </span>
-                              <span className="activity-role">{displayRoleLabel}</span>
+                              <EllipsisTooltip className="activity-role" tooltip={displayRoleLabel}>
+                                {displayRoleLabel}
+                              </EllipsisTooltip>
                               <span className={`activity-badge ${progressStatus.className}`}>{progressStatus.text}</span>
                               <span className={`activity-check ${reviewStatus.className}`}>{reviewStatus.text}</span>
                             </div>

@@ -1,0 +1,23 @@
+// EllipsisTooltip 말풍선 — createPortal 로 document.body 에 직접 렌더된다.
+// PopupProvider(components/ui/popup)와 달리 색이 theme(cluster-px/encre) 종속적이지
+// 않은 중립 다크 스타일이라 라우트별 theme class 부착이 필요 없다.
+.ellipsis-tooltip-bubble {
+  position: fixed;
+  z-index: 2147483000; // Popup(9999999)보다 위 — hover 중엔 항상 최상단에 보여야 함
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(20, 20, 24, 0.96);
+  color: #fff;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  font-weight: 400;
+  white-space: normal;
+  word-break: break-word;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  pointer-events: none; // 마우스 상호작용을 가로채지 않음 — hover/tap 은 항상 트리거 요소가 소유
+  transition: opacity 0.08s ease-out;
+
+  // 위치 계산 완료(placed) 전까지 상위 컴포넌트에서 opacity:0 로 시작 →
+  // 잘못된 좌표에서 잠깐 보이는 깜빡임을 막는다.
+}

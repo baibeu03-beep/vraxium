@@ -21,6 +21,7 @@ import { useDataMasking } from "@/hooks/useDataMasking";
 import { dedupedJson, invalidateDedupe } from "@/lib/fetch-dedupe";
 import TestUserBanner from "@/components/test-user-banner/TestUserBanner";
 import LoadingPanel from "@/components/ui/loading/LoadingPanel";
+import { EllipsisTooltip } from "@/components/ui/tooltip";
 import {
   CLUSTER3_DUMMY_PROFILE,
   CLUSTER3_DUMMY_ARCHIVES,
@@ -2873,12 +2874,12 @@ const Cluster3Content = () => {
                         <span className="author-name">{ownerName}</span>
                       </div>
                       <div className="card-top-metrics">
-                        <span className="card-top-metric" title={displayTopMetric(card.topMetricName)}>
+                        <EllipsisTooltip className="card-top-metric" tooltip={displayTopMetric(card.topMetricName)}>
                           {displayTopMetric(card.topMetricName)}
-                        </span>
-                        <span className="card-top-metric" title={displayTopMetric(card.topMetricValue)}>
+                        </EllipsisTooltip>
+                        <EllipsisTooltip className="card-top-metric" tooltip={displayTopMetric(card.topMetricValue)}>
                           {displayTopMetric(card.topMetricValue)}
-                        </span>
+                        </EllipsisTooltip>
                       </div>
                     </div>
                   </div>
@@ -3158,7 +3159,7 @@ const Cluster3Content = () => {
                     {detailFirstMetric && (detailFirstMetric.label || detailFirstMetric.value) && (
                       <div className="detail-metric">
                         <span className="detail-metric__name">{detailFirstMetric.label || "-"}</span>
-                        <span className="detail-metric__value" title={detailFirstMetric.value}>{detailFirstMetric.value || "-"}</span>
+                        <EllipsisTooltip className="detail-metric__value" tooltip={detailFirstMetric.value || "-"}>{detailFirstMetric.value || "-"}</EllipsisTooltip>
                       </div>
                     )}
                     {/* [2] 플랫폼 + [1] 제목 + [4] 도구 (하단) */}
