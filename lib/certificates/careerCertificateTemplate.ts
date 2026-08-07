@@ -76,6 +76,15 @@ export const CAREER_CERTIFICATE_MULTILINE_FIELDS: readonly CareerCertificateInpu
   "careerDescription",
 ] as const;
 
+/**
+ * 오늘(KST)보다 미래 날짜를 금지하는 필드 — 경력 시작/종료일만 대상이다.
+ * ⚠️ 발급일(issueDate)·생년월일(birthDate)은 대상이 아니다(활동증명서와 동일 범위).
+ */
+export const CAREER_CERTIFICATE_FUTURE_BLOCKED_FIELDS: readonly CareerCertificateInputField[] = [
+  "careerStartDate",
+  "careerEndDate",
+] as const;
+
 /** 입력 길이 상한 — 클라이언트와 서버가 같은 값을 쓴다. */
 export const CAREER_CERTIFICATE_INPUT_MAX_LENGTH: Record<CareerCertificateInputField, number> = {
   name: 20,
@@ -186,15 +195,26 @@ export const CAREER_CERTIFICATE_TEMPLATE = {
 
   slots: {
     // ── 인적 사항 1행: 성명 / 생년월일 (표 y 594~667, baseline 641) ──
+    // ⚠️ 폰트 크기 재조정(2026-08-06): 라벨(성명·생년월일 등) cap-height 실측 17px 대비
+    //    기존 fontSize(36/34/32/32/32/22/32/28/28)가 시각적으로 지나치게 커서(cap-height
+    //    27~31px) 라벨과 균형이 안 맞았다. Pretendard 실측 비율(cap-height ≈ fontSize×0.87,
+    //    opentype.js bbox 직접 측정)로 목표 cap-height 19~21px(라벨보다 살짝 크되 과하지
+    //    않게)에 맞는 fontSize 를 다시 계산했다 — 기계적 동일 비율 축소가 아니라 각 칸의
+    //    실제 대표값 폭(font.getAdvanceWidth 로 실측)과 maxWidth 여유를 따로 확인해 필드별로
+    //    다르게 낮췄다(예: taskName 은 실제 업무명이 자주 길어 같은 행의 name 보다 더 낮춤).
+    //    minFontSize 는 "일반적인 값에서는 도달하지 않는 하한"으로 재설정 — 대표값 렌더
+    //    결과(font-after-*.png)로 실제 도달하지 않음을 확인했다.
     name: {
       x: 382, y: 641, align: "center",
-      fontSize: 36, minFontSize: 14, maxWidth: 260,
-      note: "성명 값 칸(x 246~519, 라벨 셀 x 109~242 우측)",
+      fontSize: 24, minFontSize: 14, maxWidth: 260,
+      note: "성명 값 칸(x 246~519, 라벨 셀 x 109~242 우측). cap-height≈20.9px(라벨 17px 대비" +
+        " 자연스러운 강조), \"홍길동\" 실측 폭 62.2px ≪ maxWidth 260(shrink 여유 충분).",
     },
     birthDate: {
       x: 792, y: 641, align: "center",
-      fontSize: 34, minFontSize: 16, maxWidth: 280,
-      note: "생년월일 값 칸(x 646~938, 라벨 셀 x 519~642 우측) — \"YYYY. MM. DD\" 고정 12자",
+      fontSize: 24, minFontSize: 18, maxWidth: 280,
+      note: "생년월일 값 칸(x 646~938, 라벨 셀 x 519~642 우측) — \"YYYY. MM. DD\" 고정 12자," +
+        " 폭이 항상 동일(≈132.8px)해 minFontSize 에 도달할 일이 없다.",
     },
 
     // ── 인적 사항 2행: 소속 / 학과사항 (표 y 668~739, baseline 712) ──
@@ -205,54 +225,64 @@ export const CAREER_CERTIFICATE_TEMPLATE = {
     //    바뀌면 값 칸 시작 x 도 달라질 수 있음).
     affiliation: {
       x: 382, y: 712, align: "center",
-      fontSize: 32, minFontSize: 12, maxWidth: 260,
-      note: "소속 값 칸(x 246~519) — 신청 조직 표시명(예: 엥크레)만 그린다. 사용자 입력 아님.",
+      fontSize: 22, minFontSize: 14, maxWidth: 260,
+      note: "소속 값 칸(x 246~519) — 신청 조직 표시명(엥크레/오랑캐/팔랑크스, 항상 3자)만" +
+        " 그린다. cap-height≈19.1px, 폭 57~102px ≪ 260이라 shrink 가 걸릴 일이 없다.",
     },
     academicRecord: {
       x: 792, y: 712, align: "center",
-      fontSize: 32, minFontSize: 14, maxWidth: 280,
-      note: "학과사항 값 칸(x 646~938) — \"{대학교명} {학과명}\" 자동 조회값만 그린다. 사용자 입력 아님.",
+      fontSize: 24, minFontSize: 16, maxWidth: 280,
+      note: "학과사항 값 칸(x 646~938) — \"{대학교명} {학과명}\" 자동 조회값만 그린다." +
+        " 대표값(경희대학교 경영학과, 10자) 실측 폭 192.7px, 16자 안팎까지는 24px 그대로" +
+        " 들어가고 그보다 길면 그때만 minFontSize 16(16자 기준 211px)까지 축소.",
     },
 
-    // ── 경력 사항 1행: 업무명 / 기간 (표 y 835~932, baseline 895) ──
+    // ── 경력 사항 1행: 업무명 / 기간 (표 y 835~932, baseline 893) ──
     taskName: {
-      x: 382, y: 895, align: "center",
-      fontSize: 32, minFontSize: 11, maxWidth: 260,
-      note: "업무명 값 칸(x 246~519, 라벨 셀 x 109~242 우측 ~ 기간 라벨 셀 x 519 좌측)",
+      x: 382, y: 893, align: "center",
+      fontSize: 22, minFontSize: 12, maxWidth: 260,
+      note: "업무명 값 칸(x 246~519, 라벨 셀 x 109~242 우측 ~ 기간 라벨 셀 x 519 좌측)." +
+        " 같은 행의 name 보다 낮게 잡음 — 실제 업무명 문구(예: \"신제품 마케팅 콘텐츠 기획" +
+        " 및 제작\", 17자)가 name(2~4자) 보다 훨씬 길어 22px 에서도 자동 축소가 걸릴 수 있음.",
     },
     careerPeriod: {
-      // "YYYY. MM. DD. ~ YYYY. MM. DD." (29자) 고정 길이 한 줄.
-      x: 779, y: 890, align: "center",
-      fontSize: 22, minFontSize: 11, maxWidth: 310,
-      note: "기간 값 칸(x 620~938, 라벨 셀 x 519~616 우측) — 시작일~종료일 합쳐 1칸",
+      // "YYYY. MM. DD. ~ YYYY. MM. DD." (29자) 고정 길이 한 줄. 항상 이 길이라 shrink 불필요.
+      x: 779, y: 893, align: "center",
+      fontSize: 20, minFontSize: 16, maxWidth: 310,
+      note: "기간 값 칸(x 620~938, 라벨 셀 x 519~616 우측) — 시작일~종료일 합쳐 1칸." +
+        " 29자 고정 폭 258.5px(size20) ≪ maxWidth 310, 길이가 변하지 않아 shrink 없음.",
     },
 
     // ── 발급일: 템플릿에 "년/월/일" 글자만 고정 인쇄(숫자 없음) ──
     // 활동증명서와 달리 "20" 같은 고정 접두사가 없다 — 연도 4자리 전체를 그린다.
+    // baseline 정렬(y=1279, 고정 라벨과 동일 줄)이라 폰트 크기를 바꿔도 y 는 그대로 둔다.
     issueYear: {
       x: 381, y: 1279, align: "center",
-      fontSize: 32, minFontSize: 18, maxWidth: 140,
-      note: "'년'(x 461~475) 왼쪽 빈 공간(x 311~451) — 4자리 연도. 라벨(년/월/일, cap-height" +
-        " 17px)과 시각적 비례를 맞추려 활동증명서 발급일 슬롯보다 낮은 배율을 썼다.",
+      fontSize: 22, minFontSize: 16, maxWidth: 140,
+      note: "'년'(x 461~475) 왼쪽 빈 공간(x 311~451) — 4자리 연도. cap-height≈19.1px 로" +
+        " 라벨(년/월/일, cap-height 17px)과 비례를 맞췄다. \"2026\" 실측 폭 52.4px ≪ 140.",
     },
     issueMonth: {
       x: 504, y: 1279, align: "center",
-      fontSize: 28, minFontSize: 14, maxWidth: 51,
-      note: "'년'(475)과 '월'(534) 사이(x 479~530) — 1~2자리 월",
+      fontSize: 20, minFontSize: 14, maxWidth: 51,
+      note: "'년'(475)과 '월'(534) 사이(x 479~530) — 1~2자리 월. \"12\" 실측 폭 20.5px ≪ 51.",
     },
     issueDay: {
       x: 580, y: 1279, align: "center",
-      fontSize: 28, minFontSize: 14, maxWidth: 56,
-      note: "'월'(548)과 '일'(612) 사이(x 552~608) — 1~2자리 일",
+      fontSize: 20, minFontSize: 14, maxWidth: 56,
+      note: "'월'(548)과 '일'(612) 사이(x 552~608) — 1~2자리 일. \"31\" 실측 폭 21.1px ≪ 56.",
     },
   } satisfies Record<CareerCertificateRenderSlot, CareerCertificateSlotSpec>,
 
   /**
    * 경력 설명(해당 사항) 멀티라인 블록 — 표 2행 값 영역.
    * 라벨 "해당 사항"(x 110~242)의 우측, 표 내부(x 258~908, y 933~1105)에 최대 3줄.
+   * 폰트 크기 재조정(2026-08-06): fontSize 30→22 와 함께 lineHeight 도 44→32 로 같이
+   * 줄여 줄 간격 비율(lineHeight/fontSize)을 1.47 그대로 유지했다 — 글자만 줄이고
+   * lineHeight 를 안 줄이면 문단이 듬성듬성해 보이는 문제를 피하기 위함.
    */
   careerDescriptionBlock: {
-    x: 588, y: 980, fontSize: 30, minFontSize: 14, maxWidth: 640, maxLines: 3, lineHeight: 44,
+    x: 588, y: 990, fontSize: 22, minFontSize: 13, maxWidth: 640, maxLines: 3, lineHeight: 32,
     note: "해당 사항 값 블록(라벨 우측 x 258~908, 표 하단 y 933~1105 안)",
   } satisfies CareerCertificateBlockSpec,
 
@@ -260,9 +290,12 @@ export const CAREER_CERTIFICATE_TEMPLATE = {
    * 하단 증명 문구 블록 — 완전히 빈 사각 테두리 박스(x 106~941, y 1132~1237) 중앙.
    * 조직별 소속 문구가 포함된 전체 문장을 여기 하나의 블록으로 찍는다(부분 문자열
    * 끼워넣기 금지 — careerCertificateValidation.ts 의 buildVerificationText 참고).
+   * 폰트 크기 재조정(2026-08-06): fontSize 26→20, lineHeight 44→30(비율 1.69→1.5 로
+   * 살짝 더 조밀하게 — 법적 문구 특성상 문단형 가독성이 우선이라 careerDescriptionBlock
+   * 보다 약간 낮은 배율을 썼다). 박스 중앙(y 1184.5)에 2줄 블록이 오도록 y 재계산.
    */
   verificationTextBlock: {
-    x: 524, y: 1168, fontSize: 26, minFontSize: 13, maxWidth: 740, maxLines: 2, lineHeight: 44,
+    x: 524, y: 1176, fontSize: 20, minFontSize: 13, maxWidth: 740, maxLines: 2, lineHeight: 30,
     note: "증명 문구 박스(x 106~941, y 1132~1237) 중앙 — 조직별 소속 문구 포함 전체 문장",
   } satisfies CareerCertificateBlockSpec,
 } as const;

@@ -84,6 +84,17 @@ export const CERTIFICATE_NUMERIC_FIELDS: readonly CertificateInputField[] = [
   "activityWeeks",
 ] as const;
 
+/**
+ * 오늘(KST)보다 미래 날짜를 금지하는 필드 — 활동 시작/종료일만 대상이다.
+ * ⚠️ 발급일(issueDate)은 대상이 아니다(템플릿 "20" 고정 접두사 때문에 이미 별도의
+ * CERTIFICATE_ISSUE_DATE_MIN_YEAR 정책을 쓰고 있고, 이번 미래 날짜 금지 정책과는
+ * 무관하게 유지한다). 생년월일(birthDate)도 이번 정책 대상이 아니다(요청 범위 밖).
+ */
+export const CERTIFICATE_FUTURE_BLOCKED_FIELDS: readonly CertificateInputField[] = [
+  "activityStartDate",
+  "activityEndDate",
+] as const;
+
 /** 입력 길이 상한 — 클라이언트와 서버가 같은 값을 쓴다. */
 export const CERTIFICATE_INPUT_MAX_LENGTH: Record<CertificateInputField, number> = {
   clubName: 20,

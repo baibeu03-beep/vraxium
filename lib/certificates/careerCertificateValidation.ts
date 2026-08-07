@@ -13,6 +13,7 @@
 import {
   CAREER_CERTIFICATE_DATE_FIELDS,
   CAREER_CERTIFICATE_FIELD_LABELS,
+  CAREER_CERTIFICATE_FUTURE_BLOCKED_FIELDS,
   CAREER_CERTIFICATE_INPUT_FIELDS,
   CAREER_CERTIFICATE_INPUT_MAX_LENGTH,
   CAREER_CERTIFICATE_MULTILINE_FIELDS,
@@ -21,21 +22,22 @@ import {
   type CareerCertificateRenderSlot,
   type Organization,
 } from "./careerCertificateTemplate";
-// 정규화·날짜 유틸은 활동증명서와 완전히 동일한 규칙을 쓴다 — 재정의하지 않고 그대로 재사용.
+// 정규화 유틸은 활동증명서와 완전히 동일한 규칙을 쓴다 — 재정의하지 않고 그대로 재사용.
 import {
   countCodePoints,
   formatActivityPeriod as formatDateRange,
   formatBirthDate as formatSingleDate,
-  isValidIsoDate,
   normalizeCertificateText,
-  todayIsoKst,
   CERTIFICATE_MIN_YEAR,
   CERTIFICATE_MAX_YEAR_OFFSET,
   type CertificateFieldError,
   type CertificateFieldErrorCode,
 } from "./activityCertificateValidation";
+// 날짜 정책(오늘·미래 판정)은 활동증명서와 경력증명서가 공유하는 certificateDatePolicy.ts
+// 에서 직접 가져온다 — 별도의 미래 날짜 판정 함수를 여기서 새로 만들지 않는다.
+import { getTodayDateInKst, isValidIsoDate, validatePastOrTodayDate } from "./certificateDatePolicy";
 
-export { todayIsoKst, isValidIsoDate, normalizeCertificateText };
+export { getTodayDateInKst, getTodayDateInKst as todayIsoKst, isValidIsoDate, normalizeCertificateText };
 export type { CertificateFieldError, CertificateFieldErrorCode };
 
 export type CareerCertificateInput = Record<CareerCertificateInputField, string>;
@@ -78,7 +80,7 @@ function normalizeMultilineText(raw: unknown): string {
 
 export function validateCareerCertificateInput(
   body: unknown,
-  todayIso: string = todayIsoKst(),
+  todayIso: string = getTodayDateInKst(),
 ): CareerCertificateValidationResult {
   const errors: CertificateFieldError[] = [];
   const source = (body ?? {}) as Record<string, unknown>;
@@ -108,6 +110,11 @@ export function validateCareerCertificateInput(
         errors.push(
           err(key, "DATE_OUT_OF_BOUNDS", `${label}은(는) ${CERTIFICATE_MIN_YEAR}년 ~ ${maxYear}년 사이여야 합니다.`),
         );
+      }
+      // 경력 시작/종료일은 오늘(KST) 이후 날짜를 금지한다(발급일·생년월일은 대상 아님).
+      if ((CAREER_CERTIFICATE_FUTURE_BLOCKED_FIELDS as readonly string[]).includes(key)) {
+        const futureError = validatePastOrTodayDate(key, label, text, todayIso);
+        if (futureError) errors.push(futureError);
       }
       continue;
     }

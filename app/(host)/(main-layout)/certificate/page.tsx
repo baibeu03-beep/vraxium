@@ -10,6 +10,7 @@ import { resolveCurrentOrgSlug, type OrgSlug } from "@/lib/orgNav";
 import {
   CERTIFICATE_DATE_FIELDS,
   CERTIFICATE_FIELD_LABELS,
+  CERTIFICATE_FUTURE_BLOCKED_FIELDS,
   CERTIFICATE_INPUT_FIELDS,
   CERTIFICATE_INPUT_MAX_LENGTH,
   CERTIFICATE_NUMERIC_FIELDS,
@@ -25,6 +26,7 @@ import {
 import {
   CAREER_CERTIFICATE_DATE_FIELDS,
   CAREER_CERTIFICATE_FIELD_LABELS,
+  CAREER_CERTIFICATE_FUTURE_BLOCKED_FIELDS,
   CAREER_CERTIFICATE_INPUT_FIELDS,
   CAREER_CERTIFICATE_INPUT_MAX_LENGTH,
   CAREER_CERTIFICATE_MULTILINE_FIELDS,
@@ -35,6 +37,9 @@ import {
   validateCareerCertificateInput,
   type CareerCertificateInput,
 } from "@/lib/certificates/careerCertificateValidation";
+// 날짜 input 의 max 속성 계산 — 서버 검증(getTodayDateInKst)과 동일한 함수를 그대로 쓴다.
+// new Date().toISOString() 을 클라에서 직접 쓰지 않는다(KST 자정 전후 하루 어긋남 방지).
+import { getTodayDateInKst } from "@/lib/certificates/certificateDatePolicy";
 
 // /certificate — 증명서 발급(활동 증명서 · 경력 증명서 탭).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -295,6 +300,8 @@ function ActivityCertificatePanel({ visible }: { visible: boolean }) {
     const label = CERTIFICATE_FIELD_LABELS[key];
     const isDate = (CERTIFICATE_DATE_FIELDS as readonly string[]).includes(key);
     const isNumeric = (CERTIFICATE_NUMERIC_FIELDS as readonly string[]).includes(key);
+    // 활동 시작/종료일만 오늘(KST) 이후를 막는다 — 발급일·생년월일은 대상 아님(서버와 동일 범위).
+    const isFutureBlocked = (CERTIFICATE_FUTURE_BLOCKED_FIELDS as readonly string[]).includes(key);
     const message = errorFor(key);
     const badge = SOURCE_BADGE[dto?.sources[key] ?? "manual"];
     const maxLength = dto?.limits.maxLength[key] ?? CERTIFICATE_INPUT_MAX_LENGTH[key];
@@ -316,6 +323,7 @@ function ActivityCertificatePanel({ visible }: { visible: boolean }) {
           value={form[key]}
           placeholder={ACTIVITY_FIELD_PLACEHOLDER[key]}
           maxLength={isDate ? undefined : maxLength}
+          max={isFutureBlocked ? getTodayDateInKst() : undefined}
           disabled={!eligible}
           onChange={(e) => handleChange(key, e.target.value)}
         />
@@ -488,6 +496,7 @@ const CAREER_FIELD_PLACEHOLDER: Record<CareerCertificateInputField, string> = {
 
 const CAREER_DATE_SET = new Set<string>(CAREER_CERTIFICATE_DATE_FIELDS);
 const CAREER_MULTILINE_SET = new Set<string>(CAREER_CERTIFICATE_MULTILINE_FIELDS);
+const CAREER_FUTURE_BLOCKED_SET = new Set<string>(CAREER_CERTIFICATE_FUTURE_BLOCKED_FIELDS);
 
 function CareerCertificatePanel({ visible, org }: { visible: boolean; org: OrgSlug | null }) {
   const demo = useDemoUserMode();
@@ -688,6 +697,8 @@ function CareerCertificatePanel({ visible, org }: { visible: boolean; org: OrgSl
     const label = CAREER_CERTIFICATE_FIELD_LABELS[key];
     const isDate = CAREER_DATE_SET.has(key);
     const isMultiline = CAREER_MULTILINE_SET.has(key);
+    // 경력 시작/종료일만 오늘(KST) 이후를 막는다 — 발급일·생년월일은 대상 아님.
+    const isFutureBlocked = CAREER_FUTURE_BLOCKED_SET.has(key);
     const message = errorFor(key);
     const badge = SOURCE_BADGE[dto?.sources[key] ?? "manual"];
     const maxLength = dto?.limits.maxLength[key] ?? CAREER_CERTIFICATE_INPUT_MAX_LENGTH[key];
@@ -719,6 +730,7 @@ function CareerCertificatePanel({ visible, org }: { visible: boolean; org: OrgSl
             value={form[key]}
             placeholder={CAREER_FIELD_PLACEHOLDER[key]}
             maxLength={isDate ? undefined : maxLength}
+            max={isFutureBlocked ? getTodayDateInKst() : undefined}
             disabled={!eligible}
             onChange={(e) => handleChange(key, e.target.value)}
           />

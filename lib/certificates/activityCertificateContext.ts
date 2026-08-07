@@ -18,6 +18,7 @@ import {
   todayIsoKst,
   type CertificateLimits,
 } from "./activityCertificateValidation";
+import { isFutureDate } from "./certificateDatePolicy";
 import { probeCertificateAssets } from "./activityCertificateAssets";
 
 // 증명 발급 페이지 컨텍스트 — 일반/actAsTestUserId/demoUserId 가 **공유하는 유일한** 조회 함수.
@@ -233,6 +234,16 @@ export async function buildActivityCertificatePageDto(
       ? "PROFILE_NOT_FOUND"
       : "ORG_NOT_ELIGIBLE";
 
+  // ⚠️ 미래 날짜 금지 정책(2026-08-06 추가): DB 에 이미 저장된 activity_started_at/
+  //    activity_ended_at 이 데이터 이상 등으로 미래 날짜라면, 그 값을 그대로 기본값으로
+  //    내려 "발급 가능한 정상값"처럼 보여주지 않는다 — null 로 감춰 사용자가 직접 올바른
+  //    날짜를 입력하게 하고 sources 도 "manual"로 내린다(자동 조회 배지를 달지 않는다).
+  const today = todayIsoKst();
+  const safeActivityStartDate =
+    ctx.activityStartDate && !isFutureDate(ctx.activityStartDate, today) ? ctx.activityStartDate : null;
+  const safeActivityEndDate =
+    ctx.activityEndDate && !isFutureDate(ctx.activityEndDate, today) ? ctx.activityEndDate : null;
+
   return {
     success: true,
     user: {
@@ -251,11 +262,11 @@ export async function buildActivityCertificatePageDto(
       birthDate: ctx.birthDate,
       clubEliteCode: ctx.clubEliteCode,
       graduationGrade: null, // 권위 원천 없음 — 사용자 입력
-      activityStartDate: ctx.activityStartDate,
-      activityEndDate: ctx.activityEndDate,
+      activityStartDate: safeActivityStartDate,
+      activityEndDate: safeActivityEndDate,
       activityWeeks: ctx.activityWeeks === null ? null : String(ctx.activityWeeks),
       activityForm: null, // 권위 원천 없음 — 사용자 입력
-      issueDate: todayIsoKst(),
+      issueDate: today,
     },
     sources: {
       clubName: ctx.organizationName ? "db" : "preset",
@@ -264,8 +275,8 @@ export async function buildActivityCertificatePageDto(
       birthDate: ctx.birthDate ? "db" : "manual",
       clubEliteCode: ctx.clubEliteCode ? "db" : "manual",
       graduationGrade: "manual",
-      activityStartDate: ctx.activityStartDate ? "db" : "manual",
-      activityEndDate: ctx.activityEndDate ? "db" : "manual",
+      activityStartDate: safeActivityStartDate ? "db" : "manual",
+      activityEndDate: safeActivityEndDate ? "db" : "manual",
       activityWeeks: ctx.activityWeeks === null ? "manual" : "db",
       activityForm: "manual",
       issueDate: "db",

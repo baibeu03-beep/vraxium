@@ -243,6 +243,21 @@ const ORG_PHRASE = {
 const SLUG_TO_ORG_CANONICAL = { encre: "entertainment", oranke: "marketing", phalanx: "planning" };
 const ORG_DISPLAY_NAME_KO = { encre: "엥크레", oranke: "오랑캐", phalanx: "팔랑크스" };
 
+// lib/certificates/certificateDatePolicy.ts 의 getTodayDateInKst 와 동일한 계산 —
+// 스크립트가 독립 실행되므로(node .mjs, TS import 불가) 같은 공식을 여기서도 쓴다.
+// 서버가 실제로 이 공식과 동일하게 판정하는지는 아래 HTTP 응답으로 교차 검증한다.
+function todayKst() {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+function addDaysIso(iso, days) {
+  const d = new Date(`${iso}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+const TODAY_KST = todayKst();
+const TOMORROW_KST = addDaysIso(TODAY_KST, 1);
+const YESTERDAY_KST = addDaysIso(TODAY_KST, -1);
+
 async function main() {
   console.log(`경력 증명서(3개 조직) 발급 API 검증 — ${BASE}`);
   const users = await pickUsers();
@@ -558,6 +573,74 @@ async function main() {
 
   const badFormat = await post(`/api/certificates/career/issue/${withExtra("?org=encre", "format=svg")}`, VALID_BODY);
   check(badFormat.res.status === 400 && badFormat.json?.code === "INVALID_FORMAT", "format=svg → 400 INVALID_FORMAT");
+
+  // ── 13. 미래 날짜 금지 정책(경력 시작/종료일) ───────────────────────────────
+  section(`13. 미래 날짜 금지 — 경력 시작/종료일 (오늘=${TODAY_KST}, 내일=${TOMORROW_KST})`);
+  {
+    // 오늘 날짜는 시작/종료일 둘 다 선택 가능해야 한다.
+    const todayStart = await post(
+      `/api/certificates/career/preview/?org=encre`,
+      { ...VALID_BODY, careerStartDate: TODAY_KST, careerEndDate: TODAY_KST },
+      { cookie },
+    );
+    check(
+      todayStart.res.status === 200 && todayStart.res.headers.get("content-type") === "image/png",
+      "경력 시작일=오늘, 종료일=오늘 → 200(선택 가능)",
+      `status=${todayStart.res.status} ${JSON.stringify(todayStart.json ?? "").slice(0, 200)}`,
+    );
+
+    // 내일 날짜는 세 경로(session/actAs/demo) 모두 동일하게 422 DATE_IN_FUTURE.
+    for (const [label, body, field] of [
+      ["경력 시작일=내일", { ...VALID_BODY, careerStartDate: TOMORROW_KST }, "careerStartDate"],
+      ["경력 종료일=내일", { ...VALID_BODY, careerStartDate: YESTERDAY_KST, careerEndDate: TOMORROW_KST }, "careerEndDate"],
+    ]) {
+      const seen = [];
+      for (const view of VIEWS) {
+        const opts = view.cookie ? { cookie: view.cookie } : {};
+        const r = await post(`/api/certificates/career/preview/${withOrg(view.qs, "encre")}`, body, opts);
+        const fe = r.json?.fieldErrors?.find((e) => e.field === field);
+        seen.push(`${r.res.status}/${fe?.code ?? "none"}`);
+      }
+      check(
+        new Set(seen).size === 1 && seen[0] === "422/DATE_IN_FUTURE",
+        `${label} → 422 DATE_IN_FUTURE (session/actAs/demo 동일)`,
+        seen.join(" "),
+      );
+    }
+
+    // 개발자도구/직접 HTTP body 조작을 흉내낸 케이스 — 쿠키 없이 demoUserId 로 바로 body 조작.
+    const directHttp = await post(
+      `/api/certificates/career/preview/?org=encre&demoUserId=${primary.user_id}`,
+      { ...VALID_BODY, careerEndDate: TOMORROW_KST },
+    );
+    check(
+      directHttp.res.status === 422 && directHttp.json?.fieldErrors?.some((e) => e.field === "careerEndDate" && e.code === "DATE_IN_FUTURE"),
+      "demoUserId 경로로 미래 종료일 직접 전송 → 422 DATE_IN_FUTURE",
+      JSON.stringify(directHttp.json?.fieldErrors),
+    );
+
+    // 기존 DATE_RANGE(종료일 < 시작일)와 새 DATE_IN_FUTURE 가 서로 다른 케이스에서 각각
+    // 정확히 걸리는지(둘 다 유효한 과거 날짜인데 순서만 뒤바뀐 경우는 여전히 DATE_RANGE).
+    const rangeOnly = await post(
+      `/api/certificates/career/preview/?org=encre`,
+      { ...VALID_BODY, careerStartDate: "2025-06-01", careerEndDate: "2025-01-01" },
+      { cookie },
+    );
+    const rangeFe = rangeOnly.json?.fieldErrors?.find((e) => e.field === "careerEndDate");
+    check(
+      rangeOnly.res.status === 422 && rangeFe?.code === "DATE_RANGE",
+      "과거 날짜끼리 순서만 역전(미래 아님) → 여전히 422 DATE_RANGE(미래 정책과 혼동 없음)",
+      JSON.stringify(rangeFe),
+    );
+
+    // context DTO 의 defaults 도 미래 날짜를 기본값으로 내려주지 않는지(경력증명서는 애초에
+    // careerStartDate/EndDate 의 DB 기본값이 없어 항상 null — 회귀 확인 차원의 스모크 테스트).
+    const ctxAfter = await get(`/api/certificates/career/context/?org=encre`, { cookie });
+    check(
+      ctxAfter.body?.defaults?.careerStartDate === null && ctxAfter.body?.defaults?.careerEndDate === null,
+      "context defaults.career{Start,End}Date 는 여전히 null(자동 미래값 없음)",
+    );
+  }
 
   console.log(`\n결과: ${passed} passed / ${failed} failed`);
   process.exit(failed ? 1 : 0);

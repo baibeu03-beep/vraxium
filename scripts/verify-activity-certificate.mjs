@@ -280,6 +280,19 @@ const VALID_BODY = {
   issueDate: "2026-08-04",
 };
 
+// lib/certificates/certificateDatePolicy.ts 의 getTodayDateInKst 와 동일한 계산 —
+// 스크립트가 독립 실행되므로(node .mjs, TS import 불가) 같은 공식을 여기서도 쓴다.
+function todayKst() {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+function addDaysIso(iso, days) {
+  const d = new Date(`${iso}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+const TODAY_KST = todayKst();
+const TOMORROW_KST = addDaysIso(TODAY_KST, 1);
+
 async function main() {
   console.log(`활동 증명서(엥크레) 발급 API 검증 — ${BASE}`);
   const { primary, secondary, nonEncre, realUser } = await pickUsers();
@@ -533,6 +546,73 @@ async function main() {
     badFormat.res.status === 400 && badFormat.json?.code === "INVALID_FORMAT",
     "format=svg → 400 INVALID_FORMAT",
   );
+
+  // ── 13. 미래 날짜 금지 정책(활동 시작/종료일) ───────────────────────────────
+  section(`13. 미래 날짜 금지 — 활동 시작/종료일 (오늘=${TODAY_KST}, 내일=${TOMORROW_KST})`);
+  {
+    const todayBoth = await post(`/api/certificates/activity/preview/${VIEWS[0].qs}`, {
+      ...VALID_BODY,
+      activityStartDate: TODAY_KST,
+      activityEndDate: TODAY_KST,
+    }, { cookie });
+    check(
+      todayBoth.res.status === 200 && todayBoth.res.headers.get("content-type") === "image/png",
+      "활동 시작일=오늘, 종료일=오늘 → 200(선택 가능)",
+      `status=${todayBoth.res.status} ${JSON.stringify(todayBoth.json ?? "").slice(0, 200)}`,
+    );
+
+    for (const [label, body, field] of [
+      ["활동 시작일=내일", { ...VALID_BODY, activityStartDate: TOMORROW_KST }, "activityStartDate"],
+      ["활동 종료일=내일", { ...VALID_BODY, activityEndDate: TOMORROW_KST }, "activityEndDate"],
+    ]) {
+      const seen = [];
+      for (const view of VIEWS) {
+        const opts = view.cookie ? { cookie: view.cookie } : {};
+        const r = await post(`/api/certificates/activity/preview/${view.qs}`, body, opts);
+        const fe = r.json?.fieldErrors?.find((e) => e.field === field);
+        seen.push(`${r.res.status}/${fe?.code ?? "none"}`);
+      }
+      check(
+        new Set(seen).size === 1 && seen[0] === "422/DATE_IN_FUTURE",
+        `${label} → 422 DATE_IN_FUTURE (session/actAs/demo 동일)`,
+        seen.join(" "),
+      );
+    }
+
+    const directHttp = await post(`/api/certificates/activity/preview/?demoUserId=${primary.user_id}`, {
+      ...VALID_BODY,
+      activityEndDate: TOMORROW_KST,
+    });
+    check(
+      directHttp.res.status === 422 &&
+        directHttp.json?.fieldErrors?.some((e) => e.field === "activityEndDate" && e.code === "DATE_IN_FUTURE"),
+      "demoUserId 경로로 미래 종료일 직접 전송 → 422 DATE_IN_FUTURE",
+      JSON.stringify(directHttp.json?.fieldErrors),
+    );
+
+    const rangeOnly = await post(`/api/certificates/activity/preview/${VIEWS[0].qs}`, {
+      ...VALID_BODY,
+      activityStartDate: "2025-06-01",
+      activityEndDate: "2025-01-01",
+    }, { cookie });
+    const rangeFe = rangeOnly.json?.fieldErrors?.find((e) => e.field === "activityEndDate");
+    check(
+      rangeOnly.res.status === 422 && rangeFe?.code === "DATE_RANGE",
+      "과거 날짜끼리 순서만 역전(미래 아님) → 여전히 422 DATE_RANGE(미래 정책과 혼동 없음)",
+      JSON.stringify(rangeFe),
+    );
+
+    // 발급일(issueDate)은 이번 정책 대상이 아니다 — 기존처럼 today+1년까지는 허용되어야 한다.
+    const issueNextYear = await post(`/api/certificates/activity/preview/${VIEWS[0].qs}`, {
+      ...VALID_BODY,
+      issueDate: addDaysIso(TODAY_KST, 300),
+    }, { cookie });
+    check(
+      issueNextYear.res.status === 200 || issueNextYear.json?.fieldErrors?.every((e) => e.field !== "issueDate" || e.code !== "DATE_IN_FUTURE"),
+      "발급일은 미래 날짜 금지 정책 대상이 아님(기존 연도 범위 정책만 적용)",
+      `status=${issueNextYear.res.status} ${JSON.stringify(issueNextYear.json?.fieldErrors ?? "")}`,
+    );
+  }
 
   console.log(`\n결과: ${passed} passed / ${failed} failed`);
   process.exit(failed ? 1 : 0);

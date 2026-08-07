@@ -14,12 +14,20 @@ import {
   ACTIVITY_CERTIFICATE_TEMPLATE,
   CERTIFICATE_DATE_FIELDS,
   CERTIFICATE_FIELD_LABELS,
+  CERTIFICATE_FUTURE_BLOCKED_FIELDS,
   CERTIFICATE_INPUT_FIELDS,
   CERTIFICATE_INPUT_MAX_LENGTH,
   CERTIFICATE_NUMERIC_FIELDS,
   type CertificateInputField,
   type CertificateRenderSlot,
 } from "./activityCertificateTemplate";
+import {
+  getTodayDateInKst,
+  isValidIsoDate,
+  validatePastOrTodayDate,
+} from "./certificateDatePolicy";
+
+export { getTodayDateInKst, isValidIsoDate };
 
 export const CERTIFICATE_MIN_YEAR = 1900;
 export const CERTIFICATE_MAX_YEAR_OFFSET = 1;
@@ -38,6 +46,7 @@ export type CertificateFieldErrorCode =
   | "INVALID_DATE"
   | "DATE_RANGE"
   | "DATE_OUT_OF_BOUNDS"
+  | "DATE_IN_FUTURE"
   | "INVALID_NUMBER"
   | "MAX_LENGTH"
   | "MAX_LINES"
@@ -121,20 +130,11 @@ export function countCodePoints(value: string): number {
 }
 
 // ── 날짜 ────────────────────────────────────────────────────────────────────
-
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-export function isValidIsoDate(value: string): boolean {
-  if (!ISO_DATE.test(value)) return false;
-  const [y, m, d] = value.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
-}
-
-/** KST(UTC+9) 기준 오늘 "YYYY-MM-DD". */
-export function todayIsoKst(now: Date = new Date()): string {
-  return new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
+// isValidIsoDate · getTodayDateInKst(구 todayIsoKst) 는 certificateDatePolicy.ts 로
+// 이동했다(경력증명서와 공유) — 위에서 import 해 재수출만 한다. 기존 호출부(다른 파일의
+// `import { todayIsoKst } from "./activityCertificateValidation"`)가 계속 동작하도록
+// 이름을 유지한다.
+export const todayIsoKst = getTodayDateInKst;
 
 /** 생년월일 표기: "YYYY. MM. DD" (템플릿 사양 — 끝점 없음). */
 export function formatBirthDate(iso: string): string {
@@ -205,6 +205,11 @@ export function validateActivityCertificateInput(
               : `${label}은(는) ${minYear}년 ~ ${maxYear}년 사이여야 합니다.`,
           ),
         );
+      }
+      // 활동 시작/종료일은 오늘(KST) 이후 날짜를 금지한다(발급일·생년월일은 대상 아님).
+      if ((CERTIFICATE_FUTURE_BLOCKED_FIELDS as readonly string[]).includes(key)) {
+        const futureError = validatePastOrTodayDate(key, label, text, todayIso);
+        if (futureError) errors.push(futureError);
       }
       continue;
     }
