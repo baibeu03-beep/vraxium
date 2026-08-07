@@ -140,9 +140,9 @@ function diff(a, b) {
  *    파인더 패턴으로 오인해 실패한다(URL 이 길어져 QR 이 조밀해질수록 잘 발생).
  *    좌표는 lib/certificates/activityCertificateTemplate.ts 의 qr 설정과 일치시킬 것.
  */
-// activityCertificateTemplate.ts 의 qr 설정과 일치시킬 것 — 2026-08-07 A4 비율 교체본에서
-// top 이 1896 → 2054 로 이동했다(세로만 13/12배 스케일, left/size 는 가로 불변이라 그대로).
-const QR_BOX = { left: 1920, top: 2054, size: 240 };
+// activityCertificateTemplate.ts 의 qr 설정과 일치시킬 것 — 2026-08-07 신규 교체본(처음부터
+// 재실측, 이전 좌표 미참조)에서 left/top/size 가 모두 다시 바뀌었다.
+const QR_BOX = { left: 1921, top: 2024, size: 238 };
 async function decodeQr(png) {
   const region = { left: QR_BOX.left, top: QR_BOX.top, width: QR_BOX.size, height: QR_BOX.size };
   const { data, info } = await sharp(png)
@@ -164,10 +164,11 @@ async function decodeQr(png) {
 //        q / 1 0 0 1 x y cm / 1 0 0 1 0 0 cm / w 0 0 h 0 0 cm / /Image Do / Q
 //    따라서 하나만 골라 읽으면 안 되고 순서대로 행렬을 합성해야 한다.
 const A4_PT = { width: 595.28, height: 841.89 };
-// 2026-08-07 A4 비율 교체본: 2475x3300 → 2475x3575(세로만 13/12배). 이미지를 교체하면
-// 반드시 여기도 같이 갱신할 것 — activityCertificateTemplate.ts 의 width/height 와 동일해야
-// 종횡비·PDF 여백 방향 검증(아래 checkPdfGeometry)이 실제 파일과 어긋나지 않는다.
-const TEMPLATE_PX = { width: 2475, height: 3575 };
+// 2026-08-07 신규 교체본: 2475x3497(가로세로 비율 0.7078 ≈ A4 0.7071, 처음부터 재실측).
+// 이미지를 교체하면 반드시 여기도 같이 갱신할 것 — activityCertificateTemplate.ts 의
+// width/height 와 동일해야 종횡비·PDF 여백 방향 검증(아래 checkPdfGeometry)이 실제 파일과
+// 어긋나지 않는다.
+const TEMPLATE_PX = { width: 2475, height: 3497 };
 
 /** PDF cm 연산: CTM' = M x CTM. 행렬은 [a b c d e f]. */
 function concatMatrix(m, ctm) {
@@ -516,8 +517,9 @@ async function main() {
     { label: "공백 문자열", body: { ...VALID_BODY, name: "   " }, field: "name", code: "REQUIRED" },
     { label: "길이 초과", body: { ...VALID_BODY, graduationGrade: "가".repeat(21) }, field: "graduationGrade", code: "MAX_LENGTH" },
     { label: "숫자 아닌 주차", body: { ...VALID_BODY, activityWeeks: "삼십" }, field: "activityWeeks", code: "INVALID_NUMBER" },
-    // 템플릿에 "20"이 고정 인쇄되어 있어 발급일은 2000년 미만을 거부해야 한다.
-    { label: "발급일 2000년 미만(템플릿 '20' 고정 인쇄)", body: { ...VALID_BODY, issueDate: "1999-12-31" }, field: "issueDate", code: "DATE_OUT_OF_BOUNDS" },
+    // 신규 템플릿엔 "20" 고정 접두사가 없다 — 발급일도 다른 날짜 필드와 같은 1900년
+    // 하한을 쓴다(더 이상 2000년 특례 없음).
+    { label: "발급일 1900년 미만", body: { ...VALID_BODY, issueDate: "1899-12-31" }, field: "issueDate", code: "DATE_OUT_OF_BOUNDS" },
   ];
   for (const c of CASES) {
     const seen = [];
@@ -535,7 +537,7 @@ async function main() {
   }
 
   section("12(b). 모든 필드가 maxLength 까지 채워져도 칸 안에 들어가는지");
-  // 새 템플릿(2475x3300) 실측 후 각 슬롯의 minFontSize 를 "maxWidth / maxLength" 기준으로
+  // 새 템플릿(2475x3497) 실측 후 각 슬롯의 minFontSize 를 "maxWidth / maxLength" 기준으로
   // 다시 잡아, 글자 제한(maxLength)을 꽉 채워도 항상 칸 안에 들어가도록 설계했다(구
   // 템플릿의 이름 칸은 이 여유가 없어 20자를 채우면 FIELD_OVERFLOW 가 났었다 — 그건 칸이
   // 좁았던 구 템플릿의 한계였지 의도한 안전장치 시연용이 아니었으므로, 새 템플릿에서는
