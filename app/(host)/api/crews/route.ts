@@ -16,7 +16,7 @@ import { resolveAdminBaseUrl } from "@/lib/adminBaseUrl";
 import { resolveUserScopeFromParams } from "@/lib/userScope";
 import { resolveWeekResultStates, statesByStartDate } from "@/lib/weekResultState";
 import { enforceQaMode } from "@/lib/qaModeGate";
-import { operationalSeasonDbKey } from "@/lib/seasonCalendar";
+import { getOperationalSeason, getSeasonForDate, seasonDbKey, operationalSeasonDbKey } from "@/lib/seasonCalendar";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -565,10 +565,33 @@ export async function GET(request: Request) {
     // 0) operationalSeasonKey + 시즌 status 맵 + 스코프. season/scope 는 서로 독립 → 병렬.
     //    (season=active+rest 게이트+카운트, scope=운영/테스트 모집단.)
     const operationalSeasonKey = operationalSeasonDbKey(new Date().toISOString().slice(0, 10));
-    const [season, scope] = await Promise.all([
+    const [seasonPrimary, scope] = await Promise.all([
       fetchSeasonStatusMap(supabase, operationalSeasonKey),
       resolveUserScopeFromParams(supabase, searchParams, orgFilter),
     ]);
+    // ⚠️ 2026-10-06: 새 시즌이 시작됐는데 어드민이 아직 user_season_statuses 행을 만들지 않으면
+    //   (행 0건) 게이트가 빈 집합이 되어 /crews 가 "No members" 로 비었다(2026-autumn 실제 사고).
+    //   → 현재 운영 시즌 행이 0건이면 행이 있는 직전 시즌(최대 4개 시즌 전까지)으로 폴백한다.
+    //   새 시즌 행이 1건이라도 생기면 즉시 원래 동작(현재 시즌 기준)으로 돌아온다.
+    let season = seasonPrimary;
+    let seasonFallbackKey: string | null = null;
+    if (seasonPrimary && seasonPrimary.counts.total === 0) {
+      let cursor = getOperationalSeason(new Date().toISOString().slice(0, 10));
+      for (let i = 0; i < 4 && cursor; i++) {
+        const prevDay = new Date(Date.parse(`${cursor.startDate}T00:00:00Z`) - 86_400_000)
+          .toISOString().slice(0, 10);
+        cursor = getSeasonForDate(prevDay);
+        if (!cursor) break;
+        const prevKey = seasonDbKey(cursor);
+        const prev = await fetchSeasonStatusMap(supabase, prevKey);
+        if (prev && prev.counts.total > 0) {
+          season = prev;
+          seasonFallbackKey = prevKey;
+          console.warn(`[/api/crews] ${operationalSeasonKey} 시즌 행 0건 — ${prevKey} 로 폴백`);
+          break;
+        }
+      }
+    }
     // ⚠️ QA 워크백(2026-07-01): 시즌 참여 게이트는 test·operating 무관하게 **항상 적용**(operating 정책).
     //   과거 test 모집단은 게이트를 스킵했으나 시즌/정책은 operating 기준이어야 하므로 mode 조건 제거.
     //   모집단(실유저 vs 테스트 유저) 필터는 아래 scope.filter 에서만 유지된다.
@@ -629,7 +652,7 @@ export async function GET(request: Request) {
     const statusCounts = { active: orgActive, rest: orgRest, total: orgActive + orgRest };
     const emptyEnvelope = (filteredTotal: number) => NextResponse.json({
       success: true, data: [], page, pageSize, total: population.length, filteredTotal,
-      statusCounts, seasonCounts: season?.counts ?? null, operationalSeasonKey,
+      statusCounts, seasonCounts: season?.counts ?? null, operationalSeasonKey, seasonFallbackKey,
     });
 
     if (population.length === 0) return emptyEnvelope(0);
@@ -814,6 +837,7 @@ export async function GET(request: Request) {
       statusCounts,
       seasonCounts: season?.counts ?? null,
       operationalSeasonKey,
+      seasonFallbackKey,
     });
   } catch (error) {
     console.error("Crew list API error:", error);
