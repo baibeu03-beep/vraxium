@@ -315,11 +315,11 @@ async function fetchSeasonStatusMap(
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from("user_season_statuses")
-      .select("user_id, status")
+      .select("user_id, status, note")
       .eq("season_key", seasonKey)
       .order("user_id", { ascending: true })
       .range(from, from + PAGE - 1)
-      .returns<{ user_id: string; status: string }[]>();
+      .returns<{ user_id: string; status: string; note: string | null }[]>();
     if (error) {
       console.error(
         "[/api/crews] user_season_statuses 조회 실패 — 시즌 필터 건너뜀(fail-open):",
@@ -329,6 +329,10 @@ async function fetchSeasonStatusMap(
     }
     if (!data || data.length === 0) break;
     for (const r of data) {
+      // UI 테스트용 mock 참가 기록(note='TESTSIM-…')은 "시즌 행 존재"로 세지 않는다.
+      //   세면 새 시즌에 mock 1건만 있어도 직전 시즌 폴백(아래)이 꺼져 /crews 목록이 증발한다.
+      //   운영 데이터에는 이 접두 메모가 없으므로 영향 없음.
+      if (typeof r.note === "string" && r.note.startsWith("TESTSIM-")) continue;
       statusByUser.set(r.user_id, r.status);
       counts.total += 1;
       if (r.status === "active") counts.active += 1;

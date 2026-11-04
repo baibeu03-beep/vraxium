@@ -43,7 +43,9 @@ if (process.argv.includes("--rollback")) {
 const ex=ck(await sb.from("cluster4_lines").select("id").eq("source_file_name",TAG),"check");
 if(ex.length){ console.error("이미 씨드됨. 먼저 --rollback"); process.exit(1); }
 
-// 1) 시즌 참가 기록
+// 1) 시즌 참가 기록 — ⚠ note=TAG("TESTSIM-…") 필수.
+//    /crews 는 현재 시즌 행이 0건일 때만 직전 시즌으로 폴백하는데, app/(host)/api/crews/route.ts 가
+//    note 가 "TESTSIM-" 로 시작하는 행을 세지 않도록 처리돼 있어 이 1건이 목록을 증발시키지 않는다.
 const hasSeason=ck(await sb.from("user_season_statuses").select("id").eq("user_id",U).eq("season_key",SEASON),"season chk");
 if(!hasSeason.length) ck(await sb.from("user_season_statuses").insert({user_id:U,season_key:SEASON,status:"active",note:TAG}),"season ins");
 
